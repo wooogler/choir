@@ -1,0 +1,75 @@
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Contribution History",
+        "emoji": true
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "image",
+          "image_url": "https://pbs.twimg.com/profile_images/625633822235693056/lNGUneLX_400x400.jpg",
+          "alt_text": "dog profile"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Sangwook* - Updates wifi passwords on Dec 4th 2016"
+        }
+      ]
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "image",
+          "image_url": "https://i.pinimg.com/736x/04/8b/8d/048b8dbc061a104f266176b1b7bf828c.jpg",
+          "alt_text": "dog profile"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Sang* - Updates wifi passwords on Dec 12th 2020"
+        }
+      ]
+    },
+    {
+      "type": "input",
+      "element": {
+        "type": "channels_select",
+        "placeholder": {
+          "type": "plain_text",
+          "text": "Select a channel",
+          "emoji": true
+        },
+        "initial_channel": "C12345678",
+        "action_id": "actionId-2"
+      },
+      "label": {
+        "type": "plain_text",
+        "text": "Select Conversation Channel",
+        "emoji": true
+      }
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "dispatch_action": true,
+      "type": "input",
+      "element": {
+        "type": "plain_text_input",
+        "action_id": "plain_text_input-action",
+        "initial_value": "Can I change wifi passwords?"
+      },
+      "label": {
+        "type": "plain_text",
+        "text": "Message to Start Conversations",
+        "emoji": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+	"blocks": [
+		{
+			"type": "section",
+			"text": {
+				"type": "mrkdwn",
+				"text": "I cannot find the wifi password of the echolab. Sorry."
+			}
+		},
+		{
+			"type": "context",
+			"elements": [
+				{
+					"type": "plain_text",
+					"text": "You can ask to others.",
+					"emoji": true
+				}
+			]
+		},
+		{
+			"type": "input",
+			"element": {
+				"type": "channels_select",
+				"placeholder": {
+					"type": "plain_text",
+					"text": "Select a channel",
+					"emoji": true
+				},
+				"initial_channel": "C12345678",
+				"action_id": "actionId-2"
+			},
+			"label": {
+				"type": "plain_text",
+				"text": "Select Conversation Channel",
+				"emoji": true
+			}
+		},
+		{
+			"type": "divider"
+		},
+		{
+			"dispatch_action": true,
+			"type": "input",
+			"element": {
+				"type": "plain_text_input",
+				"action_id": "plain_text_input-action",
+				"initial_value": "What is the wifi password of the echolab?"
+			},
+			"label": {
+				"type": "plain_text",
+				"text": "Message to Start Conversations",
+				"emoji": true
+			}
+		}
+	]
+}
