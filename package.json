@@ -48,6 +48,6 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "nodemon": "^3.1.9",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.3"
   }
 }
