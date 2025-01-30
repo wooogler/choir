@@ -1,0 +1,136 @@
+{
+  "blocks": [
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "<@Sangwook> select messages to update team's documents."
+      }
+    },
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Selected Messages",
+        "emoji": true
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "image",
+          "image_url": "https://i.pinimg.com/736x/04/8b/8d/048b8dbc061a104f266176b1b7bf828c.jpg",
+          "alt_text": "dog profile"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Sangwook* - Good Morning!"
+        }
+      ]
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "image",
+          "image_url": "https://i.pinimg.com/736x/04/8b/8d/048b8dbc061a104f266176b1b7bf828c.jpg",
+          "alt_text": "dog profile"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Sangwook* - I brought new coffee beans on <https://a.co/d/fQsh2PP|Amazon>!"
+        }
+      ]
+    },
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Create a New Section",
+        "emoji": true
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "Document: <https://www.google.com|Lab Resources>"
+      }
+    },
+    {
+      "type": "input",
+      "element": {
+        "type": "plain_text_input",
+        "action_id": "plain_text_input-action",
+        "initial_value": "Coffee Beans"
+      },
+      "label": {
+        "type": "plain_text",
+        "text": "Section Title",
+        "emoji": true
+      }
+    },
+    {
+      "type": "input",
+      "element": {
+        "type": "plain_text_input",
+        "multiline": true,
+        "action_id": "plain_text_input-action",
+        "initial_value": "* Lavazza Super Crema Whole Bean Coffee Blend - Sangwook"
+      },
+      "label": {
+        "type": "plain_text",
+        "text": "Content",
+        "emoji": true
+      }
+    },
+    {
+      "type": "input",
+      "element": {
+        "type": "plain_text_input",
+        "multiline": true,
+        "action_id": "plain_text_input-action",
+        "initial_value": "Sangwook bought from <https://a.co/d/fQsh2PP|https://a.co/d/fQsh2PP> on Jan 19"
+      },
+      "label": {
+        "type": "plain_text",
+        "text": "Context",
+        "emoji": true
+      }
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "emoji": true,
+            "text": "Create"
+          },
+          "confirm": {
+            "title": {
+              "type": "plain_text",
+              "text": "Are you sure?"
+            },
+            "text": {
+              "type": "mrkdwn",
+              "text": "Do you want to update the document?"
+            },
+            "confirm": {
+              "type": "plain_text",
+              "text": "Yes"
+            },
+            "deny": {
+              "type": "plain_text",
+              "text": "No"
+            }
+          },
+          "style": "primary",
+          "value": "click_me_123"
+        }
+      ]
+    }
+  ]
+}

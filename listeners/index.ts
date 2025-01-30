@@ -1,11 +1,13 @@
-import type { App } from '@slack/bolt';
-import actions from './actions';
-import commands from './commands';
-import events from './events';
-import messages from './messages';
-import shortcuts from './shortcuts';
-import views from './views';
-
+import type { App } from "@slack/bolt";
+import actions from "./actions";
+import commands from "./commands";
+import events from "./events";
+import messages from "./messages";
+import shortcuts from "./shortcuts";
+import views from "./views";
+import dms from "./dms";
+import reactions from "./reactions";
+import mentions from "./mentions";
 const registerListeners = (app: App) => {
   actions.register(app);
   commands.register(app);
@@ -13,6 +15,9 @@ const registerListeners = (app: App) => {
   messages.register(app);
   shortcuts.register(app);
   views.register(app);
+  dms.register(app);
+  reactions.register(app);
+  mentions.register(app);
 };
 
 export default registerListeners;

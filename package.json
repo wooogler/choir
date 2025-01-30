@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc",
     "start": "npm run build && node ./dist/app.js",
+    "dev": "nodemon --watch '**/*.ts' --exec 'ts-node' app.ts",
     "lint": "npx @biomejs/biome check *.ts listeners",
     "lint:fix": "npx @biomejs/biome check --write *.ts listeners",
     "test": "npm run build && npm run lint"
@@ -26,11 +27,27 @@
     "url": "https://github.com/slack-samples/bolt-ts-starter-template/issues"
   },
   "dependencies": {
+    "@langchain/community": "^0.3.27",
+    "@langchain/core": "^0.3.36",
+    "@langchain/openai": "^0.4.2",
+    "@octokit/types": "^13.7.0",
     "@slack/bolt": "^4.2.0",
-    "dotenv": "~16.4.7"
+    "@slack/types": "^2.14.0",
+    "@slack/web-api": "^7.8.0",
+    "@types/diff": "^7.0.0",
+    "@types/diff-match-patch": "^1.0.36",
+    "diff": "^7.0.0",
+    "diff-match-patch": "^1.0.5",
+    "dotenv": "~16.4.7",
+    "faiss-node": "^0.5.1",
+    "langchain": "^0.3.13",
+    "marked": "^15.0.6",
+    "octokit": "^4.1.0",
+    "openai": "^4.80.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "nodemon": "^3.1.9",
     "typescript": "^5.7.2"
   }
 }
