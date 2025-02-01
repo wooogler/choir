@@ -27,7 +27,7 @@
     "url": "https://github.com/slack-samples/bolt-ts-starter-template/issues"
   },
   "dependencies": {
-    "@langchain/community": "^0.3.27",
+    "@langchain/community": "^0.3.28",
     "@langchain/core": "^0.3.36",
     "@langchain/openai": "^0.4.2",
     "@octokit/types": "^13.7.0",
