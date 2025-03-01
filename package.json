@@ -40,7 +40,7 @@
     "diff-match-patch": "^1.0.5",
     "dotenv": "~16.4.7",
     "faiss-node": "^0.5.1",
-    "langchain": "^0.3.13",
+    "langchain": "^0.3.19",
     "marked": "^15.0.6",
     "octokit": "^4.1.0",
     "openai": "^4.80.0"
