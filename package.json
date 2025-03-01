@@ -43,7 +43,7 @@
     "langchain": "^0.3.13",
     "marked": "^15.0.6",
     "octokit": "^4.1.0",
-    "openai": "^4.80.0"
+    "openai": "^4.86.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
