@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import dotenv from "dotenv";
 import type { ChatCompletionMessageParam } from "openai/resources";
+import type { SlackMessage } from "./slack-utils";
 
 dotenv.config();
 
@@ -25,13 +26,8 @@ export async function createCompletion(
 
 export async function editMarkdownWithUserMessages(
   markdown: string,
-  userMessages: {
-    name: string;
-    content: string;
-  }[]
+  userMessages: SlackMessage[]
 ) {
-  console.log("userMessages", userMessages);
-
   const completion = await createCompletion("gpt-4o", [
     {
       role: "system",
@@ -47,7 +43,8 @@ Return the raw markdown content exactly as it should appear in the document.`,
       content: `<markdown>${markdown}</markdown>
 <conversation>${userMessages
         .map(
-          (message) => `<${message.name}>${message.content}</${message.name}>`
+          (message) =>
+            `<${message.username}>${message.text}</${message.username}>`
         )
         .join("\n")}</conversation>`,
     },
