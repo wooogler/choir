@@ -6,7 +6,13 @@ import type {
 import { createDiffBlock } from "../../services/slack-diff";
 import { editMarkdownWithUserMessages } from "../../services/completions";
 import { convertMarkdownToSlackText } from "../../services/markdown";
-import { getUserName, replaceUserMentions } from "../../services/slack-utils";
+import {
+  type EditData,
+  extractKeysFromMessages,
+  getStoredMessages,
+  type SlackMessage,
+  storeEditData,
+} from "../../services/slack-utils";
 import VectorStoreService from "../../services/vector-store";
 import type { Button } from "@slack/types";
 
@@ -20,15 +26,16 @@ const suggestUpdatesCallback = async ({
   try {
     // value 파싱
     const rawValue = body.actions[0].value;
+    console.log("rawValue", rawValue);
     let currentIndex = 0;
-    let validMessages: { name: string; content: string; userId: string }[] = [];
+    let validMessages: SlackMessage[] = [];
 
     if (rawValue) {
       const parsedValue = JSON.parse(rawValue);
       if ("index" in parsedValue) {
         // Next Suggestion 버튼에서 온 경우
         currentIndex = parsedValue.index;
-        validMessages = parsedValue.messages;
+        validMessages = getStoredMessages(parsedValue.messageKeys);
       }
     }
 
@@ -42,42 +49,16 @@ const suggestUpdatesCallback = async ({
         throw new Error("No selected options provided");
       }
 
-      const selectedMessages = await Promise.all(
-        selectedOptions.map(async (option: { value: string }) => {
-          const lines = option.value.split("\n");
-          const header = lines[0];
-          const content = lines.slice(1).join("\n").trim();
-
-          const userIdMatch = header.match(/<@([A-Z0-9]+)>/);
-          const userId = userIdMatch?.[1];
-
-          if (!userId || !content) return null;
-
-          const userName = await getUserName(userId, client);
-          const processedContent = await replaceUserMentions(content, client);
-
-          return {
-            name: userName,
-            userId,
-            content: processedContent,
-          };
-        })
-      );
-
-      validMessages = selectedMessages.filter(
-        (msg): msg is { name: string; content: string; userId: string } =>
-          msg !== null
+      validMessages = getStoredMessages(
+        selectedOptions.map((option) => option.value)
       );
     }
 
-    // Similarity Search 수행
     const vectorStore = VectorStoreService.getInstance();
     const searchResults = await vectorStore.similaritySearch(
-      validMessages.map((msg) => msg.content).join("\n"),
+      validMessages.map((msg) => msg.text).join("\n"),
       3
     );
-
-    console.log("searchResults", searchResults);
 
     const mostRelevantDoc = searchResults[currentIndex];
     const { fileName, githubUrl } = mostRelevantDoc.metadata;
@@ -85,7 +66,7 @@ const suggestUpdatesCallback = async ({
       mostRelevantDoc.pageContent.split("---")[0].trim() ?? "";
     const markdownContent = mostRelevantDoc.pageContent.split("---")[1] ?? "";
 
-    // 선택된 메시지로 문서 편집
+    // // 선택된 메시지로 문서 편집
     const updatedContent = await editMarkdownWithUserMessages(
       markdownContent,
       validMessages
@@ -95,7 +76,30 @@ const suggestUpdatesCallback = async ({
     const newSlackText = await convertMarkdownToSlackText(updatedContent);
     const diffBlock = createDiffBlock(oldSlackText, newSlackText);
 
-    // 버튼에 다음 인덱스 정보 포함
+    const updatedMarkdown = await vectorStore.getUpdatedMarkdown({
+      metadata: {
+        fileName,
+        sectionIndex: mostRelevantDoc.metadata.sectionIndex,
+        contentIndex: mostRelevantDoc.metadata.contentIndex,
+      },
+      newContent: updatedContent,
+    });
+
+    if (!updatedMarkdown) {
+      throw new Error("Failed to get updated markdown");
+    }
+
+    const editData: EditData = {
+      fileName,
+      updatedMarkdown,
+      messages: validMessages,
+      diffBlock,
+      author: body.user.id,
+    };
+
+    const editDataKey = storeEditData(editData);
+
+    // // 버튼에 다음 인덱스 정보 포함
     const nextIndex = currentIndex + 1;
     const hasNextSuggestion = nextIndex < searchResults.length;
 
@@ -104,32 +108,29 @@ const suggestUpdatesCallback = async ({
     );
 
     const actionButtons: Button[] = [
-      {
-        type: "button" as const,
-        text: {
-          type: "plain_text" as const,
-          text: "Apply",
-        },
-        style: "primary" as const,
-        action_id: "apply_update",
-        value: JSON.stringify({
-          fileName,
-          sectionIndex: mostRelevantDoc.metadata.sectionIndex,
-          contentIndex: mostRelevantDoc.metadata.contentIndex,
-          newContent: updatedContent,
-        }),
-      },
+      // {
+      //   type: "button" as const,
+      //   text: {
+      //     type: "plain_text" as const,
+      //     text: "Apply",
+      //   },
+      //   style: "primary" as const,
+      //   action_id: "apply_update",
+      //   value: JSON.stringify({
+      //     editDataKey,
+      //   }),
+      // },
       {
         type: "button" as const,
         text: {
           type: "plain_text" as const,
           text: "Start Discussion",
         },
+        style: "primary" as const,
         action_id: "start_discussion",
         value: JSON.stringify({
-          authors: uniqueAuthors,
-          fileName,
-          githubUrl,
+          stakeholders: uniqueAuthors,
+          editDataKey,
         }),
       },
     ];
@@ -144,7 +145,7 @@ const suggestUpdatesCallback = async ({
         action_id: "suggest_updates",
         value: JSON.stringify({
           index: nextIndex,
-          messages: validMessages,
+          messageKeys: extractKeysFromMessages(validMessages),
         }),
       });
     }

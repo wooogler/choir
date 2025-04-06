@@ -41,7 +41,7 @@ export function parseMarkdownToTree(markdown: string): MarkdownTree {
       const newSection: MarkdownNode = {
         type: "section",
         depth: headingToken.depth - 1,
-        text: headingToken.raw,
+        text: headingToken.raw.trim(),
         children: [],
         sectionIndex: currentSectionIndex,
       };
@@ -85,7 +85,7 @@ export function parseMarkdownToTree(markdown: string): MarkdownTree {
         const listToken = token as MarkedTokens.List;
         const listNode: MarkdownNode = {
           type: "list",
-          text: token.raw,
+          text: token.raw.trim(),
           children: [],
           sectionIndex: currentSection.sectionIndex,
         };
@@ -93,7 +93,7 @@ export function parseMarkdownToTree(markdown: string): MarkdownTree {
 
         listNode.children = listToken.items.map((item, idx) => ({
           type: "list-item",
-          text: item.raw,
+          text: item.raw.trim(),
           children: [],
           sectionIndex: currentSection?.sectionIndex,
           contentIndex: `${listNode.contentIndex}-${idx + 1}`,
@@ -101,7 +101,7 @@ export function parseMarkdownToTree(markdown: string): MarkdownTree {
       } else {
         const contentNode: MarkdownNode = {
           type: token.type,
-          text: token.raw,
+          text: token.raw.trim(),
           children: [],
           sectionIndex: currentSection.sectionIndex,
         };

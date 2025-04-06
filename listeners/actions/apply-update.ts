@@ -4,6 +4,11 @@ import type {
   BlockButtonAction,
 } from "@slack/bolt";
 import VectorStoreService from "../../services/vector-store";
+import {
+  getStoredEditData,
+  getStoredMessages,
+} from "../../services/slack-utils";
+import GithubService from "../../services/github";
 
 const applyUpdateCallback = async ({
   ack,
@@ -18,18 +23,35 @@ const applyUpdateCallback = async ({
       throw new Error("No value provided");
     }
 
-    const { fileName, sectionIndex, contentIndex, newContent } =
-      JSON.parse(rawValue);
-
-    const vectorStore = VectorStoreService.getInstance();
-    const updatedMarkdown = await vectorStore.updateMarkdownContent(
-      { fileName, sectionIndex, contentIndex },
-      newContent
-    );
-
-    if (!updatedMarkdown) {
-      throw new Error("Failed to update content");
+    const { editDataKey } = JSON.parse(rawValue);
+    const editData = getStoredEditData(editDataKey);
+    if (!editData) {
+      throw new Error("No edit data found");
     }
+
+    const { updatedMarkdown, messages, fileName } = editData;
+
+    const subject = "Update document with CHOIR";
+
+    const githubService = GithubService.getInstance();
+
+    console.log(messages);
+    const commits = await githubService.getHistoryOfMarkdownUpdate({
+      owner: "wooogler",
+      repo: "choir_docs",
+      path: fileName,
+      newContent: updatedMarkdown,
+    });
+
+    console.log(commits);
+
+    // await githubService.updateMarkdownFile({
+    //   owner: "wooogler",
+    //   repo: "choir_docs",
+    //   path: editData.fileName,
+    //   content: updatedMarkdown,
+    //   message: `${subject}\n\n${JSON.stringify(messages)}`,
+    // });
 
     await client.chat.postMessage({
       channel: body.channel?.id ?? "",

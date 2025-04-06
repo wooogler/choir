@@ -1,6 +1,6 @@
 import { diffArrays } from "diff";
 
-interface RichTextElement {
+export interface RichTextElement {
   type: "text" | "rich_text_section" | "divider";
   text?: string;
   style?: Record<string, boolean>;
