@@ -207,47 +207,154 @@ export function findNodesInSection(
 }
 
 /**
- * 노드 내용 업데이트
+ * 노드 내용 업데이트 - 불변성 원칙을 준수하여 새로운 트리 반환
  */
 export function updateNodeContent(
   docTree: DocumentTree,
   nodeId: string,
   newContent: string
-): boolean {
-  const node = docTree.nodeMap.get(nodeId);
-  if (!node) return false;
+): DocumentTree {
+  // 원본 트리의 깊은 복사본 생성
+  const newTree: DocumentTree = {
+    title: docTree.title,
+    nodeMap: new Map(docTree.nodeMap),
+    sectionMap: new Map(docTree.sectionMap),
+    root: JSON.parse(JSON.stringify(docTree.root)),
+  };
 
-  if (is(node, "paragraph")) {
+  const node = newTree.nodeMap.get(nodeId);
+  if (!node) return newTree; // 노드가 없으면 변경되지 않은 복사본 반환
+
+  // 노드 깊은 복사
+  const nodeCopy = JSON.parse(JSON.stringify(node));
+
+  let updated = false;
+
+  if (is(nodeCopy, "paragraph")) {
     // 단락 노드의 경우 텍스트 자식 업데이트
-    const para = node as Paragraph & ExtendedNode;
+    const para = nodeCopy as Paragraph & ExtendedNode;
     const textNode = para.children[0] as Text;
     if (textNode) {
       textNode.value = newContent;
-      return true;
+      updated = true;
     }
-  } else if (is(node, "heading")) {
+  } else if (is(nodeCopy, "heading")) {
     // 헤딩 노드의 경우 텍스트 자식 업데이트
-    const heading = node as Heading & ExtendedNode;
+    const heading = nodeCopy as Heading & ExtendedNode;
     const textNode = heading.children[0] as Text;
     if (textNode) {
       textNode.value = newContent;
-      return true;
+      updated = true;
     }
-  } else if (is(node, "listItem")) {
+  } else if (is(nodeCopy, "listItem")) {
     // 리스트 아이템의 경우 첫 번째 단락 업데이트
-    const listItem = node as ListItem & ExtendedNode;
+    const listItem = nodeCopy as ListItem & ExtendedNode;
     const firstChild = listItem.children[0];
     if (is(firstChild, "paragraph")) {
       const para = firstChild as Paragraph;
       const textNode = para.children[0] as Text;
       if (textNode) {
         textNode.value = newContent;
-        return true;
+        updated = true;
       }
     }
   }
 
-  return false;
+  if (updated) {
+    // 변경된 노드로 교체
+    newTree.nodeMap.set(nodeId, nodeCopy);
+
+    // 부모 노드들과 루트 트리 구조 업데이트
+    updateNodeInRootTree(newTree, nodeCopy);
+
+    console.log(`노드 ID ${nodeId} 업데이트 성공 - 새 트리 생성됨`);
+  }
+
+  return newTree;
+}
+
+/**
+ * 노드를 root 트리 구조에서도 업데이트
+ */
+function updateNodeInRootTree(tree: DocumentTree, node: ExtendedNode): void {
+  // 노드가 root 트리에 있는 실제 노드 찾기
+  function findAndUpdateNodeInRoot(
+    rootNode: Parent & ExtendedNode,
+    targetId: string
+  ): boolean {
+    // 현재 노드가 대상 노드인지 확인
+    if (rootNode.id === targetId) {
+      // 현재 노드를 찾았으므로 업데이트 (이 경우는 루트 자체가 대상인 드문 경우)
+      Object.assign(rootNode, node);
+      return true;
+    }
+
+    // 자식 노드가 없으면 종료
+    if (!rootNode.children || !Array.isArray(rootNode.children)) {
+      return false;
+    }
+
+    // 자식 노드들을 순회하며 대상 노드 찾기
+    for (let i = 0; i < rootNode.children.length; i++) {
+      const child = rootNode.children[i] as any; // any로 타입 변환하여 children 접근 가능하게 함
+
+      // 자식이 대상 노드인 경우
+      if (child.id === targetId) {
+        // 자식 노드를 업데이트된 노드로 교체
+        rootNode.children[i] = node;
+        return true;
+      }
+
+      // 자식이 부모 노드인 경우 재귀적으로 탐색
+      if (child.children && Array.isArray(child.children)) {
+        if (findAndUpdateNodeInRoot(child as Parent & ExtendedNode, targetId)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  // root에서 노드 업데이트 시작
+  if (node.id) {
+    // id가 있는 경우만 업데이트 시도
+    findAndUpdateNodeInRoot(tree.root, node.id);
+  }
+
+  // 기존 부모 노드 업데이트 로직 유지 (nodeMap 업데이트)
+  updateParentNodes(tree, node);
+}
+
+/**
+ * 부모 노드들 업데이트 (nodeMap 업데이트)
+ */
+function updateParentNodes(tree: DocumentTree, node: ExtendedNode): void {
+  if (!node.parentId) return;
+
+  const parentId = node.parentId;
+  const parentNode = tree.nodeMap.get(parentId);
+
+  if (!parentNode) return;
+
+  // 부모 노드 복사
+  const parentCopy = JSON.parse(JSON.stringify(parentNode));
+
+  // 자식 노드 찾기 및 교체
+  if (Array.isArray(parentCopy.children)) {
+    for (let i = 0; i < parentCopy.children.length; i++) {
+      if (parentCopy.children[i].id === node.id) {
+        parentCopy.children[i] = node;
+        break;
+      }
+    }
+
+    // 업데이트된 부모 노드를 맵에 설정
+    tree.nodeMap.set(parentId, parentCopy);
+
+    // 재귀적으로 상위 부모 업데이트
+    updateParentNodes(tree, parentCopy);
+  }
 }
 
 /**
@@ -267,10 +374,13 @@ export function updateSectionContent(
   const contentNode = docTree.nodeMap.get(contentId);
   if (!contentNode || contentNode.sectionId !== sectionId) return null;
 
-  // 내용 업데이트
-  if (updateNodeContent(docTree, contentId, newContent)) {
+  // 불변 방식으로 내용 업데이트
+  const updatedTree = updateNodeContent(docTree, contentId, newContent);
+
+  // 변경이 있었는지 확인 (참조가 다르면 변경된 것)
+  if (updatedTree !== docTree) {
     // 전체 마크다운으로 변환
-    return treeToMarkdown(docTree);
+    return treeToMarkdown(updatedTree);
   }
 
   return null;

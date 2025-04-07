@@ -22,6 +22,8 @@ const register = (app: App) => {
   app.action("start_discussion", startDiscussionCallback);
   app.action("start_discussion_selected", startDiscussionCallback);
   app.action("apply_update", applyUpdateCallback);
+  app.action("apply_selected_to_github", applySelectedToGithub);
+  app.action("document_selection", handleDocumentSelection);
 
   // 관리자 권한 관리 액션 등록
   app.action("select_user_for_permission", selectUserCallback);
@@ -250,10 +252,6 @@ const register = (app: App) => {
       });
     }
   });
-
-  // 문서 업데이트 관련 액션 등록
-  app.action("document_selection", handleDocumentSelection);
-  app.action("apply_selected_to_github", applySelectedToGithub);
 };
 
 export default { register };

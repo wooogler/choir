@@ -634,10 +634,22 @@ const suggestUpdatesCallback = async ({
 
             if (hasChanges) {
               // 노드 내용만 업데이트
-              if (updateNodeContent(docTree, nodeId, updatedNodeContent)) {
+              // updateNodeContent 함수가 이제 새로운 docTree를 반환함
+              const updatedDocTree = updateNodeContent(
+                docTree,
+                nodeId,
+                updatedNodeContent
+              );
+
+              // 업데이트된 트리가 원본과 다른지 확인
+              if (updatedDocTree !== docTree) {
+                // 업데이트된 트리로 대체
+                docTree = updatedDocTree;
                 nodeUpdated = true;
                 hasAnyChanges = true;
-                console.log(`노드 ID ${nodeId} 업데이트 성공`);
+                console.log(
+                  `노드 ID ${nodeId} 업데이트 성공: ${treeToMarkdown(docTree)}`
+                );
               } else {
                 console.log(
                   `노드 ID ${nodeId} 업데이트 실패 - 지원되지 않는 노드 타입`
@@ -694,6 +706,8 @@ const suggestUpdatesCallback = async ({
       if (hasAnyChanges) {
         // 수정된 트리를 다시 마크다운으로 변환
         const updatedFullMarkdown = treeToMarkdown(docTree);
+
+        console.log("updatedFullMarkdown", updatedFullMarkdown);
 
         // 전체 파일에 대한 정보도 저장 (GitHub 업데이트용)
         documentUpdates.push({
