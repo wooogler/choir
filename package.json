@@ -49,7 +49,7 @@
     "mdast-util-to-string": "^4.0.0",
     "nanoid": "^5.1.5",
     "octokit": "^4.1.0",
-    "openai": "^4.80.0",
+    "openai": "^4.92.0",
     "remark-parse": "^11.0.0",
     "remark-stringify": "^11.0.0",
     "unified": "^11.0.5",
