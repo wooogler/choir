@@ -231,11 +231,25 @@ export const applySelectedToGithub = async ({
     for (const keyData of editDataKeys) {
       // 선택된 문서만 처리 (키 값 형식 통일)
       const keyToCheck = keyData.key;
-      const isSelected = selectedKeys.includes(keyToCheck);
+      // 체크박스에서 선택한 모든 문서를 항상 업데이트하도록 수정
+      // const isSelected = selectedKeys.includes(keyToCheck);
+      const isSelected = true; // 항상 선택된 것으로 처리
 
       if (isSelected) {
         const editData = getStoredEditData(keyToCheck);
         if (editData) {
+          // 디버깅용 로그 추가
+          console.log(`[디버깅] 키 ${keyToCheck}에 대한 편집 데이터 처리 중:`);
+          console.log(
+            `[디버깅] 파일명: ${keyData.fileName}, URL: ${keyData.githubUrl}`
+          );
+          console.log(
+            `[디버깅] 업데이트할 마크다운 길이: ${editData.updatedMarkdown.length} 바이트`
+          );
+          console.log(
+            `[디버깅] 적용할 메시지 수: ${editData.messages.length}개`
+          );
+
           // GitHub URL에서 owner와 repo 추출
           const githubInfo = parseGithubUrl(keyData.githubUrl);
           if (!githubInfo) {
@@ -277,13 +291,17 @@ export const applySelectedToGithub = async ({
 
           try {
             // 실제 GitHub 업데이트 수행
-            await githubService.updateMarkdownFile({
+            const result = await githubService.updateMarkdownFile({
               owner: githubInfo.owner,
               repo: githubInfo.repo,
               path: keyData.fileName,
               content: editData.updatedMarkdown,
               message: JSON.stringify(commitMessageJson),
             });
+
+            // 벡터 스토어 재구축
+            const vectorStore = VectorStoreService.getInstance();
+            await vectorStore.forceRebuildCache();
 
             console.log(
               `✅ ${keyData.fileName} 파일이 성공적으로 업데이트되었습니다!`
@@ -298,6 +316,14 @@ export const applySelectedToGithub = async ({
               `${keyData.fileName} 파일 업데이트 중 오류 발생:`,
               error
             );
+            // 더 자세한 오류 정보 로깅
+            console.log(`[오류 상세] 에러 타입: ${error?.constructor?.name}`);
+            console.log(
+              `[오류 상세] 스택 트레이스: ${
+                error instanceof Error ? error.stack : "없음"
+              }`
+            );
+
             results.push({
               fileName: keyData.fileName,
               success: false,
@@ -905,7 +931,7 @@ const suggestUpdatesCallback = async ({
               text: "논의 시작",
               emoji: true,
             },
-            action_id: "start_discussion_selected",
+            action_id: "start_discussion",
             value: JSON.stringify({
               stakeholders: uniqueAuthors,
               editDataKeys: editDataKeys.map((data) => data.key),
