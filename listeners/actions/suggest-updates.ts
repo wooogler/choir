@@ -231,9 +231,8 @@ export const applySelectedToGithub = async ({
     for (const keyData of editDataKeys) {
       // 선택된 문서만 처리 (키 값 형식 통일)
       const keyToCheck = keyData.key;
-      // 체크박스에서 선택한 모든 문서를 항상 업데이트하도록 수정
-      // const isSelected = selectedKeys.includes(keyToCheck);
-      const isSelected = true; // 항상 선택된 것으로 처리
+      // 체크박스에서 선택한 항목만 업데이트하도록 수정
+      const isSelected = selectedKeys.includes(keyToCheck);
 
       if (isSelected) {
         const editData = getStoredEditData(keyToCheck);
@@ -248,6 +247,9 @@ export const applySelectedToGithub = async ({
           );
           console.log(
             `[디버깅] 적용할 메시지 수: ${editData.messages.length}개`
+          );
+          console.log(
+            `[디버깅] 선택 상태: ${isSelected ? "선택됨" : "선택되지 않음"}`
           );
 
           // GitHub URL에서 owner와 repo 추출
