@@ -3,7 +3,11 @@ import type {
   SlackActionMiddlewareArgs,
   BlockButtonAction,
 } from "@slack/bolt";
-import { getManagers, getWorkspaceId } from "../../services/slack-utils";
+import {
+  getManagers,
+  getWorkspaceId,
+  getUserName,
+} from "../../services/slack-utils";
 
 const startDiscussionCallback = async ({
   ack,
@@ -21,8 +25,17 @@ const startDiscussionCallback = async ({
     }
 
     const value = JSON.parse(rawValue);
-    const { stakeholders, editDataKey } = value;
+    const { stakeholders, editDataKey, editDataKeys } = value;
     const uniqueStakeholders = Array.from(new Set(stakeholders)) as string[];
+
+    // editDataKey 또는 editDataKeys에서 첫 번째 키 사용
+    const finalEditDataKey =
+      editDataKey ||
+      (editDataKeys && editDataKeys.length > 0 ? editDataKeys[0] : null);
+
+    if (!finalEditDataKey) {
+      throw new Error("No edit data key provided");
+    }
 
     // 워크스페이스 ID 가져오기
     const workspaceId = await getWorkspaceId(client);
@@ -61,13 +74,26 @@ const startDiscussionCallback = async ({
       (uid) => !managers.includes(uid)
     );
 
+    // 현재 대화 참가자 목록 텍스트 생성
+    const stakeholderNames = await Promise.all(
+      uniqueStakeholders.map(async (userId) => {
+        try {
+          const userName = await getUserName(userId, client);
+          return `<@${userId}> (${userName})`;
+        } catch (error) {
+          logger.error(`Error fetching user info for ${userId}:`, error);
+          return `<@${userId}>`;
+        }
+      })
+    );
+
     await client.views.open({
       trigger_id: body.trigger_id,
       view: {
         type: "modal",
         private_metadata: JSON.stringify({
           participants: allParticipants,
-          editDataKey,
+          editDataKey: finalEditDataKey,
         }),
         title: {
           type: "plain_text",
@@ -93,6 +119,26 @@ const startDiscussionCallback = async ({
                 managers.length > 0
                   ? managerNames.join("\n")
                   : "_관리자가 설정되지 않았습니다_",
+            },
+          },
+          {
+            type: "divider",
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*현재 대화 참가자*\n문서 업데이트에 사용된 메시지를 발화한 사람들:",
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text:
+                stakeholderNames.length > 0
+                  ? stakeholderNames.join("\n")
+                  : "_대화 참가자가 없습니다_",
             },
           },
           {

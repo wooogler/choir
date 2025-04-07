@@ -8,7 +8,9 @@ import views from "./views";
 import dms from "./dms";
 import reactions from "./reactions";
 import mentions from "./mentions";
+
 const registerListeners = (app: App) => {
+  // 모든 리스너 등록
   actions.register(app);
   commands.register(app);
   events.register(app);

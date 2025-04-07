@@ -3,12 +3,12 @@ import type {
   SlackActionMiddlewareArgs,
   BlockButtonAction,
 } from "@slack/bolt";
-import VectorStoreService from "../../services/vector-store";
+import GithubService from "../../services/github";
+import { VectorStoreService } from "../../services/index";
 import {
   getStoredEditData,
   getStoredMessages,
 } from "../../services/slack-utils";
-import GithubService from "../../services/github";
 
 const applyUpdateCallback = async ({
   ack,
@@ -35,7 +35,7 @@ const applyUpdateCallback = async ({
 
     const githubService = GithubService.getInstance();
 
-    console.log(messages);
+    console.log("messages", messages);
     const commits = await githubService.getHistoryOfMarkdownUpdate({
       owner: "wooogler",
       repo: "choir_docs",
@@ -43,7 +43,7 @@ const applyUpdateCallback = async ({
       newContent: updatedMarkdown,
     });
 
-    console.log(commits);
+    console.log("commits", commits);
 
     // await githubService.updateMarkdownFile({
     //   owner: "wooogler",

@@ -268,6 +268,98 @@ const appHomeOpenedCallback = async ({
           type: "divider",
         }
       );
+
+      // 벡터 스토어 관리 섹션 추가
+      managerManagementBlocks.push(
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: "🔍 벡터 스토어 관리",
+            emoji: true,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "벡터 스토어 진단 및 복구 기능을 사용할 수 있습니다. 문서 검색이나 업데이트 제안 기능에 문제가 있는 경우 사용하세요.",
+          },
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "벡터 스토어 진단",
+                emoji: true,
+              },
+              style: "primary",
+              action_id: "diagnose_vector_store",
+            },
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "캐시 재구축",
+                emoji: true,
+              },
+              action_id: "rebuild_vector_cache",
+              confirm: {
+                title: {
+                  type: "plain_text",
+                  text: "캐시 재구축",
+                },
+                text: {
+                  type: "mrkdwn",
+                  text: "벡터 스토어 캐시를 재구축하시겠습니까? 이 작업은 몇 분 정도 소요될 수 있습니다.",
+                },
+                confirm: {
+                  type: "plain_text",
+                  text: "재구축",
+                },
+                deny: {
+                  type: "plain_text",
+                  text: "취소",
+                },
+              },
+            },
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "긴급 초기화",
+                emoji: true,
+              },
+              style: "danger",
+              action_id: "reset_vector_store",
+              confirm: {
+                title: {
+                  type: "plain_text",
+                  text: "긴급 초기화",
+                },
+                text: {
+                  type: "mrkdwn",
+                  text: "⚠️ 벡터 스토어를 완전히 초기화하고 새로 구축하시겠습니까? 이 작업은 되돌릴 수 없으며 몇 분 정도 소요될 수 있습니다.",
+                },
+                confirm: {
+                  type: "plain_text",
+                  text: "초기화",
+                },
+                deny: {
+                  type: "plain_text",
+                  text: "취소",
+                },
+              },
+            },
+          ],
+        },
+        {
+          type: "divider",
+        }
+      );
     }
 
     // 최종 홈 뷰 블록 구성
