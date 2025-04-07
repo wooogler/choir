@@ -1,146 +1,279 @@
 import { marked, Renderer } from "marked";
 import type { Tokens as MarkedTokens } from "marked";
+import { unified } from "unified";
+import remarkParse from "remark-parse";
+import remarkStringify from "remark-stringify";
+import { visit } from "unist-util-visit";
+import { is } from "unist-util-is";
+import { toString } from "mdast-util-to-string";
+import type { Root, Heading, ListItem, Paragraph, Text } from "mdast";
+import type { Node, Parent } from "unist";
+import * as crypto from "crypto";
+import * as fs from "fs";
 
-export interface MarkdownNode {
-  type: string;
-  depth?: number;
-  text?: string;
-  children: MarkdownNode[];
-  sectionIndex?: string;
-  contentIndex?: string;
+/**
+ * 확장된 MDAST 노드 인터페이스 - 커스텀 속성 추가
+ */
+export interface ExtendedNode extends Node {
+  id?: string;
+  parentId?: string;
+  sectionId?: string;
+  sectionLevel?: number;
+  isListItem?: boolean;
+  listItemIndex?: number;
 }
 
-export interface MarkdownTree {
+/**
+ * 문서 트리 전체를 나타내는 인터페이스
+ */
+export interface DocumentTree {
   title: string;
-  content: MarkdownNode[];
+  root: Root & ExtendedNode;
+  // 빠른 조회를 위한 맵
+  nodeMap: Map<string, ExtendedNode>;
+  sectionMap: Map<string, ExtendedNode>;
 }
 
-export function parseMarkdownToTree(markdown: string): MarkdownTree {
-  const tokens = marked.lexer(markdown);
-  const tree: MarkdownTree = {
+/**
+ * 노드에 고유 ID 부여하는 함수
+ */
+function generateNodeId(node: Node, prefix = ""): string {
+  const type = node.type;
+  const content = toString(node as any).slice(0, 20);
+  const hash = crypto
+    .createHash("md5")
+    .update(`${type}-${content}-${Math.random()}`)
+    .digest("hex")
+    .slice(0, 8);
+
+  return `${prefix}${type}-${hash}`;
+}
+
+/**
+ * 마크다운을 파싱하여 DocumentTree로 변환
+ */
+export function parseMarkdownToTree(markdown: string): DocumentTree {
+  // 마크다운을 MDAST로 파싱
+  const processor = unified().use(remarkParse);
+  const root = processor.parse(markdown) as Root;
+
+  // 문서 트리 초기화
+  const docTree: DocumentTree = {
     title: "",
-    content: [],
+    root: root as Root & ExtendedNode,
+    nodeMap: new Map<string, ExtendedNode>(),
+    sectionMap: new Map<string, ExtendedNode>(),
   };
 
-  let currentSection: MarkdownNode | null = null;
-  const sectionStack: MarkdownNode[] = [];
+  // 트리 순회하며 노드 ID 부여 및 관계 설정
   let sectionCount = 0;
+  let currentSection: ExtendedNode | null = null;
+  let sectionStack: ExtendedNode[] = [];
 
-  for (const token of tokens) {
-    if (token.type === "heading") {
-      const headingToken = token as MarkedTokens.Heading;
+  // 첫 번째 h1을 문서 제목으로 설정
+  let titleFound = false;
 
-      if (headingToken.depth === 1) {
-        tree.title = headingToken.text;
-        continue;
+  visit(root, (node, index, parent) => {
+    // 노드를 확장 노드로 변환
+    const extNode = node as ExtendedNode;
+
+    // 노드에 고유 ID 부여
+    extNode.id = generateNodeId(node);
+
+    // 부모 ID 설정
+    if (parent) {
+      extNode.parentId = (parent as ExtendedNode).id;
+    }
+
+    // 섹션 처리 (heading)
+    if (is(node, "heading")) {
+      const heading = node as Heading & ExtendedNode;
+
+      // 첫 번째 h1은 문서 제목으로
+      if (heading.depth === 1 && !titleFound) {
+        docTree.title = toString(heading);
+        titleFound = true;
+        return;
       }
 
+      // h2-h6은 섹션으로 처리
       sectionCount++;
-      const currentSectionIndex = String(sectionCount);
+      heading.sectionId = `section-${sectionCount}`;
+      heading.sectionLevel = heading.depth;
 
-      const newSection: MarkdownNode = {
-        type: "section",
-        depth: headingToken.depth - 1,
-        text: headingToken.raw.trim(),
-        children: [],
-        sectionIndex: currentSectionIndex,
-      };
-
+      // 섹션 스택 관리
       while (
         sectionStack.length > 0 &&
-        (sectionStack[sectionStack.length - 1].depth ?? 0) >=
-          (newSection.depth ?? 0)
+        (sectionStack[sectionStack.length - 1] as Heading).depth >=
+          heading.depth
       ) {
         sectionStack.pop();
       }
 
-      if (sectionStack.length === 0) {
-        tree.content.push(newSection);
-      } else {
-        sectionStack[sectionStack.length - 1].children.push(newSection);
+      // 상위 섹션 ID 설정
+      if (sectionStack.length > 0) {
+        heading.parentId = sectionStack[sectionStack.length - 1].id;
       }
 
-      sectionStack.push(newSection);
-      currentSection = newSection;
+      sectionStack.push(heading);
+      currentSection = heading;
 
-      let contentCount = 0;
-      const parentSectionIndex =
-        sectionStack.length > 0
-          ? sectionStack[sectionStack.length - 1].sectionIndex
-          : currentSectionIndex;
+      // 섹션 맵에 추가
+      docTree.sectionMap.set(heading.sectionId, heading);
+    }
 
-      const addIndexToNode = (node: MarkdownNode) => {
-        contentCount++;
-        node.sectionIndex = parentSectionIndex;
-        node.contentIndex = String(contentCount);
-      };
+    // 리스트 아이템 처리
+    if (is(node, "listItem")) {
+      const listItem = node as ListItem & ExtendedNode;
+      listItem.isListItem = true;
 
-      const originalPush = newSection.children.push;
-      newSection.children.push = function (...items: MarkdownNode[]) {
-        items.forEach(addIndexToNode);
-        return originalPush.apply(this, items);
-      };
-    } else if (currentSection) {
-      if (token.type === "list") {
-        const listToken = token as MarkedTokens.List;
-        const listNode: MarkdownNode = {
-          type: "list",
-          text: token.raw.trim(),
-          children: [],
-          sectionIndex: currentSection.sectionIndex,
-        };
-        currentSection.children.push(listNode);
+      // 부모 리스트의 자식 중 현재 아이템 인덱스 찾기
+      if (parent && is(parent, "list") && index !== null) {
+        listItem.listItemIndex = index;
+      }
 
-        listNode.children = listToken.items.map((item, idx) => ({
-          type: "list-item",
-          text: item.raw.trim(),
-          children: [],
-          sectionIndex: currentSection?.sectionIndex,
-          contentIndex: `${listNode.contentIndex}-${idx + 1}`,
-        }));
-      } else {
-        const contentNode: MarkdownNode = {
-          type: token.type,
-          text: token.raw.trim(),
-          children: [],
-          sectionIndex: currentSection.sectionIndex,
-        };
-        currentSection.children.push(contentNode);
+      // 현재 리스트 아이템이 속한 섹션 ID 설정
+      if (currentSection) {
+        listItem.sectionId = currentSection.sectionId;
       }
     }
-  }
 
-  return tree;
+    // 일반 콘텐츠 노드 (단락 등)
+    if (is(node, "paragraph") || is(node, "code") || is(node, "blockquote")) {
+      // 현재 노드가 속한 섹션 ID 설정
+      if (currentSection) {
+        extNode.sectionId = currentSection.sectionId;
+      }
+    }
+
+    // 노드맵에 추가
+    docTree.nodeMap.set(extNode.id, extNode);
+  });
+
+  return docTree;
 }
 
-export function treeToMarkdown(tree: MarkdownTree): string {
-  let markdown = "";
+/**
+ * DocumentTree를 마크다운으로 변환
+ */
+export function treeToMarkdown(docTree: DocumentTree): string {
+  // MDAST를 마크다운으로 변환
+  const processor = unified().use(remarkStringify, {
+    bullet: "-",
+    listItemIndent: "one",
+    emphasis: "_",
+    strong: "**",
+  } as any);
 
-  if (tree.title) {
-    markdown += `# ${tree.title}\n\n`;
-  }
+  return processor.stringify(docTree.root).toString().trim();
+}
 
-  function renderNode(node: MarkdownNode): string {
-    let result = "";
+/**
+ * 특정 노드 찾기
+ */
+export function findNodeById(
+  docTree: DocumentTree,
+  id: string
+): ExtendedNode | undefined {
+  return docTree.nodeMap.get(id);
+}
 
-    if (node.type === "section") {
-      result += `${node.text}\n\n`;
+/**
+ * 섹션 노드 찾기
+ */
+export function findSectionById(
+  docTree: DocumentTree,
+  sectionId: string
+): ExtendedNode | undefined {
+  return docTree.sectionMap.get(sectionId);
+}
 
-      for (const child of node.children) {
-        result += renderNode(child);
-      }
-    } else if (node.type === "list" || node.type === "paragraph") {
-      result += `${node.text}\n\n`;
+/**
+ * 섹션 내 모든 콘텐츠 노드 찾기
+ */
+export function findNodesInSection(
+  docTree: DocumentTree,
+  sectionId: string
+): ExtendedNode[] {
+  const result: ExtendedNode[] = [];
+
+  docTree.nodeMap.forEach((node) => {
+    if (node.sectionId === sectionId) {
+      result.push(node);
     }
+  });
 
-    return result;
+  return result;
+}
+
+/**
+ * 노드 내용 업데이트
+ */
+export function updateNodeContent(
+  docTree: DocumentTree,
+  nodeId: string,
+  newContent: string
+): boolean {
+  const node = docTree.nodeMap.get(nodeId);
+  if (!node) return false;
+
+  if (is(node, "paragraph")) {
+    // 단락 노드의 경우 텍스트 자식 업데이트
+    const para = node as Paragraph & ExtendedNode;
+    const textNode = para.children[0] as Text;
+    if (textNode) {
+      textNode.value = newContent;
+      return true;
+    }
+  } else if (is(node, "heading")) {
+    // 헤딩 노드의 경우 텍스트 자식 업데이트
+    const heading = node as Heading & ExtendedNode;
+    const textNode = heading.children[0] as Text;
+    if (textNode) {
+      textNode.value = newContent;
+      return true;
+    }
+  } else if (is(node, "listItem")) {
+    // 리스트 아이템의 경우 첫 번째 단락 업데이트
+    const listItem = node as ListItem & ExtendedNode;
+    const firstChild = listItem.children[0];
+    if (is(firstChild, "paragraph")) {
+      const para = firstChild as Paragraph;
+      const textNode = para.children[0] as Text;
+      if (textNode) {
+        textNode.value = newContent;
+        return true;
+      }
+    }
   }
 
-  for (const node of tree.content) {
-    markdown += renderNode(node);
+  return false;
+}
+
+/**
+ * 문서에서 특정 섹션 업데이트
+ */
+export function updateSectionContent(
+  docTree: DocumentTree,
+  sectionId: string,
+  contentId: string,
+  newContent: string
+): string | null {
+  // 섹션 검증
+  const section = docTree.sectionMap.get(sectionId);
+  if (!section) return null;
+
+  // 콘텐츠 노드 검증
+  const contentNode = docTree.nodeMap.get(contentId);
+  if (!contentNode || contentNode.sectionId !== sectionId) return null;
+
+  // 내용 업데이트
+  if (updateNodeContent(docTree, contentId, newContent)) {
+    // 전체 마크다운으로 변환
+    return treeToMarkdown(docTree);
   }
 
-  return markdown.trim();
+  return null;
 }
 
 export async function convertMarkdownToSlackText(
@@ -148,14 +281,27 @@ export async function convertMarkdownToSlackText(
 ): Promise<string> {
   const renderer = new Renderer();
 
+  // 첫 번째 헤딩 발견 여부를 추적하기 위한 플래그
+  let firstHeadingFound = false;
+
   // 수평선은 divider로 변환
   renderer.hr = () => {
     return "---\n";
   };
 
-  // 헤딩은 Slack에서 굵은 텍스트 처리
-  renderer.heading = ({ text }: MarkedTokens.Heading) => {
-    return `*${text}*\n\n`;
+  // 헤딩은 Slack에서 굵은 텍스트 처리 - 헤딩 내용이 이미 문서에 포함되어 있어 중복될 수 있으므로 제거
+  renderer.heading = ({ text, depth }: MarkedTokens.Heading) => {
+    // 첫 번째 헤딩은 완전히 제거 (이미 UI에 표시되므로 중복 방지)
+    if (!firstHeadingFound) {
+      firstHeadingFound = true;
+      return ""; // 첫 번째 헤딩 제거
+    }
+
+    // 나머지 헤딩은 기존대로 처리
+    if (depth <= 2) {
+      return `*${text}*\n\n`;
+    }
+    return `${text}\n\n`;
   };
 
   // 링크는 링크 텍스트만 표시 (URL 제거)
@@ -163,10 +309,12 @@ export async function convertMarkdownToSlackText(
     return text;
   };
 
-  // italic', 'bold' 등은 Slack에서 Marked가 자동 변환하는 걸 믿고, 필요 시 추가 처리 가능
-  // HTML은 제거
-  renderer.html = () => {
-    return "";
+  // HTML을 제거 - HTML 태그를 완전히 제거하고 내용만 유지
+  renderer.html = ({ text }: MarkedTokens.HTML) => {
+    // HTML 태그를 제거하고 내부 텍스트만 유지
+    return text
+      .replace(/<[^>]*>([^<]*)<\/[^>]*>/g, "$1")
+      .replace(/<[^>]*>/g, "");
   };
 
   // 목록
@@ -189,13 +337,23 @@ export async function convertMarkdownToSlackText(
     return text;
   };
 
+  // 단락 처리 - 기본 단락 마커를 제거하고 줄바꿈만 유지
+  renderer.paragraph = ({ text }: MarkedTokens.Paragraph) => {
+    return `${text}\n\n`;
+  };
+
   let slackText = await marked.parse(markdown, {
     renderer,
     gfm: true,
   });
 
-  // 수평선 마커를 실제 divider 블록으로 변환
-  slackText = slackText.replace(/___DIVIDER___/g, '{"type":"divider"}');
+  // HTML 태그 제거 추가 처리
+  slackText = slackText
+    .replace(/<[^>]*>([^<]*)<\/[^>]*>/g, "$1")
+    .replace(/<[^>]*>/g, "");
+
+  // 여러 개의 연속된 줄바꿈을 최대 2개로 정리
+  slackText = slackText.replace(/\n{3,}/g, "\n\n");
 
   return slackText.trim();
 }

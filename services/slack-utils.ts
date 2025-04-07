@@ -19,6 +19,7 @@ export interface EditData {
     }[];
   };
   author: string;
+  nodeId?: string;
 }
 
 // 메시지를 임시 저장할 Map
@@ -180,8 +181,21 @@ export async function getUserName(
   userId: string,
   client: WebClient
 ): Promise<string> {
-  const userInfo = await client.users.info({ user: userId });
-  return userInfo.user?.real_name ?? userInfo.user?.name ?? "Unknown";
+  try {
+    const userInfo = await client.users.info({ user: userId });
+
+    // 봇 계정인 경우 특별 처리
+    if (userInfo.user?.is_bot) {
+      // 봇의 이름 반환 (real_name 또는 name 속성 사용)
+      return userInfo.user?.real_name || userInfo.user?.name || "Bot";
+    }
+
+    // 일반 사용자의 경우 기존 로직 유지
+    return userInfo.user?.real_name ?? userInfo.user?.name ?? "Unknown";
+  } catch (error) {
+    console.error(`유저 정보를 가져오는 중 오류 발생: ${userId}`, error);
+    return "Unknown";
+  }
 }
 
 export async function replaceUserMentions(

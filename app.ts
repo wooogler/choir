@@ -2,7 +2,7 @@ import { App, LogLevel } from "@slack/bolt";
 import * as dotenv from "dotenv";
 import registerListeners from "./listeners";
 import GithubService from "./services/github";
-import VectorStoreService from "./services/vector-store";
+import { VectorStoreService } from "./services/index";
 import {
   getWorkspaceId,
   setupInitialManager,

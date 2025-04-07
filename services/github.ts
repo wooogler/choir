@@ -1,6 +1,6 @@
 import { Octokit } from "octokit";
 import * as dotenv from "dotenv";
-import { parseMarkdownToTree, type MarkdownTree } from "./markdown";
+import { parseMarkdownToTree, type DocumentTree } from "./markdown";
 
 dotenv.config();
 
@@ -26,7 +26,7 @@ export interface MarkdownFile {
   path: string;
   content: string;
   githubUrl: string;
-  tree: MarkdownTree;
+  tree: DocumentTree;
 }
 
 export interface GithubCommit {
@@ -356,6 +356,57 @@ class GithubService {
           message: `GitHub 연결 실패: ${err.message || "알 수 없는 오류"}`,
         };
       }
+    }
+  }
+
+  /**
+   * 특정 마크다운 파일 한 개만 가져옵니다.
+   */
+  async getMarkdownFile({
+    owner,
+    repo,
+    path,
+    ref = "main",
+  }: {
+    owner: string;
+    repo: string;
+    path: string;
+    ref?: string;
+  }): Promise<MarkdownFile | null> {
+    try {
+      console.log(`마크다운 파일 로드 중: ${path} (${owner}/${repo})`);
+
+      // 파일 내용 가져오기
+      const { data: fileData } = await this.octokit.rest.repos.getContent({
+        owner,
+        repo,
+        path,
+        ref,
+      });
+
+      if (Array.isArray(fileData) || !("content" in fileData)) {
+        console.warn(`${path}의 내용을 가져올 수 없습니다.`);
+        return null;
+      }
+
+      const content = Buffer.from(fileData.content, "base64").toString("utf-8");
+      const tree = parseMarkdownToTree(content);
+
+      const markdownFile: MarkdownFile = {
+        name: fileData.name,
+        path: fileData.path,
+        content: content,
+        githubUrl: fileData.html_url,
+        tree,
+      };
+
+      console.log(
+        `마크다운 파일 로드 완료: ${path} (${content.length} 바이트)`
+      );
+      return markdownFile;
+    } catch (error) {
+      console.error(`${path} 파일 로드 중 오류:`, error);
+      return null;
     }
   }
 }

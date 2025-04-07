@@ -2,7 +2,7 @@ import type { AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
 import OpenAI from "openai";
 import dotenv from "dotenv";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import VectorStoreService from "../../services/vector-store";
+import { VectorStoreService } from "../../services/index";
 
 dotenv.config();
 
