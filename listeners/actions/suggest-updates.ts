@@ -128,53 +128,88 @@ export const handleDocumentSelection = async ({
 
     // 체크박스 값 추출
     const actionValue = action.action_id;
-    const optionValue = action.selected_options?.[0]?.value;
+    console.log(`[체크박스 선택] 액션 ID: ${actionValue}`);
 
-    // 값이 있으면 해당 항목만 토글
-    if (optionValue) {
-      const data = JSON.parse(optionValue);
+    // 현재 선택된 옵션 로깅
+    if (action.selected_options && action.selected_options.length > 0) {
+      console.log(
+        `[체크박스 선택] ${action.selected_options.length}개 옵션이 선택됨`
+      );
+      action.selected_options.forEach((option, idx) => {
+        console.log(`[체크박스 선택] 선택 옵션 ${idx + 1}: ${option.value}`);
+      });
+    } else {
+      console.log("[체크박스 선택] 선택된 옵션 없음");
+    }
 
-      // 항목이 선택된 경우 (옵션이 추가됨)
-      if (action.selected_options && action.selected_options.length > 0) {
-        if (data.editDataKey) {
-          // 이미 선택된 목록에 없으면 추가
-          if (!selectedDocuments.has(userId)) {
-            selectedDocuments.set(userId, new Set<string>());
+    // 이전 선택 상태를 가져와서 현재 선택 상태와 비교
+    const previousSelections = new Set(getSelectedDocuments(userId));
+    console.log(
+      `[체크박스 선택] 이전 선택 상태: ${
+        Array.from(previousSelections).join(", ") || "없음"
+      }`
+    );
+
+    // 현재 선택된 키 목록 (옵션에서 추출)
+    const currentSelections = new Set<string>();
+    if (action.selected_options && action.selected_options.length > 0) {
+      for (const option of action.selected_options) {
+        try {
+          // option.value가 undefined일 수 있으므로 확인
+          if (option.value) {
+            const data = JSON.parse(option.value);
+            if (data.editDataKey) {
+              currentSelections.add(data.editDataKey);
+            }
+          } else {
+            console.log("[체크박스 선택] 옵션 값이 없습니다.");
           }
-          selectedDocuments.get(userId)?.add(data.editDataKey);
-          console.log(
-            `문서 ${data.fileName || "알 수 없는 파일"}이 선택되었습니다.`
-          );
-        }
-      } else {
-        // 항목이 선택 해제된 경우 (옵션이 제거됨)
-        if (data.editDataKey && selectedDocuments.has(userId)) {
-          selectedDocuments.get(userId)?.delete(data.editDataKey);
-          console.log(
-            `문서 ${data.fileName || "알 수 없는 파일"}이 선택 해제되었습니다.`
-          );
+        } catch (error) {
+          console.error(`[체크박스 선택] 옵션 값 파싱 오류:`, error);
         }
       }
     }
+    console.log(
+      `[체크박스 선택] 현재 선택 상태: ${
+        Array.from(currentSelections).join(", ") || "없음"
+      }`
+    );
 
-    // 현재 선택 상태 로깅
-    const selectedKeys = getSelectedDocuments(userId);
-    console.log(`현재 선택된 문서 키: ${selectedKeys.join(", ")}`);
-
-    if (channelId) {
-      const messageText =
-        selectedKeys.length > 0
-          ? `${selectedKeys.length}개 문서가 선택되었습니다.`
-          : "선택된 문서가 없습니다. 최소 하나의 문서를 선택해주세요.";
-
-      await client.chat.postEphemeral({
-        channel: channelId,
-        user: userId,
-        text: messageText,
-      });
+    // 사용자의 선택 목록 초기화 (없는 경우)
+    if (!selectedDocuments.has(userId)) {
+      selectedDocuments.set(userId, new Set<string>());
     }
+
+    // 새로 선택된 항목 처리
+    for (const key of currentSelections) {
+      if (!previousSelections.has(key)) {
+        // 새로 선택된 항목
+        selectedDocuments.get(userId)?.add(key);
+        console.log(`[체크박스 선택] 문서 키 ${key}가 새로 선택되었습니다.`);
+      }
+    }
+
+    // 선택 해제된 항목 처리
+    for (const key of previousSelections) {
+      if (!currentSelections.has(key)) {
+        // 선택 해제된 항목
+        selectedDocuments.get(userId)?.delete(key);
+        console.log(`[체크박스 선택] 문서 키 ${key}가 선택 해제되었습니다.`);
+      }
+    }
+
+    // 선택 목록 업데이트 (현재 선택 상태로 완전히 덮어쓰기)
+    selectedDocuments.set(userId, currentSelections);
+
+    // 최종 선택 상태 로깅
+    const finalSelectedKeys = getSelectedDocuments(userId);
+    console.log(
+      `[체크박스 선택] 최종 선택된 문서 키: ${
+        finalSelectedKeys.length > 0 ? finalSelectedKeys.join(", ") : "없음"
+      }`
+    );
   } catch (error) {
-    console.error("문서 선택 처리 중 오류 발생:", error);
+    console.error("[체크박스 선택] 처리 중 오류 발생:", error);
   }
 };
 
@@ -229,11 +264,17 @@ export const applySelectedToGithub = async ({
 
     // 각 선택된 문서에 대해 GitHub 업데이트 수행
     for (const keyData of editDataKeys) {
-      // 선택된 문서만 처리 (키 값 형식 통일)
-      const keyToCheck = keyData.key;
       // 체크박스에서 선택한 항목만 업데이트하도록 수정
+      const keyToCheck = keyData.key;
       const isSelected = selectedKeys.includes(keyToCheck);
 
+      console.log(
+        `[디버깅] 키 ${keyToCheck}의 선택 상태: ${
+          isSelected ? "선택됨" : "선택되지 않음"
+        }`
+      );
+
+      // 선택된 문서만 처리
       if (isSelected) {
         const editData = getStoredEditData(keyToCheck);
         if (editData) {
@@ -247,9 +288,6 @@ export const applySelectedToGithub = async ({
           );
           console.log(
             `[디버깅] 적용할 메시지 수: ${editData.messages.length}개`
-          );
-          console.log(
-            `[디버깅] 선택 상태: ${isSelected ? "선택됨" : "선택되지 않음"}`
           );
 
           // GitHub URL에서 owner와 repo 추출
@@ -342,6 +380,16 @@ export const applySelectedToGithub = async ({
             message: `❌ ${keyData.fileName} 파일 업데이트 실패: 편집 데이터를 찾을 수 없습니다.`,
           });
         }
+      } else {
+        // 선택되지 않은 문서에 대한 로그 추가
+        console.log(
+          `[디버깅] 키 ${keyToCheck}(${keyData.fileName})는 선택되지 않아 업데이트되지 않습니다.`
+        );
+        results.push({
+          fileName: keyData.fileName,
+          success: false,
+          message: `ℹ️ ${keyData.fileName} 파일은 선택되지 않아 업데이트되지 않았습니다.`,
+        });
       }
     }
 
@@ -709,8 +757,6 @@ const suggestUpdatesCallback = async ({
         // 수정된 트리를 다시 마크다운으로 변환
         const updatedFullMarkdown = treeToMarkdown(docTree);
 
-        console.log("updatedFullMarkdown", updatedFullMarkdown);
-
         // 전체 파일에 대한 정보도 저장 (GitHub 업데이트용)
         documentUpdates.push({
           index: -1, // 특수 인덱스로 전체 파일 표시
@@ -830,6 +876,7 @@ const suggestUpdatesCallback = async ({
                     editDataKeys[Math.min(index, editDataKeys.length - 1)].key,
                   fileName: doc.fileName,
                   githubUrl: doc.githubUrl,
+                  nodeId: doc.nodeId,
                 }),
               },
             ],
@@ -845,6 +892,7 @@ const suggestUpdatesCallback = async ({
                     editDataKeys[Math.min(index, editDataKeys.length - 1)].key,
                   fileName: doc.fileName,
                   githubUrl: doc.githubUrl,
+                  nodeId: doc.nodeId,
                 }),
               },
             ],
@@ -893,22 +941,17 @@ const suggestUpdatesCallback = async ({
       }
     });
 
-    // 사용자 선택 목록 초기화하고 모든 문서를 기본 선택 상태로 설정
-    // 이전 선택 상태를 모두 지우고 새로운 선택 항목으로 초기화
+    // 사용자 선택 목록 초기화
     selectedDocuments.set(body.user.id, new Set<string>());
-    // 모든 파일을 기본적으로 선택 상태로 설정
-    editDataKeys.forEach((data) => {
-      if (data && data.key) {
-        selectedDocuments.get(body.user.id)?.add(data.key);
-        console.log(
-          `파일 키 ${data.key}(${data.fileName})를 기본 선택 목록에 추가했습니다`
-        );
-      }
-    });
+    // 체크박스가 선택된 상태로 표시되지만, 실제로는 사용자가 체크박스를 클릭하여
+    // handleDocumentSelection 핸들러를 통해 선택 목록에 추가됨
+    // 즉, 실제 선택 상태는 체크박스 클릭 이벤트에 의해 관리됨
 
     // 현재 선택 상태 로깅
     const currentSelections = getSelectedDocuments(body.user.id);
-    console.log(`현재 기본 선택된 문서 키: ${currentSelections.join(", ")}`);
+    console.log(
+      `현재 선택된 문서 키: ${currentSelections.join(", ") || "없음"}`
+    );
 
     // 선택한 문서에 대한 액션 버튼
     blocks.push(
