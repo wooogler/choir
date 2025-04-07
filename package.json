@@ -30,7 +30,7 @@
     "@langchain/community": "^0.3.27",
     "@langchain/core": "^0.3.36",
     "@langchain/openai": "^0.4.2",
-    "@octokit/types": "^13.7.0",
+    "@octokit/types": "^13.10.0",
     "@slack/bolt": "^4.2.0",
     "@slack/types": "^2.14.0",
     "@slack/web-api": "^7.8.0",
