@@ -3,421 +3,23 @@ import type {
   AllMiddlewareArgs,
   SlackActionMiddlewareArgs,
   BlockButtonAction,
-  BlockCheckboxesAction,
 } from "@slack/bolt";
 import { createDiffBlock } from "../../services/slack-diff";
 import { editMarkdownWithUserMessages } from "../../services/completions";
 import { convertMarkdownToSlackText } from "../../services/markdown";
 import {
-  type EditData,
-  extractKeysFromMessages,
   getStoredMessages,
   type SlackMessage,
-  storeEditData,
-  getStoredEditData,
   parseGithubUrl,
-  getUserName,
 } from "../../services/slack-utils";
 import { VectorStoreService } from "../../services/index";
 import GithubService from "../../services/github";
-import {
-  parseMarkdownToTree,
-  treeToMarkdown,
-  updateNodeContent,
-  type DocumentTree,
-  type ExtendedNode,
-} from "../../services/markdown";
 import { DocumentMetadata } from "../../services/vector/types";
-import { WebClient } from "@slack/web-api";
-
-// 선택된 문서 추적을 위한 Map
-const selectedDocuments = new Map<string, Set<string>>();
-
-// 사용자의 선택 문서 가져오기
-const getSelectedDocuments = (userId: string): string[] => {
-  return Array.from(selectedDocuments.get(userId) || new Set<string>());
-};
-
-// 유저 ID를 유저 이름으로 변환하는 함수
-async function convertUserIdsToNames(
-  messages: { text: string; userId: string; ts?: string }[],
-  client: WebClient
-): Promise<{ text: string; userId: string; username: string; ts?: string }[]> {
-  const result: {
-    text: string;
-    userId: string;
-    username: string;
-    ts?: string;
-  }[] = [];
-  const anonymousCounter = new Map<string, number>();
-
-  for (const message of messages) {
-    try {
-      const username = await getUserName(message.userId, client);
-      result.push({
-        ...message,
-        username,
-      });
-    } catch (error) {
-      console.error(
-        `유저 이름을 가져오는 중 오류 발생: ${message.userId}`,
-        error
-      );
-
-      // 익명 사용자 이름 생성
-      let anonymousNumber = anonymousCounter.get(message.userId) || 0;
-      if (anonymousNumber === 0) {
-        // 새로운 익명 사용자
-        anonymousNumber = anonymousCounter.size + 1;
-        anonymousCounter.set(message.userId, anonymousNumber);
-      }
-
-      result.push({
-        ...message,
-        username: `Anonymous ${anonymousNumber}`,
-      });
-    }
-  }
-
-  return result;
-}
-
-// 메시지 텍스트에서 @멘션을 유저 이름으로 변환하는 함수
-async function replaceMentionsInText(
-  text: string,
-  client: WebClient
-): Promise<string> {
-  // @멘션 패턴 찾기
-  const mentionPattern = /<@([A-Z0-9]+)>/g;
-  const mentions = [...text.matchAll(mentionPattern)];
-
-  let processedText = text;
-
-  for (const mention of mentions) {
-    const userId = mention[1];
-    let username = "Unknown";
-
-    try {
-      username = await getUserName(userId, client);
-    } catch (error) {
-      console.error(
-        `멘션된 유저 이름을 가져오는 중 오류 발생: ${userId}`,
-        error
-      );
-    }
-
-    // 멘션을 유저 이름으로 대체
-    processedText = processedText.replace(mention[0], `@${username}`);
-  }
-
-  return processedText;
-}
-
-// 체크박스 액션 핸들러
-export const handleDocumentSelection = async ({
-  ack,
-  body,
-  client,
-  action,
-}: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockCheckboxesAction>) => {
-  await ack();
-
-  try {
-    const userId = body.user.id;
-    const channelId = body.channel?.id;
-
-    // 체크박스 값 추출
-    const actionValue = action.action_id;
-    console.log(`[체크박스 선택] 액션 ID: ${actionValue}`);
-
-    // 현재 선택된 옵션 로깅
-    if (action.selected_options && action.selected_options.length > 0) {
-      console.log(
-        `[체크박스 선택] ${action.selected_options.length}개 옵션이 선택됨`
-      );
-      action.selected_options.forEach((option, idx) => {
-        console.log(`[체크박스 선택] 선택 옵션 ${idx + 1}: ${option.value}`);
-      });
-    } else {
-      console.log("[체크박스 선택] 선택된 옵션 없음");
-    }
-
-    // 이전 선택 상태를 가져와서 현재 선택 상태와 비교
-    const previousSelections = new Set(getSelectedDocuments(userId));
-    console.log(
-      `[체크박스 선택] 이전 선택 상태: ${
-        Array.from(previousSelections).join(", ") || "없음"
-      }`
-    );
-
-    // 현재 선택된 키 목록 (옵션에서 추출)
-    const currentSelections = new Set<string>();
-    if (action.selected_options && action.selected_options.length > 0) {
-      for (const option of action.selected_options) {
-        try {
-          // option.value가 undefined일 수 있으므로 확인
-          if (option.value) {
-            const data = JSON.parse(option.value);
-            if (data.editDataKey) {
-              currentSelections.add(data.editDataKey);
-            }
-          } else {
-            console.log("[체크박스 선택] 옵션 값이 없습니다.");
-          }
-        } catch (error) {
-          console.error(`[체크박스 선택] 옵션 값 파싱 오류:`, error);
-        }
-      }
-    }
-    console.log(
-      `[체크박스 선택] 현재 선택 상태: ${
-        Array.from(currentSelections).join(", ") || "없음"
-      }`
-    );
-
-    // 사용자의 선택 목록 초기화 (없는 경우)
-    if (!selectedDocuments.has(userId)) {
-      selectedDocuments.set(userId, new Set<string>());
-    }
-
-    // 새로 선택된 항목 처리
-    for (const key of currentSelections) {
-      if (!previousSelections.has(key)) {
-        // 새로 선택된 항목
-        selectedDocuments.get(userId)?.add(key);
-        console.log(`[체크박스 선택] 문서 키 ${key}가 새로 선택되었습니다.`);
-      }
-    }
-
-    // 선택 해제된 항목 처리
-    for (const key of previousSelections) {
-      if (!currentSelections.has(key)) {
-        // 선택 해제된 항목
-        selectedDocuments.get(userId)?.delete(key);
-        console.log(`[체크박스 선택] 문서 키 ${key}가 선택 해제되었습니다.`);
-      }
-    }
-
-    // 선택 목록 업데이트 (현재 선택 상태로 완전히 덮어쓰기)
-    selectedDocuments.set(userId, currentSelections);
-
-    // 최종 선택 상태 로깅
-    const finalSelectedKeys = getSelectedDocuments(userId);
-    console.log(
-      `[체크박스 선택] 최종 선택된 문서 키: ${
-        finalSelectedKeys.length > 0 ? finalSelectedKeys.join(", ") : "없음"
-      }`
-    );
-  } catch (error) {
-    console.error("[체크박스 선택] 처리 중 오류 발생:", error);
-  }
-};
-
-// GitHub에 변경사항 적용
-export const applySelectedToGithub = async ({
-  ack,
-  body,
-  client,
-}: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
-  await ack();
-
-  try {
-    const actionValue = body.actions?.[0]?.value;
-    if (!actionValue) {
-      throw new Error("액션 값이 없습니다");
-    }
-
-    const { editDataKeys } = JSON.parse(actionValue);
-    const selectedKeys = getSelectedDocuments(body.user.id);
-
-    console.log("적용 요청된 editDataKeys:", JSON.stringify(editDataKeys));
-    console.log("현재 사용자가 선택한 키:", selectedKeys);
-
-    const channelId = body.channel?.id;
-    if (!channelId) {
-      throw new Error("채널 ID를 찾을 수 없습니다");
-    }
-
-    // 선택된 문서가 없는 경우
-    if (selectedKeys.length === 0) {
-      await client.chat.postEphemeral({
-        channel: channelId,
-        user: body.user.id,
-        text: "선택된 문서가 없습니다. 업데이트할 문서를 선택해주세요.",
-      });
-      return;
-    }
-
-    // 업데이트 진행 중 메시지 전송
-    await client.chat.postEphemeral({
-      channel: channelId,
-      user: body.user.id,
-      text: "선택한 문서를 GitHub에 업데이트 중입니다...",
-    });
-
-    // GitHub 서비스 인스턴스 생성
-    const githubService = GithubService.getInstance();
-
-    // 결과 저장 배열
-    const results: { fileName: string; success: boolean; message: string }[] =
-      [];
-
-    // 각 선택된 문서에 대해 GitHub 업데이트 수행
-    for (const keyData of editDataKeys) {
-      // 체크박스에서 선택한 항목만 업데이트하도록 수정
-      const keyToCheck = keyData.key;
-      const isSelected = selectedKeys.includes(keyToCheck);
-
-      console.log(
-        `[디버깅] 키 ${keyToCheck}의 선택 상태: ${
-          isSelected ? "선택됨" : "선택되지 않음"
-        }`
-      );
-
-      // 선택된 문서만 처리
-      if (isSelected) {
-        const editData = getStoredEditData(keyToCheck);
-        if (editData) {
-          // 디버깅용 로그 추가
-          console.log(`[디버깅] 키 ${keyToCheck}에 대한 편집 데이터 처리 중:`);
-          console.log(
-            `[디버깅] 파일명: ${keyData.fileName}, URL: ${keyData.githubUrl}`
-          );
-          console.log(
-            `[디버깅] 업데이트할 마크다운 길이: ${editData.updatedMarkdown.length} 바이트`
-          );
-          console.log(
-            `[디버깅] 적용할 메시지 수: ${editData.messages.length}개`
-          );
-
-          // GitHub URL에서 owner와 repo 추출
-          const githubInfo = parseGithubUrl(keyData.githubUrl);
-          if (!githubInfo) {
-            console.error(`유효한 GitHub URL이 아닙니다: ${keyData.githubUrl}`);
-            results.push({
-              fileName: keyData.fileName,
-              success: false,
-              message: `❌ ${keyData.fileName} 파일 업데이트 실패: 유효한 GitHub URL이 아닙니다.`,
-            });
-            continue;
-          }
-
-          // 커밋 메시지 생성 - 업데이트에 사용된 메시지 포함
-          const messagesWithUsernames = await convertUserIdsToNames(
-            editData.messages,
-            client
-          );
-          const processedMessages = await Promise.all(
-            messagesWithUsernames.map(async (msg) => ({
-              ...msg,
-              text: await replaceMentionsInText(msg.text, client),
-              ts: msg.ts || new Date().toISOString(),
-            }))
-          );
-
-          // JSON 형식의 커밋 메시지 생성
-          const commitMessageJson = {
-            fileName: keyData.fileName,
-            updateType: "document_update",
-            source: "choir_app",
-            timestamp: new Date().toISOString(),
-            messages: processedMessages.map((msg) => ({
-              userId: msg.userId,
-              username: msg.username,
-              text: msg.text,
-              ts: msg.ts,
-            })),
-          };
-
-          try {
-            // 실제 GitHub 업데이트 수행
-            const result = await githubService.updateMarkdownFile({
-              owner: githubInfo.owner,
-              repo: githubInfo.repo,
-              path: keyData.fileName,
-              content: editData.updatedMarkdown,
-              message: JSON.stringify(commitMessageJson),
-            });
-
-            // 벡터 스토어 재구축
-            const vectorStore = VectorStoreService.getInstance();
-            await vectorStore.forceRebuildCache();
-
-            console.log(
-              `✅ ${keyData.fileName} 파일이 성공적으로 업데이트되었습니다!`
-            );
-            results.push({
-              fileName: keyData.fileName,
-              success: true,
-              message: `✅ ${keyData.fileName} 파일이 성공적으로 업데이트되었습니다!`,
-            });
-          } catch (error) {
-            console.error(
-              `${keyData.fileName} 파일 업데이트 중 오류 발생:`,
-              error
-            );
-            // 더 자세한 오류 정보 로깅
-            console.log(`[오류 상세] 에러 타입: ${error?.constructor?.name}`);
-            console.log(
-              `[오류 상세] 스택 트레이스: ${
-                error instanceof Error ? error.stack : "없음"
-              }`
-            );
-
-            results.push({
-              fileName: keyData.fileName,
-              success: false,
-              message: `❌ ${keyData.fileName} 파일 업데이트 실패: ${
-                error instanceof Error ? error.message : "알 수 없는 오류"
-              }`,
-            });
-          }
-        } else {
-          console.error(`편집 데이터를 찾을 수 없습니다: ${keyToCheck}`);
-          results.push({
-            fileName: keyData.fileName,
-            success: false,
-            message: `❌ ${keyData.fileName} 파일 업데이트 실패: 편집 데이터를 찾을 수 없습니다.`,
-          });
-        }
-      } else {
-        // 선택되지 않은 문서에 대한 로그 추가
-        console.log(
-          `[디버깅] 키 ${keyToCheck}(${keyData.fileName})는 선택되지 않아 업데이트되지 않습니다.`
-        );
-        results.push({
-          fileName: keyData.fileName,
-          success: false,
-          message: `ℹ️ ${keyData.fileName} 파일은 선택되지 않아 업데이트되지 않았습니다.`,
-        });
-      }
-    }
-
-    // 사용자에게 결과 전송
-    const resultMessage =
-      results.length > 0
-        ? results.map((r) => r.message).join("\n")
-        : "선택된 문서가 없습니다.";
-
-    await client.chat.postEphemeral({
-      channel: channelId,
-      user: body.user.id,
-      text: `*문서 업데이트 결과*\n\n${resultMessage}`,
-    });
-  } catch (error) {
-    console.error("선택한 문서 업데이트 중 오류 발생:", error);
-
-    if (body.channel?.id) {
-      await client.chat.postEphemeral({
-        channel: body.channel.id,
-        user: body.user.id,
-        text: `문서 업데이트 중 오류가 발생했습니다: ${
-          error instanceof Error ? error.message : "알 수 없는 오류"
-        }`,
-      });
-    }
-  }
-};
+import {
+  storeDocumentUpdates,
+  setSelectedNodeIds,
+  DocumentUpdate,
+} from "../../services/document-store";
 
 const suggestUpdatesCallback = async ({
   ack,
@@ -427,6 +29,13 @@ const suggestUpdatesCallback = async ({
   await ack();
 
   try {
+    const userId = body.user.id;
+    const channelId = body.channel?.id;
+
+    if (!channelId) {
+      throw new Error("채널 ID를 찾을 수 없습니다");
+    }
+
     // value 파싱
     const rawValue = body.actions[0].value;
     console.log("rawValue", rawValue);
@@ -608,8 +217,8 @@ const suggestUpdatesCallback = async ({
 
     console.log(`파일 그룹 수: ${fileGroups.size}개`);
 
-    // 각 문서별 결과 저장 배열
-    const documentUpdates = [];
+    // documentUpdates 생성
+    const documentUpdates: DocumentUpdate[] = [];
 
     // GitHub 서비스 인스턴스
     const githubService = GithubService.getInstance();
@@ -635,16 +244,11 @@ const suggestUpdatesCallback = async ({
         continue;
       }
 
-      // 전체 마크다운 내용과 트리
-      const fullMarkdownContent = markdownFile.content;
       let docTree = markdownFile.tree;
 
       console.log(
         `파일 트리 파싱 완료: 노드 ${docTree.nodeMap.size}개, 섹션 ${docTree.sectionMap.size}개`
       );
-
-      // 이 파일에서 업데이트할 노드들
-      let hasAnyChanges = false;
 
       // 각 노드 업데이트 처리 및 결과 저장
       for (let i = 0; i < group.documents.length; i++) {
@@ -666,7 +270,6 @@ const suggestUpdatesCallback = async ({
 
         const nodeContent = currentDoc.pageContent || "";
 
-        let nodeUpdated = false;
         let updatedNodeContent = "";
 
         // 노드 업데이트 시도
@@ -678,36 +281,6 @@ const suggestUpdatesCallback = async ({
               nodeContent,
               validMessages
             );
-
-            // 노드 내용 변경되었는지 확인
-            const hasChanges = nodeContent !== updatedNodeContent;
-
-            if (hasChanges) {
-              // 노드 내용만 업데이트
-              // updateNodeContent 함수가 이제 새로운 docTree를 반환함
-              const updatedDocTree = updateNodeContent(
-                docTree,
-                nodeId,
-                updatedNodeContent
-              );
-
-              // 업데이트된 트리가 원본과 다른지 확인
-              if (updatedDocTree !== docTree) {
-                // 업데이트된 트리로 대체
-                docTree = updatedDocTree;
-                nodeUpdated = true;
-                hasAnyChanges = true;
-                console.log(
-                  `노드 ID ${nodeId} 업데이트 성공: ${treeToMarkdown(docTree)}`
-                );
-              } else {
-                console.log(
-                  `노드 ID ${nodeId} 업데이트 실패 - 지원되지 않는 노드 타입`
-                );
-              }
-            } else {
-              console.log(`노드 ID ${nodeId}에 변경사항 없음`);
-            }
           } else {
             console.log(`노드 ID가 없거나 트리에서 찾을 수 없음: ${nodeId}`);
           }
@@ -720,24 +293,38 @@ const suggestUpdatesCallback = async ({
           const diffBlock = createDiffBlock(oldSlackText, newSlackText);
 
           // 변경사항 있는지 확인
-          const diffHasChanges =
-            diffBlock.elements &&
-            diffBlock.elements.length > 0 &&
-            diffBlock.elements[0].elements &&
-            diffBlock.elements[0].elements.length > 0;
+          const diffHasChanges = oldSlackText !== newSlackText;
+
+          // 메시지 정보 추출
+          const messageInfo = validMessages.map((msg) => ({
+            userId: msg.userId,
+            text: msg.text,
+            ts: msg.ts,
+            username: msg.username || "Unknown",
+          }));
+
+          // 중복 메시지 제거
+          const uniqueMessageInfo = Array.from(
+            new Map(
+              messageInfo.map((msg) => [
+                `${msg.userId}-${msg.ts}-${msg.text}`,
+                msg,
+              ])
+            ).values()
+          );
 
           documentUpdates.push({
             index: documentUpdates.length,
             fileName,
             githubUrl: group.githubUrl,
             markdownSection,
-            hasChanges: nodeUpdated && diffHasChanges,
+            hasChanges: diffHasChanges,
             // 원래 노드 내용과 업데이트된 노드 내용 저장
             nodeContent,
             updatedNodeContent: updatedNodeContent || nodeContent,
             // diff 화면용
             diffBlock,
-            nodeId,
+            nodeId: nodeId || "",
             oldContent: oldSlackText.substring(
               0,
               Math.min(oldSlackText.length, 1500)
@@ -746,51 +333,24 @@ const suggestUpdatesCallback = async ({
               0,
               Math.min(newSlackText.length, 1500)
             ),
+            // 메시지 정보 추가 (중복 제거된 메시지)
+            messages: uniqueMessageInfo,
+            // 타임스탬프 추가
+            timestamp: new Date().toISOString(),
           });
         } catch (error) {
           console.error(`노드 처리 중 오류 발생:`, error);
         }
       }
-
-      // 이 파일의 업데이트된 전체 마크다운 생성
-      if (hasAnyChanges) {
-        // 수정된 트리를 다시 마크다운으로 변환
-        const updatedFullMarkdown = treeToMarkdown(docTree);
-
-        // 전체 파일에 대한 정보도 저장 (GitHub 업데이트용)
-        documentUpdates.push({
-          index: -1, // 특수 인덱스로 전체 파일 표시
-          fileName,
-          githubUrl: group.githubUrl,
-          markdownSection: "전체 파일",
-          hasChanges: true,
-          // 파일 전체 내용 저장
-          nodeContent: fullMarkdownContent,
-          updatedNodeContent: updatedFullMarkdown,
-          updatedFullMarkdown, // 전체 업데이트된 마크다운
-          // UI에 표시하지 않음
-          diffBlock: { type: "rich_text", elements: [] },
-          nodeId: undefined,
-          isFullFile: true,
-          oldContent: "",
-          newContent: "",
-        });
-
-        console.log(
-          `'${fileName}' 파일 전체 업데이트 준비 완료 (${updatedFullMarkdown.length} 바이트)`
-        );
-      } else {
-        console.log(`'${fileName}' 파일에 변경사항 없음`);
-      }
     }
 
     // 변경사항이 있고 UI에 표시할 문서만 필터링 (전체 파일 업데이트는 제외)
-    const documentsWithChanges = documentUpdates.filter(
+    const documentUpdatesWithChanges = documentUpdates.filter(
       (doc) => doc.hasChanges && doc.index >= 0
     );
 
     // 변경사항이 있는 문서가 없는 경우
-    if (documentsWithChanges.length === 0) {
+    if (documentUpdatesWithChanges.length === 0) {
       await client.chat.postEphemeral({
         channel: body.channel?.id ?? "",
         user: body.user.id,
@@ -800,26 +360,14 @@ const suggestUpdatesCallback = async ({
       return;
     }
 
-    // GitHub 업데이트용 전체 파일 정보
-    const fullFileUpdates = documentUpdates.filter(
-      (doc) => doc.isFullFile && doc.hasChanges
-    );
+    // documentUpdates 저장
+    storeDocumentUpdates(userId, documentUpdates, body.container.thread_ts);
 
-    // 각 문서에 대한 EditData 생성 및 저장
-    const editDataKeys = fullFileUpdates.map((doc) => {
-      const editData: EditData = {
-        fileName: doc.fileName,
-        updatedMarkdown: doc.updatedFullMarkdown || doc.updatedNodeContent,
-        messages: validMessages,
-        diffBlock: { type: "rich_text", elements: [] }, // 전체 파일은 diff 표시 안함
-        author: body.user.id,
-      };
-      return {
-        key: storeEditData(editData),
-        fileName: doc.fileName,
-        githubUrl: doc.githubUrl,
-      };
-    });
+    // 초기 상태에서 모든 문서가 선택되도록 설정
+    const initialNodeIds = documentUpdatesWithChanges
+      .filter((doc) => doc.nodeId)
+      .map((doc) => doc.nodeId!);
+    setSelectedNodeIds(userId, initialNodeIds);
 
     const uniqueAuthors = Array.from(
       new Set(validMessages.map((msg) => msg.userId))
@@ -841,7 +389,7 @@ const suggestUpdatesCallback = async ({
     ];
 
     // 각 문서에 대한 섹션 추가 (UI 표시용 documentsWithChanges 사용)
-    documentsWithChanges.forEach(async (doc, index) => {
+    documentUpdatesWithChanges.forEach(async (doc, index) => {
       // 문서 헤더 - "문서 N" 제목 제거
       blocks.push(
         {
@@ -872,8 +420,6 @@ const suggestUpdatesCallback = async ({
                 },
                 value: JSON.stringify({
                   index: index,
-                  editDataKey:
-                    editDataKeys[Math.min(index, editDataKeys.length - 1)].key,
                   fileName: doc.fileName,
                   githubUrl: doc.githubUrl,
                   nodeId: doc.nodeId,
@@ -888,8 +434,6 @@ const suggestUpdatesCallback = async ({
                 },
                 value: JSON.stringify({
                   index: index,
-                  editDataKey:
-                    editDataKeys[Math.min(index, editDataKeys.length - 1)].key,
                   fileName: doc.fileName,
                   githubUrl: doc.githubUrl,
                   nodeId: doc.nodeId,
@@ -902,56 +446,7 @@ const suggestUpdatesCallback = async ({
           type: "divider",
         }
       );
-
-      // 이전 커밋 정보 가져오기
-      try {
-        const githubService = GithubService.getInstance();
-        const githubInfo = parseGithubUrl(doc.githubUrl);
-
-        if (githubInfo && githubInfo.owner && githubInfo.repo) {
-          console.log(`\n----- ${doc.fileName} 파일의 이전 커밋 정보 -----`);
-
-          const commits = await githubService.getHistoryOfMarkdownUpdate({
-            owner: githubInfo.owner,
-            repo: githubInfo.repo,
-            path: doc.fileName,
-            newContent: doc.updatedFullMarkdown || doc.updatedNodeContent,
-          });
-
-          if (commits.length > 0) {
-            console.log(`총 ${commits.length}개의 관련 커밋이 발견되었습니다:`);
-            commits.forEach((commit, i) => {
-              console.log(`\n[커밋 ${i + 1}]`);
-              console.log(`작성자: ${commit.author}`);
-              console.log(`날짜: ${commit.date}`);
-              console.log(`메시지: ${commit.message}`);
-              if (commit.description) {
-                console.log(`설명: ${commit.description}`);
-              }
-            });
-          } else {
-            console.log("관련 커밋이 없습니다.");
-          }
-        }
-      } catch (error) {
-        console.error(
-          `${doc.fileName} 파일의 커밋 정보를 가져오는 중 오류 발생:`,
-          error
-        );
-      }
     });
-
-    // 사용자 선택 목록 초기화
-    selectedDocuments.set(body.user.id, new Set<string>());
-    // 체크박스가 선택된 상태로 표시되지만, 실제로는 사용자가 체크박스를 클릭하여
-    // handleDocumentSelection 핸들러를 통해 선택 목록에 추가됨
-    // 즉, 실제 선택 상태는 체크박스 클릭 이벤트에 의해 관리됨
-
-    // 현재 선택 상태 로깅
-    const currentSelections = getSelectedDocuments(body.user.id);
-    console.log(
-      `현재 선택된 문서 키: ${currentSelections.join(", ") || "없음"}`
-    );
 
     // 선택한 문서에 대한 액션 버튼
     blocks.push(
@@ -976,11 +471,7 @@ const suggestUpdatesCallback = async ({
             style: "primary",
             action_id: "apply_selected_to_github",
             value: JSON.stringify({
-              editDataKeys: editDataKeys.map((data) => ({
-                key: data.key,
-                fileName: data.fileName,
-                githubUrl: data.githubUrl,
-              })),
+              validMessages,
             }),
           },
           {
@@ -993,7 +484,7 @@ const suggestUpdatesCallback = async ({
             action_id: "start_discussion",
             value: JSON.stringify({
               stakeholders: uniqueAuthors,
-              editDataKeys: editDataKeys.map((data) => data.key),
+              validMessages,
             }),
           },
         ],
@@ -1008,20 +499,16 @@ const suggestUpdatesCallback = async ({
       blocks: blocks,
     });
   } catch (error) {
-    console.error("Document update suggestion failed:", error);
+    console.error("문서 업데이트 제안 중 오류 발생:", error);
 
-    // 사용자에게 더 구체적인 오류 메시지 제공
-    try {
+    if (body.channel?.id) {
       await client.chat.postEphemeral({
-        channel: body.channel?.id ?? "",
+        channel: body.channel.id,
         user: body.user.id,
-        thread_ts: body.container?.thread_ts,
         text: `문서 업데이트 제안 중 오류가 발생했습니다: ${
           error instanceof Error ? error.message : "알 수 없는 오류"
-        }. 관리자에게 문의하거나 다시 시도해주세요.`,
+        }`,
       });
-    } catch (sendError) {
-      console.error("Failed to send error message:", sendError);
     }
   }
 };
