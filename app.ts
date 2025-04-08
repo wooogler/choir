@@ -10,6 +10,8 @@ import {
 import GithubService from "./services/github";
 import startDiscussionCallback from "./listeners/actions/start-discussion";
 import createDiscussionRoomCallback from "./listeners/views/create-discussion";
+import startConsultationCallback from "./listeners/actions/start-consultation";
+import createConsultationRoomCallback from "./listeners/views/create-consultation";
 
 dotenv.config();
 
@@ -30,6 +32,8 @@ registerListeners(app);
 // Register listeners
 app.action("start_discussion", startDiscussionCallback);
 app.view("create_discussion_room", createDiscussionRoomCallback);
+app.action("start_consultation", startConsultationCallback);
+app.view("create_consultation_room", createConsultationRoomCallback);
 
 /** Start Bolt App */
 (async () => {

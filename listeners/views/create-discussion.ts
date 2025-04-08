@@ -8,6 +8,7 @@ import {
 import {
   getSessionData,
   removeSessionData,
+  SessionType,
 } from "../../services/session-store";
 
 interface Message {
@@ -34,15 +35,33 @@ const createDiscussionRoomCallback = async ({
       throw new Error("세션 ID가 없습니다");
     }
 
+    logger.info(`세션 데이터 요청: ${sessionId}`);
+
     // 세션 데이터 가져오기
-    const sessionData = getSessionData(sessionId);
+    const sessionData = getSessionData(sessionId, SessionType.DISCUSSION);
 
     if (!sessionData) {
       throw new Error(`세션 데이터를 찾을 수 없습니다: ${sessionId}`);
     }
 
+    logger.info(
+      `세션 데이터 검색 성공. 참가자 수: ${
+        sessionData.participants?.length || 0
+      }`
+    );
+    logger.info(`세션 데이터 내용: ${JSON.stringify(sessionData, null, 2)}`);
+
     // 세션 데이터에서 필요한 정보 추출
-    const { participants, commitHistories, documentDiffs } = sessionData;
+    const {
+      participants,
+      commitHistories,
+      documentDiffs,
+      validMessages,
+      stakeholders,
+    } = sessionData;
+
+    logger.info(`이해관계자 수: ${stakeholders?.length || 0}`);
+    logger.info(`유효한 메시지 수: ${validMessages?.length || 0}`);
 
     // 워크스페이스 ID 가져오기
     const workspaceId = await getWorkspaceId(client);
@@ -89,9 +108,17 @@ const createDiscussionRoomCallback = async ({
       const {
         fileName,
         history,
-        validMessages,
+        validMessages: historyValidMessages,
         documentDiffs: fileDiffs,
       } = commitHistory;
+
+      // validMessages가 commitHistory에 없는 경우 세션의 validMessages 사용
+      const messagesForBlock =
+        historyValidMessages?.length > 0
+          ? historyValidMessages
+          : validMessages || [];
+
+      logger.info(`${fileName} 파일의 메시지 수: ${messagesForBlock.length}`);
 
       if (!history || history.length === 0) continue;
 
@@ -162,9 +189,6 @@ const createDiscussionRoomCallback = async ({
       // 업데이트 정보 블록
       const updateInfoBlocks = [
         {
-          type: "divider",
-        },
-        {
           type: "section",
           text: {
             type: "mrkdwn",
@@ -175,8 +199,8 @@ const createDiscussionRoomCallback = async ({
 
       // validMessages 블록 생성 (문서 업데이트에 영향을 준 메시지)
       const validMessageBlocks =
-        validMessages && validMessages.length > 0
-          ? validMessages.map((msg: Message) => {
+        messagesForBlock && messagesForBlock.length > 0
+          ? messagesForBlock.map((msg: Message) => {
               // 날짜 포맷팅 (예: 2023-05-15T14:30:00Z -> 2023년 5월 15일 14:30)
               const date = new Date(parseInt(msg.ts) * 1000);
               const formattedDate = `${date.getFullYear()}년 ${
@@ -275,7 +299,8 @@ const createDiscussionRoomCallback = async ({
     });
 
     // 사용이 끝난 세션 데이터 삭제
-    removeSessionData(sessionId);
+    removeSessionData(sessionId, SessionType.DISCUSSION);
+    logger.info(`세션 데이터 삭제 완료: ${sessionId}`);
   } catch (error) {
     logger.error("Error in create discussion modal submission:", error);
   }
