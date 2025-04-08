@@ -5,20 +5,33 @@
  * Slack API의 private_metadata 크기 제한(3001자)을 우회하기 위한 임시 저장소입니다.
  */
 
-// 세션 데이터를 저장할 Map (메모리 기반 저장소)
-const sessionStore = new Map<string, any>();
+// 세션 타입 열거형
+export enum SessionType {
+  DISCUSSION = "discussion",
+  CONSULTATION = "consultation",
+}
+
+// 세션 타입별 데이터를 저장할 Map (메모리 기반 저장소)
+const sessionStores = {
+  [SessionType.DISCUSSION]: new Map<string, any>(),
+  [SessionType.CONSULTATION]: new Map<string, any>(),
+};
 
 /**
  * 세션 데이터를 저장합니다.
  * @param sessionId 세션 ID
  * @param data 저장할 데이터 객체
+ * @param sessionType 세션 타입 (DISCUSSION 또는 CONSULTATION)
  * @param expirationMs 세션 만료 시간 (밀리초, 기본값 30분)
  */
 export function storeSessionData(
   sessionId: string,
   data: any,
+  sessionType: SessionType = SessionType.DISCUSSION,
   expirationMs: number = 30 * 60 * 1000
 ): void {
+  const sessionStore = sessionStores[sessionType];
+
   // 기존 타이머가 있으면 제거
   const existingSession = sessionStore.get(sessionId);
   if (existingSession && existingSession._timerId) {
@@ -27,7 +40,7 @@ export function storeSessionData(
 
   // 만료 타이머 설정
   const timerId = setTimeout(() => {
-    console.log(`세션 만료: ${sessionId}`);
+    console.log(`세션 만료: ${sessionId} (${sessionType})`);
     sessionStore.delete(sessionId);
   }, expirationMs);
 
@@ -38,19 +51,26 @@ export function storeSessionData(
     _createdAt: Date.now(),
   });
 
-  console.log(`세션 저장: ${sessionId}, 만료 시간: ${expirationMs}ms`);
+  console.log(
+    `세션 저장: ${sessionId} (${sessionType}), 만료 시간: ${expirationMs}ms`
+  );
 }
 
 /**
  * 저장된 세션 데이터를 가져옵니다.
  * @param sessionId 세션 ID
+ * @param sessionType 세션 타입 (DISCUSSION 또는 CONSULTATION)
  * @returns 저장된 데이터 객체, 없으면 null
  */
-export function getSessionData(sessionId: string): any {
+export function getSessionData(
+  sessionId: string,
+  sessionType: SessionType = SessionType.DISCUSSION
+): any {
+  const sessionStore = sessionStores[sessionType];
   const session = sessionStore.get(sessionId);
 
   if (!session) {
-    console.log(`존재하지 않는 세션: ${sessionId}`);
+    console.log(`존재하지 않는 세션: ${sessionId} (${sessionType})`);
     return null;
   }
 
@@ -62,9 +82,14 @@ export function getSessionData(sessionId: string): any {
 /**
  * 세션 데이터를 삭제합니다.
  * @param sessionId 세션 ID
+ * @param sessionType 세션 타입 (DISCUSSION 또는 CONSULTATION)
  * @returns 삭제 성공 여부
  */
-export function removeSessionData(sessionId: string): boolean {
+export function removeSessionData(
+  sessionId: string,
+  sessionType: SessionType = SessionType.DISCUSSION
+): boolean {
+  const sessionStore = sessionStores[sessionType];
   const session = sessionStore.get(sessionId);
 
   if (session && session._timerId) {

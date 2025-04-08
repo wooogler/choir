@@ -25,6 +25,7 @@ import {
 import {
   generateSessionId,
   storeSessionData,
+  SessionType,
 } from "../../services/session-store";
 
 const startDiscussionCallback = async ({
@@ -43,7 +44,10 @@ const startDiscussionCallback = async ({
     }
 
     const value = JSON.parse(rawValue);
+    logger.info("Parsed value:", JSON.stringify(value, null, 2));
     const { stakeholders, validMessages } = value;
+    logger.info(`Stakeholders: ${JSON.stringify(stakeholders)}`);
+    logger.info(`Valid messages count: ${validMessages?.length || 0}`);
     const uniqueStakeholders = Array.from(new Set(stakeholders)) as string[];
 
     const userId = body.user.id;
@@ -426,32 +430,69 @@ const startDiscussionCallback = async ({
 
     // 세션 ID 생성
     const sessionId = generateSessionId("discussion");
+    logger.info(`Generated session ID: ${sessionId}`);
 
     // 전체 데이터를 세션 저장소에 저장
-    storeSessionData(sessionId, {
-      participants: allParticipants,
-      commitHistories: simplifiedCommitHistories,
-      documentDiffs,
-    });
-
-    // private_metadata에는 세션 ID만 전달
-    await client.views.open({
-      trigger_id: body.trigger_id,
-      view: {
-        type: "modal",
-        private_metadata: JSON.stringify({ sessionId }),
-        title: {
-          type: "plain_text",
-          text: "Start Discussion",
-        },
-        submit: {
-          type: "plain_text",
-          text: "Start",
-        },
-        blocks: blocks,
-        callback_id: "create_discussion_room",
+    storeSessionData(
+      sessionId,
+      {
+        participants: allParticipants,
+        commitHistories: simplifiedCommitHistories,
+        documentDiffs,
+        validMessages,
+        stakeholders: uniqueStakeholders,
       },
-    });
+      SessionType.DISCUSSION
+    );
+
+    logger.info(`Session data stored with ID: ${sessionId}`);
+
+    try {
+      // trigger_id 유효성 확인
+      const triggerId = body.trigger_id;
+      logger.info(`Using trigger_id: ${triggerId}`);
+
+      // private_metadata에는 세션 ID만 전달
+      const result = await client.views.open({
+        trigger_id: triggerId,
+        view: {
+          type: "modal",
+          private_metadata: JSON.stringify({ sessionId }),
+          title: {
+            type: "plain_text",
+            text: "Start Discussion",
+          },
+          submit: {
+            type: "plain_text",
+            text: "Start",
+          },
+          blocks: blocks,
+          callback_id: "create_discussion_room",
+        },
+      });
+
+      logger.info(`Modal opened successfully: ${result.view?.id}`);
+    } catch (error: any) {
+      logger.error(`Error opening modal: ${error.message || error}`);
+
+      // trigger_id 관련 오류인 경우 사용자에게 알림
+      if (
+        error.data?.error === "exchanged_trigger_id" ||
+        error.data?.error === "expired_trigger_id"
+      ) {
+        try {
+          await client.chat.postEphemeral({
+            channel: body.channel?.id || "",
+            user: body.user.id,
+            text: "논의 시작 버튼을 다시 클릭해주세요. 이전 요청이 만료되었습니다.",
+          });
+        } catch (notifyError: any) {
+          logger.error(
+            `Error sending notification: ${notifyError.message || notifyError}`
+          );
+        }
+      }
+    }
   } catch (error) {
     logger.error("Error in start discussion callback:", error);
   }
