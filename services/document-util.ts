@@ -4,7 +4,12 @@ import { WebClient } from "@slack/web-api";
 import { SlackMessage, parseGithubUrl } from "./slack-utils";
 import GithubService from "./github";
 import { DocumentUpdate } from "./document-store";
-import { updateDocTreeWithChanges, updateNodeContent } from "./markdown";
+import {
+  updateDocTreeWithChanges,
+  updateNodeContent,
+  convertMarkdownToSlackText,
+} from "./markdown";
+import { createDiffBlock } from "./slack-diff";
 
 export interface DocumentChangeResult {
   fileName: string;
@@ -229,4 +234,48 @@ export async function processFileChanges(
       message: `파일 처리 중 오류 발생: ${error}`,
     };
   }
+}
+
+export interface DocumentDiff {
+  nodeId: string;
+  fileName: string;
+  markdownSection: string;
+  diffBlock: any;
+  hasChanges: boolean;
+}
+
+export async function generateDocumentDiffs(
+  documentUpdates: DocumentUpdate[]
+): Promise<DocumentDiff[]> {
+  const diffs: DocumentDiff[] = [];
+
+  for (const update of documentUpdates) {
+    try {
+      // 마크다운을 Slack 텍스트로 변환
+      const oldSlackText = await convertMarkdownToSlackText(update.nodeContent);
+      const newSlackText = await convertMarkdownToSlackText(
+        update.updatedNodeContent
+      );
+
+      // Diff 생성
+      const diffBlock = createDiffBlock(oldSlackText, newSlackText);
+
+      // 변경사항 있는지 확인
+      const diffHasChanges = oldSlackText !== newSlackText;
+
+      if (diffHasChanges) {
+        diffs.push({
+          nodeId: update.nodeId,
+          fileName: update.fileName,
+          markdownSection: update.markdownSection || "전체 문서",
+          diffBlock,
+          hasChanges: diffHasChanges,
+        });
+      }
+    } catch (error) {
+      console.error(`문서 diff 생성 중 오류 발생: ${error}`);
+    }
+  }
+
+  return diffs;
 }
