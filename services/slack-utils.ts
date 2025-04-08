@@ -397,3 +397,249 @@ export const removeDuplicateMessages = (
     (a, b) => parseInt(a.ts) - parseInt(b.ts)
   );
 };
+
+/**
+ * 타임스탬프를 한국어 형식의 날짜 문자열로 변환합니다.
+ * @param timestamp 타임스탬프 (초 단위)
+ * @returns 한국어 형식의 날짜 문자열 (예: 2023년 5월 15일 14:30)
+ */
+export function formatDate(timestamp: string | number): string {
+  const date = new Date(parseInt(timestamp.toString()) * 1000);
+  return `${date.getFullYear()}년 ${
+    date.getMonth() + 1
+  }월 ${date.getDate()}일 ${date.getHours()}:${date
+    .getMinutes()
+    .toString()
+    .padStart(2, "0")}`;
+}
+
+/**
+ * Slack 메시지 블록을 생성합니다.
+ * @param message 메시지 객체
+ * @returns Slack 메시지 블록
+ */
+export function createMessageBlock(message: Message | SlackMessage) {
+  const formattedDate = formatDate(message.ts);
+  return {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: `*${message.username || "사용자"}* • ${formattedDate}\n${
+        message.text
+      }`,
+    },
+  };
+}
+
+/**
+ * 여러 메시지에 대한 Slack 블록을 생성합니다.
+ * @param messages 메시지 배열
+ * @param title 블록 제목 (선택적)
+ * @returns Slack 블록 배열
+ */
+export function createMessageBlocks(
+  messages: (Message | SlackMessage)[],
+  title?: string
+) {
+  const blocks = [];
+
+  if (title) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: title,
+      },
+    });
+  }
+
+  if (messages && messages.length > 0) {
+    blocks.push(...messages.map(createMessageBlock));
+  } else {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "_메시지가 없습니다._",
+      },
+    });
+  }
+
+  return blocks;
+}
+
+/**
+ * 슬랙 헤더 블록을 생성합니다.
+ * @param text 헤더 텍스트
+ * @returns 슬랙 헤더 블록
+ */
+export function createHeaderBlock(text: string) {
+  return {
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: text,
+      emoji: true,
+    },
+  };
+}
+
+/**
+ * 슬랙 섹션 블록을 생성합니다.
+ * @param text 섹션 텍스트
+ * @returns 슬랙 섹션 블록
+ */
+export function createSectionBlock(text: string) {
+  return {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: text,
+    },
+  };
+}
+
+/**
+ * 슬랙 구분선 블록을 생성합니다.
+ * @returns 슬랙 구분선 블록
+ */
+export function createDividerBlock() {
+  return {
+    type: "divider",
+  };
+}
+
+/**
+ * 슬랙 컨텍스트 블록을 생성합니다.
+ * @param elements 컨텍스트 요소 배열
+ * @returns 슬랙 컨텍스트 블록
+ */
+export function createContextBlock(elements: any[]) {
+  return {
+    type: "context",
+    elements: elements,
+  };
+}
+
+/**
+ * 슬랙 입력 블록을 생성합니다.
+ * @param blockId 블록 ID
+ * @param label 라벨 텍스트
+ * @param element 입력 요소
+ * @returns 슬랙 입력 블록
+ */
+export function createInputBlock(blockId: string, label: string, element: any) {
+  return {
+    type: "input",
+    block_id: blockId,
+    element: element,
+    label: {
+      type: "plain_text",
+      text: label,
+    },
+  };
+}
+
+/**
+ * 사용자 ID 목록에서 관리자를 필터링합니다.
+ * @param userIds 사용자 ID 배열
+ * @param managers 관리자 ID 배열
+ * @returns 관리자가 아닌 사용자 ID 배열
+ */
+export function filterNonManagers(
+  userIds: string[],
+  managers: string[]
+): string[] {
+  return userIds.filter((userId) => !managers.includes(userId));
+}
+
+/**
+ * 사용자 ID 목록에서 중복을 제거합니다.
+ * @param userIds 사용자 ID 배열
+ * @returns 중복이 제거된 사용자 ID 배열
+ */
+export function getUniqueUserIds(userIds: string[]): string[] {
+  return Array.from(new Set(userIds));
+}
+
+/**
+ * 사용자 ID 목록에 관리자를 추가합니다.
+ * @param userIds 사용자 ID 배열
+ * @param managers 관리자 ID 배열
+ * @returns 관리자가 추가된 사용자 ID 배열
+ */
+export function addManagersToUserIds(
+  userIds: string[],
+  managers: string[]
+): string[] {
+  return getUniqueUserIds([...userIds, ...managers]);
+}
+
+/**
+ * 사용자 ID 목록에 현재 사용자를 추가합니다.
+ * @param userIds 사용자 ID 배열
+ * @param currentUserId 현재 사용자 ID
+ * @returns 현재 사용자가 추가된 사용자 ID 배열
+ */
+export function addCurrentUserToUserIds(
+  userIds: string[],
+  currentUserId: string
+): string[] {
+  if (userIds.includes(currentUserId)) {
+    return userIds;
+  }
+  return [...userIds, currentUserId];
+}
+
+/**
+ * 커밋 히스토리에서 사용자 ID를 추출합니다.
+ * @param commitHistories 커밋 히스토리 배열
+ * @returns 사용자 ID 배열
+ */
+export function extractUserIdsFromCommitHistories(
+  commitHistories: any[]
+): string[] {
+  const userIds = new Set<string>();
+
+  commitHistories.forEach((history) => {
+    if (history && history.history && history.history.length > 0) {
+      const latestCommit = history.history[0];
+      if (
+        latestCommit &&
+        latestCommit.commitInfo &&
+        latestCommit.commitInfo.messages
+      ) {
+        latestCommit.commitInfo.messages.forEach((msg: any) => {
+          if (msg.userId) {
+            userIds.add(msg.userId);
+          }
+        });
+      }
+    }
+  });
+
+  return Array.from(userIds);
+}
+
+/**
+ * 커밋 히스토리를 단순화합니다.
+ * @param commitHistories 커밋 히스토리 배열
+ * @param validMessages 유효한 메시지 배열
+ * @returns 단순화된 커밋 히스토리 배열
+ */
+export function simplifyCommitHistories(
+  commitHistories: any[],
+  validMessages: any[] = []
+) {
+  return commitHistories
+    .filter((history) => history !== null)
+    .map((history) => {
+      if (!history) return null;
+      return {
+        fileName: history.fileName,
+        history: history.history,
+        validMessages: validMessages || [],
+      };
+    })
+    .filter((history) => history !== null);
+}
