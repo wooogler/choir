@@ -98,12 +98,12 @@ const startConsultationCallback = async ({
           initial_users: [...nonManagerStakeholders, ...managers],
           placeholder: {
             type: "plain_text",
-            text: "질문에 참가할 사용자 선택",
+            text: "Select users to participate in the direct question",
           },
         },
         label: {
           type: "plain_text",
-          text: "참가자",
+          text: "Participants",
         },
       },
       {
@@ -117,12 +117,18 @@ const startConsultationCallback = async ({
           action_id: "topic_input",
           placeholder: {
             type: "plain_text",
-            text: "질문 주제를 입력하세요",
+            text: "Enter your question",
           },
+          initial_value:
+            validMessages && validMessages.length > 0
+              ? validMessages
+                  .find((msg: SlackMessage) => msg.userId === currentUser)
+                  ?.text.substring(0, 300) || ""
+              : "",
         },
         label: {
           type: "plain_text",
-          text: "질문 주제",
+          text: "Question",
         },
       },
     ];
@@ -136,7 +142,7 @@ const startConsultationCallback = async ({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "*참여할 관리자*\n관리자는 자동으로 DM에 참여합니다:",
+          text: "*Managers*\nManagers will automatically join the DM:",
         },
       },
       {
@@ -146,7 +152,7 @@ const startConsultationCallback = async ({
           text:
             managers.length > 0
               ? managerNames.join("\n")
-              : "_관리자가 설정되지 않았습니다_",
+              : "_No managers have been set up_",
         },
       }
     );
@@ -160,7 +166,7 @@ const startConsultationCallback = async ({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "*현재 참가자*:",
+          text: "*Current Participants*:",
         },
       },
       {
@@ -170,7 +176,7 @@ const startConsultationCallback = async ({
           text:
             stakeholderNames.length > 0
               ? stakeholderNames.join("\n")
-              : "_참가자가 없습니다_",
+              : "_No participants_",
         },
       }
     );
@@ -196,11 +202,11 @@ const startConsultationCallback = async ({
         private_metadata: JSON.stringify({ sessionId }),
         title: {
           type: "plain_text",
-          text: "직접 질문하기",
+          text: "Ask Direct Question",
         },
         submit: {
           type: "plain_text",
-          text: "시작",
+          text: "Start",
         },
         blocks: blocks,
         callback_id: "create_consultation_room",

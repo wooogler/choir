@@ -145,13 +145,21 @@ export async function createSlackMessageWithName(
 
 export async function formatSlackMessageBlock(message: SlackMessage) {
   const timestamp = new Date(Number(message.ts) * 1000).toLocaleTimeString();
-  const displayText = `*<@${message.userId}>* ${timestamp}\n${message.text}`;
+
+  // 전체 displayText를 70자로 제한
+  const fullDisplayText = `*<@${message.userId}>* ${timestamp}\n${message.text}`;
+  const truncatedDisplayText =
+    fullDisplayText.length > 70
+      ? fullDisplayText.substring(0, 70) + "..."
+      : fullDisplayText;
+
+  // 메시지를 저장하고 키를 반환
   const key = storeMessage(message);
 
   return {
     text: {
       type: "mrkdwn",
-      text: displayText,
+      text: truncatedDisplayText,
     },
     value: key, // 메시지 키만 전달
   };

@@ -13,11 +13,11 @@ import {
   setupInitialManager,
 } from "../../services/slack-utils";
 
-// 사용자 선택 상태 저장
+// Store user selection state
 const selectedUsers = new Map<string, string>();
 
 /**
- * 사용자 선택 액션 처리
+ * Handle user selection action
  */
 const selectUserCallback = async ({
   ack,
@@ -29,17 +29,17 @@ const selectUserCallback = async ({
 
   try {
     const userId = body.user.id;
-    // UsersSelect 액션에서 selected_user 속성 추출
+    // UsersSelect action from value
     const action = body.actions[0] as UsersSelectAction;
     const selectedUser = action.selected_user;
 
-    // 선택된 사용자가 없는 경우 처리
+    // No user selected
     if (!selectedUser) {
       logger.error("No user selected in user select action");
       return;
     }
 
-    // 선택된 사용자 저장
+    // Store selected user
     selectedUsers.set(userId, selectedUser);
 
     logger.info(
@@ -51,7 +51,7 @@ const selectUserCallback = async ({
 };
 
 /**
- * 관리자 권한 부여 액션 처리
+ * Grant manager permission action
  */
 const addManagerCallback = async ({
   ack,
@@ -65,36 +65,36 @@ const addManagerCallback = async ({
     const userId = body.user.id;
     const workspaceId = await getWorkspaceId(client);
 
-    // 워크스페이스 소유자인 경우 초기 관리자로 설정
+    // If user is workspace owner, set as initial manager
     const isOwner = await isWorkspaceOwner(userId, client);
     if (isOwner) {
       setupInitialManager(workspaceId, userId);
     }
 
-    // 선택된 사용자 확인
+    // Confirm selected user
     const selectedUser = selectedUsers.get(userId);
     if (!selectedUser) {
-      // 사용자가 선택되지 않은 경우 에러 메시지 전송
+      // If no user is selected, send error message
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: "권한을 부여할 사용자를 먼저 선택해주세요.",
+        text: "Please select a user to grant permission first.",
       });
       return;
     }
 
-    // 권한 부여 시도
+    // Try to grant permission
     const success = addManager(workspaceId, selectedUser, userId);
 
     if (success) {
-      // 성공 메시지 전송
+      // Send success message
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: `<@${selectedUser}>에게 관리자 권한을 부여했습니다.`,
+        text: `Manager permission has been granted to <@${selectedUser}>.`,
       });
 
-      // 홈 화면 새로고침
+      // Refresh home view
       await client.views.publish({
         user_id: userId,
         view: {
@@ -104,18 +104,18 @@ const addManagerCallback = async ({
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: "홈 화면을 새로고침 중입니다...",
+                text: "Refreshing home view...",
               },
             },
           ],
         },
       });
 
-      // 알림 메시지 전송
+      // Send notification message
       try {
         await client.chat.postMessage({
           channel: selectedUser,
-          text: `<@${userId}>가 당신에게 CHOIR 관리자 권한을 부여했습니다.`,
+          text: `<@${userId}> has granted you CHOIR manager permission.`,
         });
       } catch (error) {
         logger.error(
@@ -124,11 +124,11 @@ const addManagerCallback = async ({
         );
       }
     } else {
-      // 실패 메시지 전송
+      // Send failure message
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: "권한 부여에 실패했습니다. 관리자 권한이 있는지 확인해주세요.",
+        text: "Failed to grant permission. Please check if you have manager permission.",
       });
     }
   } catch (error) {
@@ -137,7 +137,7 @@ const addManagerCallback = async ({
 };
 
 /**
- * 관리자 권한 제거 액션 처리
+ * Remove manager permission action
  */
 const removeManagerCallback = async ({
   ack,
@@ -151,48 +151,48 @@ const removeManagerCallback = async ({
     const userId = body.user.id;
     const workspaceId = await getWorkspaceId(client);
 
-    // 워크스페이스 소유자인 경우 초기 관리자로 설정
+    // If user is workspace owner, set as initial manager
     const isOwner = await isWorkspaceOwner(userId, client);
     if (isOwner) {
       setupInitialManager(workspaceId, userId);
     }
 
-    // 선택된 사용자 확인 - Button 액션에서 value 속성 추출
+    // Confirm selected user - Button action from value
     const action = body.actions[0] as ButtonAction;
     const targetUserId = action.value;
 
-    // value가 undefined인 경우 처리
+    // No value
     if (!targetUserId) {
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: "대상 사용자를 식별할 수 없습니다. 다시 시도해주세요.",
+        text: "Unable to identify target user. Please try again.",
       });
       return;
     }
 
-    // 본인의 권한은 제거할 수 없음
+    // Cannot remove own permission
     if (targetUserId === userId) {
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: "자신의 관리자 권한은 제거할 수 없습니다.",
+        text: "You cannot remove your own manager permission.",
       });
       return;
     }
 
-    // 권한 제거 시도
+    // Try to remove permission
     const success = removeManager(workspaceId, targetUserId, userId);
 
     if (success) {
-      // 성공 메시지 전송
+      // Send success message
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: `<@${targetUserId}>의 관리자 권한을 제거했습니다.`,
+        text: `Manager permission has been removed from <@${targetUserId}>.`,
       });
 
-      // 홈 화면 새로고침
+      // Refresh home view
       await client.views.publish({
         user_id: userId,
         view: {
@@ -202,18 +202,18 @@ const removeManagerCallback = async ({
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: "홈 화면을 새로고침 중입니다...",
+                text: "Refreshing home view...",
               },
             },
           ],
         },
       });
 
-      // 알림 메시지 전송
+      // Send notification message
       try {
         await client.chat.postMessage({
           channel: targetUserId,
-          text: `<@${userId}>가 당신의 CHOIR 관리자 권한을 제거했습니다.`,
+          text: `<@${userId}> has removed your CHOIR manager permission.`,
         });
       } catch (error) {
         logger.error(
@@ -222,11 +222,11 @@ const removeManagerCallback = async ({
         );
       }
     } else {
-      // 실패 메시지 전송
+      // Send failure message
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: "권한 제거에 실패했습니다. 관리자 권한이 있는지 확인해주세요.",
+        text: "Failed to remove permission. Please check if you have manager permission.",
       });
     }
   } catch (error) {

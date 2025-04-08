@@ -16,40 +16,38 @@ const appHomeOpenedCallback = async ({
   if (event.tab !== "home") return;
 
   try {
-    // 워크스페이스 정보 가져오기
+    // Get workspace information
     const workspaceId = await getWorkspaceId(client);
 
-    // 현재 사용자가 관리자인지 확인
+    // Check if current user is a manager
     const isUserManager = isManager(workspaceId, event.user);
 
-    // 워크스페이스 소유자 여부 확인 (초기 설정을 위해)
+    // Check if user is workspace owner (for initial setup)
     const isOwner = await isWorkspaceOwner(event.user, client);
 
-    // 현재 관리자 목록 가져오기
+    // Get current manager list
     const managers = getManagers(workspaceId);
 
-    // 관리자 사용자 이름 가져오기
+    // Get manager usernames
     const managerBlocks = [];
 
     if (managers.length > 0) {
-      // 관리자 리스트 헤더
+      // Manager list header
       managerBlocks.push({
         type: "header",
         text: {
           type: "plain_text",
-          text: "✨ 현재 관리자",
+          text: "✨ Current Managers",
           emoji: true,
         },
       });
 
-      // 각 관리자에 대한 사용자 정보를 가져와서 블록에 추가
+      // Get user info for each manager and add to blocks
       for (const managerId of managers) {
         try {
           const userInfo = await client.users.info({ user: managerId });
           const name =
-            userInfo.user?.real_name ||
-            userInfo.user?.name ||
-            "알 수 없는 사용자";
+            userInfo.user?.real_name || userInfo.user?.name || "Unknown User";
 
           managerBlocks.push({
             type: "section",
@@ -62,7 +60,7 @@ const appHomeOpenedCallback = async ({
                   type: "button",
                   text: {
                     type: "plain_text",
-                    text: "권한 제거",
+                    text: "Remove Permission",
                     emoji: true,
                   },
                   style: "danger",
@@ -71,19 +69,19 @@ const appHomeOpenedCallback = async ({
                   confirm: {
                     title: {
                       type: "plain_text",
-                      text: "관리자 권한 제거",
+                      text: "Remove Manager Permission",
                     },
                     text: {
                       type: "mrkdwn",
-                      text: `*<@${managerId}>*의 관리자 권한을 제거하시겠습니까?`,
+                      text: `Do you want to remove manager permission from *<@${managerId}>*?`,
                     },
                     confirm: {
                       type: "plain_text",
-                      text: "제거",
+                      text: "Remove",
                     },
                     deny: {
                       type: "plain_text",
-                      text: "취소",
+                      text: "Cancel",
                     },
                   },
                 }
@@ -99,32 +97,34 @@ const appHomeOpenedCallback = async ({
       });
     }
 
-    // GitHub 저장소 연동 섹션
+    // GitHub repository connection section
     const githubBlocks = [];
 
-    // 사용자가 관리자이거나 워크스페이스 소유자인 경우에만 GitHub 연동 UI 표시
+    // Show GitHub connection UI only for managers or workspace owners
     if (isUserManager || isOwner) {
-      // 현재 연결된 GitHub 저장소 정보 가져오기
+      // Get current connected GitHub repository info
       const repoInfo = getGithubRepo(workspaceId);
 
       githubBlocks.push({
         type: "header",
         text: {
           type: "plain_text",
-          text: "🔗 GitHub 저장소 연동",
+          text: "🔗 GitHub Repository Connection",
           emoji: true,
         },
       });
 
-      // 현재 연결 상태 표시
+      // Show current connection status
       if (repoInfo) {
         githubBlocks.push({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*현재 연결된 저장소*\n<${repoInfo.url}|${repoInfo.owner}/${
-              repoInfo.repo
-            }${repoInfo.path ? ` (경로: ${repoInfo.path})` : ""}>`,
+            text: `*Currently Connected Repository*\n<${repoInfo.url}|${
+              repoInfo.owner
+            }/${repoInfo.repo}${
+              repoInfo.path ? ` (Path: ${repoInfo.path})` : ""
+            }>`,
           },
         });
       } else {
@@ -132,12 +132,12 @@ const appHomeOpenedCallback = async ({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "*현재 연결된 저장소가 없습니다*\n아래에 GitHub 저장소 URL을 입력하여 연결하세요.",
+            text: "*No repository connected*\nEnter a GitHub repository URL below to connect.",
           },
         });
       }
 
-      // GitHub 저장소 입력 양식
+      // GitHub repository input form
       githubBlocks.push(
         {
           type: "input",
@@ -152,11 +152,11 @@ const appHomeOpenedCallback = async ({
           },
           label: {
             type: "plain_text",
-            text: "GitHub 저장소 URL",
+            text: "GitHub Repository URL",
           },
           hint: {
             type: "plain_text",
-            text: "GitHub 저장소 URL을 입력하세요 (예: https://github.com/username/repo)",
+            text: "Enter GitHub repository URL (e.g., https://github.com/username/repo)",
           },
         },
         {
@@ -166,7 +166,7 @@ const appHomeOpenedCallback = async ({
               type: "button",
               text: {
                 type: "plain_text",
-                text: "저장소 연결 테스트",
+                text: "Test Repository Connection",
                 emoji: true,
               },
               style: "primary",
@@ -180,20 +180,20 @@ const appHomeOpenedCallback = async ({
       );
     }
 
-    // 기본 홈 뷰 블록
+    // Default home view blocks
     const homeBlocks = [
       {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*환영합니다, <@${event.user}> :house:*`,
+          text: `*Welcome, <@${event.user}> :house:*`,
         },
       },
       {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "CHOIR는 Slack 대화 내용을 기반으로 문서를 자동으로 업데이트하는 도구입니다.",
+          text: "CHOIR is a tool that automatically updates documents based on Slack conversations.",
         },
       },
       {
@@ -201,17 +201,17 @@ const appHomeOpenedCallback = async ({
       },
     ];
 
-    // 관리자 권한 관리 섹션
+    // Manager permission management section
     const managerManagementBlocks = [];
 
-    // 사용자가 관리자이거나 워크스페이스 소유자인 경우에만 관리 UI 표시
+    // Show management UI only for managers or workspace owners
     if (isUserManager || isOwner) {
       managerManagementBlocks.push(
         {
           type: "header",
           text: {
             type: "plain_text",
-            text: "👑 관리자 권한 관리",
+            text: "👑 Manager Permission Management",
             emoji: true,
           },
         },
@@ -219,7 +219,7 @@ const appHomeOpenedCallback = async ({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "관리자는 다른 사용자에게 관리자 권한을 부여하고 제거할 수 있습니다.",
+            text: "Managers can grant and revoke manager permissions for other users.",
           },
         },
         {
@@ -229,7 +229,7 @@ const appHomeOpenedCallback = async ({
               type: "users_select",
               placeholder: {
                 type: "plain_text",
-                text: "사용자 선택",
+                text: "Select User",
                 emoji: true,
               },
               action_id: "select_user_for_permission",
@@ -238,7 +238,7 @@ const appHomeOpenedCallback = async ({
               type: "button",
               text: {
                 type: "plain_text",
-                text: "관리자 권한 부여",
+                text: "Grant Manager Permission",
                 emoji: true,
               },
               style: "primary",
@@ -246,19 +246,19 @@ const appHomeOpenedCallback = async ({
               confirm: {
                 title: {
                   type: "plain_text",
-                  text: "관리자 권한 부여",
+                  text: "Grant Manager Permission",
                 },
                 text: {
                   type: "mrkdwn",
-                  text: "선택한 사용자에게 관리자 권한을 부여하시겠습니까?",
+                  text: "Do you want to grant manager permission to the selected user?",
                 },
                 confirm: {
                   type: "plain_text",
-                  text: "부여",
+                  text: "Grant",
                 },
                 deny: {
                   type: "plain_text",
-                  text: "취소",
+                  text: "Cancel",
                 },
               },
             },
@@ -269,13 +269,13 @@ const appHomeOpenedCallback = async ({
         }
       );
 
-      // 벡터 스토어 관리 섹션 추가
+      // Add vector store management section
       managerManagementBlocks.push(
         {
           type: "header",
           text: {
             type: "plain_text",
-            text: "🔍 벡터 스토어 관리",
+            text: "🔍 Vector Store Management",
             emoji: true,
           },
         },
@@ -283,7 +283,7 @@ const appHomeOpenedCallback = async ({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "벡터 스토어 진단 및 복구 기능을 사용할 수 있습니다. 문서 검색이나 업데이트 제안 기능에 문제가 있는 경우 사용하세요.",
+            text: "You can use vector store diagnosis and recovery features. Use these when there are issues with document search or update suggestion features.",
           },
         },
         {
@@ -293,7 +293,7 @@ const appHomeOpenedCallback = async ({
               type: "button",
               text: {
                 type: "plain_text",
-                text: "벡터 스토어 진단",
+                text: "Vector Store Diagnosis",
                 emoji: true,
               },
               style: "primary",
@@ -303,26 +303,26 @@ const appHomeOpenedCallback = async ({
               type: "button",
               text: {
                 type: "plain_text",
-                text: "캐시 재구축",
+                text: "Rebuild Cache",
                 emoji: true,
               },
               action_id: "rebuild_vector_cache",
               confirm: {
                 title: {
                   type: "plain_text",
-                  text: "캐시 재구축",
+                  text: "Rebuild Cache",
                 },
                 text: {
                   type: "mrkdwn",
-                  text: "벡터 스토어 캐시를 재구축하시겠습니까? 이 작업은 몇 분 정도 소요될 수 있습니다.",
+                  text: "Do you want to rebuild the vector store cache? This process may take a few minutes.",
                 },
                 confirm: {
                   type: "plain_text",
-                  text: "재구축",
+                  text: "Rebuild",
                 },
                 deny: {
                   type: "plain_text",
-                  text: "취소",
+                  text: "Cancel",
                 },
               },
             },
@@ -330,7 +330,7 @@ const appHomeOpenedCallback = async ({
               type: "button",
               text: {
                 type: "plain_text",
-                text: "긴급 초기화",
+                text: "Emergency Reset",
                 emoji: true,
               },
               style: "danger",
@@ -338,19 +338,19 @@ const appHomeOpenedCallback = async ({
               confirm: {
                 title: {
                   type: "plain_text",
-                  text: "긴급 초기화",
+                  text: "Emergency Reset",
                 },
                 text: {
                   type: "mrkdwn",
-                  text: "⚠️ 벡터 스토어를 완전히 초기화하고 새로 구축하시겠습니까? 이 작업은 되돌릴 수 없으며 몇 분 정도 소요될 수 있습니다.",
+                  text: "⚠️ Do you want to completely reset and rebuild the vector store? This action cannot be undone and may take a few minutes.",
                 },
                 confirm: {
                   type: "plain_text",
-                  text: "초기화",
+                  text: "Reset",
                 },
                 deny: {
                   type: "plain_text",
-                  text: "취소",
+                  text: "Cancel",
                 },
               },
             },
@@ -362,7 +362,7 @@ const appHomeOpenedCallback = async ({
       );
     }
 
-    // 최종 홈 뷰 블록 구성
+    // Final home view blocks
     const blocks = [
       ...homeBlocks,
       ...githubBlocks,
@@ -370,7 +370,7 @@ const appHomeOpenedCallback = async ({
       ...managerBlocks,
     ];
 
-    // 홈 뷰 게시
+    // Publish home view
     await client.views.publish({
       user_id: event.user,
       view: {

@@ -32,24 +32,26 @@ const createDiscussionRoomCallback = async ({
     const { sessionId } = JSON.parse(view.private_metadata);
 
     if (!sessionId) {
-      throw new Error("세션 ID가 없습니다");
+      throw new Error("No session ID provided");
     }
 
-    logger.info(`세션 데이터 요청: ${sessionId}`);
+    logger.info(`Session data request: ${sessionId}`);
 
     // 세션 데이터 가져오기
     const sessionData = getSessionData(sessionId, SessionType.DISCUSSION);
 
     if (!sessionData) {
-      throw new Error(`세션 데이터를 찾을 수 없습니다: ${sessionId}`);
+      throw new Error(`Session data not found: ${sessionId}`);
     }
 
     logger.info(
-      `세션 데이터 검색 성공. 참가자 수: ${
+      `Session data search successful. Number of participants: ${
         sessionData.participants?.length || 0
       }`
     );
-    logger.info(`세션 데이터 내용: ${JSON.stringify(sessionData, null, 2)}`);
+    logger.info(
+      `Session data content: ${JSON.stringify(sessionData, null, 2)}`
+    );
 
     // 세션 데이터에서 필요한 정보 추출
     const {
@@ -60,8 +62,8 @@ const createDiscussionRoomCallback = async ({
       stakeholders,
     } = sessionData;
 
-    logger.info(`이해관계자 수: ${stakeholders?.length || 0}`);
-    logger.info(`유효한 메시지 수: ${validMessages?.length || 0}`);
+    logger.info(`Number of stakeholders: ${stakeholders?.length || 0}`);
+    logger.info(`Number of valid messages: ${validMessages?.length || 0}`);
 
     // 워크스페이스 ID 가져오기
     const workspaceId = await getWorkspaceId(client);
@@ -118,7 +120,9 @@ const createDiscussionRoomCallback = async ({
           ? historyValidMessages
           : validMessages || [];
 
-      logger.info(`${fileName} 파일의 메시지 수: ${messagesForBlock.length}`);
+      logger.info(
+        `Number of messages for ${fileName}: ${messagesForBlock.length}`
+      );
 
       if (!history || history.length === 0) continue;
 
@@ -134,7 +138,7 @@ const createDiscussionRoomCallback = async ({
           type: "header",
           text: {
             type: "plain_text",
-            text: "문서 업데이트 논의",
+            text: "Document Update Discussion",
             emoji: true,
           },
         },
@@ -142,7 +146,7 @@ const createDiscussionRoomCallback = async ({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*파일:* ${fileName}`,
+            text: `*File:* ${fileName}`,
           },
         },
       ];
@@ -155,7 +159,7 @@ const createDiscussionRoomCallback = async ({
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: "*문서 변경사항:*",
+                  text: "*Document Changes:*",
                 },
               },
               {
@@ -171,14 +175,14 @@ const createDiscussionRoomCallback = async ({
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: "*문서 변경사항:*",
+                  text: "*Document Changes:*",
                 },
               },
               {
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: "_변경사항 정보를 가져올 수 없습니다._",
+                  text: "_Unable to retrieve change information._",
                 },
               },
               {
@@ -192,7 +196,7 @@ const createDiscussionRoomCallback = async ({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "*문서 업데이트에 영향을 준 메시지:*",
+            text: "*Messages that influenced the document update:*",
           },
         },
       ];
@@ -214,7 +218,7 @@ const createDiscussionRoomCallback = async ({
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: `*${msg.username || "사용자"}* • ${formattedDate}\n${
+                  text: `*${msg.username || "User"}* • ${formattedDate}\n${
                     msg.text
                   }`,
                 },
@@ -225,7 +229,7 @@ const createDiscussionRoomCallback = async ({
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: "_문서 업데이트에 영향을 준 메시지가 없습니다._",
+                  text: "_No messages influenced the document update._",
                 },
               },
             ];
@@ -239,7 +243,7 @@ const createDiscussionRoomCallback = async ({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "*이전 문서 업데이트에 기여한 메시지:*",
+            text: "*Messages from previous document updates:*",
           },
         },
       ];
@@ -277,7 +281,7 @@ const createDiscussionRoomCallback = async ({
           elements: [
             {
               type: "mrkdwn",
-              text: `<@${body.user.id}>님이 이 논의를 시작했습니다.`,
+              text: `<@${body.user.id}> started this discussion.`,
             },
           ],
         },
@@ -294,13 +298,13 @@ const createDiscussionRoomCallback = async ({
     await client.chat.postMessage({
       channel: result.channel.id,
       text:
-        "다음 사용자가 이 논의에 참여하고 있습니다: " +
+        "The following users are participating in this discussion: " +
         allUsers.map((uid) => `<@${uid}>`).join(", "),
     });
 
     // 사용이 끝난 세션 데이터 삭제
     removeSessionData(sessionId, SessionType.DISCUSSION);
-    logger.info(`세션 데이터 삭제 완료: ${sessionId}`);
+    logger.info(`Session data deleted: ${sessionId}`);
   } catch (error) {
     logger.error("Error in create discussion modal submission:", error);
   }

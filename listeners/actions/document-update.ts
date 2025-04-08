@@ -2,6 +2,8 @@ import type {
   AllMiddlewareArgs,
   SlackActionMiddlewareArgs,
   BlockButtonAction,
+  BlockAction,
+  UsersSelectAction,
 } from "@slack/bolt";
 import { WebClient } from "@slack/web-api";
 import { VectorStoreService } from "../../services/index";
@@ -14,6 +16,135 @@ import {
 } from "../../services/document-store";
 import { applySelectedToGithub } from "../../services/github";
 import { SlackMessage } from "services/slack-utils";
+import {
+  getWorkspaceId,
+  isWorkspaceOwner,
+  setupInitialManager,
+  addManager as updateDocument,
+} from "../../services/slack-utils";
+
+// Store user selection state
+const selectedUsers = new Map<string, string>();
+
+/**
+ * Handle user selection action
+ */
+const selectUserCallback = async ({
+  ack,
+  body,
+  client,
+  logger,
+}: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockAction>) => {
+  await ack();
+
+  try {
+    const userId = body.user.id;
+    // UsersSelect action from value
+    const action = body.actions[0] as UsersSelectAction;
+    const selectedUser = action.selected_user;
+
+    // No user selected
+    if (!selectedUser) {
+      logger.error("No user selected in user select action");
+      return;
+    }
+
+    // Store selected user
+    selectedUsers.set(userId, selectedUser);
+
+    logger.info(`User ${userId} selected ${selectedUser} for document update`);
+  } catch (error) {
+    logger.error("Error handling user selection:", error);
+  }
+};
+
+/**
+ * Handle document update action
+ */
+const documentUpdateCallback = async ({
+  ack,
+  body,
+  client,
+  logger,
+}: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockAction>) => {
+  await ack();
+
+  try {
+    const userId = body.user.id;
+    const workspaceId = await getWorkspaceId(client);
+
+    // If user is workspace owner, set as initial manager
+    const isOwner = await isWorkspaceOwner(userId, client);
+    if (isOwner) {
+      setupInitialManager(workspaceId, userId);
+    }
+
+    // Confirm selected user
+    const selectedUser = selectedUsers.get(userId);
+    if (!selectedUser) {
+      // If no user is selected, send error message
+      await client.chat.postEphemeral({
+        channel: body.channel?.id || body.user.id,
+        user: userId,
+        text: "Please select a user to update document first.",
+      });
+      return;
+    }
+
+    // Try to update document
+    const success = updateDocument(workspaceId, selectedUser, userId);
+
+    if (success) {
+      // Send success message
+      await client.chat.postEphemeral({
+        channel: body.channel?.id || body.user.id,
+        user: userId,
+        text: `Document has been updated for <@${selectedUser}>.`,
+      });
+
+      // Refresh home view
+      await client.views.publish({
+        user_id: userId,
+        view: {
+          type: "home",
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: "Refreshing home view...",
+              },
+            },
+          ],
+        },
+      });
+
+      // Send notification message
+      try {
+        await client.chat.postMessage({
+          channel: selectedUser,
+          text: `<@${userId}> has updated your document.`,
+        });
+      } catch (error) {
+        logger.error(
+          `Failed to send notification to user ${selectedUser}:`,
+          error
+        );
+      }
+    } else {
+      // Send failure message
+      await client.chat.postEphemeral({
+        channel: body.channel?.id || body.user.id,
+        user: userId,
+        text: "Failed to update document. Please check if you have manager permission.",
+      });
+    }
+  } catch (error) {
+    logger.error("Error updating document:", error);
+  }
+};
+
+export { selectUserCallback, documentUpdateCallback };
 
 // GitHub에 변경사항 적용
 export const applySelectedToGithubAction = async ({

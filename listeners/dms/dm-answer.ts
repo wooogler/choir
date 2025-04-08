@@ -52,26 +52,26 @@ const dmCallback = async ({
           .map((doc, index) => {
             const metadata = doc.metadata;
             const sectionInfo = metadata.sectionName
-              ? `*섹션:* ${metadata.sectionName}\n`
+              ? `*Section:* ${metadata.sectionName}\n`
               : "";
             const gitbookLink = metadata.gitbookSectionLink
-              ? `*GitBook 링크:* <${metadata.gitbookSectionLink}|${
-                  metadata.sectionName || "문서 보기"
+              ? `*GitBook Link:* <${metadata.gitbookSectionLink}|${
+                  metadata.sectionName || "View Document"
                 }>\n`
               : "";
             const githubLink = metadata.githubUrl
-              ? `*GitHub 링크:* <${metadata.githubUrl}|소스 코드 보기>\n`
+              ? `*GitHub Link:* <${metadata.githubUrl}|View Source Code>\n`
               : "";
 
-            // 문서 내용을 더 길게 표시 (500자까지)
+            // Display document content longer (up to 500 characters)
             const contentPreview =
               doc.pageContent.length > 500
                 ? `${doc.pageContent.substring(0, 500)}...`
                 : doc.pageContent;
 
-            return `*참조 문서 ${
+            return `*Reference Document ${
               index + 1
-            }*\n${sectionInfo}${gitbookLink}${githubLink}*관련 내용:*\n\`\`\`${contentPreview}\`\`\`\n`;
+            }*\n${sectionInfo}${gitbookLink}${githubLink}*Related Content:*\n\`\`\`${contentPreview}\`\`\`\n`;
           })
           .join("\n");
 
@@ -79,65 +79,52 @@ const dmCallback = async ({
         await client.chat.postMessage({
           channel: event.channel,
           thread_ts: result.ts,
-          text: `*참조한 문서 정보:*\n\n${documentInfo}\n\n더 자세한 정보는 위 링크를 통해 확인하실 수 있습니다.`,
+          text: `*Reference Document Information:*\n\n${documentInfo}\n\nFor more detailed information, please check the links above.`,
           mrkdwn: true,
         });
 
-        // 관리자만 볼 수 있는 "토론 시작" 버튼 추가
         try {
-          // 워크스페이스 ID 가져오기
-          const workspaceId = await getWorkspaceId(client);
-
-          // 관리자 목록 가져오기
-          const managers = getManagers(workspaceId);
-
-          // 현재 사용자가 관리자인지 확인
-          const isManager = managers.includes(userId);
-
-          if (isManager) {
-            // 토론 시작 버튼 추가
-            await client.chat.postMessage({
-              channel: event.channel,
-              thread_ts: result.ts,
-              blocks: [
-                {
-                  type: "section",
-                  text: {
-                    type: "mrkdwn",
-                    text: "이 문서에 대해 직접 질문하시겠습니까?",
-                  },
+          await client.chat.postMessage({
+            channel: event.channel,
+            blocks: [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: "Would you like to ask a question about this document?",
                 },
-                {
-                  type: "actions",
-                  elements: [
-                    {
-                      type: "button",
-                      text: {
-                        type: "plain_text",
-                        text: "직접 질문하기",
-                        emoji: true,
-                      },
-                      style: "primary",
-                      action_id: "start_consultation",
-                      value: JSON.stringify({
-                        stakeholders: [userId],
-                        validMessages: [
-                          {
-                            username: "AI Assistant",
-                            text: response,
-                            ts: result.ts,
-                          },
-                        ],
-                      }),
+              },
+              {
+                type: "actions",
+                elements: [
+                  {
+                    type: "button",
+                    text: {
+                      type: "plain_text",
+                      text: "Ask Direct Question",
+                      emoji: true,
                     },
-                  ],
-                },
-              ],
-            });
-          }
+                    style: "primary",
+                    action_id: "start_consultation",
+                    value: JSON.stringify({
+                      stakeholders: [userId],
+                      validMessages: [
+                        {
+                          userId: userId,
+                          username: "User",
+                          text: userMessage,
+                          ts: event.ts,
+                        },
+                      ],
+                    }),
+                  },
+                ],
+              },
+            ],
+          });
         } catch (error) {
           logger.error("Error adding discussion button:", error);
-          // 버튼 추가 실패 시에도 계속 진행
+          // Continue even if button addition fails
         }
       }
     }
@@ -145,7 +132,7 @@ const dmCallback = async ({
     logger.error("Error processing DM response:", error);
     await client.chat.postMessage({
       channel: event.channel,
-      text: "죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.",
+      text: "I'm sorry. An error occurred. Please try again.",
     });
   }
 };

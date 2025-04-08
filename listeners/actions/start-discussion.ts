@@ -312,12 +312,12 @@ const startDiscussionCallback = async ({
           initial_users: initialUsers,
           placeholder: {
             type: "plain_text",
-            text: "대화 참가자 선택",
+            text: "Select discussion participants",
           },
         },
         label: {
           type: "plain_text",
-          text: "대화 참가자",
+          text: "Discussion Participants",
         },
       },
     ];
@@ -332,7 +332,7 @@ const startDiscussionCallback = async ({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "*문서 변경사항*",
+            text: "*Document Changes*",
           },
         },
         ...documentDiffBlocks
@@ -348,7 +348,7 @@ const startDiscussionCallback = async ({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "*참여할 관리자*\n관리자는 자동으로 대화에 참여합니다:",
+          text: "*Participating Managers*\nManagers automatically join the discussion:",
         },
       },
       {
@@ -358,7 +358,7 @@ const startDiscussionCallback = async ({
           text:
             managers.length > 0
               ? managerNames.join("\n")
-              : "_관리자가 설정되지 않았습니다_",
+              : "_No managers have been set up_",
         },
       }
     );
@@ -372,7 +372,7 @@ const startDiscussionCallback = async ({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "*현재 대화 참가자*\n문서 업데이트에 사용된 메시지를 발화한 사람들:",
+          text: "*Current Discussion Participants*\nPeople who sent messages used for document updates:",
         },
       },
       {
@@ -382,7 +382,7 @@ const startDiscussionCallback = async ({
           text:
             stakeholderNames.length > 0
               ? stakeholderNames.join("\n")
-              : "_대화 참가자가 없습니다_",
+              : "_No participants_",
         },
       }
     );
@@ -396,7 +396,7 @@ const startDiscussionCallback = async ({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "*이전 문서 기여자*\n이전에 이 문서를 업데이트한 사람들:",
+          text: "*Previous Document Contributors*\nPeople who previously updated this document:",
         },
       },
       {
@@ -406,7 +406,7 @@ const startDiscussionCallback = async ({
           text:
             commitHistoryUserNames.length > 0
               ? commitHistoryUserNames.join("\n")
-              : "_이전 기여자가 없습니다_",
+              : "_No previous contributors_",
         },
       }
     );
@@ -421,7 +421,7 @@ const startDiscussionCallback = async ({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "*이전 문서 업데이트 대화 내용*\n이전에 이 문서를 업데이트할 때 나눈 대화 내용입니다. 이 정보는 대화의 맥락을 이해하는 데 도움이 됩니다.",
+            text: "*Previous Document Update Discussions*\nConversations from previous document updates. This information helps understand the context of the discussion.",
           },
         },
         ...commitHistoryBlocks

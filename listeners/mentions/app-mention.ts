@@ -3,6 +3,7 @@ import {
   createSlackMessageWithName,
   formatSlackMessageBlock,
   type SlackMessage,
+  getStoredMessages,
 } from "../../services/slack-utils";
 
 const appMentionCallback = async ({
@@ -25,28 +26,36 @@ const appMentionCallback = async ({
           messages.map((msg) => createSlackMessageWithName(msg, client))
         )
       ).filter((msg): msg is SlackMessage => msg !== null);
-      console.log("slackMessages", slackMessages);
 
       const messageOptions = await Promise.all(
         slackMessages.map(formatSlackMessageBlock)
       );
 
-      console.log("messageOptions", messageOptions);
+      // 체크박스 옵션을 Slack API 형식에 맞게 변환
+      const checkboxOptions = messageOptions.map((option) => ({
+        text: option.text,
+        value: option.value,
+      }));
 
       const messageBlocks = [
         {
-          type: "input",
-          element: {
-            type: "checkboxes",
-            action_id: "selected_messages",
-            options: messageOptions,
-            initial_options: messageOptions,
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "*Select Messages to Save*",
           },
-          label: {
-            type: "plain_text",
-            text: "Select Messages to Save",
-            emoji: true,
-          },
+        },
+        {
+          type: "actions",
+          block_id: "message_selection",
+          elements: [
+            {
+              type: "checkboxes",
+              action_id: "selected_messages",
+              options: checkboxOptions,
+              initial_options: checkboxOptions,
+            },
+          ],
         },
       ];
 
@@ -60,6 +69,7 @@ const appMentionCallback = async ({
         channel: event.channel,
         user: event.user ?? "unknown",
         thread_ts: event.ts,
+        text: "Please select the messages you want to save.",
         blocks: [
           ...messageBlocks,
           {
