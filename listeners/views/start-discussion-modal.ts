@@ -1,5 +1,14 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
 import { getManagers, getWorkspaceId } from "../../services/slack-utils";
+import { DocumentUpdate } from "../../services/document-store";
+import {
+  DocumentDiff,
+  generateDocumentDiffs,
+} from "../../services/document-util";
+import {
+  getSessionData,
+  removeSessionData,
+} from "../../services/session-store";
 
 interface Message {
   userId: string;
@@ -25,8 +34,22 @@ const startDiscussionModalCallback = async ({
   await ack();
 
   try {
-    // private_metadata에서 정보 가져오기
-    const { participants, commitHistories } = JSON.parse(view.private_metadata);
+    // private_metadata에서 세션 ID 가져오기
+    const { sessionId } = JSON.parse(view.private_metadata);
+
+    if (!sessionId) {
+      throw new Error("세션 ID가 없습니다");
+    }
+
+    // 세션 데이터 가져오기
+    const sessionData = getSessionData(sessionId);
+
+    if (!sessionData) {
+      throw new Error(`세션 데이터를 찾을 수 없습니다: ${sessionId}`);
+    }
+
+    // 세션 데이터에서 필요한 정보 추출
+    const { participants, commitHistories, documentDiffs } = sessionData;
 
     // 워크스페이스 ID 가져오기
     const workspaceId = await getWorkspaceId(client);
@@ -70,7 +93,12 @@ const startDiscussionModalCallback = async ({
 
     // 각 파일별 커밋 히스토리에 대해 메시지 전송
     for (const commitHistory of commitHistories) {
-      const { fileName, history, validMessages } = commitHistory;
+      const {
+        fileName,
+        history,
+        validMessages,
+        documentDiffs: fileDiffs,
+      } = commitHistory;
 
       if (!history || history.length === 0) continue;
 
@@ -97,20 +125,49 @@ const startDiscussionModalCallback = async ({
             text: `*파일:* ${fileName}`,
           },
         },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*업데이트 유형:* ${commitInfo.updateType}`,
-          },
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*수정된 노드:* ${commitInfo.nodeIds.join(", ")}`,
-          },
-        },
+      ];
+
+      // Diff 블록 생성 (문서 변경사항 표시)
+      const diffBlocks =
+        fileDiffs && fileDiffs.length > 0
+          ? [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: "*문서 변경사항:*",
+                },
+              },
+              {
+                type: "divider",
+              },
+              ...fileDiffs.map((diff: DocumentDiff) => diff.diffBlock),
+              {
+                type: "divider",
+              },
+            ]
+          : [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: "*문서 변경사항:*",
+                },
+              },
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: "_변경사항 정보를 가져올 수 없습니다._",
+                },
+              },
+              {
+                type: "divider",
+              },
+            ];
+
+      // 업데이트 정보 블록
+      const updateInfoBlocks = [
         {
           type: "divider",
         },
@@ -193,6 +250,8 @@ const startDiscussionModalCallback = async ({
       // 모든 블록 결합
       const allBlocks = [
         ...fileInfoBlocks,
+        ...diffBlocks,
+        ...updateInfoBlocks,
         ...validMessageBlocks,
         ...previousMessagesSection,
         ...previousMessageBlocks,
@@ -221,6 +280,9 @@ const startDiscussionModalCallback = async ({
         "다음 사용자가 이 논의에 참여하고 있습니다: " +
         allUsers.map((uid) => `<@${uid}>`).join(", "),
     });
+
+    // 사용이 끝난 세션 데이터 삭제
+    removeSessionData(sessionId);
   } catch (error) {
     logger.error("Error in start discussion modal submission:", error);
   }

@@ -20,7 +20,12 @@ import { VectorStoreService } from "../../services";
 import {
   groupNodesByFile,
   processFileChanges,
+  generateDocumentDiffs,
 } from "../../services/document-util";
+import {
+  generateSessionId,
+  storeSessionData,
+} from "../../services/session-store";
 
 const startDiscussionCallback = async ({
   ack,
@@ -49,6 +54,14 @@ const startDiscussionCallback = async ({
     if (!documentUpdates || documentUpdates.length === 0) {
       throw new Error("No document updates found");
     }
+
+    // 선택된 노드의 업데이트만 필터링
+    const selectedUpdates = documentUpdates.filter((update) =>
+      selectedNodeIds.includes(update.nodeId)
+    );
+
+    // Diff 생성
+    const documentDiffs = await generateDocumentDiffs(selectedUpdates);
 
     const nodesByFile = groupNodesByFile(selectedNodeIds, documentUpdates);
 
@@ -148,15 +161,21 @@ const startDiscussionCallback = async ({
     );
 
     // private_metadata에 저장할 데이터 최소화
-    // documentUpdates 대신 commitHistories만 사용
     const simplifiedCommitHistories = commitHistories
       .filter((history) => history !== null)
       .map((history) => {
         if (!history) return null;
+
+        // 해당 파일의 documentDiffs 찾기
+        const fileDiffs = documentDiffs.filter(
+          (diff) => diff.fileName === history.fileName
+        );
+
         return {
           fileName: history.fileName,
           history: history.history,
           validMessages: validMessages || [],
+          documentDiffs: fileDiffs || [],
         };
       })
       .filter((history) => history !== null);
@@ -256,14 +275,171 @@ const startDiscussionCallback = async ({
       new Set([...nonManagerStakeholders, ...Array.from(commitHistoryUserIds)])
     );
 
+    // 문서 변경사항 블록 생성
+    const documentDiffBlocks = documentDiffs
+      .map((diff) => {
+        return [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*파일:* ${diff.fileName}\n*섹션:* ${diff.markdownSection}`,
+            },
+          },
+          {
+            type: "divider",
+          },
+          diff.diffBlock,
+          {
+            type: "divider",
+          },
+        ];
+      })
+      .flat();
+
+    // Slack 블록 생성
+    const blocks: any[] = [
+      {
+        type: "input",
+        block_id: "users_block",
+        element: {
+          type: "multi_users_select",
+          action_id: "selected_users",
+          initial_users: initialUsers,
+          placeholder: {
+            type: "plain_text",
+            text: "대화 참가자 선택",
+          },
+        },
+        label: {
+          type: "plain_text",
+          text: "대화 참가자",
+        },
+      },
+    ];
+
+    // 문서 변경사항 블록이 있는 경우 추가
+    if (documentDiffBlocks.length > 0) {
+      blocks.push(
+        {
+          type: "divider",
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "*문서 변경사항*",
+          },
+        },
+        ...documentDiffBlocks
+      );
+    }
+
+    // 관리자 정보 블록 추가
+    blocks.push(
+      {
+        type: "divider",
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*참여할 관리자*\n관리자는 자동으로 대화에 참여합니다:",
+        },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text:
+            managers.length > 0
+              ? managerNames.join("\n")
+              : "_관리자가 설정되지 않았습니다_",
+        },
+      }
+    );
+
+    // 현재 대화 참가자 블록 추가
+    blocks.push(
+      {
+        type: "divider",
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*현재 대화 참가자*\n문서 업데이트에 사용된 메시지를 발화한 사람들:",
+        },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text:
+            stakeholderNames.length > 0
+              ? stakeholderNames.join("\n")
+              : "_대화 참가자가 없습니다_",
+        },
+      }
+    );
+
+    // 이전 문서 기여자 블록 추가
+    blocks.push(
+      {
+        type: "divider",
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*이전 문서 기여자*\n이전에 이 문서를 업데이트한 사람들:",
+        },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text:
+            commitHistoryUserNames.length > 0
+              ? commitHistoryUserNames.join("\n")
+              : "_이전 기여자가 없습니다_",
+        },
+      }
+    );
+
+    // 이전 문서 업데이트 대화 내용 블록 추가
+    if (commitHistoryBlocks.length > 0) {
+      blocks.push(
+        {
+          type: "divider",
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "*이전 문서 업데이트 대화 내용*\n이전에 이 문서를 업데이트할 때 나눈 대화 내용입니다. 이 정보는 대화의 맥락을 이해하는 데 도움이 됩니다.",
+          },
+        },
+        ...commitHistoryBlocks
+      );
+    }
+
+    // 세션 ID 생성
+    const sessionId = generateSessionId("discussion");
+
+    // 전체 데이터를 세션 저장소에 저장
+    storeSessionData(sessionId, {
+      participants: allParticipants,
+      commitHistories: simplifiedCommitHistories,
+      documentDiffs,
+    });
+
+    // private_metadata에는 세션 ID만 전달
     await client.views.open({
       trigger_id: body.trigger_id,
       view: {
         type: "modal",
-        private_metadata: JSON.stringify({
-          participants: allParticipants,
-          commitHistories: simplifiedCommitHistories,
-        }),
+        private_metadata: JSON.stringify({ sessionId }),
         title: {
           type: "plain_text",
           text: "Start Discussion",
@@ -272,97 +448,7 @@ const startDiscussionCallback = async ({
           type: "plain_text",
           text: "Start",
         },
-        blocks: [
-          {
-            type: "input",
-            block_id: "users_block",
-            element: {
-              type: "multi_users_select",
-              action_id: "selected_users",
-              initial_users: initialUsers,
-              placeholder: {
-                type: "plain_text",
-                text: "대화 참가자 선택",
-              },
-            },
-            label: {
-              type: "plain_text",
-              text: "대화 참가자",
-            },
-          },
-          {
-            type: "divider",
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: "*참여할 관리자*\n관리자는 자동으로 대화에 참여합니다:",
-            },
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text:
-                managers.length > 0
-                  ? managerNames.join("\n")
-                  : "_관리자가 설정되지 않았습니다_",
-            },
-          },
-          {
-            type: "divider",
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: "*현재 대화 참가자*\n문서 업데이트에 사용된 메시지를 발화한 사람들:",
-            },
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text:
-                stakeholderNames.length > 0
-                  ? stakeholderNames.join("\n")
-                  : "_대화 참가자가 없습니다_",
-            },
-          },
-          {
-            type: "divider",
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: "*이전 문서 기여자*\n이전에 이 문서를 업데이트한 사람들:",
-            },
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text:
-                commitHistoryUserNames.length > 0
-                  ? commitHistoryUserNames.join("\n")
-                  : "_이전 기여자가 없습니다_",
-            },
-          },
-          {
-            type: "divider",
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: "*이전 문서 업데이트 대화 내용*\n이전에 이 문서를 업데이트할 때 나눈 대화 내용입니다. 이 정보는 대화의 맥락을 이해하는 데 도움이 됩니다.",
-            },
-          },
-          // 커밋 히스토리 블록 추가
-          ...commitHistoryBlocks,
-        ],
+        blocks: blocks,
         callback_id: "start_discussion_modal",
       },
     });
