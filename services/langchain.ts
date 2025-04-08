@@ -106,22 +106,23 @@ export function createDocumentsFromTree(
       const headingNode = node as Heading & ExtendedNode;
       const headingText = toString(headingNode);
 
-      documents.push(
-        new Document({
-          pageContent: headingText,
-          metadata: {
-            fileName,
-            nodeId,
-            sectionId: headingNode.sectionId,
-            nodeType: "heading",
-            githubUrl,
-            headingPath,
-            ancestors: ancestors.map((a) => a.id as string),
-            depth: ancestors.length,
-            importance: importance + 0.1, // 헤딩은 중요도 가중치 추가
-          },
-        })
-      );
+      // 섹션 헤딩은 documents에 추가하지 않음
+      // documents.push(
+      //   new Document({
+      //     pageContent: headingText,
+      //     metadata: {
+      //       fileName,
+      //       nodeId,
+      //       sectionId: headingNode.sectionId,
+      //       nodeType: "heading",
+      //       githubUrl,
+      //       headingPath,
+      //       ancestors: ancestors.map((a) => a.id as string),
+      //       depth: ancestors.length,
+      //       importance: importance + 0.1, // 헤딩은 중요도 가중치 추가
+      //     },
+      //   })
+      // );
       return;
     }
 
@@ -306,13 +307,13 @@ export function createDocumentsFromTree(
   });
 
   // 섹션별 요약 Document 생성
-  createSectionSummaryDocuments(
-    docTree,
-    headingMap,
-    sectionToHeadings,
-    fileName,
-    githubUrl
-  ).forEach((doc) => documents.push(doc));
+  // createSectionSummaryDocuments(
+  //   docTree,
+  //   headingMap,
+  //   sectionToHeadings,
+  //   fileName,
+  //   githubUrl
+  // ).forEach((doc) => documents.push(doc));
 
   return documents;
 }

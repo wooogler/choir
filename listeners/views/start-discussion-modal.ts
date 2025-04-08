@@ -1,9 +1,19 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
-import {
-  getStoredEditData,
-  getManagers,
-  getWorkspaceId,
-} from "../../services/slack-utils";
+import { getManagers, getWorkspaceId } from "../../services/slack-utils";
+
+interface Message {
+  userId: string;
+  text: string;
+  ts: string;
+  username?: string;
+}
+
+interface CommitMessage {
+  userId: string;
+  username: string;
+  text: string;
+  ts: string;
+}
 
 const startDiscussionModalCallback = async ({
   ack,
@@ -16,7 +26,7 @@ const startDiscussionModalCallback = async ({
 
   try {
     // private_metadata에서 정보 가져오기
-    const { participants, editDataKey } = JSON.parse(view.private_metadata);
+    const { participants, commitHistories } = JSON.parse(view.private_metadata);
 
     // 워크스페이스 ID 가져오기
     const workspaceId = await getWorkspaceId(client);
@@ -48,12 +58,6 @@ const startDiscussionModalCallback = async ({
 
     logger.info(`Starting discussion with users: ${allUsers.join(", ")}`);
 
-    // 편집 데이터 가져오기
-    const editData = getStoredEditData(editDataKey);
-    if (!editData) {
-      throw new Error("Edit data not found");
-    }
-
     // DM 채널 생성
     const result = await client.conversations.open({
       users: allUsers.join(","),
@@ -64,10 +68,20 @@ const startDiscussionModalCallback = async ({
       throw new Error("Failed to create conversation");
     }
 
-    // DM 채널에 메시지 전송
-    await client.chat.postMessage({
-      channel: result.channel.id,
-      blocks: [
+    // 각 파일별 커밋 히스토리에 대해 메시지 전송
+    for (const commitHistory of commitHistories) {
+      const { fileName, history, validMessages } = commitHistory;
+
+      if (!history || history.length === 0) continue;
+
+      const latestCommit = history[0];
+      if (!latestCommit || !latestCommit.commitInfo) continue;
+
+      const commitInfo = latestCommit.commitInfo;
+      const messages = commitInfo.messages;
+
+      // 파일 정보 블록
+      const fileInfoBlocks = [
         {
           type: "header",
           text: {
@@ -80,10 +94,108 @@ const startDiscussionModalCallback = async ({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*파일:* <${editData.fileName}>`,
+            text: `*파일:* ${fileName}`,
           },
         },
-        editData.diffBlock,
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*업데이트 유형:* ${commitInfo.updateType}`,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*수정된 노드:* ${commitInfo.nodeIds.join(", ")}`,
+          },
+        },
+        {
+          type: "divider",
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "*문서 업데이트에 영향을 준 메시지:*",
+          },
+        },
+      ];
+
+      // validMessages 블록 생성 (문서 업데이트에 영향을 준 메시지)
+      const validMessageBlocks =
+        validMessages && validMessages.length > 0
+          ? validMessages.map((msg: Message) => {
+              // 날짜 포맷팅 (예: 2023-05-15T14:30:00Z -> 2023년 5월 15일 14:30)
+              const date = new Date(parseInt(msg.ts) * 1000);
+              const formattedDate = `${date.getFullYear()}년 ${
+                date.getMonth() + 1
+              }월 ${date.getDate()}일 ${date.getHours()}:${date
+                .getMinutes()
+                .toString()
+                .padStart(2, "0")}`;
+
+              return {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: `*${msg.username || "사용자"}* • ${formattedDate}\n${
+                    msg.text
+                  }`,
+                },
+              };
+            })
+          : [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: "_문서 업데이트에 영향을 준 메시지가 없습니다._",
+                },
+              },
+            ];
+
+      // 이전 문서 업데이트에 기여한 메시지 섹션
+      const previousMessagesSection = [
+        {
+          type: "divider",
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "*이전 문서 업데이트에 기여한 메시지:*",
+          },
+        },
+      ];
+
+      // 이전 문서 업데이트에 기여한 메시지 블록 생성
+      const previousMessageBlocks = messages.map((msg: Message) => {
+        // 날짜 포맷팅 (예: 2023-05-15T14:30:00Z -> 2023년 5월 15일 14:30)
+        const date = new Date(parseInt(msg.ts) * 1000);
+        const formattedDate = `${date.getFullYear()}년 ${
+          date.getMonth() + 1
+        }월 ${date.getDate()}일 ${date.getHours()}:${date
+          .getMinutes()
+          .toString()
+          .padStart(2, "0")}`;
+
+        return {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*${msg.username}* • ${formattedDate}\n${msg.text}`,
+          },
+        };
+      });
+
+      // 모든 블록 결합
+      const allBlocks = [
+        ...fileInfoBlocks,
+        ...validMessageBlocks,
+        ...previousMessagesSection,
+        ...previousMessageBlocks,
         {
           type: "context",
           elements: [
@@ -93,8 +205,14 @@ const startDiscussionModalCallback = async ({
             },
           ],
         },
-      ],
-    });
+      ];
+
+      // 메시지 전송
+      await client.chat.postMessage({
+        channel: result.channel.id,
+        blocks: allBlocks,
+      });
+    }
 
     // 요약 메시지도 보내기
     await client.chat.postMessage({

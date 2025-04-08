@@ -31,12 +31,16 @@ export async function editMarkdownWithUserMessages(
   const completion = await createCompletion("gpt-4o", [
     {
       role: "system",
-      content: `You are an AI assistant that helps edit markdown.
-You will be given a markdown and conversation to modify it.
-Return ONLY the edited markdown content without including the user's request or any explanations.
-Do not wrap the response in markdown code blocks.
-Do not add any formatting or annotations around the content.
-Return the raw markdown content exactly as it should appear in the document.`,
+      content: `You edit markdown based on conversation content.
+
+CRITICAL RULES:
+- Only update with new information or correct factual errors from the conversation
+- Preserve original sentence structure and formatting
+- Change only necessary keywords, not entire sentences
+- Do not fix grammar or style unless explicitly requested
+- Return original markdown unchanged if no substantive updates needed
+
+Return only the raw markdown with no code blocks, annotations, or explanations.`,
     },
     {
       role: "user",

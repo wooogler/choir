@@ -1,13 +1,13 @@
 import { App, LogLevel } from "@slack/bolt";
 import * as dotenv from "dotenv";
 import registerListeners from "./listeners";
-import GithubService from "./services/github";
 import { VectorStoreService } from "./services/index";
 import {
   getWorkspaceId,
   setupInitialManager,
   getGithubRepo,
 } from "./services/slack-utils";
+import GithubService from "./services/github";
 
 dotenv.config();
 

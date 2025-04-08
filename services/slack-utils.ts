@@ -7,19 +7,11 @@ export interface SlackMessage {
   ts: string;
 }
 
-export interface EditData {
-  fileName: string;
-  updatedMarkdown: string;
-  messages: SlackMessage[];
-  diffBlock: {
-    type: string;
-    elements: {
-      type: string;
-      elements: RichTextElement[];
-    }[];
-  };
-  author: string;
-  nodeId?: string;
+export interface Message {
+  userId: string;
+  text: string;
+  ts: string;
+  username: string;
 }
 
 // 메시지를 임시 저장할 Map
@@ -43,18 +35,6 @@ export function getStoredMessages(keys: string[]): SlackMessage[] {
 
 export function extractKeysFromMessages(messages: SlackMessage[]): string[] {
   return messages.map((msg) => `${msg.userId}-${msg.ts}`);
-}
-
-const editStore = new Map<string, EditData>();
-
-export function storeEditData(editData: EditData): string {
-  const key = editData.author;
-  editStore.set(key, editData);
-  return key;
-}
-
-export function getStoredEditData(key: string): EditData | undefined {
-  return editStore.get(key);
 }
 
 // 관리자 권한 저장소
@@ -327,3 +307,93 @@ export function parseGithubUrl(url: string): GithubRepoInfo | null {
     return null;
   }
 }
+
+// 유저 ID를 유저 이름으로 변환하는 함수
+export async function convertUserIdsToNames(
+  messages: SlackMessage[],
+  client: WebClient
+): Promise<SlackMessage[]> {
+  const result: SlackMessage[] = [];
+  const anonymousCounter = new Map<string, number>();
+
+  for (const message of messages) {
+    try {
+      const username = await getUserName(message.userId, client);
+      result.push({
+        ...message,
+        username,
+      });
+    } catch (error) {
+      console.error(
+        `유저 이름을 가져오는 중 오류 발생: ${message.userId}`,
+        error
+      );
+
+      // 익명 사용자 이름 생성
+      let anonymousNumber = anonymousCounter.get(message.userId) || 0;
+      if (anonymousNumber === 0) {
+        // 새로운 익명 사용자
+        anonymousNumber = anonymousCounter.size + 1;
+        anonymousCounter.set(message.userId, anonymousNumber);
+      }
+
+      result.push({
+        ...message,
+        username: `Anonymous ${anonymousNumber}`,
+      });
+    }
+  }
+
+  return result;
+}
+
+// 메시지 텍스트에서 @멘션을 유저 이름으로 변환하는 함수
+export async function replaceMentionsInText(
+  text: string,
+  client: WebClient
+): Promise<string> {
+  // @멘션 패턴 찾기
+  const mentionPattern = /<@([A-Z0-9]+)>/g;
+  const mentions = [...text.matchAll(mentionPattern)];
+
+  let processedText = text;
+
+  for (const mention of mentions) {
+    const userId = mention[1];
+    let username = "Unknown";
+
+    try {
+      username = await getUserName(userId, client);
+    } catch (error) {
+      console.error(
+        `멘션된 유저 이름을 가져오는 중 오류 발생: ${userId}`,
+        error
+      );
+    }
+
+    // 멘션을 유저 이름으로 대체
+    processedText = processedText.replace(mention[0], `@${username}`);
+  }
+
+  return processedText;
+}
+
+// 중복 메시지 제거 함수
+export const removeDuplicateMessages = (
+  messages: SlackMessage[]
+): SlackMessage[] => {
+  const uniqueMessages = new Map<string, SlackMessage>();
+
+  // ts를 기준으로 중복 제거 (동일한 시간에 같은 사용자가 같은 내용을 보낸 경우)
+  messages.forEach((msg) => {
+    const key = `${msg.userId}-${msg.ts}-${msg.text}`;
+    if (!uniqueMessages.has(key)) {
+      uniqueMessages.set(key, msg);
+    }
+  });
+
+  // 시간순으로 정렬
+  return Array.from(uniqueMessages.values()).sort(
+    (a, b) => parseInt(a.ts) - parseInt(b.ts)
+  );
+};

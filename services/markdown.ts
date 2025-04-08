@@ -467,3 +467,27 @@ export async function convertMarkdownToSlackText(
 
   return slackText.trim();
 }
+
+/**
+ * documentUpdates를 사용하여 docTree를 업데이트하고 마크다운으로 변환
+ */
+export function updateDocTreeWithChanges(
+  docTree: DocumentTree,
+  documentUpdates: any[]
+): string {
+  let updatedTree = docTree;
+
+  // 각 업데이트에 대해 docTree 업데이트
+  for (const update of documentUpdates) {
+    if (update.nodeId && update.updatedNodeContent) {
+      updatedTree = updateNodeContent(
+        updatedTree,
+        update.nodeId,
+        update.updatedNodeContent
+      );
+    }
+  }
+
+  // 업데이트된 트리를 마크다운으로 변환
+  return treeToMarkdown(updatedTree);
+}
