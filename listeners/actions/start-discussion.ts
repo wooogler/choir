@@ -8,7 +8,6 @@ import {
   getWorkspaceId,
   getUserName,
   SlackMessage,
-  parseGithubUrl,
   Message,
 } from "../../services/slack-utils";
 import {
@@ -19,9 +18,9 @@ import {
 import GithubService from "../../services/github";
 import { VectorStoreService } from "../../services";
 import {
-  updateDocTreeWithChanges,
-  updateNodeContent,
-} from "../../services/markdown";
+  groupNodesByFile,
+  processFileChanges,
+} from "../../services/document-util";
 
 const startDiscussionCallback = async ({
   ack,
@@ -51,39 +50,7 @@ const startDiscussionCallback = async ({
       throw new Error("No document updates found");
     }
 
-    const nodesByFile = new Map<
-      string,
-      {
-        nodeIds: string[];
-        githubUrl: string;
-        fileName: string;
-        documentUpdates: DocumentUpdate[];
-      }
-    >();
-
-    for (const nodeId of selectedNodeIds) {
-      const update = documentUpdates.find((update) => update.nodeId === nodeId);
-      if (update) {
-        const fileName = update.fileName;
-        const githubUrl = update.githubUrl;
-
-        if (!nodesByFile.has(fileName)) {
-          nodesByFile.set(fileName, {
-            nodeIds: [],
-            githubUrl,
-            fileName,
-            documentUpdates: [],
-          });
-        }
-
-        nodesByFile.get(fileName)!.nodeIds.push(nodeId);
-        nodesByFile.get(fileName)!.documentUpdates.push(update);
-      } else {
-        console.log(
-          `노드 ID ${nodeId}에 대한 업데이트 정보를 찾을 수 없습니다.`
-        );
-      }
-    }
+    const nodesByFile = groupNodesByFile(selectedNodeIds, documentUpdates);
 
     // 워크스페이스 ID 가져오기
     const workspaceId = await getWorkspaceId(client);
@@ -139,42 +106,21 @@ const startDiscussionCallback = async ({
     const githubService = GithubService.getInstance();
     const vectorStore = VectorStoreService.getInstance();
     const fileChanges = [];
+
+    // 각 파일에 대한 변경사항 처리
     for (const [fileName, fileData] of nodesByFile.entries()) {
-      // 마크다운 파일 가져오기
-      console.log(
-        `'${fileName}' 파일의 ${fileData.nodeIds.length}개 노드 업데이트 중...`
-      );
+      const { success, message, updatedMarkdown, githubInfo } =
+        await processFileChanges(fileName, fileData, vectorStore);
 
-      const markdownFile = vectorStore.getMarkdownFile(fileName);
-      if (!markdownFile) {
-        console.error(`파일을 찾을 수 없습니다: ${fileName}`);
-        continue;
+      if (success && updatedMarkdown && githubInfo) {
+        fileChanges.push({
+          fileName,
+          updatedMarkdown,
+          githubInfo,
+        });
+      } else {
+        console.error(message);
       }
-
-      let docTree = markdownFile.tree;
-      const githubInfo = parseGithubUrl(fileData.githubUrl);
-      if (!githubInfo) {
-        console.error(`유효한 GitHub URL이 아닙니다: ${fileData.githubUrl}`);
-        continue;
-      }
-
-      for (const update of fileData.documentUpdates) {
-        const nodeId = update.nodeId;
-        const updatedNodeContent = update.updatedNodeContent;
-
-        docTree = updateNodeContent(docTree, nodeId, updatedNodeContent);
-      }
-
-      const updatedMarkdown = updateDocTreeWithChanges(
-        docTree,
-        fileData.documentUpdates
-      );
-
-      fileChanges.push({
-        fileName,
-        updatedMarkdown,
-        githubInfo,
-      });
     }
 
     const commitHistories = await Promise.all(
