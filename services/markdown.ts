@@ -159,7 +159,7 @@ export function parseMarkdownToTree(markdown: string): DocumentTree {
 export function treeToMarkdown(docTree: DocumentTree): string {
   // MDAST를 마크다운으로 변환
   const processor = unified().use(remarkStringify, {
-    bullet: "-",
+    bullet: "*",
     listItemIndent: "one",
     emphasis: "_",
     strong: "**",

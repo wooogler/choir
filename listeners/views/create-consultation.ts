@@ -40,7 +40,7 @@ const createConsultationRoomCallback = async ({
     const selectedUsersValue =
       view.state.values.users_block.selected_users.selected_users || [];
     const topicValue =
-      view.state.values.consultation_topic.topic_input.value || "질문";
+      view.state.values.consultation_topic.topic_input.value || "Question";
 
     // 기존 참가자에 새로 선택한 사용자 추가
     const allParticipants = [
@@ -60,7 +60,7 @@ const createConsultationRoomCallback = async ({
     // 상담방 시작 메시지 전송
     await client.chat.postMessage({
       channel: channelId,
-      text: `*질문 주제: ${topicValue}*\n\n이 DM은 직접 질문을 위해 만들어졌습니다. 모든 참가자가 초대되었습니다.`,
+      text: `*Question Topic: ${topicValue}*\n\nThis DM was created for direct questions. All participants have been invited.`,
       mrkdwn: true,
     });
 
@@ -94,7 +94,7 @@ const createConsultationRoomCallback = async ({
 
       await client.chat.postMessage({
         channel: channelId,
-        text: `*참여할 관리자*\n관리자는 자동으로 질문 대화에 참여합니다:\n${managerNames.join(
+        text: `*Participating Managers*\nManagers automatically join the question discussion:\n${managerNames.join(
           "\n"
         )}`,
         mrkdwn: true,
@@ -109,7 +109,7 @@ const createConsultationRoomCallback = async ({
 
       await client.chat.postMessage({
         channel: channelId,
-        text: `*참조된 메시지:*\n\n${messagesContent}`,
+        text: `*Referenced Messages:*\n\n${messagesContent}`,
         mrkdwn: true,
       });
     }

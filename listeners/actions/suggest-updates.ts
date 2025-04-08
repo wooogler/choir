@@ -11,6 +11,8 @@ import {
   getStoredMessages,
   type SlackMessage,
   parseGithubUrl,
+  getManagers,
+  getWorkspaceId,
 } from "../../services/slack-utils";
 import { VectorStoreService } from "../../services/index";
 import GithubService from "../../services/github";
@@ -35,6 +37,15 @@ const suggestUpdatesCallback = async ({
     if (!channelId) {
       throw new Error("채널 ID를 찾을 수 없습니다");
     }
+
+    // 워크스페이스 ID 가져오기
+    const workspaceId = await getWorkspaceId(client);
+
+    // 관리자 목록 가져오기
+    const managers = getManagers(workspaceId);
+
+    // 현재 사용자가 관리자인지 확인
+    const isManager = managers.includes(userId);
 
     // value 파싱
     const rawValue = body.actions[0].value;
@@ -64,14 +75,14 @@ const suggestUpdatesCallback = async ({
           channel: body.channel?.id ?? "",
           user: body.user.id,
           thread_ts: body.container.thread_ts,
-          text: "문서 업데이트를 제안하려면 적어도 하나의 메시지를 선택해야 합니다. 메시지를 선택 후 다시 시도해주세요.",
+          text: "You need to select at least one message to suggest document updates. Please select messages and try again.",
         });
         return; // 기능 종료
       }
 
-      validMessages = getStoredMessages(
-        selectedOptions.map((option) => option.value)
-      );
+      // 선택된 옵션의 value는 메시지 키입니다
+      const messageKeys = selectedOptions.map((option) => option.value);
+      validMessages = getStoredMessages(messageKeys);
 
       // 메시지가 비어있는 경우 처리
       if (validMessages.length === 0) {
@@ -79,7 +90,7 @@ const suggestUpdatesCallback = async ({
           channel: body.channel?.id ?? "",
           user: body.user.id,
           thread_ts: body.container.thread_ts,
-          text: "선택된 메시지가 없거나 메시지를 찾을 수 없습니다. 다시 시도해주세요.",
+          text: "No messages were selected or messages could not be found. Please try again.",
         });
         return;
       }
@@ -118,7 +129,7 @@ const suggestUpdatesCallback = async ({
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `⚠️ *벡터 스토어에 문제가 발견되었습니다*: ${diagnosis.status}\n\n벡터 스토어 진단 명령어를 실행하거나 자동 복구를 시도할 수 있습니다.`,
+                text: `⚠️ *Vector store issue detected*: ${diagnosis.status}\n\nYou can run the vector store diagnosis command or try automatic recovery.`,
               },
             },
             {
@@ -128,7 +139,7 @@ const suggestUpdatesCallback = async ({
                   type: "button",
                   text: {
                     type: "plain_text",
-                    text: "진단 실행",
+                    text: "Run Diagnosis",
                     emoji: true,
                   },
                   action_id: "diagnose_vector_store",
@@ -137,7 +148,7 @@ const suggestUpdatesCallback = async ({
                   type: "button",
                   text: {
                     type: "plain_text",
-                    text: "자동 복구 시도",
+                    text: "Try Automatic Recovery",
                     emoji: true,
                   },
                   style: "primary",
@@ -155,7 +166,7 @@ const suggestUpdatesCallback = async ({
         channel: body.channel?.id ?? "",
         user: body.user.id,
         thread_ts: body.container.thread_ts,
-        text: `⚠️ 벡터 스토어에 문제가 발견되었습니다: ${diagnosis.status}\n\n벡터 스토어 진단을 실행하려면 앱 홈 탭을 열고 '벡터 스토어 진단' 버튼을 클릭하거나, \`/vector-diagnosis\` 명령어를 실행하세요.`,
+        text: `⚠️ Vector store issue detected: ${diagnosis.status}\n\nTo run vector store diagnosis, open the app home tab and click the 'Vector Store Diagnosis' button, or run the \`/vector-diagnosis\` command.`,
       });
       return;
     }
@@ -173,7 +184,7 @@ const suggestUpdatesCallback = async ({
         channel: body.channel?.id ?? "",
         user: body.user.id,
         thread_ts: body.container.thread_ts,
-        text: "선택한 메시지와 관련된 문서를 찾을 수 없습니다. 다른 메시지를 선택하거나 관리자에게 문의하세요.\n\n벡터 스토어에 문제가 있는 경우 `/vector-diagnosis` 명령어를 실행하여 진단하고 필요시 복구할 수 있습니다.",
+        text: "No documents found related to the selected messages. Please select different messages or contact an administrator.\n\nIf there's an issue with the vector store, run the `/vector-diagnosis` command to diagnose and recover if needed.",
       });
       return;
     }
@@ -355,7 +366,7 @@ const suggestUpdatesCallback = async ({
         channel: body.channel?.id ?? "",
         user: body.user.id,
         thread_ts: body.container.thread_ts,
-        text: "선택한 메시지로 업데이트할 수 있는 부분이 없습니다. 다른 메시지를 선택하거나 명확한 업데이트 내용을 담고 있는 메시지를 선택해주세요.",
+        text: "No parts of the document can be updated with the selected messages. Please select different messages or messages with clear update content.",
       });
       return;
     }
@@ -407,7 +418,7 @@ const suggestUpdatesCallback = async ({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "이 문서를 업데이트하시겠습니까?",
+            text: "Would you like to update this document?",
           },
           accessory: {
             type: "checkboxes",
@@ -416,7 +427,7 @@ const suggestUpdatesCallback = async ({
               {
                 text: {
                   type: "mrkdwn",
-                  text: "업데이트",
+                  text: "Update",
                 },
                 value: JSON.stringify({
                   index: index,
@@ -430,7 +441,7 @@ const suggestUpdatesCallback = async ({
               {
                 text: {
                   type: "mrkdwn",
-                  text: "업데이트",
+                  text: "Update",
                 },
                 value: JSON.stringify({
                   index: index,
@@ -454,31 +465,35 @@ const suggestUpdatesCallback = async ({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "*선택한 문서에 대한 작업:*",
+          text: "*Actions for selected documents:*",
         },
       },
       {
         type: "actions",
         block_id: "document_actions",
         elements: [
+          ...(isManager
+            ? [
+                {
+                  type: "button",
+                  text: {
+                    type: "plain_text",
+                    text: "Apply to Document",
+                    emoji: true,
+                  },
+                  style: "primary",
+                  action_id: "apply_selected_to_github",
+                  value: JSON.stringify({
+                    validMessages,
+                  }),
+                },
+              ]
+            : []),
           {
             type: "button",
             text: {
               type: "plain_text",
-              text: "GitHub에 적용",
-              emoji: true,
-            },
-            style: "primary",
-            action_id: "apply_selected_to_github",
-            value: JSON.stringify({
-              validMessages,
-            }),
-          },
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "논의 시작",
+              text: "Start Discussion",
               emoji: true,
             },
             action_id: "start_discussion",
@@ -505,8 +520,8 @@ const suggestUpdatesCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel.id,
         user: body.user.id,
-        text: `문서 업데이트 제안 중 오류가 발생했습니다: ${
-          error instanceof Error ? error.message : "알 수 없는 오류"
+        text: `An error occurred while suggesting document updates: ${
+          error instanceof Error ? error.message : "Unknown error"
         }`,
       });
     }
