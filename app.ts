@@ -8,6 +8,8 @@ import {
   getGithubRepo,
 } from "./services/slack-utils";
 import GithubService from "./services/github";
+import startDiscussionCallback from "./listeners/actions/start-discussion";
+import createDiscussionRoomCallback from "./listeners/views/create-discussion";
 
 dotenv.config();
 
@@ -24,6 +26,10 @@ const vectorStore = VectorStoreService.getInstance();
 
 /** Register Listeners */
 registerListeners(app);
+
+// Register listeners
+app.action("start_discussion", startDiscussionCallback);
+app.view("create_discussion_room", createDiscussionRoomCallback);
 
 /** Start Bolt App */
 (async () => {

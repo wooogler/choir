@@ -449,7 +449,7 @@ const startDiscussionCallback = async ({
           text: "Start",
         },
         blocks: blocks,
-        callback_id: "start_discussion_modal",
+        callback_id: "create_discussion_room",
       },
     });
   } catch (error) {

@@ -17,14 +17,7 @@ interface Message {
   username?: string;
 }
 
-interface CommitMessage {
-  userId: string;
-  username: string;
-  text: string;
-  ts: string;
-}
-
-const startDiscussionModalCallback = async ({
+const createDiscussionRoomCallback = async ({
   ack,
   body,
   view,
@@ -79,7 +72,7 @@ const startDiscussionModalCallback = async ({
       new Set([...participants, ...filteredSelectedUsers])
     );
 
-    logger.info(`Starting discussion with users: ${allUsers.join(", ")}`);
+    logger.info(`Creating discussion with users: ${allUsers.join(", ")}`);
 
     // DM 채널 생성
     const result = await client.conversations.open({
@@ -284,8 +277,8 @@ const startDiscussionModalCallback = async ({
     // 사용이 끝난 세션 데이터 삭제
     removeSessionData(sessionId);
   } catch (error) {
-    logger.error("Error in start discussion modal submission:", error);
+    logger.error("Error in create discussion modal submission:", error);
   }
 };
 
-export default startDiscussionModalCallback;
+export default createDiscussionRoomCallback;
