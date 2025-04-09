@@ -104,3 +104,24 @@ CRITICAL RULES:
 
   return responseContent;
 }
+
+export async function classifyMessageIntent(message: string): Promise<"question" | "update_request"> {
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "system",
+        content: "Classify the user message as either a 'question' (asking for information) or 'update_request' (asking to save/store information). Respond with only 'question' or 'update_request'."
+      },
+      {
+        role: "user",
+        content: message
+      }
+    ],
+    temperature: 0.1,
+    max_tokens: 10
+  });
+
+  const result = completion.choices[0].message.content?.trim().toLowerCase();
+  return result === "update_request" ? "update_request" : "question";
+}

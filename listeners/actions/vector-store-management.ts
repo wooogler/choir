@@ -5,7 +5,7 @@ import type {
 } from "@slack/bolt";
 
 /**
- * 벡터 스토어 캐시 재구축 액션 핸들러
+ * Vector store cache rebuild action handler
  */
 export const rebuildVectorCacheAction = async ({
   ack,
@@ -15,43 +15,43 @@ export const rebuildVectorCacheAction = async ({
   await ack();
 
   try {
-    // 사용자 ID 추출
+    // Extract user ID
     const userId = body.user.id;
 
-    // 작업이 오래 걸릴 수 있다는 메시지 표시
+    // Display message indicating the operation may take time
     await client.chat.postMessage({
       channel: userId,
-      text: "벡터 스토어 캐시를 재구축하는 중입니다. 잠시만 기다려주세요...",
+      text: "Rebuilding vector store cache. Please wait...",
     });
 
-    // 서비스 로드 및 캐시 재구축
+    // Load service and rebuild cache
     const VectorStoreService = (await import("../../services/index"))
       .VectorStoreService;
     const vectorStore = VectorStoreService.getInstance();
     const result = await vectorStore.forceRebuildCache();
 
-    // 결과 보고
+    // Report results
     if (result) {
       await client.chat.postMessage({
         channel: userId,
-        text: "✅ 벡터 스토어 캐시가 성공적으로 재구축되었습니다!",
+        text: "✅ Vector store cache has been successfully rebuilt!",
       });
     } else {
       await client.chat.postMessage({
         channel: userId,
-        text: "❌ 벡터 스토어 캐시 재구축 중 문제가 발생했습니다. 로그를 확인해주세요.",
+        text: "❌ An issue occurred during vector store cache rebuild. Please check the logs.",
       });
     }
   } catch (error) {
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ 오류 발생: ${error}`,
+      text: `❌ Error occurred: ${error}`,
     });
   }
 };
 
 /**
- * 벡터 스토어 긴급 초기화 액션 핸들러
+ * Vector store emergency reset action handler
  */
 export const resetVectorStoreAction = async ({
   ack,
@@ -61,37 +61,37 @@ export const resetVectorStoreAction = async ({
   await ack();
 
   try {
-    // 사용자 ID 추출
+    // Extract user ID
     const userId = body.user.id;
 
-    // 작업이 오래 걸릴 수 있다는 메시지 표시
+    // Display message indicating the operation may take time
     await client.chat.postMessage({
       channel: userId,
-      text: "⚠️ 벡터 스토어를 완전히 초기화하고 재구축하는 중입니다. 이 작업은 몇 분 정도 소요될 수 있습니다...",
+      text: "⚠️ Completely resetting and rebuilding the vector store. This operation may take several minutes...",
     });
 
-    // 서비스 로드 및 전체 초기화 실행
+    // Load service and execute full reset
     const VectorStoreService = (await import("../../services/index"))
       .VectorStoreService;
     const vectorStore = VectorStoreService.getInstance();
     const result = await vectorStore.resetAndRebuildVectorStore();
 
-    // 결과 보고
+    // Report results
     if (result) {
       await client.chat.postMessage({
         channel: userId,
-        text: "✅ 벡터 스토어가 성공적으로 초기화되고 재구축되었습니다!",
+        text: "✅ Vector store has been successfully reset and rebuilt!",
       });
     } else {
       await client.chat.postMessage({
         channel: userId,
-        text: "❌ 벡터 스토어 초기화 및 재구축에 실패했습니다. 로그를 확인해주세요.",
+        text: "❌ Failed to reset and rebuild vector store. Please check the logs.",
       });
     }
   } catch (error) {
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ 긴급 초기화 중 오류 발생: ${error}`,
+      text: `❌ Error occurred during emergency reset: ${error}`,
     });
   }
 };

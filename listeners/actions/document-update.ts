@@ -144,7 +144,7 @@ const documentUpdateCallback = async ({
 
 export { selectUserCallback, documentUpdateCallback };
 
-// GitHub에 변경사항 적용
+// Apply changes to GitHub
 export const applySelectedToGithubAction = async ({
   ack,
   body,
@@ -158,7 +158,7 @@ export const applySelectedToGithubAction = async ({
     const value = body.actions[0].value;
     const parsedValue = JSON.parse(value || "{}");
 
-    // validMessages 예외 처리
+    // Handle validMessages exception
     let validMessages: SlackMessage[] = [];
     try {
       if (
@@ -168,47 +168,47 @@ export const applySelectedToGithubAction = async ({
         validMessages = parsedValue.validMessages;
       } else {
         console.warn(
-          "유효한 메시지 배열이 없거나 잘못된 형식입니다:",
+          "Valid message array is missing or has invalid format:",
           parsedValue.validMessages
         );
       }
     } catch (error) {
-      console.error("validMessages 파싱 중 오류 발생:", error);
+      console.error("Error parsing validMessages:", error);
     }
 
     if (!channelId) {
-      throw new Error("채널 ID를 찾을 수 없습니다");
+      throw new Error("Channel ID not found");
     }
 
-    // 사용자가 선택한 노드 ID 가져오기
+    // Get node IDs selected by user
     const selectedNodeIdsArray = getSelectedNodeIds(userId);
 
-    // 선택된 문서가 없는 경우
+    // No documents selected
     if (selectedNodeIdsArray.length === 0) {
       await client.chat.postEphemeral({
         channel: channelId,
         user: userId,
-        text: "선택된 문서가 없습니다. 업데이트할 문서를 선택해주세요.",
+        text: "No documents selected. Please select documents to update.",
       });
       return;
     }
 
-    // 저장된 documentUpdates 가져오기
+    // Get stored document updates
     const documentUpdates = getStoredDocumentUpdates(userId);
     const thread_ts = getStoredThreadTs(userId);
 
-    // 업데이트 진행 중 메시지 전송 (댓글 쓰레드에 표시)
+    // Send update in progress message (displayed in comment thread)
     await client.chat.postEphemeral({
       channel: channelId,
       user: userId,
       thread_ts: thread_ts,
-      text: "선택한 문서를 GitHub에 업데이트 중입니다...",
+      text: "Updating selected documents to GitHub...",
     });
 
-    // VectorStoreService 인스턴스 생성
+    // Create VectorStoreService instance
     const vectorStore = VectorStoreService.getInstance();
 
-    // GitHub에 변경사항 적용
+    // Apply changes to GitHub
     const results = await applySelectedToGithub({
       userId,
       channelId,
@@ -219,33 +219,33 @@ export const applySelectedToGithubAction = async ({
       validMessages,
     });
 
-    // 벡터 스토어 재구축
+    // Rebuild vector store
     await vectorStore.forceRebuildCache();
 
-    // 사용자에게 결과 전송
+    // Send results to user
     const resultMessage =
       results.length > 0
         ? results.map((r) => r.message).join("\n")
-        : "선택된 문서가 없습니다.";
+        : "No documents selected.";
 
     await client.chat.postEphemeral({
       channel: channelId,
       user: userId,
       thread_ts: thread_ts,
-      text: `*문서 업데이트 결과*\n\n${resultMessage}`,
+      text: `*Document Update Results*\n\n${resultMessage}`,
     });
 
-    // 업데이트 완료 후 선택 노드 초기화
+    // Reset selected nodes after update
     clearSelectedNodeIds(userId);
   } catch (error) {
-    console.error("선택한 문서 업데이트 중 오류 발생:", error);
+    console.error("Error updating selected documents:", error);
 
     if (body.channel?.id) {
       await client.chat.postEphemeral({
         channel: body.channel.id,
         user: body.user.id,
-        text: `문서 업데이트 중 오류가 발생했습니다: ${
-          error instanceof Error ? error.message : "알 수 없는 오류"
+        text: `Error occurred during document update: ${
+          error instanceof Error ? error.message : "Unknown error"
         }`,
       });
     }
