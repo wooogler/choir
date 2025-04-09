@@ -56,7 +56,7 @@ export const generateCompletion = async (
       },
       ...(messages as ChatCompletionMessageParam[]),
     ],
-    temperature: 0.7,
+    temperature: 0.2,
     max_tokens: 1000,
   });
 
@@ -79,9 +79,8 @@ CRITICAL RULES:
 - Preserve original sentence structure and formatting
 - Change only necessary keywords, not entire sentences
 - Do not fix grammar or style unless explicitly requested
-- Return original markdown unchanged if no substantive updates needed
-
-Return only the raw markdown with no code blocks, annotations, or explanations.`,
+- Return only the raw markdown with no code blocks, annotations, or explanations.
+- NEVER include <markdown> tags in your response.`,
       },
       {
         role: "user",
@@ -96,5 +95,12 @@ Return only the raw markdown with no code blocks, annotations, or explanations.`
     ],
   });
 
-  return completion.choices[0].message.content ?? markdown;
+  let responseContent = completion.choices[0].message.content ?? markdown;
+  
+  // Remove any markdown tags from the response
+  responseContent = responseContent.replace(/<\/?markdown>/g, '');
+  
+  console.log(responseContent);
+
+  return responseContent;
 }

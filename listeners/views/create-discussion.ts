@@ -1,5 +1,9 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
-import { getManagers, getWorkspaceId } from "../../services/slack-utils";
+import {
+  getManagers,
+  getWorkspaceId,
+  formatTimestampToDateString,
+} from "../../services/slack-utils";
 import { DocumentUpdate } from "../../services/document-store";
 import {
   DocumentDiff,
@@ -199,40 +203,19 @@ const createDiscussionRoomCallback = async ({
             text: "*Messages that influenced the document update:*",
           },
         },
+        ...validMessages.map((msg: Message) => {
+          const formattedDate = formatTimestampToDateString(msg.ts);
+          return {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*${msg.username || "User"}* • ${formattedDate}\n${
+                msg.text
+              }`,
+            },
+          };
+        }),
       ];
-
-      // validMessages 블록 생성 (문서 업데이트에 영향을 준 메시지)
-      const validMessageBlocks =
-        messagesForBlock && messagesForBlock.length > 0
-          ? messagesForBlock.map((msg: Message) => {
-              // 날짜 포맷팅 (예: 2023-05-15T14:30:00Z -> 2023년 5월 15일 14:30)
-              const date = new Date(parseInt(msg.ts) * 1000);
-              const formattedDate = `${date.getFullYear()}년 ${
-                date.getMonth() + 1
-              }월 ${date.getDate()}일 ${date.getHours()}:${date
-                .getMinutes()
-                .toString()
-                .padStart(2, "0")}`;
-
-              return {
-                type: "section",
-                text: {
-                  type: "mrkdwn",
-                  text: `*${msg.username || "User"}* • ${formattedDate}\n${
-                    msg.text
-                  }`,
-                },
-              };
-            })
-          : [
-              {
-                type: "section",
-                text: {
-                  type: "mrkdwn",
-                  text: "_No messages influenced the document update._",
-                },
-              },
-            ];
 
       // 이전 문서 업데이트에 기여한 메시지 섹션
       const previousMessagesSection = [
@@ -249,33 +232,31 @@ const createDiscussionRoomCallback = async ({
       ];
 
       // 이전 문서 업데이트에 기여한 메시지 블록 생성
-      const previousMessageBlocks = messages.map((msg: Message) => {
-        // 날짜 포맷팅 (예: 2023-05-15T14:30:00Z -> 2023년 5월 15일 14:30)
-        const date = new Date(parseInt(msg.ts) * 1000);
-        const formattedDate = `${date.getFullYear()}년 ${
-          date.getMonth() + 1
-        }월 ${date.getDate()}일 ${date.getHours()}:${date
-          .getMinutes()
-          .toString()
-          .padStart(2, "0")}`;
-
-        return {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*${msg.username}* • ${formattedDate}\n${msg.text}`,
-          },
-        };
+      const previousMessages = messages.filter((msg: Message) => {
+        const formattedDate = formatTimestampToDateString(msg.ts);
+        return formattedDate !== "Invalid date";
       });
+
+      const previousUpdateBlocks = [
+        ...previousMessagesSection,
+        ...previousMessages.map((msg: Message) => {
+          const formattedDate = formatTimestampToDateString(msg.ts);
+          return {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*${msg.username}* • ${formattedDate}\n${msg.text}`,
+            },
+          };
+        }),
+      ];
 
       // 모든 블록 결합
       const allBlocks = [
         ...fileInfoBlocks,
         ...diffBlocks,
         ...updateInfoBlocks,
-        ...validMessageBlocks,
-        ...previousMessagesSection,
-        ...previousMessageBlocks,
+        ...previousUpdateBlocks,
         {
           type: "context",
           elements: [
