@@ -5,9 +5,7 @@ import type {
   BlockAction,
   UsersSelectAction,
 } from "@slack/bolt";
-import { WebClient } from "@slack/web-api";
 import { VectorStoreService } from "../../services/index";
-import { handleDocumentSelection } from "./document-selection";
 import {
   getStoredDocumentUpdates,
   getStoredThreadTs,

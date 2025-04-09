@@ -14,7 +14,7 @@ const appMentionCallback = async ({
   try {
     const historyResult = await client.conversations.history({
       channel: event.channel,
-      limit: 3,
+      limit: 5,
     });
 
     console.log("historyResult", historyResult);

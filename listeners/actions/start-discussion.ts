@@ -9,6 +9,7 @@ import {
   getUserName,
   SlackMessage,
   Message,
+  formatTimestampToDateString,
 } from "../../services/slack-utils";
 import {
   DocumentUpdate,
@@ -206,15 +207,8 @@ const startDiscussionCallback = async ({
 
         // 메시지 블록 생성
         const messageBlocks = messages.map((msg: Message) => {
-          // 날짜 포맷팅 (예: 2023-05-15T14:30:00Z -> 2023년 5월 15일 14:30)
-          const date = new Date(parseInt(msg.ts) * 1000);
-
-          const formattedDate = `${date.getFullYear()}년 ${
-            date.getMonth() + 1
-          }월 ${date.getDate()}일 ${date.getHours()}:${date
-            .getMinutes()
-            .toString()
-            .padStart(2, "0")}`;
+          // Use the date formatting function
+          const formattedDate = formatTimestampToDateString(msg.ts);
 
           return {
             type: "section",
@@ -230,7 +224,7 @@ const startDiscussionCallback = async ({
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `*${fileName} 파일의 메시지:*`,
+              text: `*Messages in the file:*`,
             },
           },
           ...messageBlocks,
@@ -287,7 +281,7 @@ const startDiscussionCallback = async ({
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `*파일:* ${diff.fileName}\n*섹션:* ${diff.markdownSection}`,
+              text: `*File:* ${diff.fileName}\n*Section:* ${diff.markdownSection}`,
             },
           },
           {
@@ -323,21 +317,21 @@ const startDiscussionCallback = async ({
     ];
 
     // 문서 변경사항 블록이 있는 경우 추가
-    if (documentDiffBlocks.length > 0) {
-      blocks.push(
-        {
-          type: "divider",
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: "*Document Changes*",
-          },
-        },
-        ...documentDiffBlocks
-      );
-    }
+    // if (documentDiffBlocks.length > 0) {
+    //   blocks.push(
+    //     {
+    //       type: "divider",
+    //     },
+    //     {
+    //       type: "section",
+    //       text: {
+    //         type: "mrkdwn",
+    //         text: "*Document Changes*",
+    //       },
+    //     },
+    //     ...documentDiffBlocks
+    //   );
+    // }
 
     // 관리자 정보 블록 추가
     blocks.push(
@@ -411,7 +405,7 @@ const startDiscussionCallback = async ({
       }
     );
 
-    // 이전 문서 업데이트 대화 내용 블록 추가
+    //이전 문서 업데이트 대화 내용 블록 추가
     if (commitHistoryBlocks.length > 0) {
       blocks.push(
         {
