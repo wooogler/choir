@@ -4,9 +4,12 @@ import {
   formatSlackMessageBlock,
   type SlackMessage,
   getStoredMessages,
+  getWorkspaceId,
+  getManagers,
 } from "../../services/slack-utils";
 import { VectorStoreService } from "../../services/index";
 import { classifyMessageIntent, generateCompletion } from "../../services/completions";
+import { generateSessionId, storeSessionData, SessionType } from "../../services/session-store";
 
 const appMentionCallback = async ({
   client,
@@ -59,11 +62,115 @@ async function handleQuestionMessage(client: any, event: any, userMessage: strin
       relevantDocs
     );
 
-    // Send the response to the main channel (not in thread)
+    // Extract all unique user IDs from the conversation history
+    const historyUsers = new Set<string>();
+    historyUsers.add(event.user); // Add the current user who triggered the mention
+    
+    // Add all other users from conversation history
+    (historyResult.messages || []).forEach((msg: any) => {
+      if (msg.user && typeof msg.user === 'string') {
+        historyUsers.add(msg.user);
+      }
+    });
+
+    // Convert history messages to validMessages format
+    const validMessages = (historyResult.messages || []).map((msg: any) => ({
+      userId: msg.user || msg.bot_id || "unknown",
+      username: msg.username || (msg.bot_id ? "CHOIR" : "User"), // Use "CHOIR" for bot messages
+      text: msg.text,
+      ts: msg.ts
+    }));
+    
+    // Make sure the current mention is included (it might be too recent for history)
+    const currentMessageIncluded = validMessages.some((msg: any) => msg.ts === event.ts);
+    if (!currentMessageIncluded) {
+      validMessages.push({
+        userId: event.user,
+        username: "User",
+        text: userMessage,
+        ts: event.ts,
+      });
+    }
+
+    // Add the bot's current response to validMessages as well
+    validMessages.push({
+      userId: "bot", // Use a placeholder for bot ID
+      username: "CHOIR",
+      text: response,
+      ts: (Math.floor(Date.now() / 1000) + "." + Date.now() % 1000), // Slack timestamp format: seconds.milliseconds
+    });
+
+    // Sort all messages by timestamp (descending) so latest messages appear at the top
+    validMessages.sort((a: SlackMessage, b: SlackMessage) => {
+      const tsA = parseFloat(a.ts);
+      const tsB = parseFloat(b.ts);
+      return tsB - tsA; // Descending order (newest first)
+    });
+
+    // Get workspace ID and managers list
+    const workspaceId = await getWorkspaceId(client);
+    const managers = getManagers(workspaceId);
+    
+    // Format managers for display
+    let managersText = "";
+    if (managers && managers.length > 0) {
+      managersText = managers.map((uid: string) => `<@${uid}>`).join(", ");
+    } else {
+      managersText = "No managers available";
+    }
+
+    // Generate session ID
+    const sessionId = generateSessionId("consultation");
+
+    // Store session data
+    storeSessionData(
+      sessionId,
+      {
+        stakeholders: Array.from(historyUsers),
+        validMessages: validMessages,
+      },
+      SessionType.CONSULTATION
+    );
+
+    // Send the response to the main channel with the button
+    const mainBlocks = [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: response
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `Would you like to discuss this question with managers: ${managersText}`
+        }
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Ask Direct Question",
+              emoji: true,
+            },
+            style: "primary",
+            action_id: "start_consultation",
+            value: sessionId,
+          },
+        ],
+      }
+    ];
+
     const result = await client.chat.postMessage({
       channel: event.channel,
       text: response,
       mrkdwn: true,
+      blocks: mainBlocks
     });
 
     // Add document references in thread if available
@@ -103,52 +210,6 @@ async function handleQuestionMessage(client: any, event: any, userMessage: strin
         text: `*Reference Document Information:*\n\n${documentInfo}\n\nFor more detailed information, please check the links above.`,
         mrkdwn: true,
       });
-
-      // Add "Ask Direct Question" button in the same thread
-      try {
-        await client.chat.postMessage({
-          channel: event.channel,
-          thread_ts: result.ts,
-          blocks: [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: "Would you like to ask a question about this document?",
-              },
-            },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: {
-                    type: "plain_text",
-                    text: "Ask Direct Question",
-                    emoji: true,
-                  },
-                  style: "primary",
-                  action_id: "start_consultation",
-                  value: JSON.stringify({
-                    stakeholders: [event.user],
-                    validMessages: [
-                      {
-                        userId: event.user,
-                        username: "User",
-                        text: userMessage,
-                        ts: event.ts,
-                      },
-                    ],
-                  }),
-                },
-              ],
-            },
-          ],
-        });
-      } catch (error) {
-        logger.error("Error adding discussion button:", error);
-        // Continue even if button addition fails
-      }
     }
   } catch (error) {
     logger.error("Error handling question message:", error);

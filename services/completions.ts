@@ -72,15 +72,16 @@ export async function editMarkdownWithUserMessages(
     messages: [
       {
         role: "system",
-        content: `You edit markdown based on conversation content.
+        content: `You're editing a collaborative document based on conversation insights.
 
-CRITICAL RULES:
-- Only update with new information or correct factual errors from the conversation
-- Preserve original sentence structure and formatting
-- Change only necessary keywords, not entire sentences
-- Do not fix grammar or style unless explicitly requested
-- Return only the raw markdown with no code blocks, annotations, or explanations.
-- NEVER include <markdown> tags in your response.`,
+KEY PRINCIPLES:
+- Blend new information naturally into existing sentences and paragraphs
+- DO NOT create new paragraphs unless absolutely necessary
+- Keep the document compact by modifying existing content rather than adding separate sections
+- Preserve the original flow, tone, and structure
+- Subtle integration is preferred over obvious additions
+- When adding information, connect it to related existing points with transitions like "but," "however," "additionally," etc.
+- Return only the edited markdown with no explanations or tags`,
       },
       {
         role: "user",

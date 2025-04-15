@@ -90,7 +90,7 @@ class GithubService {
     owner,
     repo,
     path,
-    ref = "main",
+    ref = "master",
   }: {
     owner: string;
     repo: string;
@@ -455,7 +455,7 @@ class GithubService {
     owner,
     repo,
     path,
-    ref = "main",
+    ref = "master",
   }: {
     owner: string;
     repo: string;

@@ -9,18 +9,17 @@ import {
 } from "./services/slack-utils";
 import GithubService from "./services/github";
 import startDiscussionCallback from "./listeners/actions/start-discussion";
-import createDiscussionRoomCallback from "./listeners/views/create-discussion";
 import startConsultationCallback from "./listeners/actions/start-consultation";
-import createConsultationRoomCallback from "./listeners/views/create-consultation";
 
 dotenv.config();
 
 /** Initialization */
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
-  socketMode: true,
-  appToken: process.env.SLACK_APP_TOKEN,
+  socketMode: false,
+  signingSecret: process.env.SLACK_SIGNING_SECRET,
   logLevel: LogLevel.DEBUG,
+  appToken: process.env.SLACK_APP_TOKEN,
 });
 
 const githubService = GithubService.getInstance();
@@ -29,17 +28,75 @@ const vectorStore = VectorStoreService.getInstance();
 /** Register Listeners */
 registerListeners(app);
 
+// Register app home event
+app.event('app_home_opened', async ({ event, client, logger }) => {
+  try {
+    await client.views.publish({
+      user_id: event.user,
+      view: {
+        type: 'home',
+        blocks: [
+          {
+            type: 'header',
+            text: {
+              type: 'plain_text',
+              text: 'CHOIR - Your AI Assistant',
+              emoji: true
+            }
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '*Welcome to CHOIR!*\n\nCHOIR is your AI-powered assistant that helps you find information and answer questions.'
+            }
+          },
+          {
+            type: 'divider'
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '*How to use CHOIR:*\n\n• Send me a DM to ask questions\n• Mention me in any channel with @CHOIR\n• I\'ll help you find relevant information and answer your questions'
+            }
+          },
+          {
+            type: 'divider'
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '*Features:*\n\n• Answer questions based on documentation\n• Provide relevant document references\n• Start discussions with team members\n• Help with technical queries'
+            }
+          }
+        ]
+      }
+    });
+  } catch (error) {
+    logger.error('Error publishing home tab:', error);
+  }
+});
+
 // Register listeners
 app.action("start_discussion", startDiscussionCallback);
-app.view("create_discussion_room", createDiscussionRoomCallback);
 app.action("start_consultation", startConsultationCallback);
-app.view("create_consultation_room", createConsultationRoomCallback);
 
 /** Start Bolt App */
 (async () => {
   try {
     // 워크스페이스 ID 가져오기
     const workspaceId = await getWorkspaceId(app.client);
+
+    // 개발자를 초기 관리자로 설정
+    const developerUserId = process.env.DEVELOPER_USER_ID;
+    if (developerUserId) {
+      setupInitialManager(workspaceId, developerUserId);
+      app.logger.info(`Initialized developer (${developerUserId}) as a manager`);
+    } else {
+      app.logger.warn("DEVELOPER_USER_ID environment variable is not set");
+    }
 
     // 워크스페이스 소유자를 초기 관리자로 설정
     try {
@@ -85,14 +142,14 @@ app.view("create_consultation_room", createConsultationRoomCallback);
 
       // 기본 저장소 설정 (예시 또는 개발용)
       const markdownFiles = await githubService.getAllMarkdownFiles({
-        owner: "wooogler",
-        repo: "choir_docs",
+        owner: "echo-lab",
+        repo: "assets",
         path: "",
       });
 
       await vectorStore.setMarkdownFiles(markdownFiles, {
-        owner: "wooogler",
-        repo: "choir_docs",
+        owner: "echo-lab",
+        repo: "assets",
       });
     }
 
