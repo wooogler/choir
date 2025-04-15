@@ -8,11 +8,15 @@ import {
   removeSessionData,
   SessionType,
 } from "../../services/session-store";
+import {
+  formatTimestampToDateString,
+} from "../../services/slack-utils";
 
 interface MessageData {
   username: string;
   text: string;
   ts?: string;
+  userId?: string;
 }
 
 const createConsultationRoomCallback = async ({
@@ -103,13 +107,37 @@ const createConsultationRoomCallback = async ({
 
     // 포함된 메시지가 있으면 스레드로 추가
     if (sessionData.validMessages && sessionData.validMessages.length > 0) {
-      const messagesContent = sessionData.validMessages
-        .map((msg: MessageData) => `*${msg.username}*\n${msg.text}`)
-        .join("\n\n");
+      // 메시지 블록 생성
+      const messageBlocks = [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "*Referenced Messages:*",
+          },
+        },
+        {
+          type: "divider",
+        },
+      ];
 
+      // 각 메시지를 블록으로 추가 (최신 메시지가 위에 오도록 역순 정렬)
+      // 배열을 복사하여 원본 배열을 변경하지 않고 역순으로 처리
+      [...sessionData.validMessages].reverse().forEach((msg: MessageData) => {
+        const formattedDate = msg.ts ? formatTimestampToDateString(msg.ts) : "No date";
+        messageBlocks.push({
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*${msg.username}* • ${formattedDate}\n${msg.text}`,
+          },
+        });
+      });
+
+      // 메시지 블록 전송
       await client.chat.postMessage({
         channel: channelId,
-        text: `*Referenced Messages:*\n\n${messagesContent}`,
+        blocks: messageBlocks,
         mrkdwn: true,
       });
     }

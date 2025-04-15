@@ -9,6 +9,7 @@ import {
   getUserName,
   SlackMessage,
   Message,
+  formatTimestampToDateString,
 } from "../../services/slack-utils";
 import {
   generateSessionId,
@@ -26,12 +27,22 @@ const startConsultationCallback = async ({
 
   try {
     const rawValue = body.actions[0].value;
-    logger.info("rawValue", rawValue);
+    logger.info("rawValue type:", typeof rawValue);
+    logger.info("rawValue content:", rawValue);
     if (!rawValue) {
       throw new Error("No value provided");
     }
 
-    const value = JSON.parse(rawValue);
+    let value;
+    try {
+      value = JSON.parse(rawValue);
+    } catch (e) {
+      // If parsing fails, treat it as a direct consultation ID
+      value = {
+        stakeholders: [body.user.id],
+        validMessages: []
+      };
+    }
     const { stakeholders, validMessages } = value;
     const uniqueStakeholders = Array.from(new Set(stakeholders)) as string[];
 
@@ -109,29 +120,104 @@ const startConsultationCallback = async ({
       {
         type: "divider",
       },
-      {
-        type: "input",
-        block_id: "consultation_topic",
-        element: {
-          type: "plain_text_input",
-          action_id: "topic_input",
-          placeholder: {
-            type: "plain_text",
-            text: "Enter your question",
-          },
-          initial_value:
-            validMessages && validMessages.length > 0
-              ? validMessages
-                  .find((msg: SlackMessage) => msg.userId === currentUser)
-                  ?.text.substring(0, 300) || ""
-              : "",
-        },
-        label: {
-          type: "plain_text",
-          text: "Question",
-        },
-      },
     ];
+
+    // Check if there's only one message or multiple messages
+    if (!validMessages || validMessages.length <= 1) {
+      // Single message mode - Show input field for question
+      const initialMessage = validMessages && validMessages.length > 0 
+        ? validMessages.find((msg: SlackMessage) => msg.userId === currentUser)?.text.substring(0, 300) || ""
+        : "";
+
+      blocks.push(
+        {
+          type: "input",
+          block_id: "consultation_topic",
+          element: {
+            type: "plain_text_input",
+            action_id: "topic_input",
+            placeholder: {
+              type: "plain_text",
+              text: "Enter your question",
+            },
+            initial_value: initialMessage,
+          },
+          label: {
+            type: "plain_text",
+            text: "Question",
+          },
+        }
+      );
+    } else {
+      // Multiple messages mode - Display conversation history
+      blocks.push(
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "*Conversation History*",
+          },
+        }
+      );
+
+      // Format and add previous messages
+      const messageBlocks = await Promise.all(
+        validMessages.map(async (msg: SlackMessage) => {
+          try {
+            // Get user name
+            let username = "Unknown User";
+            try {
+              const userInfo = await client.users.info({ user: msg.userId });
+              username = userInfo.user?.real_name || userInfo.user?.name || msg.username || "Unknown User";
+            } catch (error) {
+              logger.error(`Error fetching user info for ${msg.userId}:`, error);
+              username = msg.username || "Unknown User";
+            }
+
+            // Format timestamp
+            const formattedDate = formatTimestampToDateString(msg.ts);
+
+            return {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `*${username}* • ${formattedDate}\n${msg.text}`,
+              },
+            };
+          } catch (error) {
+            logger.error(`Error formatting message for ${msg.userId}:`, error);
+            return null;
+          }
+        }).reverse()
+      );
+
+      // Add the message blocks, filtering out any null entries
+      blocks.push(...messageBlocks.filter((block) => block !== null));
+
+      // Add input for follow-up question
+      blocks.push(
+        {
+          type: "divider",
+        },
+        {
+          type: "input",
+          block_id: "consultation_topic",
+          element: {
+            type: "plain_text_input",
+            action_id: "topic_input",
+            placeholder: {
+              type: "plain_text",
+              text: "Enter your follow-up question",
+            },
+            initial_value: "",
+          },
+          label: {
+            type: "plain_text",
+            text: "Follow-up Question",
+          },
+        }
+      );
+    }
 
     // 관리자 정보 블록 추가
     blocks.push(

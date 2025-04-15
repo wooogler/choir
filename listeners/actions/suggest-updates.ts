@@ -175,7 +175,7 @@ const suggestUpdatesCallback = async ({
     console.log("벡터 스토어 상태 정상, 유사도 검색 실행");
     const searchResults = await vectorStore.similaritySearch(
       validMessages.map((msg) => msg.text).join("\n"),
-      3
+      5
     );
 
     // 검색 결과가 없는 경우 처리
@@ -192,7 +192,7 @@ const suggestUpdatesCallback = async ({
     // 상위 3개 문서를 처리 (또는 검색 결과의 모든 문서)
     const topDocuments = searchResults.slice(
       0,
-      Math.min(3, searchResults.length)
+      Math.min(5, searchResults.length)
     );
     console.log(`처리할 상위 문서: ${topDocuments.length}개`);
 
@@ -230,9 +230,6 @@ const suggestUpdatesCallback = async ({
 
     // documentUpdates 생성
     const documentUpdates: DocumentUpdate[] = [];
-
-    // GitHub 서비스 인스턴스
-    const githubService = GithubService.getInstance();
 
     // 각 파일별로 처리
     for (const [fileName, group] of fileGroups.entries()) {

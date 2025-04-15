@@ -141,7 +141,7 @@ export const testGithubConnectionCallback = async ({
       repo: repoInfo.repo,
     });
 
-    if (testResult.success) {
+    if (testResult) {
       // 연결 성공 시 저장소 정보 저장
       storeGithubRepo(workspaceId, repoInfo);
 
@@ -149,7 +149,7 @@ export const testGithubConnectionCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: `🎉 ${testResult.message}\n\n저장소가 성공적으로 연결되었습니다.`,
+        text: `🎉 저장소가 성공적으로 연결되었습니다.`,
       });
 
       // 홈 화면 새로고침
@@ -173,7 +173,7 @@ export const testGithubConnectionCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: `❌ ${testResult.message}`,
+        text: `❌ ${testResult}`,
       });
     }
   } catch (error) {

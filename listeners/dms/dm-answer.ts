@@ -2,6 +2,7 @@ import type { AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
 import { VectorStoreService } from "../../services/index";
 import { generateCompletion } from "../../services/completions";
 import { getManagers, getWorkspaceId } from "../../services/slack-utils";
+import { generateSessionId, storeSessionData, SessionType } from "../../services/session-store";
 
 const dmCallback = async ({
   client,
@@ -84,6 +85,26 @@ const dmCallback = async ({
         });
 
         try {
+          // Generate session ID
+          const sessionId = generateSessionId("consultation");
+
+          // Store session data
+          storeSessionData(
+            sessionId,
+            {
+              stakeholders: [userId],
+              validMessages: [
+                {
+                  userId: userId,
+                  username: "User",
+                  text: userMessage,
+                  ts: event.ts,
+                },
+              ],
+            },
+            SessionType.CONSULTATION
+          );
+
           await client.chat.postMessage({
             channel: event.channel,
             blocks: [
@@ -106,17 +127,7 @@ const dmCallback = async ({
                     },
                     style: "primary",
                     action_id: "start_consultation",
-                    value: JSON.stringify({
-                      stakeholders: [userId],
-                      validMessages: [
-                        {
-                          userId: userId,
-                          username: "User",
-                          text: userMessage,
-                          ts: event.ts,
-                        },
-                      ],
-                    }),
+                    value: sessionId,
                   },
                 ],
               },
