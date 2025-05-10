@@ -100,8 +100,7 @@ KEY PRINCIPLES:
   
   // Remove any markdown tags from the response
   responseContent = responseContent.replace(/<\/?markdown>/g, '');
-  
-  console.log(responseContent);
+
 
   return responseContent;
 }

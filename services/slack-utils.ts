@@ -1,5 +1,7 @@
 import type { WebClient } from "@slack/web-api";
 import type { RichTextElement } from "./slack-diff";
+import slugify from 'slugify';
+
 export interface SlackMessage {
   userId: string;
   username: string;
@@ -415,4 +417,29 @@ export function formatTimestampToDateString(timestamp: string): string {
     .getHours()
     .toString()
     .padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+}
+
+// 섹션 이름을 GitBook URL 형식으로 변환하는 함수
+export function createGitbookSectionLink(sectionName: string, fileName?: string): string {
+  if (!sectionName) return "";
+  
+  // 파일 이름이 없는 경우 기본 URL 반환
+  if (!fileName) {
+    return `https://choir.gitbook.io/echolab-assets/#${sectionName.toLowerCase().replace(/\s+/g, '-')}`;
+  }
+  
+  // 파일 이름에서 확장자 제거 후 GitBook 형식으로 변환
+  const formattedFileName = fileName
+    .replace(/\.md$/, '')
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+  
+  // 섹션 이름을 GitBook 형식으로 변환
+  const formattedSectionName = sectionName
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/\./g, '.')  // 마침표 유지
+    .replace(/-/g, '-');  // 하이픈 유지
+  
+  return `https://choir.gitbook.io/echolab-assets/${formattedFileName}#${formattedSectionName}`;
 }

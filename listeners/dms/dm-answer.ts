@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
 import { VectorStoreService } from "../../services/index";
 import { generateCompletion } from "../../services/completions";
-import { getManagers, getWorkspaceId } from "../../services/slack-utils";
+import { getManagers, getWorkspaceId, createGitbookSectionLink } from "../../services/slack-utils";
 import { generateSessionId, storeSessionData, SessionType } from "../../services/session-store";
 
 const dmCallback = async ({
@@ -49,14 +49,15 @@ const dmCallback = async ({
       // Create a thread with relevant document information
       if (result.ts && relevantDocs.length > 0) {
         // Format document information for the thread
+
         const documentInfo = relevantDocs
           .map((doc, index) => {
             const metadata = doc.metadata;
             const sectionInfo = metadata.sectionName
               ? `*Section:* ${metadata.sectionName}\n`
               : "";
-            const gitbookLink = metadata.gitbookSectionLink
-              ? `*GitBook Link:* <${metadata.gitbookSectionLink}|${
+            const gitbookLink = metadata.sectionName
+              ? `*GitBook Link:* <${createGitbookSectionLink(metadata.sectionName, metadata.fileName)}|${
                   metadata.sectionName || "View Document"
                 }>\n`
               : "";
