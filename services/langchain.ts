@@ -25,7 +25,6 @@ export interface DocumentMetadata {
   nodeId: string;
   sectionId?: string;
   sectionName?: string;
-  gitbookSectionLink?: string; // 추가: GitBook 섹션 링크
   nodeType: string;
   githubUrl: string;
   listItemIndex?: number;
@@ -141,7 +140,7 @@ export function createDocumentsFromTree(
       const entities = extractEntities(text);
 
       // 섹션 이름과 GitBook 링크 가져오기
-      const { sectionName, gitbookSectionLink } = getSectionName(
+      const { sectionName } = getSectionName(
         paraNode,
         headingMap
       );
@@ -166,7 +165,6 @@ export function createDocumentsFromTree(
               nodeId,
               sectionId: paraNode.sectionId,
               sectionName,
-              gitbookSectionLink,
               nodeType: "paragraph",
               githubUrl,
               headingPath,
@@ -196,7 +194,7 @@ export function createDocumentsFromTree(
       const entities = extractEntities(text);
 
       // 섹션 이름과 GitBook 링크 가져오기
-      const { sectionName, gitbookSectionLink } = getSectionName(
+      const { sectionName } = getSectionName(
         listItemNode,
         headingMap
       );
@@ -212,7 +210,6 @@ export function createDocumentsFromTree(
             nodeId,
             sectionId: listItemNode.sectionId,
             sectionName,
-            gitbookSectionLink,
             nodeType: "listItem",
             listItemIndex: listItemNode.listItemIndex,
             githubUrl,
@@ -241,7 +238,7 @@ export function createDocumentsFromTree(
       const entities = extractCodeEntities(text, codeNode.lang || "");
 
       // 섹션 이름과 GitBook 링크 가져오기
-      const { sectionName, gitbookSectionLink } = getSectionName(
+      const { sectionName } = getSectionName(
         codeNode,
         headingMap
       );
@@ -267,7 +264,6 @@ export function createDocumentsFromTree(
               nodeId,
               sectionId: codeNode.sectionId,
               sectionName,
-              gitbookSectionLink,
               nodeType: "code",
               githubUrl,
               headingPath,
@@ -840,33 +836,16 @@ function createSectionSummaryDocuments(
   return documents;
 }
 
-// 섹션 이름 가져오기 함수 추가
+// 섹션 이름 가져오기 함수 수정
 function getSectionName(
   node: ExtendedNode,
   headingMap: Map<string, string>
-): { sectionName: string | undefined; gitbookSectionLink: string | undefined } {
+): { sectionName: string | undefined } {
   let sectionName: string | undefined;
-  let gitbookSectionLink: string | undefined;
 
   if (node.sectionId && headingMap.has(node.sectionId)) {
     sectionName = headingMap.get(node.sectionId);
-    if (sectionName) {
-      gitbookSectionLink = createGitbookSectionLink(sectionName);
-    }
   }
 
-  return { sectionName, gitbookSectionLink };
-}
-
-// 섹션 이름을 GitBook URL 형식으로 변환하는 함수
-function createGitbookSectionLink(sectionName: string): string {
-  if (!sectionName) return "";
-
-  // 섹션 이름을 소문자로 변환하고 공백을 하이픈으로 치환
-  const formattedName = sectionName
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, ""); // 특수문자 제거
-
-  return `https://choir.gitbook.io/choir-docs#${formattedName}`;
+  return { sectionName };
 }

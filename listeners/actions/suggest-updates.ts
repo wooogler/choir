@@ -49,7 +49,6 @@ const suggestUpdatesCallback = async ({
 
     // value 파싱
     const rawValue = body.actions[0].value;
-    console.log("rawValue", rawValue);
     let currentIndex = 0;
     let validMessages: SlackMessage[] = [];
 
@@ -192,7 +191,7 @@ const suggestUpdatesCallback = async ({
     // 상위 3개 문서를 처리 (또는 검색 결과의 모든 문서)
     const topDocuments = searchResults.slice(
       0,
-      Math.min(5, searchResults.length)
+      Math.min(3, searchResults.length)
     );
     console.log(`처리할 상위 문서: ${topDocuments.length}개`);
 
@@ -428,8 +427,8 @@ const suggestUpdatesCallback = async ({
                 },
                 value: JSON.stringify({
                   index: index,
-                  fileName: doc.fileName,
-                  githubUrl: doc.githubUrl,
+                  // fileName: doc.fileName,
+                  // githubUrl: doc.githubUrl,
                   nodeId: doc.nodeId,
                 }),
               },
@@ -442,8 +441,8 @@ const suggestUpdatesCallback = async ({
                 },
                 value: JSON.stringify({
                   index: index,
-                  fileName: doc.fileName,
-                  githubUrl: doc.githubUrl,
+                  // fileName: doc.fileName,
+                  // githubUrl: doc.githubUrl,
                   nodeId: doc.nodeId,
                 }),
               },

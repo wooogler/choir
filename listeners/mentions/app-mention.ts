@@ -6,6 +6,7 @@ import {
   getStoredMessages,
   getWorkspaceId,
   getManagers,
+  createGitbookSectionLink,
 } from "../../services/slack-utils";
 import { VectorStoreService } from "../../services/index";
 import { classifyMessageIntent, generateCompletion } from "../../services/completions";
@@ -182,8 +183,8 @@ async function handleQuestionMessage(client: any, event: any, userMessage: strin
           const sectionInfo = metadata.sectionName
             ? `*Section:* ${metadata.sectionName}\n`
             : "";
-          const gitbookLink = metadata.gitbookSectionLink
-            ? `*GitBook Link:* <${metadata.gitbookSectionLink}|${
+          const gitbookLink = metadata.sectionName
+            ? `*GitBook Link:* <${createGitbookSectionLink(metadata.sectionName, metadata.fileName)}|${
                 metadata.sectionName || "View Document"
               }>\n`
             : "";

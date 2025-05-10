@@ -141,7 +141,7 @@ class GithubService {
                   fileData.content,
                   "base64"
                 ).toString("utf-8");
-                const tree = parseMarkdownToTree(content);
+                const tree = parseMarkdownToTree(content, item.name);
 
                 allMarkdownFiles.push({
                   name: item.name,
@@ -327,7 +327,7 @@ class GithubService {
               message: message,
               description: description,
               date: commit.commit.author?.date ?? "",
-              commitInfo: commitInfo,
+              commitInfo,
             };
           }
         )
@@ -479,12 +479,12 @@ class GithubService {
       }
 
       const content = Buffer.from(fileData.content, "base64").toString("utf-8");
-      const tree = parseMarkdownToTree(content);
+      const tree = parseMarkdownToTree(content, path.split("/").pop() || "");
 
       const markdownFile: MarkdownFile = {
         name: fileData.name,
         path: fileData.path,
-        content: content,
+        content,
         githubUrl: fileData.html_url,
         tree,
       };

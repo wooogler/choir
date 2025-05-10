@@ -21,6 +21,7 @@ export interface ExtendedNode extends Node {
   sectionLevel?: number;
   isListItem?: boolean;
   listItemIndex?: number;
+  fileName?: string;
 }
 
 /**
@@ -52,7 +53,7 @@ function generateNodeId(node: Node, prefix = ""): string {
 /**
  * 마크다운을 파싱하여 DocumentTree로 변환
  */
-export function parseMarkdownToTree(markdown: string): DocumentTree {
+export function parseMarkdownToTree(markdown: string, fileName?: string): DocumentTree {
   // 마크다운을 MDAST로 파싱
   const processor = unified().use(remarkParse);
   const root = processor.parse(markdown) as Root;
@@ -79,6 +80,11 @@ export function parseMarkdownToTree(markdown: string): DocumentTree {
 
     // 노드에 고유 ID 부여
     extNode.id = generateNodeId(node);
+
+    // fileName 설정
+    if (fileName) {
+      extNode.fileName = fileName;
+    }
 
     // 부모 ID 설정
     if (parent) {

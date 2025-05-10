@@ -142,13 +142,13 @@ app.action("start_consultation", startConsultationCallback);
 
       // 기본 저장소 설정 (예시 또는 개발용)
       const markdownFiles = await githubService.getAllMarkdownFiles({
-        owner: "echo-lab",
+        owner: "wooogler",
         repo: "assets",
         path: "",
       });
 
       await vectorStore.setMarkdownFiles(markdownFiles, {
-        owner: "echo-lab",
+        owner: "wooogler",
         repo: "assets",
       });
     }
