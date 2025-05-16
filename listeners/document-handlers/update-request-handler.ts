@@ -1,5 +1,12 @@
-import { createSlackMessageWithName, formatSlackMessageBlock, type SlackMessage } from "../../../services/slack-utils";
+import type { SlackMessage } from "../../services/slack-utils";
+import {
+  createSlackMessageWithName,
+  formatSlackMessageBlock,
+} from "../../services/slack-utils";
 
+/**
+ * 업데이트 요청 메시지 처리
+ */
 export async function handleUpdateRequestMessage(client: any, event: any, logger: any) {
   try {
     const historyResult = await client.conversations.history({
@@ -19,7 +26,7 @@ export async function handleUpdateRequestMessage(client: any, event: any, logger
         slackMessages.map(formatSlackMessageBlock)
       );
 
-      // Convert checkbox options to Slack API format
+      // 체크박스 옵션 Slack API 형식으로 변환
       const checkboxOptions = messageOptions.map((option) => ({
         text: option.text,
         value: option.value,
@@ -30,7 +37,7 @@ export async function handleUpdateRequestMessage(client: any, event: any, logger
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "*Select Messages to Save*",
+            text: "*저장할 메시지 선택*",
           },
         },
         {
@@ -47,17 +54,19 @@ export async function handleUpdateRequestMessage(client: any, event: any, logger
         },
       ];
 
+      // 채널인 경우 스레드로 메시지 전송, DM인 경우 바로 전송
       await client.chat.postMessage({
         channel: event.channel,
-        thread_ts: event.ts,
-        text: `<@${event.user}> requested CHOIR to edit the document.`,
+        ...(event.channel_type !== "im" && event.ts ? { thread_ts: event.ts } : {}),
+        text: `<@${event.user}>님이 CHOIR에 문서 편집을 요청했습니다.`,
       });
 
+      // 사용자에게만 보이는 임시 메시지 전송
       await client.chat.postEphemeral({
         channel: event.channel,
         user: event.user ?? "unknown",
-        thread_ts: event.ts,
-        text: "Please select the messages you want to save.",
+        ...(event.channel_type !== "im" && event.ts ? { thread_ts: event.ts } : {}),
+        text: "저장할 메시지를 선택해주세요.",
         blocks: [
           ...messageBlocks,
           {
@@ -67,7 +76,7 @@ export async function handleUpdateRequestMessage(client: any, event: any, logger
                 type: "button",
                 text: {
                   type: "plain_text",
-                  text: "Suggest Document Updates",
+                  text: "문서 업데이트 제안",
                 },
                 action_id: "suggest_updates",
               },
@@ -75,7 +84,10 @@ export async function handleUpdateRequestMessage(client: any, event: any, logger
           },
         ],
       });
+
+      return true;
     }
+    return false;
   } catch (error) {
     logger.error("Error handling update request message:", error);
     throw error;
