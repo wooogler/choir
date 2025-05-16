@@ -10,24 +10,24 @@ import {
   SlackMessage,
   Message,
   formatTimestampToDateString,
-} from "../../services/slack-utils";
+} from "services/slack-utils";
 import {
   DocumentUpdate,
   getSelectedNodeIds,
   getStoredDocumentUpdates,
-} from "../../services/document-store";
-import GithubService from "../../services/github";
-import { VectorStoreService } from "../../services";
+} from "services/document-store";
+import GithubService from "services/github";
+import { VectorStoreService } from "services";
 import {
   groupNodesByFile,
   processFileChanges,
   generateDocumentDiffs,
-} from "../../services/document-util";
+} from "services/document-util";
 import {
   generateSessionId,
   storeSessionData,
   SessionType,
-} from "../../services/session-store";
+} from "services/session-store";
 
 const startDiscussionCallback = async ({
   ack,

@@ -1,11 +1,11 @@
-import type { AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
+import type { App, AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
 import {
   getManagers,
   isManager,
   getWorkspaceId,
   isWorkspaceOwner,
   getGithubRepo,
-} from "../../services/slack-utils";
+} from "../services/slack-utils";
 
 const appHomeOpenedCallback = async ({
   client,
@@ -250,7 +250,7 @@ const appHomeOpenedCallback = async ({
                 },
                 text: {
                   type: "mrkdwn",
-                  text: "Do you want to grant manager permission to the selected user?",
+                  text: "Are you sure you want to grant manager permission to the selected user?",
                 },
                 confirm: {
                   type: "plain_text",
@@ -268,119 +268,31 @@ const appHomeOpenedCallback = async ({
           type: "divider",
         }
       );
-
-      // Add vector store management section
-      managerManagementBlocks.push(
-        {
-          type: "header",
-          text: {
-            type: "plain_text",
-            text: "🔍 Vector Store Management",
-            emoji: true,
-          },
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: "You can use vector store diagnosis and recovery features. Use these when there are issues with document search or update suggestion features.",
-          },
-        },
-        {
-          type: "actions",
-          elements: [
-            {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: "Vector Store Diagnosis",
-                emoji: true,
-              },
-              style: "primary",
-              action_id: "diagnose_vector_store",
-            },
-            {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: "Rebuild Cache",
-                emoji: true,
-              },
-              action_id: "rebuild_vector_cache",
-              confirm: {
-                title: {
-                  type: "plain_text",
-                  text: "Rebuild Cache",
-                },
-                text: {
-                  type: "mrkdwn",
-                  text: "Do you want to rebuild the vector store cache? This process may take a few minutes.",
-                },
-                confirm: {
-                  type: "plain_text",
-                  text: "Rebuild",
-                },
-                deny: {
-                  type: "plain_text",
-                  text: "Cancel",
-                },
-              },
-            },
-            {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: "Emergency Reset",
-                emoji: true,
-              },
-              style: "danger",
-              action_id: "reset_vector_store",
-              confirm: {
-                title: {
-                  type: "plain_text",
-                  text: "Emergency Reset",
-                },
-                text: {
-                  type: "mrkdwn",
-                  text: "⚠️ Do you want to completely reset and rebuild the vector store? This action cannot be undone and may take a few minutes.",
-                },
-                confirm: {
-                  type: "plain_text",
-                  text: "Reset",
-                },
-                deny: {
-                  type: "plain_text",
-                  text: "Cancel",
-                },
-              },
-            },
-          ],
-        },
-        {
-          type: "divider",
-        }
-      );
     }
 
-    // Final home view blocks
+    // Combine all blocks
     const blocks = [
       ...homeBlocks,
-      ...githubBlocks,
       ...managerManagementBlocks,
       ...managerBlocks,
+      ...githubBlocks,
     ];
 
-    // Publish home view
+    // Publish the view
     await client.views.publish({
       user_id: event.user,
       view: {
         type: "home",
-        blocks: blocks,
+        blocks,
       },
     });
   } catch (error) {
-    logger.error(error);
+    logger.error("Error publishing home view:", error);
   }
 };
 
-export default appHomeOpenedCallback;
+const register = (app: App) => {
+  app.event("app_home_opened", appHomeOpenedCallback);
+};
+
+export default { register }; 

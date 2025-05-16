@@ -4,24 +4,17 @@ import type {
   SlackActionMiddlewareArgs,
   BlockButtonAction,
 } from "@slack/bolt";
-import { createDiffBlock } from "../../services/slack-diff";
-import { editMarkdownWithUserMessages } from "../../services/completions";
-import { convertMarkdownToSlackText } from "../../services/markdown";
-import {
-  getStoredMessages,
-  type SlackMessage,
-  parseGithubUrl,
-  getManagers,
-  getWorkspaceId,
-} from "../../services/slack-utils";
-import { VectorStoreService } from "../../services/index";
-import GithubService from "../../services/github";
-import { DocumentMetadata } from "../../services/vector/types";
-import {
-  storeDocumentUpdates,
-  setSelectedNodeIds,
-  DocumentUpdate,
-} from "../../services/document-store";
+import { editMarkdownWithUserMessages } from "services/completions";
+import { DocumentUpdate, setSelectedNodeIds, storeDocumentUpdates } from "services/document-store";
+import { convertMarkdownToSlackText } from "services/markdown";
+import { createDiffBlock } from "services/slack-diff";
+import { getStoredMessages, parseGithubUrl } from "services/slack-utils";
+import { SlackMessage } from "services/slack-utils";
+import { getManagers } from "services/slack-utils";
+import { getWorkspaceId } from "services/slack-utils";
+import { VectorStoreService } from "services/vector/main-service";
+import { DocumentMetadata } from "services/vector/types";
+
 
 const suggestUpdatesCallback = async ({
   ack,

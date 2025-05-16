@@ -25,7 +25,7 @@ export const rebuildVectorCacheAction = async ({
     });
 
     // Load service and rebuild cache
-    const VectorStoreService = (await import("../../services/index"))
+    const VectorStoreService = (await import("services/index"))
       .VectorStoreService;
     const vectorStore = VectorStoreService.getInstance();
     const result = await vectorStore.forceRebuildCache();
@@ -71,7 +71,7 @@ export const resetVectorStoreAction = async ({
     });
 
     // Load service and execute full reset
-    const VectorStoreService = (await import("../../services/index"))
+    const VectorStoreService = (await import("services/index"))
       .VectorStoreService;
     const vectorStore = VectorStoreService.getInstance();
     const result = await vectorStore.resetAndRebuildVectorStore();

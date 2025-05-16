@@ -11,7 +11,7 @@ import {
   getWorkspaceId,
   isWorkspaceOwner,
   setupInitialManager,
-} from "../../services/slack-utils";
+} from "services/slack-utils";
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();

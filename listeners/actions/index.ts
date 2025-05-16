@@ -1,29 +1,24 @@
 import type { App } from "@slack/bolt";
-import suggestUpdatesCallback from "./suggest-updates";
-import { handleDocumentSelection } from "./document-selection";
-import { applySelectedToGithubAction } from "./document-update";
-import startDiscussionCallback from "./start-discussion";
+import startDiscussionCallback from "./discussion/start-discussion";
+import startConsultationCallback from "./discussion/start-consultation";
 import {
   selectUserCallback,
   addManagerCallback,
   removeManagerCallback,
-} from "./manage-permissions";
+} from "./permissions/manage-permissions";
 import {
   githubRepoUrlInputCallback,
   testGithubConnectionCallback,
-} from "./github-connection";
-import { diagnoseVectorStoreAction } from "./vector-store-diagnosis";
+} from "./github/github-connection";
+import { diagnoseVectorStoreAction } from "./vector-store/vector-store-diagnosis";
 import {
   rebuildVectorCacheAction,
   resetVectorStoreAction,
-} from "./vector-store-management";
+} from "./vector-store/vector-store-management";
 
 const register = (app: App) => {
-  app.action("suggest_updates", suggestUpdatesCallback);
   app.action("start_discussion", startDiscussionCallback);
   app.action("start_discussion_selected", startDiscussionCallback);
-  app.action("apply_selected_to_github", applySelectedToGithubAction);
-  app.action("document_selection", handleDocumentSelection);
 
   // 관리자 권한 관리 액션 등록
   app.action("select_user_for_permission", selectUserCallback);
