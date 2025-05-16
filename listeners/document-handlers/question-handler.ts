@@ -1,54 +1,57 @@
-import type { SlackMessage } from "../../../services/slack-utils";
+import type { SlackMessage } from "../../services/slack-utils";
 import {
   createSlackMessageWithName,
   formatSlackMessageBlock,
   getWorkspaceId,
   getManagers,
   createGitbookSectionLink,
-} from "../../../services/slack-utils";
-import { VectorStoreService } from "../../../services/index";
-import { generateCompletion } from "../../../services/completions";
-import { generateSessionId, storeSessionData, SessionType } from "../../../services/session-store";
+} from "../../services/slack-utils";
+import { VectorStoreService } from "../../services/index";
+import { generateCompletion } from "../../services/completions";
+import { generateSessionId, storeSessionData, SessionType } from "../../services/session-store";
 
+/**
+ * 질문 메시지 처리
+ */
 export async function handleQuestionMessage(client: any, event: any, userMessage: string, logger: any) {
   try {
-    // Get message history for context (limit to 5 previous messages)
+    // 컨텍스트를 위한 메시지 히스토리 가져오기 (최대 5개 이전 메시지)
     const historyResult = await client.conversations.history({
       channel: event.channel,
       limit: 5,
     });
 
-    // Get relevant documents from vector store
+    // 벡터 스토어에서 관련 문서 가져오기
     const vectorStore = VectorStoreService.getInstance();
     const relevantDocs = await vectorStore.similaritySearch(userMessage, 3);
 
-    // Generate response
+    // 응답 생성
     const response = await generateCompletion(
       userMessage,
       historyResult.messages || [],
       relevantDocs
     );
 
-    // Extract all unique user IDs from the conversation history
+    // 대화 히스토리에서 모든 고유 사용자 ID 추출
     const historyUsers = new Set<string>();
-    historyUsers.add(event.user); // Add the current user who triggered the mention
+    historyUsers.add(event.user); // 현재 메시지를 보낸 사용자 추가
     
-    // Add all other users from conversation history
+    // 대화 히스토리의 다른 사용자 추가
     (historyResult.messages || []).forEach((msg: any) => {
       if (msg.user && typeof msg.user === 'string') {
         historyUsers.add(msg.user);
       }
     });
 
-    // Convert history messages to validMessages format
+    // 히스토리 메시지를 validMessages 형식으로 변환
     const validMessages = (historyResult.messages || []).map((msg: any) => ({
       userId: msg.user || msg.bot_id || "unknown",
-      username: msg.username || (msg.bot_id ? "CHOIR" : "User"), // Use "CHOIR" for bot messages
+      username: msg.username || (msg.bot_id ? "CHOIR" : "User"),
       text: msg.text,
       ts: msg.ts
     }));
     
-    // Make sure the current mention is included (it might be too recent for history)
+    // 현재 메시지가 포함되어 있는지 확인 (너무 최근이면 히스토리에 포함되지 않을 수 있음)
     const currentMessageIncluded = validMessages.some((msg: any) => msg.ts === event.ts);
     if (!currentMessageIncluded) {
       validMessages.push({
@@ -59,37 +62,37 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       });
     }
 
-    // Add the bot's current response to validMessages as well
+    // 봇의 현재 응답도 validMessages에 추가
     validMessages.push({
-      userId: "bot", // Use a placeholder for bot ID
+      userId: "bot",
       username: "CHOIR",
       text: response,
-      ts: (Math.floor(Date.now() / 1000) + "." + Date.now() % 1000), // Slack timestamp format: seconds.milliseconds
+      ts: (Math.floor(Date.now() / 1000) + "." + Date.now() % 1000),
     });
 
-    // Sort all messages by timestamp (descending) so latest messages appear at the top
+    // 타임스탬프별로 메시지 정렬 (내림차순)
     validMessages.sort((a: SlackMessage, b: SlackMessage) => {
       const tsA = parseFloat(a.ts);
       const tsB = parseFloat(b.ts);
-      return tsB - tsA; // Descending order (newest first)
+      return tsB - tsA;
     });
 
-    // Get workspace ID and managers list
+    // 워크스페이스 ID와 매니저 목록 가져오기
     const workspaceId = await getWorkspaceId(client);
     const managers = getManagers(workspaceId);
     
-    // Format managers for display
+    // 매니저 표시용 형식 지정
     let managersText = "";
     if (managers && managers.length > 0) {
       managersText = managers.map((uid: string) => `<@${uid}>`).join(", ");
     } else {
-      managersText = "No managers available";
+      managersText = "매니저가 없습니다";
     }
 
-    // Generate session ID
+    // 세션 ID 생성
     const sessionId = generateSessionId("consultation");
 
-    // Store session data
+    // 세션 데이터 저장
     storeSessionData(
       sessionId,
       {
@@ -99,7 +102,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       SessionType.CONSULTATION
     );
 
-    // Send the response to the main channel with the button
+    // 채널에 응답 메시지 전송
     const mainBlocks = [
       {
         type: "section",
@@ -112,7 +115,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `Would you like to discuss this question with managers: ${managersText}`
+          text: `이 질문에 대해 매니저와 상담하시겠습니까? ${managersText}`
         }
       },
       {
@@ -122,7 +125,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
             type: "button",
             text: {
               type: "plain_text",
-              text: "Ask Direct Question",
+              text: "직접 질문하기",
               emoji: true,
             },
             style: "primary",
@@ -133,16 +136,18 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       }
     ];
 
+    // DM이면 스레드 없이, 채널이라면 스레드로 응답
     const result = await client.chat.postMessage({
       channel: event.channel,
+      ...(event.channel_type !== "im" && event.ts ? { thread_ts: event.ts } : {}),
       text: response,
       mrkdwn: true,
       blocks: mainBlocks
     });
 
-    // Add document references in thread if available
+    // 관련 문서 정보를 스레드에 추가
     if (result.ts && relevantDocs.length > 0) {
-      // Format document information for the thread
+      // 문서 정보를 스레드용으로 포맷
       const documentInfo = relevantDocs
         .map((doc, index) => {
           const metadata = doc.metadata;
@@ -158,26 +163,28 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
             ? `*GitHub Link:* <${metadata.githubUrl}|View Source Code>\n`
             : "";
 
-          // Display document content preview
+          // 문서 내용 미리보기
           const contentPreview =
             doc.pageContent.length > 500
               ? `${doc.pageContent.substring(0, 500)}...`
               : doc.pageContent;
 
-          return `*Reference Document ${
+          return `*참고 문서 ${
             index + 1
-          }*\n${sectionInfo}${gitbookLink}${githubLink}*Related Content:*\n\`\`\`${contentPreview}\`\`\`\n`;
+          }*\n${sectionInfo}${gitbookLink}${githubLink}*관련 내용:*\n\`\`\`${contentPreview}\`\`\`\n`;
         })
         .join("\n");
 
-      // Send document information in the thread of the response
+      // 문서 정보 스레드에 추가
       await client.chat.postMessage({
         channel: event.channel,
         thread_ts: result.ts,
-        text: `*Reference Document Information:*\n\n${documentInfo}\n\nFor more detailed information, please check the links above.`,
+        text: `*참고 문서 정보:*\n\n${documentInfo}\n\n더 자세한 정보는 위 링크를 확인해주세요.`,
         mrkdwn: true,
       });
     }
+
+    return true;
   } catch (error) {
     logger.error("Error handling question message:", error);
     throw error;
