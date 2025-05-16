@@ -1,4 +1,4 @@
-import { SlackMessage } from "./slack-utils";
+import { SlackMessage } from "../slack";
 
 export interface DocumentUpdate {
   index: number;

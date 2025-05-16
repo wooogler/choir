@@ -1,19 +1,10 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
-import {
-  getManagers,
-  getWorkspaceId,
-  formatTimestampToDateString,
-} from "../../services/slack-utils";
-import { DocumentUpdate } from "../../services/document-store";
-import {
-  DocumentDiff,
-  generateDocumentDiffs,
-} from "../../services/document-util";
-import {
-  getSessionData,
-  removeSessionData,
-  SessionType,
-} from "../../services/session-store";
+import { removeSessionData, SessionType } from "services/common";
+import { getSessionData } from "services/common";
+import { DocumentDiff } from "services/document";
+import { formatTimestampToDateString, getManagers } from "services/slack";
+import { getWorkspaceId } from "services/slack";
+
 
 interface Message {
   userId: string;

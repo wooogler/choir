@@ -3,14 +3,9 @@ import type {
   SlackViewMiddlewareArgs,
   SlackViewAction,
 } from "@slack/bolt";
-import {
-  getSessionData,
-  removeSessionData,
-  SessionType,
-} from "../../services/session-store";
-import {
-  formatTimestampToDateString,
-} from "../../services/slack-utils";
+import { getSessionData, removeSessionData, SessionType } from "services/common";
+import { formatTimestampToDateString } from "services/slack";
+
 
 interface MessageData {
   username: string;

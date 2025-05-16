@@ -3,31 +3,13 @@ import type {
   SlackActionMiddlewareArgs,
   BlockButtonAction,
 } from "@slack/bolt";
-import {
-  getManagers,
-  getWorkspaceId,
-  getUserName,
-  SlackMessage,
-  Message,
-  formatTimestampToDateString,
-} from "services/slack-utils";
-import {
-  DocumentUpdate,
-  getSelectedNodeIds,
-  getStoredDocumentUpdates,
-} from "services/document-store";
+import { SessionType } from "services/common";
+import { generateSessionId, storeSessionData } from "services/common";
+import { generateDocumentDiffs, getSelectedNodeIds, getStoredDocumentUpdates, groupNodesByFile, processFileChanges } from "services/document";
 import GithubService from "services/github";
-import { VectorStoreService } from "services";
-import {
-  groupNodesByFile,
-  processFileChanges,
-  generateDocumentDiffs,
-} from "services/document-util";
-import {
-  generateSessionId,
-  storeSessionData,
-  SessionType,
-} from "services/session-store";
+import { formatTimestampToDateString, getManagers, getUserName, getWorkspaceId } from "services/slack";
+import { VectorStoreService } from "services/vector/main-service";
+
 
 const startDiscussionCallback = async ({
   ack,
@@ -206,8 +188,7 @@ const startDiscussionCallback = async ({
         const messages = latestCommit.commitInfo.messages;
 
         // 메시지 블록 생성
-        const messageBlocks = messages.map((msg: Message) => {
-          // Use the date formatting function
+        const messageBlocks = messages.map((msg) => {
           const formattedDate = formatTimestampToDateString(msg.ts);
 
           return {

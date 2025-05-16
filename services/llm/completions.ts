@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import dotenv from "dotenv";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { SlackMessage } from "./slack-utils";
+import { SlackMessage } from "services/slack";
 
 dotenv.config();
 

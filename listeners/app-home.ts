@@ -1,11 +1,5 @@
 import type { App, AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
-import {
-  getManagers,
-  isManager,
-  getWorkspaceId,
-  isWorkspaceOwner,
-  getGithubRepo,
-} from "../services/slack-utils";
+import { getManagers, isManager, getWorkspaceId, isWorkspaceOwner, getGithubRepo } from "services/slack";
 
 const appHomeOpenedCallback = async ({
   client,

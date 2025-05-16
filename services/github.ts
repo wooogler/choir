@@ -1,21 +1,10 @@
 import { Octokit } from "octokit";
 import * as dotenv from "dotenv";
-import {
-  parseMarkdownToTree,
-  treeToMarkdown,
-  updateNodeContent,
-  updateDocTreeWithChanges,
-  type DocumentTree,
-} from "./markdown";
+import { DocumentTree, DocumentUpdate, parseMarkdownToTree, updateDocTreeWithChanges, updateNodeContent } from "services/document";
 import { WebClient } from "@slack/web-api";
-import {
-  convertUserIdsToNames,
-  replaceMentionsInText,
-  SlackMessage,
-} from "./slack-utils";
-import { parseGithubUrl } from "./slack-utils";
-import { DocumentUpdate } from "./document-store";
-import { VectorStoreService } from "./vector/main-service";
+import { VectorStoreService } from "services/vector/main-service";
+import { convertUserIdsToNames, parseGithubUrl, replaceMentionsInText, SlackMessage } from "services/slack";
+
 
 dotenv.config();
 

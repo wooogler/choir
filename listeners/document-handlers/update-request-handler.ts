@@ -1,8 +1,5 @@
-import type { SlackMessage } from "../../services/slack-utils";
-import {
-  createSlackMessageWithName,
-  formatSlackMessageBlock,
-} from "../../services/slack-utils";
+import { createSlackMessageWithName, formatSlackMessageBlock, SlackMessage } from "services/slack";
+
 
 /**
  * 업데이트 요청 메시지 처리
