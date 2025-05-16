@@ -13,8 +13,6 @@ import { Document } from "langchain/document";
 
 
 // 청크 크기 설정
-const MAX_CHUNK_SIZE = 1500;
-const MIN_CHUNK_SIZE = 50;
 const OPTIMAL_CHUNK_SIZE = 1000;
 
 // 확장된 메타데이터 인터페이스
