@@ -1,6 +1,5 @@
 import { Document } from "@langchain/core/documents";
-import type { DocumentTree, ExtendedNode } from "../markdown";
-import type { GithubCommit, MarkdownFile } from "../github";
+import { DocumentTree } from "services/document";
 
 /**
  * 검색 파라미터 타입

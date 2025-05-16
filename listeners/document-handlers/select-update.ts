@@ -3,7 +3,7 @@ import type {
   SlackActionMiddlewareArgs,
   BlockCheckboxesAction,
 } from "@slack/bolt";
-import { setSelectedNodeIds } from "services/document-store";
+import { setSelectedNodeIds } from "services/document";
 
 const handleDocumentSelection = async ({
   ack,

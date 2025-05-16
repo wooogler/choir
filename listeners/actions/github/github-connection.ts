@@ -3,13 +3,7 @@ import type {
   SlackActionMiddlewareArgs,
   BlockAction,
 } from "@slack/bolt";
-import {
-  getWorkspaceId,
-  isManager,
-  isWorkspaceOwner,
-  parseGithubUrl,
-  storeGithubRepo,
-} from "services/slack-utils";
+import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from "services/slack";
 import GithubService from "services/github";
 
 // 타입 정의

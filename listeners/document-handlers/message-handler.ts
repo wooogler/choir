@@ -1,4 +1,4 @@
-import { classifyMessageIntent } from "../../services/completions";
+import { classifyMessageIntent } from "services/llm";
 import { handleQuestionMessage } from "./question-handler";
 import { handleUpdateRequestMessage } from "./update-request-handler";
 

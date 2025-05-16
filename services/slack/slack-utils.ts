@@ -1,20 +1,6 @@
 import type { WebClient } from "@slack/web-api";
-import type { RichTextElement } from "./slack-diff";
-import slugify from 'slugify';
+import { SlackMessage } from "services/slack";
 
-export interface SlackMessage {
-  userId: string;
-  username: string;
-  text: string;
-  ts: string;
-}
-
-export interface Message {
-  userId: string;
-  text: string;
-  ts: string;
-  username: string;
-}
 
 // 메시지를 임시 저장할 Map
 const messageStore = new Map<string, SlackMessage>();

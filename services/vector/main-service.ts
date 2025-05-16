@@ -6,8 +6,9 @@ import { VectorCacheManager } from "./cache-manager";
 import { EmbeddingService } from "./embedding-service";
 import { SearchService } from "./search-service";
 import { DocumentMetadata, VectorStoreError } from "./types";
-import { createDocumentsFromTree } from "../langchain";
-import { DocumentTree } from "../markdown";
+import { DocumentTree } from "services/document";
+import { createDocumentsFromTree } from "services/llm";
+
 
 /**
  * 벡터 스토어의 주요 기능을 담당하는 서비스 클래스

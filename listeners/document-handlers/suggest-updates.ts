@@ -4,14 +4,11 @@ import type {
   SlackActionMiddlewareArgs,
   BlockButtonAction,
 } from "@slack/bolt";
-import { editMarkdownWithUserMessages } from "services/completions";
-import { DocumentUpdate, setSelectedNodeIds, storeDocumentUpdates } from "services/document-store";
-import { convertMarkdownToSlackText } from "services/markdown";
-import { createDiffBlock } from "services/slack-diff";
-import { getStoredMessages, parseGithubUrl } from "services/slack-utils";
-import { SlackMessage } from "services/slack-utils";
-import { getManagers } from "services/slack-utils";
-import { getWorkspaceId } from "services/slack-utils";
+import { convertMarkdownToSlackText, DocumentUpdate, setSelectedNodeIds, storeDocumentUpdates } from "services/document";
+import { editMarkdownWithUserMessages } from "services/llm";
+import { createDiffBlock, getStoredMessages, parseGithubUrl } from "services/slack";
+import { getManagers, getWorkspaceId, SlackMessage } from "services/slack";
+
 import { VectorStoreService } from "services/vector/main-service";
 import { DocumentMetadata } from "services/vector/types";
 

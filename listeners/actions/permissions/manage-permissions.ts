@@ -5,13 +5,7 @@ import type {
   UsersSelectAction,
   ButtonAction,
 } from "@slack/bolt";
-import {
-  addManager,
-  removeManager,
-  getWorkspaceId,
-  isWorkspaceOwner,
-  setupInitialManager,
-} from "services/slack-utils";
+import { addManager, isWorkspaceOwner, removeManager, setupInitialManager, getWorkspaceId } from "services/slack";
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();

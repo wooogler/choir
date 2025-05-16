@@ -1,10 +1,9 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { Document } from "@langchain/core/documents";
 import { MarkdownFile } from "../github";
-import { DocumentMetadata, EmbeddingCacheData } from "./types";
-import { DocumentTree, ExtendedNode } from "../markdown";
+import { EmbeddingCacheData } from "./types";
+import { DocumentTree, ExtendedNode } from "services/document";
 
 /**
  * 벡터 스토어의 캐시를 관리하는 클래스

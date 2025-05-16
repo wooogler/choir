@@ -1,14 +1,9 @@
-import type { SlackMessage } from "../../services/slack-utils";
-import {
-  createSlackMessageWithName,
-  formatSlackMessageBlock,
-  getWorkspaceId,
-  getManagers,
-  createGitbookSectionLink,
-} from "../../services/slack-utils";
-import { VectorStoreService } from "../../services/index";
-import { generateCompletion } from "../../services/completions";
-import { generateSessionId, storeSessionData, SessionType } from "../../services/session-store";
+import { generateSessionId, SessionType, storeSessionData } from "services/common";
+import { generateCompletion } from "services/llm";
+import { createGitbookSectionLink, getManagers } from "services/slack";
+import { getWorkspaceId } from "services/slack";
+import { SlackMessage } from "services/slack";
+import { VectorStoreService } from "services/vector/main-service";
 
 /**
  * 질문 메시지 처리

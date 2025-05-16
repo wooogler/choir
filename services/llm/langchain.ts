@@ -1,5 +1,3 @@
-import { Document } from "@langchain/core/documents";
-import type { ExtendedNode, DocumentTree } from "./markdown";
 import { is } from "unist-util-is";
 import { toString } from "mdast-util-to-string";
 import { visit } from "unist-util-visit";
@@ -9,10 +7,10 @@ import type {
   Paragraph,
   Code,
   BlockContent,
-  Root,
-  Table,
 } from "mdast";
-import type { Node, Parent } from "unist";
+import { DocumentTree, ExtendedNode } from "services/document";
+import { Document } from "langchain/document";
+
 
 // 청크 크기 설정
 const MAX_CHUNK_SIZE = 1500;

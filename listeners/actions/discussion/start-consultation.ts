@@ -3,19 +3,10 @@ import type {
   SlackActionMiddlewareArgs,
   BlockButtonAction,
 } from "@slack/bolt";
-import {
-  getManagers,
-  getWorkspaceId,
-  getUserName,
-  SlackMessage,
-  Message,
-  formatTimestampToDateString,
-} from "services/slack-utils";
-import {
-  generateSessionId,
-  storeSessionData,
-  SessionType,
-} from "services/session-store";
+import { generateSessionId, SessionType, storeSessionData } from "services/common";
+import { formatTimestampToDateString, getManagers, getUserName, getWorkspaceId, SlackMessage } from "services/slack";
+
+
 
 const startConsultationCallback = async ({
   ack,

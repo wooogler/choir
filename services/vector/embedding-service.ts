@@ -1,6 +1,5 @@
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { Document } from "@langchain/core/documents";
-import * as crypto from "crypto";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import { DocumentMetadata } from "./types";
 

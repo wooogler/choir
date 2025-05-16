@@ -4,9 +4,7 @@ import { EmbeddingService } from "./embedding-service";
 import {
   DocumentMetadata,
   EnhancedSearchResult,
-  MemoryVector,
   SearchParams,
-  SimilarityResult,
 } from "./types";
 
 /**

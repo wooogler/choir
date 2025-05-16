@@ -25,7 +25,7 @@ export const diagnoseVectorStoreAction = async ({
     });
 
     // Load vector store service
-    const VectorStoreService = (await import("services/index"))
+    const VectorStoreService = (await import("services/vector/main-service"))
       .VectorStoreService;
     const vectorStore = VectorStoreService.getInstance();
 

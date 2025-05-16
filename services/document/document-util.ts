@@ -1,15 +1,13 @@
-import { DocumentTree } from "./markdown";
-import { VectorStoreService } from "./vector/main-service";
 import { WebClient } from "@slack/web-api";
-import { SlackMessage, parseGithubUrl } from "./slack-utils";
-import GithubService from "./github";
 import { DocumentUpdate } from "./document-store";
 import {
   updateDocTreeWithChanges,
   updateNodeContent,
   convertMarkdownToSlackText,
 } from "./markdown";
-import { createDiffBlock } from "./slack-diff";
+import { createDiffBlock, parseGithubUrl, SlackMessage } from "services/slack";
+import { VectorStoreService } from "services/vector/main-service";
+import GithubService from "services/github";
 
 export interface DocumentChangeResult {
   fileName: string;
