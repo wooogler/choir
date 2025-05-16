@@ -8,15 +8,15 @@ import {
   getGithubRepo,
 } from "./services/slack-utils";
 import GithubService from "./services/github";
-import startDiscussionCallback from "./listeners/actions/start-discussion";
-import startConsultationCallback from "./listeners/actions/start-consultation";
+import startDiscussionCallback from "./listeners/actions/discussion/start-discussion";
+import startConsultationCallback from "./listeners/actions/discussion/start-consultation";
 
 dotenv.config();
 
 /** Initialization */
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
-  socketMode: false,
+  socketMode: process.env.NODE_ENV !== "production",
   signingSecret: process.env.SLACK_SIGNING_SECRET,
   logLevel: LogLevel.DEBUG,
   appToken: process.env.SLACK_APP_TOKEN,
@@ -140,16 +140,20 @@ app.action("start_consultation", startConsultationCallback);
         "No GitHub repository configured. Using default repository."
       );
 
-      // 기본 저장소 설정 (예시 또는 개발용)
+      // 기본 저장소 설정 (환경에 따라 다르게 설정)
+      const defaultRepo = process.env.NODE_ENV === 'development' 
+        ? { owner: 'wooogler', repo: 'assets' }
+        : { owner: 'echo-lab', repo: 'assets' };
+
       const markdownFiles = await githubService.getAllMarkdownFiles({
-        owner: "wooogler",
-        repo: "assets",
+        owner: defaultRepo.owner,
+        repo: defaultRepo.repo,
         path: "",
       });
 
       await vectorStore.setMarkdownFiles(markdownFiles, {
-        owner: "wooogler",
-        repo: "assets",
+        owner: defaultRepo.owner,
+        repo: defaultRepo.repo,
       });
     }
 

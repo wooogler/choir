@@ -10,12 +10,12 @@ import {
   SlackMessage,
   Message,
   formatTimestampToDateString,
-} from "../../services/slack-utils";
+} from "services/slack-utils";
 import {
   generateSessionId,
   storeSessionData,
   SessionType,
-} from "../../services/session-store";
+} from "services/session-store";
 
 const startConsultationCallback = async ({
   ack,

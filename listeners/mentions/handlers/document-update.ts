@@ -5,21 +5,18 @@ import type {
   BlockAction,
   UsersSelectAction,
 } from "@slack/bolt";
-import { VectorStoreService } from "../../services/index";
 import {
   getStoredDocumentUpdates,
-  getStoredThreadTs,
   getSelectedNodeIds,
-  clearSelectedNodeIds,
-} from "../../services/document-store";
-import { applySelectedToGithub } from "../../services/github";
-import { SlackMessage } from "services/slack-utils";
+  DocumentUpdate,
+} from "services/document-store";
 import {
   getWorkspaceId,
   isWorkspaceOwner,
   setupInitialManager,
   addManager as updateDocument,
-} from "../../services/slack-utils";
+} from "services/slack-utils";
+import GithubService from "services/github";
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();
@@ -145,7 +142,7 @@ const documentUpdateCallback = async ({
 export { selectUserCallback, documentUpdateCallback };
 
 // Apply changes to GitHub
-export const applySelectedToGithubAction = async ({
+const applySelectedToGithubAction = async ({
   ack,
   body,
   client,
@@ -155,99 +152,95 @@ export const applySelectedToGithubAction = async ({
   try {
     const userId = body.user.id;
     const channelId = body.channel?.id;
-    const value = body.actions[0].value;
-    const parsedValue = JSON.parse(value || "{}");
-
-    // Handle validMessages exception
-    let validMessages: SlackMessage[] = [];
-    try {
-      if (
-        parsedValue.validMessages &&
-        Array.isArray(parsedValue.validMessages)
-      ) {
-        validMessages = parsedValue.validMessages;
-      } else {
-        console.warn(
-          "Valid message array is missing or has invalid format:",
-          parsedValue.validMessages
-        );
-      }
-    } catch (error) {
-      console.error("Error parsing validMessages:", error);
-    }
 
     if (!channelId) {
-      throw new Error("Channel ID not found");
+      throw new Error("채널 ID를 찾을 수 없습니다");
     }
 
-    // Get node IDs selected by user
-    const selectedNodeIdsArray = getSelectedNodeIds(userId);
+    // 선택된 노드 ID 가져오기
+    const selectedNodeIds = getSelectedNodeIds(userId);
 
-    // No documents selected
-    if (selectedNodeIdsArray.length === 0) {
+    if (!selectedNodeIds || selectedNodeIds.length === 0) {
       await client.chat.postEphemeral({
         channel: channelId,
         user: userId,
-        text: "No documents selected. Please select documents to update.",
+        text: "No documents selected for update. Please select documents first.",
       });
       return;
     }
 
-    // Get stored document updates
+    // 문서 업데이트 정보 가져오기
     const documentUpdates = getStoredDocumentUpdates(userId);
-    const thread_ts = getStoredThreadTs(userId);
 
-    // Send update in progress message (displayed in comment thread)
+    if (!documentUpdates || documentUpdates.length === 0) {
+      await client.chat.postEphemeral({
+        channel: channelId,
+        user: userId,
+        text: "No document updates found. Please try suggesting updates first.",
+      });
+      return;
+    }
+
+    // 선택된 노드에 해당하는 업데이트만 필터링
+    const selectedUpdates = documentUpdates.filter((update: DocumentUpdate) =>
+      selectedNodeIds.includes(update.nodeId)
+    );
+
+    if (selectedUpdates.length === 0) {
+      await client.chat.postEphemeral({
+        channel: channelId,
+        user: userId,
+        text: "No updates found for selected documents. Please try selecting different documents.",
+      });
+      return;
+    }
+
+    // GitHub 서비스 인스턴스 가져오기
+    const githubService = GithubService.getInstance();
+
+    // 각 문서 업데이트 처리
+    for (const update of selectedUpdates) {
+      try {
+        // GitHub URL에서 owner와 repo 추출
+        const githubUrl = update.githubUrl;
+        const [owner, repo] = githubUrl
+          .replace("https://github.com/", "")
+          .split("/");
+
+        // 파일 업데이트
+        await githubService.updateMarkdownFile({
+          owner,
+          repo,
+          path: update.fileName,
+          content: update.updatedNodeContent,
+          message: `Update ${update.fileName} based on Slack discussion`,
+        });
+
+        console.log(`Successfully updated ${update.fileName}`);
+      } catch (error) {
+        console.error(`Error updating ${update.fileName}:`, error);
+      }
+    }
+
+    // 성공 메시지 전송
     await client.chat.postEphemeral({
       channel: channelId,
       user: userId,
-      thread_ts: thread_ts,
-      text: "Updating selected documents to GitHub...",
+      text: "Selected document updates have been applied to GitHub successfully.",
     });
-
-    // Create VectorStoreService instance
-    const vectorStore = VectorStoreService.getInstance();
-
-    // Apply changes to GitHub
-    const results = await applySelectedToGithub({
-      userId,
-      channelId,
-      client,
-      selectedNodeIds: selectedNodeIdsArray,
-      documentUpdates,
-      vectorStore,
-      validMessages,
-    });
-
-    // Rebuild vector store
-    await vectorStore.forceRebuildCache();
-
-    // Send results to user
-    const resultMessage =
-      results.length > 0
-        ? results.map((r) => r.message).join("\n")
-        : "No documents selected.";
-
-    await client.chat.postEphemeral({
-      channel: channelId,
-      user: userId,
-      thread_ts: thread_ts,
-      text: `*Document Update Results*\n\n${resultMessage}`,
-    });
-
-    // Reset selected nodes after update
-    clearSelectedNodeIds(userId);
   } catch (error) {
-    console.error("Error updating selected documents:", error);
+    console.error("Error applying updates to GitHub:", error);
 
     if (body.channel?.id) {
       await client.chat.postEphemeral({
         channel: body.channel.id,
         user: body.user.id,
-        text: `Error occurred during document update: ${
+        text: `An error occurred while applying updates to GitHub: ${
           error instanceof Error ? error.message : "Unknown error"
         }`,
       });
     }
   }
 };
+
+export { applySelectedToGithubAction };

@@ -9,8 +9,8 @@ import {
   isWorkspaceOwner,
   parseGithubUrl,
   storeGithubRepo,
-} from "../../services/slack-utils";
-import GithubService from "../../services/github";
+} from "services/slack-utils";
+import GithubService from "services/github";
 
 // 타입 정의
 interface ActionWithValue {
