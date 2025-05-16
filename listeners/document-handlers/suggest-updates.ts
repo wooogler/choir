@@ -276,7 +276,8 @@ const suggestUpdatesCallback = async ({
             // 선택된 메시지로 노드 편집
             updatedNodeContent = await editMarkdownWithUserMessages(
               nodeContent,
-              validMessages
+              validMessages,
+              client
             );
           } else {
             console.log(`노드 ID가 없거나 트리에서 찾을 수 없음: ${nodeId}`);
