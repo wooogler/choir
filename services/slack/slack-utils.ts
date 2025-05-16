@@ -429,3 +429,19 @@ export function createGitbookSectionLink(sectionName: string, fileName?: string)
   
   return `https://choir.gitbook.io/echolab-assets/${formattedFileName}#${formattedSectionName}`;
 }
+
+/**
+ * 사용자가 봇인지 확인합니다.
+ * @param userId 확인할 사용자 ID
+ * @param client Slack WebClient 인스턴스
+ * @returns 봇 여부
+ */
+export async function isBotUser(userId: string, client: WebClient): Promise<boolean> {
+  try {
+    const userInfo = await client.users.info({ user: userId });
+    return !!userInfo.user?.is_bot;
+  } catch (error) {
+    console.error(`봇 여부 확인 중 오류 발생: ${userId}`, error);
+    return false;
+  }
+}

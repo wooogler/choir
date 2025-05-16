@@ -2,6 +2,8 @@ import OpenAI from "openai";
 import dotenv from "dotenv";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { SlackMessage } from "services/slack";
+import { WebClient } from "@slack/web-api";
+import { getUserName, isBotUser } from "services/slack";
 
 dotenv.config();
 
@@ -97,36 +99,87 @@ Document content to reference:\n${context}`,
   ]);
 };
 
+// Process message text to handle user and bot mentions
+export async function processMessageText(text: string, client: WebClient): Promise<string> {
+  // Regular expression to find all user/bot mentions like <@U089Q1VAB3J>
+  const mentionRegex = /<@([A-Z0-9]+)>/g;
+  let matches;
+  let processedText = text;
+  
+  // Collect all unique user IDs mentioned in the text
+  const mentionedIds = new Set<string>();
+  while ((matches = mentionRegex.exec(text)) !== null) {
+    mentionedIds.add(matches[1]);
+  }
+  
+  // Process each unique user ID
+  for (const userId of mentionedIds) {
+    const isBot = await isBotUser(userId, client);
+    
+    if (isBot) {
+      // Remove bot mentions completely
+      processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), '');
+    } else {
+      // Replace user mentions with their names
+      const userName = await getUserName(userId, client);
+      processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), userName);
+    }
+  }
+  
+  return processedText.trim();
+}
+
 export async function editMarkdownWithUserMessages(
   markdown: string,
-  userMessages: SlackMessage[]
+  userMessages: SlackMessage[],
+  client: WebClient
 ) {
+  // Anonymize users by replacing usernames with generic identifiers
+  const userMap = new Map<string, string>();
+  let userCounter = 1;
+
+  // Process message texts to handle mentions
+  const processedMessages = await Promise.all(
+    userMessages.map(async (message) => {
+      const processedText = await processMessageText(message.text, client);
+      
+      if (!userMap.has(message.username)) {
+        userMap.set(message.username, `User${userCounter++}`);
+      }
+      
+      return {
+        anonUser: userMap.get(message.username) || "Unknown",
+        text: processedText
+      };
+    })
+  );
+
   const responseContent = await createChatCompletion([
     {
       role: "system",
-      content: `You're editing a collaborative document based on conversation insights.
+      content: `As a document editor, modify this markdown document with information from the conversation.
 
-KEY PRINCIPLES:
-- Blend new information naturally into existing sentences and paragraphs
-- DO NOT create new paragraphs unless absolutely necessary
-- Keep the document compact by modifying existing content rather than adding separate sections
-- Preserve the original flow, tone, and structure
-- Subtle integration is preferred over obvious additions
-- When adding information, connect it to related existing points with transitions like "but," "however," "additionally," etc.
-- Return only the edited markdown with no explanations or tags`,
+Key rules:
+1. Update information: Directly modify existing content when needed and only add important new information
+2. Keep it concise: Make minimal edits while maintaining the document's original style and tone
+3. When conversation mentions contradict existing content, replace the existing content with new information
+4. Never include user identifiers or names
+5. Return only the edited markdown without explanations or tags`,
     },
     {
       role: "user",
       content: `<markdown>${markdown}</markdown>
-<conversation>${userMessages
+<conversation>
+${processedMessages
         .map(
           (message) =>
-            `<${message.username}>${message.text}</${message.username}>`
+            `${message.anonUser}: ${message.text}`
         )
-        .join("\n")}</conversation>`,
+        .join("\n")}
+</conversation>`,
     },
   ], {
-    model: "gpt-4o",
+    model: "gpt-4o-mini",
     temperature: 0,
     function_name: "editMarkdownWithUserMessages",
     debug: true,
