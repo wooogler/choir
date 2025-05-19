@@ -7,7 +7,6 @@ import type {
 } from "@slack/bolt";
 import { DocumentUpdate, getStoredDocumentUpdates, getSelectedNodeIds } from "services/document";
 import GithubService from "services/github";
-import { addManager, getWorkspaceId, isWorkspaceOwner, setupInitialManager } from "services/slack";
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();

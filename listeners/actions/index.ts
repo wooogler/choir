@@ -15,6 +15,7 @@ import {
   rebuildVectorCacheAction,
   resetVectorStoreAction,
 } from "./vector-store/vector-store-management";
+import { handleSelectedMessages } from "./general/select-messages";
 
 const register = (app: App) => {
   app.action("start_discussion", startDiscussionCallback);
@@ -35,6 +36,9 @@ const register = (app: App) => {
   // 벡터 스토어 관리 액션 등록
   app.action("rebuild_vector_cache", rebuildVectorCacheAction);
   app.action("reset_vector_store", resetVectorStoreAction);
+
+  // 메시지 선택 메시지
+  app.action("selected_messages", handleSelectedMessages);
 };
 
 export default { register };
