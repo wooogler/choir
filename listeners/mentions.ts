@@ -30,7 +30,7 @@ const appMentionCallback = async ({
 };
 
 const register = (app: App) => {
-    app.event("app_mention", appMentionCallback);
+  app.event("app_mention", appMentionCallback);
   app.action("suggest_updates", suggestUpdatesCallback);
   app.action("document_selection", handleDocumentSelection);
   app.action("apply_selected_to_github", applySelectedToGithubAction);

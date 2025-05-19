@@ -16,10 +16,10 @@ export interface DocumentUpdate {
   timestamp: string;
 }
 
-// documentUpdates를 저장하기 위한 Map (userId -> { documentUpdates, thread_ts })
+// documentUpdates를 저장하기 위한 Map (userId -> { documentUpdates, thread_ts, channel_id })
 const storedDocumentUpdates = new Map<
   string,
-  { documentUpdates: DocumentUpdate[]; thread_ts?: string }
+  { documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }
 >();
 
 // 선택된 문서 ID를 저장하기 위한 Map (userId -> Set<string>)
@@ -35,13 +35,65 @@ export const getStoredThreadTs = (userId: string): string | undefined => {
   return storedDocumentUpdates.get(userId)?.thread_ts;
 };
 
+// 사용자의 channel_id 가져오기
+export const getStoredChannelId = (userId: string): string | undefined => {
+  return storedDocumentUpdates.get(userId)?.channel_id;
+};
+
 // 사용자의 documentUpdates 저장하기
 export const storeDocumentUpdates = (
   userId: string,
   updates: DocumentUpdate[],
-  thread_ts?: string
+  thread_ts?: string,
+  channel_id?: string
 ): void => {
-  storedDocumentUpdates.set(userId, { documentUpdates: updates, thread_ts });
+  const existing = storedDocumentUpdates.get(userId) || { documentUpdates: [] };
+  
+  storedDocumentUpdates.set(userId, { 
+    documentUpdates: updates, 
+    thread_ts: thread_ts || existing.thread_ts,
+    channel_id: channel_id || existing.channel_id
+  });
+};
+
+// 사용자의 thread 정보 저장하기
+export const storeThreadInfo = (
+  userId: string,
+  thread_ts: string,
+  channel_id: string
+): void => {
+  const existing = storedDocumentUpdates.get(userId);
+  
+  if (existing) {
+    storedDocumentUpdates.set(userId, { 
+      ...existing, 
+      thread_ts, 
+      channel_id 
+    });
+  }
+};
+
+// 특정 문서 업데이트의 updatedNodeContent 수정하기
+export const updateDocumentContent = (
+  userId: string,
+  index: number,
+  newContent: string
+): boolean => {
+  const userUpdates = storedDocumentUpdates.get(userId);
+  
+  if (!userUpdates || !userUpdates.documentUpdates[index]) {
+    return false;
+  }
+  
+  // 기존 업데이트 가져오기
+  const update = userUpdates.documentUpdates[index];
+  
+  // 업데이트된 콘텐츠 변경
+  update.updatedNodeContent = newContent;
+  
+  // 필요한 경우 diffBlock 업데이트 로직 구현 (이 부분은 나중에 구현)
+  
+  return true;
 };
 
 // 사용자의 선택된 문서 ID 가져오기
