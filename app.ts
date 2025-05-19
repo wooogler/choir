@@ -79,6 +79,9 @@ app.event('app_home_opened', async ({ event, client, logger }) => {
 // Register listeners
 app.action("start_discussion", startDiscussionCallback);
 app.action("start_consultation", startConsultationCallback);
+app.action("selected_messages", async ({ ack }) => {
+  await ack();
+});
 
 /** Start Bolt App */
 (async () => {

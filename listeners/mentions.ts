@@ -2,7 +2,7 @@ import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from "@slack/bo
 import { handleIncomingMessage } from "./document-handlers/message-handler";
 import suggestUpdatesCallback from "./document-handlers/suggest-updates";
 import { handleDocumentSelection } from "./document-handlers/select-update";
-import { applySelectedToGithubAction } from "./document-handlers/update";
+import { applySelectedToGithubAction } from "./document-handlers/update-documents";
 
 /**
  * 앱 멘션 처리 콜백
