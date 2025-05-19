@@ -4,7 +4,7 @@ import type {
   SlackActionMiddlewareArgs,
   BlockButtonAction,
 } from "@slack/bolt";
-import { convertMarkdownToSlackText, DocumentUpdate, setSelectedNodeIds, storeDocumentUpdates } from "services/document";
+import { convertMarkdownToSlackText, DocumentUpdate, setSelectedNodeIds, storeDocumentUpdates, generateDocumentUpdateBlocks, getStoredChannelId, getStoredThreadTs } from "services/document";
 import { editMarkdownWithUserMessages } from "services/llm";
 import { createDiffBlock, getStoredMessages, parseGithubUrl } from "services/slack";
 import { getManagers, getWorkspaceId, SlackMessage } from "services/slack";
@@ -22,7 +22,7 @@ const suggestUpdatesCallback = async ({
 
   try {
     const userId = body.user.id;
-    const channelId = body.channel?.id;
+    let channelId = body.channel?.id;
 
     if (!channelId) {
       throw new Error("채널 ID를 찾을 수 없습니다");
@@ -358,8 +358,8 @@ const suggestUpdatesCallback = async ({
       return;
     }
 
-    // documentUpdates 저장
-    storeDocumentUpdates(userId, documentUpdates, body.container.thread_ts);
+    // documentUpdates 저장 (채널 정보도 함께 저장)
+    storeDocumentUpdates(userId, documentUpdates, body.container.thread_ts, body.channel?.id);
 
     // 초기 상태에서 모든 문서가 선택되도록 설정
     const initialNodeIds = documentUpdatesWithChanges
@@ -371,127 +371,50 @@ const suggestUpdatesCallback = async ({
       new Set(validMessages.map((msg) => msg.userId))
     );
 
-    // 블록 생성
-    const blocks: any[] = [
-      {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: "Document Updates Suggestions",
-          emoji: true,
-        },
-      },
-      {
-        type: "divider",
-      },
-    ];
-
-    // 각 문서에 대한 섹션 추가 (UI 표시용 documentsWithChanges 사용)
-    documentUpdatesWithChanges.forEach(async (doc, index) => {
-      // 문서 헤더 - "문서 N" 제목 제거
-      blocks.push(
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*File:* <${doc.githubUrl}|${doc.fileName}>\n*Section:* ${doc.markdownSection}`,
-          },
-        },
-        {
-          type: "divider",
-        },
-        doc.diffBlock,
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: "Would you like to update this document?",
-          },
-          accessory: {
-            type: "checkboxes",
-            action_id: "document_selection",
-            options: [
-              {
-                text: {
-                  type: "mrkdwn",
-                  text: "Update",
-                },
-                value: JSON.stringify({
-                  index: index,
-                  // fileName: doc.fileName,
-                  // githubUrl: doc.githubUrl,
-                  nodeId: doc.nodeId,
-                }),
-              },
-            ],
-            initial_options: [
-              {
-                text: {
-                  type: "mrkdwn",
-                  text: "Update",
-                },
-                value: JSON.stringify({
-                  index: index,
-                  // fileName: doc.fileName,
-                  // githubUrl: doc.githubUrl,
-                  nodeId: doc.nodeId,
-                }),
-              },
-            ],
-          },
-        },
-        {
-          type: "divider",
-        }
-      );
-    });
-
-    // 선택한 문서에 대한 액션 버튼
-    blocks.push(
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "*Actions for selected documents:*",
-        },
-      },
-      {
-        type: "actions",
-        block_id: "document_actions",
-        elements: [
-          ...(isManager
-            ? [
-                {
-                  type: "button",
-                  text: {
-                    type: "plain_text",
-                    text: "Apply to Document",
-                    emoji: true,
-                  },
-                  style: "primary",
-                  action_id: "apply_selected_to_github",
-                  value: JSON.stringify({
-                    validMessages,
-                  }),
-                },
-              ]
-            : []),
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "Start Discussion",
-              emoji: true,
-            },
-            action_id: "start_discussion",
-            value: JSON.stringify({
-              stakeholders: uniqueAuthors,
-              validMessages,
-            }),
-          },
-        ],
-      }
+    // 공통 유틸리티 함수를 사용하여 블록 생성
+    const blocks = await generateDocumentUpdateBlocks(userId, documentUpdates, client);
+    
+    if (!blocks) {
+      await client.chat.postEphemeral({
+        channel: body.channel?.id ?? "",
+        user: body.user.id,
+        thread_ts: body.container.thread_ts ?? "",
+        text: "No parts of the document can be updated with the selected messages. Please select different messages or messages with clear update content.",
+      });
+      return;
+    }
+    
+    // 값 넣기: Start Discussion 버튼에 필요한 정보 추가
+    const discussionButton = blocks.find(
+      (block: any) => 
+        block.type === "actions" && 
+        block.block_id === "document_actions" && 
+        block.elements.some((el: any) => el.action_id === "start_discussion")
     );
+    
+    if (discussionButton) {
+      const startDiscussionButton = discussionButton.elements.find(
+        (el: any) => el.action_id === "start_discussion"
+      );
+      
+      if (startDiscussionButton) {
+        startDiscussionButton.value = JSON.stringify({
+          stakeholders: uniqueAuthors,
+          validMessages,
+        });
+      }
+      
+      // Apply to Document 버튼에도 정보 추가
+      const applyButton = discussionButton.elements.find(
+        (el: any) => el.action_id === "apply_selected_to_github"
+      );
+      
+      if (applyButton) {
+        applyButton.value = JSON.stringify({
+          validMessages,
+        });
+      }
+    }
 
     // 메시지 전송
     await client.chat.postEphemeral({

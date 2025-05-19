@@ -81,8 +81,8 @@ export const generateCompletion = async (
   const messages = processMessageHistory(messageHistory);
 
   return createChatCompletion([
-    {
-      role: "system",
+      {
+        role: "system",
       content: `You are an AI assistant that provides answers based on the lab's documentation.
 Please refer to the following document content to answer user questions.
 
@@ -94,8 +94,8 @@ When answering, please follow these guidelines:
 5. Format code examples using markdown syntax.
 
 Document content to reference:\n${context}`,
-    },
-    ...(messages as ChatCompletionMessageParam[]),
+      },
+      ...(messages as ChatCompletionMessageParam[]),
   ]);
 };
 
@@ -155,8 +155,8 @@ export async function editMarkdownWithUserMessages(
   );
 
   const responseContent = await createChatCompletion([
-    {
-      role: "system",
+      {
+        role: "system",
       content: `As a document editor, modify this markdown document with information from the conversation.
 
 Key rules:
@@ -165,40 +165,40 @@ Key rules:
 3. When conversation mentions contradict existing content, replace the existing content with new information
 4. Never include user identifiers or names
 5. Return only the edited markdown without explanations or tags`,
-    },
-    {
-      role: "user",
-      content: `<markdown>${markdown}</markdown>
+      },
+      {
+        role: "user",
+        content: `<markdown>${markdown}</markdown>
 <conversation>
 ${processedMessages
-        .map(
-          (message) =>
+          .map(
+            (message) =>
             `${message.anonUser}: ${message.text}`
-        )
+          )
         .join("\n")}
 </conversation>`,
-    },
+      },
   ], {
     model: "gpt-4o-mini",
     temperature: 0,
     function_name: "editMarkdownWithUserMessages",
     debug: true,
   });
-
+  
   // Remove any markdown tags from the response
   return responseContent?.replace(/<\/?markdown>/g, '') ?? markdown;
 }
 
 export async function classifyMessageIntent(message: string): Promise<"question" | "update_request"> {
   const result = await createChatCompletion([
-    {
-      role: "system",
-      content: "Classify the user message as either a 'question' (asking for information) or 'update_request' (asking to save/store information). Respond with only 'question' or 'update_request'."
-    },
-    {
-      role: "user",
-      content: message
-    }
+      {
+        role: "system",
+        content: "Classify the user message as either a 'question' (asking for information) or 'update_request' (asking to save/store information). Respond with only 'question' or 'update_request'."
+      },
+      {
+        role: "user",
+        content: message
+      }
   ], {
     temperature: 0.1,
     max_tokens: 10,
