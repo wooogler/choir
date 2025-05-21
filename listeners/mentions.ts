@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from "@slack/bolt";
 import { handleIncomingMessage } from "./document-handlers/message-handler";
 import suggestUpdatesCallback from "./document-handlers/suggest-updates";
-import { handleDocumentSelection } from "./document-handlers/select-update";
+import { rejectUpdateCallback } from "./document-handlers/reject-update";
 import { applySelectedToGithubAction } from "./document-handlers/update-documents";
 
 /**
@@ -32,8 +32,8 @@ const appMentionCallback = async ({
 const register = (app: App) => {
   app.event("app_mention", appMentionCallback);
   app.action("suggest_updates", suggestUpdatesCallback);
-  app.action("document_selection", handleDocumentSelection);
-  app.action("apply_selected_to_github", applySelectedToGithubAction);
-}
+  app.action("reject_update", rejectUpdateCallback);
+  app.action("apply_to_document", applySelectedToGithubAction);
+};
 
 export default { register }; 

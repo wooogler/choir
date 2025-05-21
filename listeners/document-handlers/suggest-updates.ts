@@ -4,14 +4,21 @@ import type {
   SlackActionMiddlewareArgs,
   BlockButtonAction,
 } from "@slack/bolt";
-import { convertMarkdownToSlackText, DocumentUpdate, setSelectedNodeIds, storeDocumentUpdates, generateDocumentUpdateBlocks, getStoredChannelId, getStoredThreadTs } from "services/document";
-import { editMarkdownWithUserMessages } from "services/llm";
-import { createDiffBlock, getStoredMessages, parseGithubUrl } from "services/slack";
-import { getManagers, getWorkspaceId, SlackMessage } from "services/slack";
-
+import type { KnownBlock, Block } from "@slack/web-api";
+import { processDocument } from "services/document/update-processor";
+import { 
+  storeSearchResults, 
+  getSearchResults, 
+  removeDocumentUpdate 
+} from "services/document/document-store";
+import { getStoredMessages } from "services/slack";
+import { SlackMessage } from "services/slack";
+import { checkVectorStoreHealth } from "services/vector/health-check";
 import { VectorStoreService } from "services/vector/main-service";
 import { DocumentMetadata } from "services/vector/types";
 
+// 마지막으로 보낸 메시지의 타임스탬프를 저장하는 Map
+const lastMessageTimestamps = new Map<string, string>();
 
 const suggestUpdatesCallback = async ({
   ack,
@@ -22,418 +29,349 @@ const suggestUpdatesCallback = async ({
 
   try {
     const userId = body.user.id;
-    let channelId = body.channel?.id;
+    const originalChannelId = body.channel?.id;
+    const originalThreadTs = body.container.thread_ts;
 
-    if (!channelId) {
+    if (!originalChannelId) {
       throw new Error("채널 ID를 찾을 수 없습니다");
     }
 
-    // 워크스페이스 ID 가져오기
-    const workspaceId = await getWorkspaceId(client);
+    // DM 채널 열기
+    const dmResult = await client.conversations.open({
+      users: userId
+    });
 
-    // 관리자 목록 가져오기
-    const managers = getManagers(workspaceId);
+    if (!dmResult.ok || !dmResult.channel?.id) {
+      throw new Error("DM 채널을 열 수 없습니다");
+    }
 
-    // 현재 사용자가 관리자인지 확인
-    const isManager = managers.includes(userId);
+    const dmChannelId = dmResult.channel.id;
+
+    // 이전 메시지의 버튼들 제거
+    const lastMessageTs = lastMessageTimestamps.get(userId);
+    if (lastMessageTs && dmChannelId) {
+      try {
+        // 이전 메시지 가져오기
+        const history = await client.conversations.history({
+          channel: dmChannelId,
+          latest: lastMessageTs,
+          inclusive: true,
+          limit: 1
+        });
+
+        if (history.messages && history.messages.length > 0) {
+          const previousMessage = history.messages[0];
+          if (previousMessage.blocks) {
+            // actions 블록을 제외한 나머지 블록만 유지
+            const updatedBlocks = previousMessage.blocks.filter((block: any) => 
+              block.type !== "actions"
+            ) as (KnownBlock | Block)[];
+
+            await client.chat.update({
+              channel: dmChannelId,
+              ts: lastMessageTs,
+              blocks: updatedBlocks,
+              text: previousMessage.text || "이전 업데이트 제안"
+            });
+          }
+        }
+      } catch (error) {
+        console.error("이전 메시지 업데이트 실패:", error);
+      }
+    }
 
     // value 파싱
-    const rawValue = body.actions[0].value;
+    const value = body.actions?.[0]?.value;
+    if (!value) {
+      throw new Error("버튼 값을 찾을 수 없습니다");
+    }
+
+    const parsedValue = JSON.parse(value);
     let currentIndex = 0;
     let validMessages: SlackMessage[] = [];
+    let searchResults: Document<DocumentMetadata>[] = [];
+    let isFirstSuggestion = true;
 
-    if (rawValue) {
-      const parsedValue = JSON.parse(rawValue);
+    // 원본 채널 및 스레드 정보 (기본값은 현재 이벤트의 채널과 스레드)
+    let contextChannelId = originalChannelId;
+    let contextThreadTs = originalThreadTs;
+
+    if (parsedValue) {
+      // 원본 채널 및 스레드 정보가 있으면 저장
+      if (parsedValue.originalChannelId) {
+        contextChannelId = parsedValue.originalChannelId;
+      }
+      
+      if (parsedValue.originalThreadTs) {
+        contextThreadTs = parsedValue.originalThreadTs;
+      }
+
+      // Next Suggestion 버튼에서 온 경우
       if ("index" in parsedValue) {
-        // Next Suggestion 버튼에서 온 경우
         currentIndex = parsedValue.index;
         validMessages = getStoredMessages(parsedValue.messageKeys);
-      }
-    }
-
-    // 첫 번째 제안인 경우에만 메시지 선택 상태 확인
-    if (currentIndex === 0) {
-      const blockId = Object.keys(body.state?.values ?? {})[0];
-      const selectedOptions =
-        body.state?.values?.[blockId]?.selected_messages?.selected_options;
-
-      if (!selectedOptions || !Array.isArray(selectedOptions)) {
-        // throw new Error("No selected options provided");
-        // 에러를 던지는 대신 안내 메시지 전송
-        await client.chat.postEphemeral({
-          channel: body.channel?.id ?? "",
-          user: body.user.id,
-          thread_ts: body.container.thread_ts,
-          text: "You need to select at least one message to suggest document updates. Please select messages and try again.",
-        });
-        return; // 기능 종료
-      }
-
-      // 선택된 옵션의 value는 메시지 키입니다
-      const messageKeys = selectedOptions.map((option) => option.value);
-      validMessages = getStoredMessages(messageKeys);
-
-      // 메시지가 비어있는 경우 처리
-      if (validMessages.length === 0) {
-        await client.chat.postEphemeral({
-          channel: body.channel?.id ?? "",
-          user: body.user.id,
-          thread_ts: body.container.thread_ts,
-          text: "No messages were selected or messages could not be found. Please try again.",
-        });
-        return;
-      }
-    }
-
-    console.log("유효한 메시지 수:", validMessages.length);
-    console.log(
-      "검색 쿼리:",
-      validMessages
-        .map((msg) => msg.text)
-        .join("\n")
-        .substring(0, 100) + "..."
-    );
-
-    console.log("벡터 스토어 상태 진단 중...");
-    const vectorStore = VectorStoreService.getInstance();
-    const diagnosis = vectorStore.diagnoseVectorStore();
-
-    // 벡터 스토어에 문제가 있는 경우 안내 메시지 전송
-    if (
-      diagnosis.status !== "healthy" ||
-      diagnosis.details.vectorsCount === 0
-    ) {
-      console.log(
-        `벡터 스토어 문제 발견: ${diagnosis.status}, 벡터 수: ${diagnosis.details.vectorsCount}`
-      );
-
-      // 벡터가 완전히 없는 경우, 사용자에게 자동 초기화 옵션 제공
-      if (diagnosis.details.vectorsCount === 0) {
-        await client.chat.postEphemeral({
-          channel: body.channel?.id ?? "",
-          user: body.user.id,
-          thread_ts: body.container.thread_ts,
-          blocks: [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `⚠️ *Vector store issue detected*: ${diagnosis.status}\n\nYou can run the vector store diagnosis command or try automatic recovery.`,
-              },
-            },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: {
-                    type: "plain_text",
-                    text: "Run Diagnosis",
-                    emoji: true,
-                  },
-                  action_id: "diagnose_vector_store",
-                },
-                {
-                  type: "button",
-                  text: {
-                    type: "plain_text",
-                    text: "Try Automatic Recovery",
-                    emoji: true,
-                  },
-                  style: "primary",
-                  action_id: "rebuild_vector_cache",
-                },
-              ],
-            },
-          ],
-        });
-        return;
-      }
-
-      // 벡터에 일부 문제가 있는 경우, 진단 명령어 실행 안내
-      await client.chat.postEphemeral({
-        channel: body.channel?.id ?? "",
-        user: body.user.id,
-        thread_ts: body.container.thread_ts,
-        text: `⚠️ Vector store issue detected: ${diagnosis.status}\n\nTo run vector store diagnosis, open the app home tab and click the 'Vector Store Diagnosis' button, or run the \`/vector-diagnosis\` command.`,
-      });
-      return;
-    }
-
-    // 정상적인 경우 유사도 검색 실행
-    console.log("벡터 스토어 상태 정상, 유사도 검색 실행");
-    const searchResults = await vectorStore.similaritySearch(
-      validMessages.map((msg) => msg.text).join("\n"),
-      5
-    );
-
-    // 검색 결과가 없는 경우 처리
-    if (!searchResults || searchResults.length === 0) {
-      await client.chat.postEphemeral({
-        channel: body.channel?.id ?? "",
-        user: body.user.id,
-        thread_ts: body.container.thread_ts,
-        text: "No documents found related to the selected messages. Please select different messages or contact an administrator.\n\nIf there's an issue with the vector store, run the `/vector-diagnosis` command to diagnose and recover if needed.",
-      });
-      return;
-    }
-
-    // 상위 3개 문서를 처리 (또는 검색 결과의 모든 문서)
-    const topDocuments = searchResults.slice(
-      0,
-      Math.min(3, searchResults.length)
-    );
-    console.log(`처리할 상위 문서: ${topDocuments.length}개`);
-
-    // 파일별로 그룹화
-    const fileGroups = new Map<
-      string,
-      {
-        documents: Document<DocumentMetadata>[];
-        githubUrl: string;
-        fileName: string;
-      }
-    >();
-
-    // 각 문서를 파일별로 그룹화
-    for (const doc of topDocuments) {
-      if (!doc.metadata?.fileName || !doc.metadata?.githubUrl) {
-        console.log(`메타데이터 누락된 문서 건너뜀:`, doc.metadata);
-        continue;
-      }
-
-      const fileName = doc.metadata.fileName;
-
-      if (!fileGroups.has(fileName)) {
-        fileGroups.set(fileName, {
-          documents: [],
-          githubUrl: doc.metadata.githubUrl,
-          fileName: fileName,
-        });
-      }
-
-      fileGroups.get(fileName)!.documents.push(doc);
-    }
-
-    console.log(`파일 그룹 수: ${fileGroups.size}개`);
-
-    // documentUpdates 생성
-    const documentUpdates: DocumentUpdate[] = [];
-
-    // 각 파일별로 처리
-    for (const [fileName, group] of fileGroups.entries()) {
-      console.log(
-        `'${fileName}' 파일 처리 중 (${group.documents.length}개 노드)...`
-      );
-
-      // GitHub URL에서 owner와 repo 추출
-      const githubInfo = parseGithubUrl(group.githubUrl);
-      if (!githubInfo) {
-        console.error(`유효한 GitHub URL이 아닙니다: ${group.githubUrl}`);
-        continue;
-      }
-
-      // VectorStoreService에서 마크다운 파일 가져오기
-      const markdownFile = vectorStore.getMarkdownFile(fileName);
-
-      if (!markdownFile) {
-        console.error(`파일을 찾을 수 없습니다: ${fileName}`);
-        continue;
-      }
-
-      let docTree = markdownFile.tree;
-
-      console.log(
-        `파일 트리 파싱 완료: 노드 ${docTree.nodeMap.size}개, 섹션 ${docTree.sectionMap.size}개`
-      );
-
-      // 각 노드 업데이트 처리 및 결과 저장
-      for (let i = 0; i < group.documents.length; i++) {
-        const currentDoc = group.documents[i];
-        const nodeId = currentDoc.metadata?.nodeId;
-        const sectionId = currentDoc.metadata?.sectionId;
-
-        console.log(
-          `노드 ${i + 1}/${group.documents.length} 처리 중 - 노드 ID: ${
-            nodeId || "없음"
-          }, 섹션 ID: ${sectionId || "없음"}`
-        );
-
-        // 노드 콘텐츠와 섹션 정보
-        const markdownSection =
-          currentDoc.metadata?.headingPath?.[0] ||
-          currentDoc.metadata?.nodeType ||
-          "";
-
-        const nodeContent = currentDoc.pageContent || "";
-
-        let updatedNodeContent = "";
-
-        // 노드 업데이트 시도
-        try {
-          // 특정 노드 업데이트
-          if (nodeId && docTree.nodeMap.has(nodeId)) {
-            // 선택된 메시지로 노드 편집
-            updatedNodeContent = await editMarkdownWithUserMessages(
-              nodeContent,
-              validMessages,
-              client
-            );
-          } else {
-            console.log(`노드 ID가 없거나 트리에서 찾을 수 없음: ${nodeId}`);
-          }
-
-          // 노드별 업데이트 정보 저장
-          const oldSlackText = await convertMarkdownToSlackText(nodeContent);
-          const newSlackText = await convertMarkdownToSlackText(
-            updatedNodeContent || nodeContent
-          );
-          const diffBlock = createDiffBlock(oldSlackText, newSlackText);
-
-          // 변경사항 있는지 확인
-          const diffHasChanges = oldSlackText !== newSlackText;
-
-          // 메시지 정보 추출
-          const messageInfo = validMessages.map((msg) => ({
-            userId: msg.userId,
-            text: msg.text,
-            ts: msg.ts,
-            username: msg.username || "Unknown",
-          }));
-
-          // 중복 메시지 제거
-          const uniqueMessageInfo = Array.from(
-            new Map(
-              messageInfo.map((msg) => [
-                `${msg.userId}-${msg.ts}-${msg.text}`,
-                msg,
-              ])
-            ).values()
-          );
-
-          documentUpdates.push({
-            index: documentUpdates.length,
-            fileName,
-            githubUrl: group.githubUrl,
-            markdownSection,
-            hasChanges: diffHasChanges,
-            // 원래 노드 내용과 업데이트된 노드 내용 저장
-            nodeContent,
-            updatedNodeContent: updatedNodeContent || nodeContent,
-            // diff 화면용
-            diffBlock,
-            nodeId: nodeId || "",
-            oldContent: oldSlackText.substring(
-              0,
-              Math.min(oldSlackText.length, 1500)
-            ),
-            newContent: newSlackText.substring(
-              0,
-              Math.min(newSlackText.length, 1500)
-            ),
-            // 메시지 정보 추가 (중복 제거된 메시지)
-            messages: uniqueMessageInfo,
-            // 타임스탬프 추가
-            timestamp: new Date().toISOString(),
-          });
-        } catch (error) {
-          console.error(`노드 처리 중 오류 발생:`, error);
+        searchResults = getSearchResults(userId);
+        isFirstSuggestion = false;
+      } else {
+        // 새로운 업데이트 시작인 경우
+        if (parsedValue.messageKeys && Array.isArray(parsedValue.messageKeys)) {
+          validMessages = getStoredMessages(parsedValue.messageKeys);
         }
       }
     }
 
-    // 변경사항이 있고 UI에 표시할 문서만 필터링 (전체 파일 업데이트는 제외)
-    const documentUpdatesWithChanges = documentUpdates.filter(
-      (doc) => doc.hasChanges && doc.index >= 0
-    );
-
-    // 변경사항이 있는 문서가 없는 경우
-    if (documentUpdatesWithChanges.length === 0) {
-      await client.chat.postEphemeral({
-        channel: body.channel?.id ?? "",
-        user: body.user.id,
-        thread_ts: body.container.thread_ts,
-        text: "No parts of the document can be updated with the selected messages. Please select different messages or messages with clear update content.",
+    // 메시지가 없는 경우
+    if (validMessages.length === 0) {
+      await client.chat.postMessage({
+        channel: dmChannelId,
+        text: "문서 업데이트를 위해 메시지를 선택해야 합니다. 원래 대화로 돌아가서 메시지를 선택한 후 다시 시도해주세요.",
       });
       return;
     }
 
-    // documentUpdates 저장 (채널 정보도 함께 저장)
-    storeDocumentUpdates(userId, documentUpdates, body.container.thread_ts, body.channel?.id);
-
-    // 초기 상태에서 모든 문서가 선택되도록 설정
-    const initialNodeIds = documentUpdatesWithChanges
-      .filter((doc) => doc.nodeId)
-      .map((doc) => doc.nodeId!);
-    setSelectedNodeIds(userId, initialNodeIds);
-
-    const uniqueAuthors = Array.from(
-      new Set(validMessages.map((msg) => msg.userId))
-    );
-
-    // 공통 유틸리티 함수를 사용하여 블록 생성
-    const blocks = await generateDocumentUpdateBlocks(userId, documentUpdates, client);
-    
-    if (!blocks) {
-      await client.chat.postEphemeral({
-        channel: body.channel?.id ?? "",
-        user: body.user.id,
-        thread_ts: body.container.thread_ts ?? "",
-        text: "No parts of the document can be updated with the selected messages. Please select different messages or messages with clear update content.",
-      });
-      return;
-    }
-    
-    // 값 넣기: Start Discussion 버튼에 필요한 정보 추가
-    const discussionButton = blocks.find(
-      (block: any) => 
-        block.type === "actions" && 
-        block.block_id === "document_actions" && 
-        block.elements.some((el: any) => el.action_id === "start_discussion")
-    );
-    
-    if (discussionButton) {
-      const startDiscussionButton = discussionButton.elements.find(
-        (el: any) => el.action_id === "start_discussion"
-      );
-      
-      if (startDiscussionButton) {
-        startDiscussionButton.value = JSON.stringify({
-          stakeholders: uniqueAuthors,
-          validMessages,
-        });
-      }
-      
-      // Apply to Document 버튼에도 정보 추가
-      const applyButton = discussionButton.elements.find(
-        (el: any) => el.action_id === "apply_selected_to_github"
-      );
-      
-      if (applyButton) {
-        applyButton.value = JSON.stringify({
-          validMessages,
-        });
-      }
-    }
-
-    // 메시지 전송
-    await client.chat.postEphemeral({
-      channel: body.channel?.id ?? "",
-      user: body.user.id,
-      thread_ts: body.container.thread_ts,
-      blocks: blocks,
+    // DM에 진행 중 메시지 표시
+    const progressMessage = await client.chat.postMessage({
+      channel: dmChannelId,
+      text: "문서 업데이트 제안을 준비 중입니다...",
     });
+
+    // 벡터 스토어 상태 검사
+    const healthCheckResult = await checkVectorStoreHealth(client, dmChannelId);
+    if (!healthCheckResult.isHealthy) {
+      if (healthCheckResult.blocks) {
+        await client.chat.postMessage({
+          channel: dmChannelId,
+          blocks: healthCheckResult.blocks
+        });
+      } else if (healthCheckResult.message) {
+        await client.chat.postMessage({
+          channel: dmChannelId,
+          text: healthCheckResult.message
+        });
+      }
+      return;
+    }
+
+    // 첫 번째 제안인 경우에만 유사도 검색 실행
+    const vectorStore = VectorStoreService.getInstance();
+    if (currentIndex === 0) {
+      searchResults = await vectorStore.similaritySearch(
+        validMessages.map((msg) => msg.text).join("\n"),
+        5
+      );
+
+      if (!searchResults || searchResults.length === 0) {
+        await client.chat.postMessage({
+          channel: dmChannelId,
+          text: "선택한 메시지와 관련된 문서를 찾을 수 없습니다. 다른 메시지를 선택하거나 관리자에게 문의하세요.",
+        });
+        return;
+      }
+
+      // 검색 결과 저장
+      storeSearchResults(userId, searchResults);
+    }
+
+    // 현재 인덱스의 문서 처리
+    if (currentIndex >= searchResults.length) {
+      await client.chat.postMessage({
+        channel: dmChannelId,
+        text: "더 이상 업데이트할 문서가 없습니다.",
+      });
+      return;
+    }
+
+    const currentDoc = searchResults[currentIndex];
+    const processedDoc = await processDocument(currentDoc, validMessages, client, vectorStore);
+
+    if (!processedDoc || !processedDoc.hasChanges) {
+      // 변경사항이 없는 경우 다음 문서로 넘어감
+      await suggestUpdatesCallback({
+        ack: async () => {},
+        body: {
+          ...body,
+          actions: [{
+            value: JSON.stringify({
+              index: currentIndex + 1,
+              messageKeys: validMessages.map(msg => `${msg.userId}-${msg.ts}`),
+              originalChannelId: contextChannelId,
+              originalThreadTs: contextThreadTs
+            })
+          }]
+        },
+        client
+      } as any);
+      return;
+    }
+
+    // UI 블록 생성
+    const blocks = [];
+
+    // 첫 번째 제안일 때만 헤더 추가
+    if (isFirstSuggestion) {
+      blocks.push({
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: "Document Update Suggestions",
+          emoji: true
+        }
+      });
+    }
+
+    // 파일 이름과 섹션 정보 추가
+    blocks.push(
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*File:* <${processedDoc.githubUrl}|${processedDoc.fileName}|>\n*Section:* ${processedDoc.markdownSection || "문서 본문"}`
+        }
+      },
+      processedDoc.diffBlock,
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Edit Update",
+              emoji: true
+            },
+            action_id: "edit_update",
+            value: JSON.stringify({
+              nodeId: processedDoc.nodeId,
+              fileName: processedDoc.fileName,
+              originalContent: processedDoc.nodeContent
+            })
+          },
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Keep & Next",
+              emoji: true
+            },
+            action_id: "suggest_updates",
+            value: JSON.stringify({
+              index: currentIndex + 1,
+              messageKeys: validMessages.map(msg => `${msg.userId}-${msg.ts}`),
+              originalChannelId: contextChannelId,
+              originalThreadTs: contextThreadTs,
+              action: "keep"
+            })
+          },
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Reject & Next",
+              emoji: true
+            },
+            style: "danger",
+            action_id: "reject_update",
+            value: JSON.stringify({
+              index: currentIndex + 1,
+              messageKeys: validMessages.map(msg => `${msg.userId}-${msg.ts}`),
+              originalChannelId: contextChannelId,
+              originalThreadTs: contextThreadTs,
+              rejectIndex: currentIndex
+            })
+          }
+        ]
+      },
+      {
+        type: "actions",
+        block_id: "document_actions",
+        elements: [
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Apply to Document",
+              emoji: true
+            },
+            style: "primary",
+            action_id: "apply_to_document",
+            value: JSON.stringify({
+              nodeId: processedDoc.nodeId,
+              fileName: processedDoc.fileName,
+              updatedContent: processedDoc.updatedNodeContent,
+              originalChannelId: contextChannelId,
+              originalThreadTs: contextThreadTs
+            })
+          },
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Start Discussion",
+              emoji: true
+            },
+            action_id: "start_discussion",
+            value: JSON.stringify({
+              nodeId: processedDoc.nodeId,
+              fileName: processedDoc.fileName,
+              stakeholders: Array.from(new Set(validMessages.map(msg => msg.userId))),
+              originalChannelId: contextChannelId,
+              originalThreadTs: contextThreadTs
+            })
+          }
+        ]
+      }
+    );
+
+    // DM에 진행 중 메시지가 있다면 삭제
+    try {
+      await client.chat.delete({
+        channel: dmChannelId,
+        ts: progressMessage.ts as string
+      });
+    } catch (deleteError) {
+      console.error("진행 중 메시지 삭제 실패:", deleteError);
+    }
+
+    // 업데이트 제안 메시지 전송
+    const result = await client.chat.postMessage({
+      channel: dmChannelId,
+      blocks: blocks,
+      text: isFirstSuggestion ? "Document Update Suggestions" : `${processedDoc.fileName} 파일 업데이트 제안`
+    });
+
+    // 새로운 메시지의 타임스탬프 저장
+    if (result.ts) {
+      lastMessageTimestamps.set(userId, result.ts);
+    }
+
   } catch (error) {
     console.error("문서 업데이트 제안 중 오류 발생:", error);
 
-    if (body.channel?.id) {
-      await client.chat.postEphemeral({
-        channel: body.channel.id,
-        user: body.user.id,
-        text: `An error occurred while suggesting document updates: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
+    try {
+      const dmResult = await client.conversations.open({
+        users: body.user.id
       });
+      
+      if (dmResult.ok && dmResult.channel?.id) {
+        await client.chat.postMessage({
+          channel: dmResult.channel.id,
+          text: `문서 업데이트 제안 중 오류가 발생했습니다: ${
+            error instanceof Error ? error.message : "알 수 없는 오류"
+          }`
+        });
+      }
+    } catch (dmError) {
+      console.error("DM 전송 오류:", dmError);
+      
+      if (body.channel?.id) {
+        await client.chat.postEphemeral({
+          channel: body.channel.id,
+          user: body.user.id,
+          text: `문서 업데이트 제안 중 오류가 발생했습니다: ${
+            error instanceof Error ? error.message : "알 수 없는 오류"
+          }`
+        });
+      }
     }
   }
 };

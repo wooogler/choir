@@ -15,7 +15,8 @@ import {
   rebuildVectorCacheAction,
   resetVectorStoreAction,
 } from "./vector-store/vector-store-management";
-import { handleSelectedMessages } from "./general/select-messages";
+import { handleCheckMessages } from "./general/check-messages";
+import { handleSelectMessages } from "./general/select-messages";
 
 const register = (app: App) => {
   app.action("start_discussion", startDiscussionCallback);
@@ -38,7 +39,8 @@ const register = (app: App) => {
   app.action("reset_vector_store", resetVectorStoreAction);
 
   // 메시지 선택 메시지
-  app.action("selected_messages", handleSelectedMessages);
+  app.action("check_messages", handleCheckMessages);
+  app.action("select_messages", handleSelectMessages);
 };
 
 export default { register };

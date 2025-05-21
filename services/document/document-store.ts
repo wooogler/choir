@@ -1,4 +1,6 @@
 import { SlackMessage } from "../slack";
+import { Document } from "@langchain/core/documents";
+import { DocumentMetadata } from "../vector/types";
 
 export interface DocumentUpdate {
   index: number;
@@ -24,6 +26,9 @@ const storedDocumentUpdates = new Map<
 
 // 선택된 문서 ID를 저장하기 위한 Map (userId -> Set<string>)
 const selectedNodeIds = new Map<string, Set<string>>();
+
+// 검색 결과를 저장하기 위한 Map (userId -> Document<DocumentMetadata>[])
+const searchResultsStorage = new Map<string, Document<DocumentMetadata>[]>();
 
 // 사용자의 documentUpdates 가져오기
 export const getStoredDocumentUpdates = (userId: string): DocumentUpdate[] => {
@@ -124,4 +129,39 @@ export const removeSelectedNodeId = (userId: string, nodeId: string): void => {
 // 사용자의 선택된 문서 ID 설정
 export const setSelectedNodeIds = (userId: string, nodeIds: string[]): void => {
   selectedNodeIds.set(userId, new Set<string>(nodeIds));
+};
+
+// 검색 결과 저장하기
+export function storeSearchResults(userId: string, results: Document<DocumentMetadata>[]) {
+  searchResultsStorage.set(userId, results);
+}
+
+// 검색 결과 가져오기
+export function getSearchResults(userId: string): Document<DocumentMetadata>[] {
+  return searchResultsStorage.get(userId) || [];
+}
+
+// 검색 결과 삭제하기
+export function clearSearchResults(userId: string) {
+  searchResultsStorage.delete(userId);
+}
+
+// 특정 문서 업데이트 삭제하기
+export const removeDocumentUpdate = (
+  userId: string,
+  index: number
+): boolean => {
+  const userUpdates = storedDocumentUpdates.get(userId);
+  
+  if (!userUpdates || !userUpdates.documentUpdates[index]) {
+    return false;
+  }
+  
+  // index 위치의 업데이트 제거
+  userUpdates.documentUpdates.splice(index, 1);
+  
+  // 업데이트된 배열 저장
+  storedDocumentUpdates.set(userId, userUpdates);
+  
+  return true;
 };
