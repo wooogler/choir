@@ -1,13 +1,51 @@
 import { createSlackMessageWithName, formatSlackMessageBlock, SlackMessage } from "services/slack";
+import { WebClient } from "@slack/web-api";
 
+interface MessageResult {
+  ts: string;
+  channel: string;
+  ok: boolean;
+}
 
 /**
  * 업데이트 요청 메시지 처리
  */
-export async function handleUpdateRequestMessage(client: any, event: any, logger: any) {
+export async function handleUpdateRequestMessage(client: WebClient, event: any, logger: any) {
   try {
+    const userId = event.user;
+    const originalChannelId = event.channel;
+    const originalThreadTs = event.ts;
+    
+    // 원래 채널에 간단한 반응만 추가 (DM 확인 메시지 제거)
+    try {
+      await client.reactions.add({
+        channel: originalChannelId,
+        name: "eyes",
+        timestamp: originalThreadTs
+      });
+    } catch (reactionError) {
+      logger.warn("Failed to add reaction:", reactionError);
+    }
+    
+    // DM 채널 열기
+    const dmResult = await client.conversations.open({
+      users: userId
+    });
+    
+    if (!dmResult.ok || !dmResult.channel?.id) {
+      throw new Error("DM 채널을 열 수 없습니다");
+    }
+    
+    const dmChannelId = dmResult.channel.id;
+    
+    // DM에 진행 중 메시지 표시
+    const progressMessage = await client.chat.postMessage({
+      channel: dmChannelId,
+      text: "메시지 이력을 불러오는 중입니다...",
+    }) as MessageResult;
+
     const historyResult = await client.conversations.history({
-      channel: event.channel,
+      channel: originalChannelId,
       limit: 5,
     });
 
@@ -43,26 +81,27 @@ export async function handleUpdateRequestMessage(client: any, event: any, logger
           elements: [
             {
               type: "checkboxes",
-              action_id: "selected_messages",
+              action_id: "check_messages",
               options: checkboxOptions,
               initial_options: checkboxOptions,
             },
           ],
         },
       ];
+      
+      // 진행 중 메시지 삭제
+      try {
+        await client.chat.delete({
+          channel: dmChannelId,
+          ts: progressMessage.ts
+        });
+      } catch (deleteError) {
+        logger.error("진행 중 메시지 삭제 실패:", deleteError);
+      }
 
-      // 채널인 경우 스레드로 메시지 전송, DM인 경우 바로 전송
+      // DM으로 선택 UI 메시지 전송
       await client.chat.postMessage({
-        channel: event.channel,
-        ...(event.channel_type !== "im" && event.ts ? { thread_ts: event.ts } : {}),
-        text: `<@${event.user}>님이 CHOIR에 문서 편집을 요청했습니다.`,
-      });
-
-      // 사용자에게만 보이는 임시 메시지 전송
-      await client.chat.postEphemeral({
-        channel: event.channel,
-        user: event.user ?? "unknown",
-        ...(event.channel_type !== "im" && event.ts ? { thread_ts: event.ts } : {}),
+        channel: dmChannelId,
         text: "저장할 메시지를 선택해주세요.",
         blocks: [
           ...messageBlocks,
@@ -75,12 +114,17 @@ export async function handleUpdateRequestMessage(client: any, event: any, logger
                   type: "plain_text",
                   text: "문서 업데이트 제안",
                 },
-                action_id: "suggest_updates",
+                action_id: "select_messages",
+                value: JSON.stringify({
+                  originalChannelId,
+                  originalThreadTs,
+                  messageTs: progressMessage.ts
+                })
               },
             ],
           },
         ],
-      });
+      }) as MessageResult;
 
       return true;
     }
