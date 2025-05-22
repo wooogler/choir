@@ -14,43 +14,87 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
   try {
     const userId = event.user;
     const originalChannelId = event.channel;
-    const originalThreadTs = event.ts;
+    const originalThreadTs = event.thread_ts || event.ts;
     
-    // 원래 채널에 간단한 반응만 추가 (DM 확인 메시지 제거)
     try {
-      await client.reactions.add({
+      // Get bot info
+      const authTest = await client.auth.test();
+      const botUserId = authTest.user_id;
+      const teamId = authTest.team_id;
+
+      // Send ephemeral message with DM shortcut
+      await client.chat.postEphemeral({
         channel: originalChannelId,
-        name: "eyes",
-        timestamp: originalThreadTs
+        user: userId,
+        thread_ts: originalThreadTs,
+        text: "CHOIR has received your message. Please proceed with the document update in DM.",
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "CHOIR has received your message. Please proceed with the document update in DM."
+            }
+          },
+          {
+            type: "actions",
+            elements: [
+              {
+                type: "button",
+                text: {
+                  type: "plain_text",
+                  text: "Open DM",
+                  emoji: true
+                },
+                style: "primary",
+                url: `slack://user?team=${teamId}&id=${botUserId}&tab=messages`
+              }
+            ]
+          }
+        ]
       });
     } catch (reactionError) {
-      logger.warn("Failed to add reaction:", reactionError);
+      logger.warn("Failed to add reaction or send ephemeral message:", reactionError);
     }
     
-    // DM 채널 열기
+    // Open DM channel
     const dmResult = await client.conversations.open({
       users: userId
     });
     
     if (!dmResult.ok || !dmResult.channel?.id) {
-      throw new Error("DM 채널을 열 수 없습니다");
+      throw new Error("Failed to open DM channel");
     }
     
     const dmChannelId = dmResult.channel.id;
     
-    // DM에 진행 중 메시지 표시
+    // Show progress message in DM
     const progressMessage = await client.chat.postMessage({
       channel: dmChannelId,
-      text: "메시지 이력을 불러오는 중입니다...",
+      text: "Loading message history...",
     }) as MessageResult;
 
-    const historyResult = await client.conversations.history({
-      channel: originalChannelId,
-      limit: 5,
-    });
+    // 스레드 메시지인 경우 replies API를 사용하여 스레드 히스토리를 가져옴
+    const historyResult = event.thread_ts ? 
+      await client.conversations.replies({
+        channel: originalChannelId,
+        ts: event.thread_ts,
+        limit: 5,
+        inclusive: true // 원본 메시지 포함
+      }) :
+      await client.conversations.history({
+        channel: originalChannelId,
+        limit: 5,
+      });
 
     if (historyResult.messages?.length) {
-      const messages = (historyResult.messages ?? []).reverse();
+      // 시간 순으로 정렬 (오래된 순)
+      const messages = [...(historyResult.messages ?? [])].sort((a, b) => {
+        const tsA = parseFloat(a.ts || '0');
+        const tsB = parseFloat(b.ts || '0');
+        return tsA - tsB;
+      });
+
       const slackMessages = (
         await Promise.all(
           messages.map((msg: any) => createSlackMessageWithName(msg, client))
@@ -61,7 +105,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         slackMessages.map(formatSlackMessageBlock)
       );
 
-      // 체크박스 옵션 Slack API 형식으로 변환
+      // Convert checkbox options to Slack API format
       const checkboxOptions = messageOptions.map((option) => ({
         text: option.text,
         value: option.value,
@@ -69,10 +113,18 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
 
       const messageBlocks = [
         {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: "Document Update",
+            emoji: true
+          }
+        },
+        {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "*저장할 메시지 선택*",
+            text: "*Select Messages to Update*",
           },
         },
         {
@@ -89,20 +141,20 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         },
       ];
       
-      // 진행 중 메시지 삭제
+      // Delete progress message
       try {
         await client.chat.delete({
           channel: dmChannelId,
           ts: progressMessage.ts
         });
       } catch (deleteError) {
-        logger.error("진행 중 메시지 삭제 실패:", deleteError);
+        logger.error("Failed to delete progress message:", deleteError);
       }
 
-      // DM으로 선택 UI 메시지 전송
+      // Send message selection UI in DM
       await client.chat.postMessage({
         channel: dmChannelId,
-        text: "저장할 메시지를 선택해주세요.",
+        text: "Please select messages to update the document.",
         blocks: [
           ...messageBlocks,
           {
@@ -112,7 +164,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
                 type: "button",
                 text: {
                   type: "plain_text",
-                  text: "문서 업데이트 제안",
+                  text: "Suggest Document Updates",
                 },
                 action_id: "select_messages",
                 value: JSON.stringify({

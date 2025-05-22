@@ -10,7 +10,7 @@ import { VectorStoreService } from "services/vector/main-service";
 export interface ProcessedDocument {
   fileName: string;
   githubUrl: string;
-  markdownSection: string;
+  sectionName: string;
   nodeId: string;
   nodeContent: string;
   updatedNodeContent: string;
@@ -86,7 +86,7 @@ export async function processDocument(
     return {
       fileName,
       githubUrl: doc.metadata.githubUrl,
-      markdownSection: doc.metadata.headingPath?.[0] || doc.metadata.nodeType || "",
+      sectionName: doc.metadata.sectionName || "",
       nodeId,
       nodeContent,
       updatedNodeContent: updatedNodeContent || nodeContent,

@@ -1,13 +1,13 @@
 import { BlockButtonAction } from "@slack/bolt";
 import { 
   updateDocumentContent, 
-  convertMarkdownToSlackText, 
+  convertMarkdownToSlackText,
   getStoredDocumentUpdates,
   getStoredThreadTs,
   getStoredChannelId,
-  generateDocumentUpdateBlocks
 } from "../../services/document";
 import { createDiffBlock } from "../../services/slack";
+import suggestUpdatesCallback from "../document-handlers/suggest-updates";
 
 /**
  * 문서 업데이트 제안 편집 모달을 표시합니다.
@@ -17,14 +17,22 @@ export const showUpdateEditorModal = async ({ ack, body, client }: any) => {
     // 액션 확인
     await ack();
 
-    // 버튼의 value에서 필요한 정보 파싱
-    const actionValue = JSON.parse(body.actions[0].value);
-    const { index, nodeContent, updatedNodeContent } = actionValue;
+    // 버튼의 value 확인
+    const value = body.actions?.[0]?.value;
+    if (!value) {
+      throw new Error("버튼 값을 찾을 수 없습니다");
+    }
 
-    // 원본 콘텐츠와 업데이트된 콘텐츠로 diff 블록 생성
-    const oldSlackText = await convertMarkdownToSlackText(nodeContent);
-    const newSlackText = await convertMarkdownToSlackText(updatedNodeContent);
-    const diffBlock = createDiffBlock(oldSlackText, newSlackText);
+    // 버튼의 value에서 필요한 정보 파싱
+    const actionValue = JSON.parse(value);
+    const { nodeContent, updatedNodeContent } = actionValue;
+
+    // 필수 값 확인
+    if (!nodeContent || !updatedNodeContent) {
+      console.log("nodeContent", nodeContent);
+      console.log("updatedNodeContent", updatedNodeContent);
+      throw new Error("필수 콘텐츠 값이 누락되었습니다");
+    }
 
     // 모달 화면 생성
     await client.views.open({
@@ -33,8 +41,12 @@ export const showUpdateEditorModal = async ({ ack, body, client }: any) => {
         type: "modal",
         callback_id: "update_editor_submission",
         private_metadata: JSON.stringify({ 
-          index,
-          nodeContent
+          messageTs: body.message.ts,
+          channelId: body.channel.id,
+          nodeContent,
+          index: actionValue.index,
+          fileName: actionValue.fileName,
+          nodeId: actionValue.nodeId
         }),
         title: {
           type: "plain_text",
@@ -52,7 +64,7 @@ export const showUpdateEditorModal = async ({ ack, body, client }: any) => {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: oldSlackText,
+              text: nodeContent,
             },
           },
           {
@@ -68,33 +80,7 @@ export const showUpdateEditorModal = async ({ ack, body, client }: any) => {
               multiline: true,
               initial_value: updatedNodeContent,
             },
-          },
-          {
-            type: "actions",
-            block_id: "preview_actions",
-            elements: [
-              {
-                type: "button",
-                text: {
-                  type: "plain_text",
-                  text: "Preview Update",
-                  emoji: true,
-                },
-                style: "primary",
-                action_id: "preview_update",
-                value: JSON.stringify({ index }),
-              }
-            ]
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: "*Update Preview:*",
-            },
-          },
-          // 초기 diffBlock 표시
-          diffBlock
+          }
         ],
         submit: {
           type: "plain_text",
@@ -108,47 +94,22 @@ export const showUpdateEditorModal = async ({ ack, body, client }: any) => {
     });
   } catch (error) {
     console.error("Error showing update editor modal:", error);
-  }
-};
-
-/**
- * 미리보기 업데이트 버튼 액션을 처리합니다.
- */
-export const handlePreviewUpdate = async ({ ack, body, client }: any) => {
-  try {
-    // 액션 확인
-    await ack();
-
-    // 현재 모달 정보 가져오기
-    const currentView = body.view;
-    const { nodeContent } = JSON.parse(currentView.private_metadata);
-    const updatedContent = currentView.state.values.updated_content_block.updated_content_input.value;
-
-    // 원본 콘텐츠와 업데이트된 콘텐츠로 diff 블록 생성
-    const oldSlackText = await convertMarkdownToSlackText(nodeContent);
-    const newSlackText = await convertMarkdownToSlackText(updatedContent);
-    const diffBlock = createDiffBlock(oldSlackText, newSlackText);
-
-    // 모달 뷰 업데이트
-    const blocks = [...currentView.blocks];
     
-    // 마지막 블록(기존 diffBlock)을 새로운 diffBlock으로 교체
-    blocks[blocks.length - 1] = diffBlock;
+    // 사용자에게 에러 메시지 전송
+    try {
+      const dmResult = await client.conversations.open({
+        users: body.user.id
+      });
 
-    await client.views.update({
-      view_id: currentView.id,
-      view: {
-        type: "modal",
-        callback_id: currentView.callback_id,
-        private_metadata: currentView.private_metadata,
-        title: currentView.title,
-        blocks: blocks,
-        submit: currentView.submit,
-        close: currentView.close,
-      },
-    });
-  } catch (error) {
-    console.error("Error handling preview update:", error);
+      if (dmResult.ok && dmResult.channel?.id) {
+        await client.chat.postMessage({
+          channel: dmResult.channel.id,
+          text: `업데이트 편집기를 열 수 없습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`
+        });
+      }
+    } catch (dmError) {
+      console.error("Error sending error message:", dmError);
+    }
   }
 };
 
@@ -160,100 +121,97 @@ export const handleUpdateEditorSubmission = async ({ ack, body, client }: any) =
     // 제출 확인
     await ack();
 
-    // 메타데이터에서 index 가져오기
-    const { index } = JSON.parse(body.view.private_metadata);
+    // 메타데이터에서 정보 가져오기
+    const { messageTs, channelId, nodeContent, index, fileName, nodeId } = JSON.parse(body.view.private_metadata);
     
     // 입력된 업데이트 내용 가져오기
     const updatedContent = body.view.state.values.updated_content_block.updated_content_input.value;
 
-    // 문서 업데이트 저장
-    const userId = body.user.id;
-    const success = updateDocumentContent(userId, index, updatedContent);
+    // 새로운 diff 블록 생성
+    const oldSlackText = await convertMarkdownToSlackText(nodeContent);
+    const newSlackText = await convertMarkdownToSlackText(updatedContent);
+    const diffBlock = createDiffBlock(oldSlackText, newSlackText);
 
-    if (success) {
-      // 사용자의 documentUpdates 가져오기
-      const documentUpdates = getStoredDocumentUpdates(userId);
-      
-      // 공통 유틸리티 함수를 사용하여 블록 생성
-      const newBlocks = await generateDocumentUpdateBlocks(userId, documentUpdates, client);
-      
-      if (newBlocks) {
-        // thread_ts와 channel_id 가져오기 (이전 메시지를 찾기 위해)
-        const threadTs = getStoredThreadTs(userId);
-        const channelId = getStoredChannelId(userId);
-        
-        if (threadTs && channelId) {
-          // 원래 스레드에 메시지 보내기
-          await client.chat.postEphemeral({
-            user: userId,
-            channel: channelId,
-            thread_ts: threadTs,
-            blocks: newBlocks,
-            text: "Document Updates Suggestions has been refreshed."
-          });
-          
-          console.log(`메시지를 기존 스레드(${threadTs})와 채널(${channelId})에 전송했습니다.`);
-        } else {
-          console.log("스레드나 채널 정보를 찾을 수 없습니다:", { threadTs, channelId });
-          
-          // DM으로 메시지 보내기
-          try {
-            const conversationsResult = await client.conversations.open({
-              users: userId
-            });
-            
-            const dmChannelId = conversationsResult.channel?.id;
-            
-            if (!dmChannelId) {
-              throw new Error("DM 채널을 찾을 수 없습니다");
-            }
-            
-            await client.chat.postEphemeral({
-              user: userId,
-              channel: dmChannelId,
-              blocks: newBlocks,
-              text: "Document Updates Suggestions has been refreshed."
-            });
-            
-            console.log(`메시지를 DM 채널(${dmChannelId})에 전송했습니다.`);
-          } catch (dmError) {
-            console.error("DM 채널 사용 시 오류:", dmError);
-            
-            // 마지막 시도: 기본 메시지만 표시
-            const dmOpenResult = await client.conversations.open({
-              users: userId
-            });
-            
-            await client.chat.postMessage({
-              channel: dmOpenResult.channel?.id as string,
-              text: "업데이트 제안이 성공적으로 수정되었습니다. 원래 대화로 돌아가세요."
-            });
+    // 기존 메시지 가져오기
+    const result = await client.conversations.history({
+      channel: channelId,
+      latest: messageTs,
+      inclusive: true,
+      limit: 1
+    });
+
+    if (!result.messages || result.messages.length === 0) {
+      throw new Error("기존 메시지를 찾을 수 없습니다");
+    }
+
+    const message = result.messages[0];
+    const blocks = JSON.parse(JSON.stringify(message.blocks || [])); // 깊은 복사로 원본 블록 보존
+
+    // diff 블록 업데이트 - rich_text 타입 블록 찾기
+    const diffBlockIndex = blocks.findIndex((block: any) => 
+      block.type === "rich_text" && 
+      block.elements?.[0]?.type === "rich_text_section"
+    );
+
+    if (diffBlockIndex !== -1) {
+      blocks[diffBlockIndex] = diffBlock;
+
+      // Edit Update 버튼의 value만 업데이트
+      const actionsBlockIndex = blocks.findIndex((block: any) => 
+        block.type === "actions" && 
+        block.elements?.some((element: any) => element.action_id === "edit_update")
+      );
+
+      if (actionsBlockIndex !== -1) {
+        const actionsBlock = blocks[actionsBlockIndex];
+        actionsBlock.elements = actionsBlock.elements.map((element: any) => {
+          if (element.action_id === "edit_update") {
+            // 버튼의 다른 속성은 그대로 유지하고 value만 업데이트
+            return {
+              ...element,
+              value: JSON.stringify({
+                ...JSON.parse(element.value),
+                nodeContent,
+                updatedNodeContent: updatedContent
+              })
+            };
           }
-        }
-      } else {
-        // 블록 생성 실패 시 기본 메시지 표시
-        const dmOpenResult = await client.conversations.open({
-          users: userId
-        });
-        
-        await client.chat.postMessage({
-          channel: dmOpenResult.channel?.id as string,
-          text: "업데이트 제안이 성공적으로 수정되었습니다. 원래 대화로 돌아가세요."
+          return {...element}; // 다른 버튼들도 깊은 복사
         });
       }
+
+      // 메시지 업데이트
+      await client.chat.update({
+        channel: channelId,
+        ts: messageTs,
+        blocks: blocks,
+        text: message.text || "Document Update Suggestion"
+      });
+
+      // 문서 업데이트 저장
+      const userId = body.user.id;
+      updateDocumentContent(userId, index, updatedContent);
     } else {
-      // 실패 시 에러 메시지
-      // DM으로 메시지 보내기
-      const dmOpenResult = await client.conversations.open({
-        users: userId
-      });
-      
-      await client.chat.postMessage({
-        channel: dmOpenResult.channel?.id as string,
-        text: "업데이트 제안 수정 중 오류가 발생했습니다. 나중에 다시 시도해주세요."
-      });
+      throw new Error("업데이트할 diff 블록을 찾을 수 없습니다");
     }
+
   } catch (error) {
     console.error("Error handling update editor submission:", error);
+    
+    // 사용자에게 에러 메시지 전송
+    try {
+      const dmResult = await client.conversations.open({
+        users: body.user.id
+      });
+
+      if (dmResult.ok && dmResult.channel?.id) {
+        await client.chat.postMessage({
+          channel: dmResult.channel.id,
+          text: `업데이트 제안 수정 중 오류가 발생했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`
+        });
+      }
+    } catch (dmError) {
+      console.error("Error sending error message:", dmError);
+    }
   }
 }; 
