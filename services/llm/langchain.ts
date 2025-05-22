@@ -57,7 +57,7 @@ export function createDocumentsFromTree(
   // 헤딩 정보 수집
   visit(docTree.root, "heading", (node) => {
     const headingNode = node as Heading & ExtendedNode;
-    if (headingNode.depth > 1 && headingNode.sectionId && headingNode.id) {
+    if (headingNode.sectionId && headingNode.id) {
       const headingText = toString(headingNode);
       headingMap.set(headingNode.sectionId, headingText);
 
@@ -419,7 +419,6 @@ function getHeadingPathForNode(
 /**
  * 헤딩 경로를 포매팅하여 문맥 접두사로 만듭니다.
  * 이 함수는 계층적 헤딩 정보를 문서 콘텐츠에 추가해 RAG 성능을 향상시킬 수 있습니다.
- * @deprecated 헤딩을 접두사로 추가하는 것은 중복 표시 문제를 발생시킬 수 있음
  */
 function formatHeadingContext(headingPath: string[]): string {
   // 헤딩 경로가 없거나 비어있으면 빈 문자열 반환

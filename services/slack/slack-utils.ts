@@ -135,7 +135,7 @@ export async function formatSlackMessageBlock(message: SlackMessage) {
   const timestamp = new Date(Number(message.ts) * 1000).toLocaleTimeString();
 
   // 전체 displayText를 70자로 제한
-  const fullDisplayText = `*<@${message.userId}>* ${timestamp}\n${message.text}`;
+  const fullDisplayText = `*${message.username || "사용자"}* ${timestamp}\n${message.text}`;
   const truncatedDisplayText =
     fullDisplayText.length > 70
       ? fullDisplayText.substring(0, 70) + "..."

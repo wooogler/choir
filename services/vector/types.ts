@@ -24,6 +24,7 @@ export interface DocumentMetadata {
   githubUrl?: string;
   nodeId?: string;
   sectionId?: string;
+  sectionName?: string;
   nodeType?: string;
   importance?: number;
   chunkIndex?: number;

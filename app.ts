@@ -7,6 +7,7 @@ import startDiscussionCallback from "./listeners/actions/discussion/start-discus
 import startConsultationCallback from "./listeners/actions/discussion/start-consultation";
 import { VectorStoreService } from "services/vector/main-service";
 import { getGithubRepo, getWorkspaceId, setupInitialManager } from "services/slack";
+import { handleClearChat } from "./listeners/commands/clear-chat";
 
 dotenv.config();
 
@@ -79,6 +80,9 @@ app.event('app_home_opened', async ({ event, client, logger }) => {
 // Register listeners
 app.action("start_discussion", startDiscussionCallback);
 app.action("start_consultation", startConsultationCallback);
+
+// Register commands
+app.command("/clear-choir-chat", handleClearChat);
 
 /** Start Bolt App */
 (async () => {

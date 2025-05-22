@@ -33,7 +33,7 @@ const suggestUpdatesCallback = async ({
     const originalThreadTs = body.container.thread_ts;
 
     if (!originalChannelId) {
-      throw new Error("채널 ID를 찾을 수 없습니다");
+      throw new Error("Channel ID not found");
     }
 
     // DM 채널 열기
@@ -83,7 +83,7 @@ const suggestUpdatesCallback = async ({
     // value 파싱
     const value = body.actions?.[0]?.value;
     if (!value) {
-      throw new Error("버튼 값을 찾을 수 없습니다");
+      throw new Error("Button value not found");
     }
 
     const parsedValue = JSON.parse(value);
@@ -124,7 +124,7 @@ const suggestUpdatesCallback = async ({
     if (validMessages.length === 0) {
       await client.chat.postMessage({
         channel: dmChannelId,
-        text: "문서 업데이트를 위해 메시지를 선택해야 합니다. 원래 대화로 돌아가서 메시지를 선택한 후 다시 시도해주세요.",
+        text: "Please select messages to update the document. Go back to the original conversation and select messages before trying again.",
       });
       return;
     }
@@ -132,7 +132,7 @@ const suggestUpdatesCallback = async ({
     // DM에 진행 중 메시지 표시
     const progressMessage = await client.chat.postMessage({
       channel: dmChannelId,
-      text: "문서 업데이트 제안을 준비 중입니다...",
+      text: "Preparing document update suggestions...",
     });
 
     // 벡터 스토어 상태 검사
@@ -163,7 +163,7 @@ const suggestUpdatesCallback = async ({
       if (!searchResults || searchResults.length === 0) {
         await client.chat.postMessage({
           channel: dmChannelId,
-          text: "선택한 메시지와 관련된 문서를 찾을 수 없습니다. 다른 메시지를 선택하거나 관리자에게 문의하세요.",
+          text: "No relevant documents found for the selected messages. Please try with different messages or contact an administrator.",
         });
         return;
       }
@@ -176,7 +176,7 @@ const suggestUpdatesCallback = async ({
     if (currentIndex >= searchResults.length) {
       await client.chat.postMessage({
         channel: dmChannelId,
-        text: "더 이상 업데이트할 문서가 없습니다.",
+        text: "No more documents to update.",
       });
       return;
     }
@@ -213,7 +213,7 @@ const suggestUpdatesCallback = async ({
         type: "header",
         text: {
           type: "plain_text",
-          text: "Document Update Suggestions",
+          text: "Suggestions",
           emoji: true
         }
       });
@@ -225,7 +225,7 @@ const suggestUpdatesCallback = async ({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*File:* <${processedDoc.githubUrl}|${processedDoc.fileName}|>\n*Section:* ${processedDoc.markdownSection || "문서 본문"}`
+          text: `*File:* <${processedDoc.githubUrl}|${processedDoc.fileName}>\n*Section:* ${processedDoc.sectionName ? `<${processedDoc.githubUrl}#${processedDoc.sectionName.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-')}|${processedDoc.sectionName}>` : "문서 본문"}`
         }
       },
       processedDoc.diffBlock,
@@ -243,14 +243,15 @@ const suggestUpdatesCallback = async ({
             value: JSON.stringify({
               nodeId: processedDoc.nodeId,
               fileName: processedDoc.fileName,
-              originalContent: processedDoc.nodeContent
+              nodeContent: processedDoc.nodeContent,
+              updatedNodeContent: processedDoc.updatedNodeContent
             })
           },
           {
             type: "button",
             text: {
               type: "plain_text",
-              text: "Keep & Next",
+              text: "Keep and Next",
               emoji: true
             },
             action_id: "suggest_updates",
@@ -266,7 +267,7 @@ const suggestUpdatesCallback = async ({
             type: "button",
             text: {
               type: "plain_text",
-              text: "Reject & Next",
+              text: "Reject and Next",
               emoji: true
             },
             style: "danger",
@@ -336,7 +337,9 @@ const suggestUpdatesCallback = async ({
     const result = await client.chat.postMessage({
       channel: dmChannelId,
       blocks: blocks,
-      text: isFirstSuggestion ? "Document Update Suggestions" : `${processedDoc.fileName} 파일 업데이트 제안`
+      unfurl_links: false,
+      unfurl_media: false,
+      text: "Document Update Suggestions"
     });
 
     // 새로운 메시지의 타임스탬프 저장
