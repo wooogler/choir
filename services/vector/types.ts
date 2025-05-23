@@ -30,6 +30,11 @@ export interface DocumentMetadata {
   chunkIndex?: number;
   totalChunks?: number;
   entityMentions?: string[];
+  webContent?: Array<{
+    url: string;
+    title: string;
+    content: string;
+  }>;
   [key: string]: any;
 }
 

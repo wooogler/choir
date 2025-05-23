@@ -16,7 +16,7 @@ const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
   socketMode: process.env.NODE_ENV !== "production",
   signingSecret: process.env.SLACK_SIGNING_SECRET,
-  logLevel: LogLevel.DEBUG,
+  logLevel: LogLevel.INFO,
   appToken: process.env.SLACK_APP_TOKEN,
 });
 

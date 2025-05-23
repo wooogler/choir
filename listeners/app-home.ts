@@ -1,5 +1,6 @@
 import type { App, AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
 import { getManagers, isManager, getWorkspaceId, isWorkspaceOwner, getGithubRepo } from "services/slack";
+import { VectorStoreService } from "services/vector/main-service";
 
 const appHomeOpenedCallback = async ({
   client,
@@ -89,6 +90,77 @@ const appHomeOpenedCallback = async ({
       managerBlocks.push({
         type: "divider",
       });
+    }
+
+    // Vector Store Management section (only for managers)
+    const vectorStoreBlocks = [];
+    if (isUserManager || isOwner) {
+      const vectorStore = VectorStoreService.getInstance();
+      const diagnosis = vectorStore.diagnoseVectorStore();
+
+      vectorStoreBlocks.push(
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: "🔄 Vector Store Management",
+            emoji: true,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Current Status:* ${diagnosis.status === "healthy" ? "✅ Healthy" : diagnosis.status === "degraded" ? "⚠️ Degraded" : "❌ Error"}\n*Documents:* ${diagnosis.details.documentCount}\n*Vectors:* ${diagnosis.details.vectorsCount}`,
+          },
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "Rebuild Cache",
+                emoji: true,
+              },
+              style: "primary",
+              action_id: "rebuild_vector_cache",
+            },
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "Emergency Reset",
+                emoji: true,
+              },
+              style: "danger",
+              action_id: "reset_vector_store",
+              confirm: {
+                title: {
+                  type: "plain_text",
+                  text: "Are you sure?",
+                },
+                text: {
+                  type: "plain_text",
+                  text: "This will completely reset the vector store and rebuild it. This action cannot be undone.",
+                },
+                confirm: {
+                  type: "plain_text",
+                  text: "Execute Reset",
+                },
+                deny: {
+                  type: "plain_text",
+                  text: "Cancel",
+                },
+              },
+            },
+          ],
+        },
+        {
+          type: "divider",
+        }
+      );
     }
 
     // GitHub repository connection section
@@ -269,6 +341,7 @@ const appHomeOpenedCallback = async ({
       ...homeBlocks,
       ...managerManagementBlocks,
       ...managerBlocks,
+      ...vectorStoreBlocks,
       ...githubBlocks,
     ];
 

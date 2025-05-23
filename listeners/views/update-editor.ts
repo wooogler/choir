@@ -127,6 +127,13 @@ export const handleUpdateEditorSubmission = async ({ ack, body, client }: any) =
     // 입력된 업데이트 내용 가져오기
     const updatedContent = body.view.state.values.updated_content_block.updated_content_input.value;
 
+    // Edit 버튼으로 변경된 내용을 콘솔에 출력
+    console.log("=== Document Update Edit ===");
+    console.log(`File: ${fileName}`);
+    console.log(`Section: ${nodeId}`);
+    console.log("Content updated successfully");
+    console.log("=== End Document Update Edit ===");
+
     // 새로운 diff 블록 생성
     const oldSlackText = await convertMarkdownToSlackText(nodeContent);
     const newSlackText = await convertMarkdownToSlackText(updatedContent);
@@ -214,4 +221,4 @@ export const handleUpdateEditorSubmission = async ({ ack, body, client }: any) =
       console.error("Error sending error message:", dmError);
     }
   }
-}; 
+};

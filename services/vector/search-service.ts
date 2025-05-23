@@ -6,6 +6,7 @@ import {
   EnhancedSearchResult,
   SearchParams,
 } from "./types";
+import { preprocessMarkdownForEmbedding } from "services/document/markdown";
 
 /**
  * 유사도 검색 관련 기능을 담당하는 클래스
@@ -93,43 +94,32 @@ export class SearchService {
     k = 5
   ): Promise<Document<DocumentMetadata>[]> {
     try {
-      // 슬랙 사용자 ID만 제거하고 나머지 콘텐츠는 유지
-      // <@U123456> 형태의 사용자 ID는 의미가 없으므로 제거
-      // 이렇게 하면 "Zoom", "Skype" 같은 중요 키워드가 보존됨
-      const cleanedQuery = query.replace(/<@[A-Z0-9]+>/g, "").trim();
+      if (!query || query.trim() === "") {
+        this.logger.warn("Empty query provided to similarity search");
+        return [];
+      }
+
+      // 쿼리를 임베딩과 동일한 방식으로 전처리
+      const preprocessedQuery = preprocessMarkdownForEmbedding(query);
+      
+      // 전처리 후 빈 쿼리인지 확인
+      if (!preprocessedQuery || preprocessedQuery.trim() === "") {
+        this.logger.warn("Query became empty after preprocessing");
+        return [];
+      }
 
       this.logger.info(
-        `Performing basic similarity search with k=${k}, query="${cleanedQuery.substring(
-          0,
-          50
-        )}${cleanedQuery.length > 50 ? "..." : ""}"`
+        `Similarity search: "${query.substring(0, 50)}${query.length > 50 ? "..." : ""}" -> "${preprocessedQuery.substring(0, 50)}${preprocessedQuery.length > 50 ? "..." : ""}"`
       );
 
-      // 쿼리에서 중요 키워드 추출 및 로깅
-      const importantKeywords = this.extractImportantKeywords(cleanedQuery);
-      if (importantKeywords.length > 0) {
-        this.logger.info(`중요 키워드 감지: ${importantKeywords.join(", ")}`);
-      }
-
-      // 입력 검증 추가
-      if (!cleanedQuery || cleanedQuery.trim() === "") {
-        this.logger.warn(
-          "Empty query provided to similaritySearch after cleaning"
-        );
-        return [];
-      }
-
-      // 벡터 스토어 검증
-      if (!this.store) {
-        this.logger.warn("Vector store is not initialized");
-        return [];
-      }
+      // 검색 실행
+      this.logger.info(`Performing similarity search with k=${k}`);
 
       // 메모리 벡터 스토어의 내장 similaritySearch 메서드 사용
       try {
         this.logger.info("Using LangChain's built-in similarity search");
         const searchResults = await this.store.similaritySearch(
-          cleanedQuery,
+          preprocessedQuery,
           k
         );
 

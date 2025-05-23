@@ -7,9 +7,12 @@ import type {
 import type { KnownBlock, Block } from "@slack/web-api";
 import { processDocument } from "services/document/update-processor";
 import { 
-  storeSearchResults, 
+  storeDocumentUpdates, 
   getSearchResults, 
-  removeDocumentUpdate 
+  removeDocumentUpdate,
+  getStoredDocumentUpdates,
+  DocumentUpdate,
+  storeSearchResults
 } from "services/document/document-store";
 import { getStoredMessages } from "services/slack";
 import { SlackMessage } from "services/slack";
@@ -204,6 +207,37 @@ const suggestUpdatesCallback = async ({
       return;
     }
 
+    // processedDoc을 DocumentUpdate 형태로 변환
+    const documentUpdate: DocumentUpdate = {
+      index: currentIndex,
+      fileName: processedDoc.fileName,
+      githubUrl: processedDoc.githubUrl,
+      markdownSection: processedDoc.sectionName || "Main Content",
+      hasChanges: processedDoc.hasChanges,
+      nodeContent: processedDoc.nodeContent,
+      updatedNodeContent: processedDoc.updatedNodeContent,
+      diffBlock: processedDoc.diffBlock,
+      nodeId: processedDoc.nodeId,
+      oldContent: processedDoc.nodeContent,
+      newContent: processedDoc.updatedNodeContent,
+      messages: validMessages,
+      timestamp: new Date().toISOString()
+    };
+
+    // 현재 사용자의 document updates 가져오기
+    const currentUpdates = getStoredDocumentUpdates(userId);
+    
+    // 새로운 업데이트 추가 (기존 인덱스 업데이트하거나 새로 추가)
+    const existingUpdateIndex = currentUpdates.findIndex(update => update.nodeId === documentUpdate.nodeId);
+    if (existingUpdateIndex >= 0) {
+      currentUpdates[existingUpdateIndex] = documentUpdate;
+    } else {
+      currentUpdates.push(documentUpdate);
+    }
+    
+    // 업데이트된 배열 저장
+    storeDocumentUpdates(userId, currentUpdates);
+
     // UI 블록 생성
     const blocks = [];
 
@@ -236,11 +270,12 @@ const suggestUpdatesCallback = async ({
             type: "button",
             text: {
               type: "plain_text",
-              text: "Edit Update",
+              text: "Edit",
               emoji: true
             },
             action_id: "edit_update",
             value: JSON.stringify({
+              index: currentIndex,
               nodeId: processedDoc.nodeId,
               fileName: processedDoc.fileName,
               nodeContent: processedDoc.nodeContent,
@@ -251,9 +286,10 @@ const suggestUpdatesCallback = async ({
             type: "button",
             text: {
               type: "plain_text",
-              text: "Keep and Next",
+              text: "Keep",
               emoji: true
             },
+            style: "primary",
             action_id: "suggest_updates",
             value: JSON.stringify({
               index: currentIndex + 1,
@@ -267,7 +303,7 @@ const suggestUpdatesCallback = async ({
             type: "button",
             text: {
               type: "plain_text",
-              text: "Reject and Next",
+              text: "Discard",
               emoji: true
             },
             style: "danger",
@@ -281,47 +317,61 @@ const suggestUpdatesCallback = async ({
             })
           }
         ]
-      },
-      {
-        type: "actions",
-        block_id: "document_actions",
-        elements: [
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "Apply to Document",
-              emoji: true
-            },
-            style: "primary",
-            action_id: "apply_to_document",
-            value: JSON.stringify({
-              nodeId: processedDoc.nodeId,
-              fileName: processedDoc.fileName,
-              updatedContent: processedDoc.updatedNodeContent,
-              originalChannelId: contextChannelId,
-              originalThreadTs: contextThreadTs
-            })
-          },
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "Start Discussion",
-              emoji: true
-            },
-            action_id: "start_discussion",
-            value: JSON.stringify({
-              nodeId: processedDoc.nodeId,
-              fileName: processedDoc.fileName,
-              stakeholders: Array.from(new Set(validMessages.map(msg => msg.userId))),
-              originalChannelId: contextChannelId,
-              originalThreadTs: contextThreadTs
-            })
-          }
-        ]
       }
     );
+
+    // 사용자 정보 가져오기
+    const userInfo = await client.users.info({
+      user: userId
+    });
+
+    // Manager 여부 확인 (is_admin 또는 is_owner가 true인 경우)
+    const isManager = userInfo.user?.is_admin || userInfo.user?.is_owner;
+
+    // 문서 액션 버튼 추가
+    const documentActions = {
+      type: "actions",
+      block_id: "document_actions",
+      elements: [] as any[]
+    };
+
+    // Manager인 경우에만 Update Documents 버튼 추가
+    if (isManager) {
+      documentActions.elements.push({
+        type: "button",
+        text: {
+          type: "plain_text",
+          text: "Update Documents",
+          emoji: true
+        },
+        style: "primary",
+        action_id: "apply_to_document",
+        value: JSON.stringify({
+          userId: userId,
+          originalChannelId: contextChannelId,
+          originalThreadTs: contextThreadTs
+        })
+      });
+    }
+
+    // Discuss 버튼 추가 (Manager 여부에 따라 텍스트 변경)
+    documentActions.elements.push({
+      type: "button",
+      text: {
+        type: "plain_text",
+        text: isManager ? "Discuss with Members" : "Discuss with Managers",
+        emoji: true
+      },
+      action_id: "start_discussion",
+      value: JSON.stringify({
+        userId: userId,
+        stakeholders: Array.from(new Set(validMessages.map(msg => msg.userId))),
+        originalChannelId: contextChannelId,
+        originalThreadTs: contextThreadTs
+      })
+    });
+
+    blocks.push(documentActions);
 
     // DM에 진행 중 메시지가 있다면 삭제
     try {

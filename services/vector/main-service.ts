@@ -8,6 +8,8 @@ import { SearchService } from "./search-service";
 import { DocumentMetadata, VectorStoreError } from "./types";
 import { DocumentTree } from "services/document";
 import { createDocumentsFromTree } from "services/llm";
+import { DocumentEnhancer } from "services/web-content/document-enhancer";
+import { preprocessMarkdownForEmbedding } from "services/document/markdown";
 
 
 /**
@@ -166,11 +168,22 @@ export class VectorStoreService {
         return false;
       }
 
-      // 텍스트 추출
-      const texts = this.documents.map((doc) => doc.pageContent);
+      // 텍스트 추출 및 임베딩을 위한 전처리
+      const texts = this.documents.map((doc) => {
+        // 마크다운 링크에서 텍스트만 추출하고 URL 제거
+        const preprocessedContent = preprocessMarkdownForEmbedding(doc.pageContent);
+        return preprocessedContent;
+      });
       console.info(
-        `Extracted ${texts.length} text chunks for embedding generation`
+        `Extracted and preprocessed ${texts.length} text chunks for embedding generation`
       );
+
+      // 전처리 결과 샘플 로깅
+      if (texts.length > 0) {
+        const originalSample = this.documents[0].pageContent.substring(0, 100);
+        const preprocessedSample = texts[0].substring(0, 100);
+        console.info(`Preprocessing sample:\nOriginal: "${originalSample}..."\nPreprocessed: "${preprocessedSample}..."`);
+      }
 
       // 임베딩 생성
       const embeddings = await this.embeddingService.createEmbeddings(texts);
@@ -361,7 +374,44 @@ export class VectorStoreService {
       }
 
       console.info(`Total documents prepared: ${allDocuments.length}`);
+
+      // 웹 콘텐츠로 문서 향상
+      try {
+        console.info("Starting document enhancement with web content...");
+        const enhancer = DocumentEnhancer.getInstance();
+        
+        // 향상 전 상태 로깅
+        console.info(`Documents before enhancement: ${allDocuments.length}`);
+        
+        // URL이 포함된 문서 확인
+        const docsWithUrls = allDocuments.filter(doc => 
+          doc.pageContent && doc.pageContent.match(/https?:\/\/[^\s<>"']+/g)
+        );
+        console.info(`Documents with URLs found: ${docsWithUrls.length}`);
+        
+        if (docsWithUrls.length > 0) {
+          console.info("Sample documents with URLs:");
+          docsWithUrls.slice(0, 3).forEach((doc, i) => {
+            const urls = doc.pageContent.match(/https?:\/\/[^\s<>"']+/g) || [];
+            console.info(`  ${i + 1}. ${doc.metadata.nodeId}: ${urls.join(', ')}`);
+          });
+        }
+        
+        const enhancedDocuments = await enhancer.enhanceDocuments(allDocuments);
+        console.info(`Documents enhanced with web content: ${enhancedDocuments.length} total`);
+        
+        // 향상 후 상태 로깅
+        const enhancedDocsWithWebContent = enhancedDocuments.filter(doc => 
+          doc.metadata.webSources && doc.metadata.webSources.length > 0
+        );
+        console.info(`Documents with web content added: ${enhancedDocsWithWebContent.length}`);
+        
+        return enhancedDocuments;
+      } catch (error) {
+        console.error("Error enhancing documents with web content:", error);
+        console.info("Proceeding with original documents without web enhancement");
       return allDocuments;
+      }
     } catch (error) {
       console.error("Error preparing documents:", error);
       return [];
