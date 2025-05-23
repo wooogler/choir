@@ -5,9 +5,9 @@
   "main": "dist/app.js",
   "scripts": {
     "build": "tsc",
-    "start": "npm run build && node ./dist/app.js",
     "dev": "ts-node -r tsconfig-paths/register app.ts",
     "dev:watch": "nodemon --watch '**/*.ts' --exec 'ts-node -r tsconfig-paths/register' app.ts",
+    "dev:prod": "NODE_ENV=production ts-node -r tsconfig-paths/register app.ts",
     "lint": "npx @biomejs/biome check *.ts listeners",
     "lint:fix": "npx @biomejs/biome check --write *.ts listeners",
     "test": "npm run build && npm run lint"
