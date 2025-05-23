@@ -445,3 +445,19 @@ export async function isBotUser(userId: string, client: WebClient): Promise<bool
     return false;
   }
 }
+
+/**
+ * 채널 ID로부터 클릭 가능한 채널 멘션을 생성합니다.
+ * @param channelId 채널 ID
+ * @param client Slack WebClient 인스턴스
+ * @returns Slack 형식의 채널 멘션 (예: <#C1234|general>)
+ */
+export async function getChannelName(channelId: string, client: WebClient): Promise<string> {
+  try {
+    const channelInfo = await client.conversations.info({ channel: channelId });
+    return channelInfo.channel?.name ? `<#${channelId}|${channelInfo.channel.name}>` : "this channel";
+  } catch (error) {
+    console.error(`채널 정보를 가져오는 중 오류 발생: ${channelId}`, error);
+    return "this channel";
+  }
+}

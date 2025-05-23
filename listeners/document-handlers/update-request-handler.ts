@@ -1,4 +1,4 @@
-import { createSlackMessageWithName, formatSlackMessageBlock, SlackMessage } from "services/slack";
+import { createSlackMessageWithName, formatSlackMessageBlock, SlackMessage, getChannelName, isBotUser } from "services/slack";
 import { WebClient } from "@slack/web-api";
 
 interface MessageResult {
@@ -14,7 +14,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
   try {
     const userId = event.user;
     const originalChannelId = event.channel;
-    const originalThreadTs = event.thread_ts || event.ts;
+    const isThreadMention = !!event.thread_ts;
     
     try {
       // Get bot info
@@ -22,18 +22,34 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       const botUserId = authTest.user_id;
       const teamId = authTest.team_id;
 
-      // Send ephemeral message with DM shortcut
-      await client.chat.postEphemeral({
+      // 스레드에서 멘션된 경우 해당 스레드에, 아닌 경우 채널에 직접 메시지 전송
+      await client.chat.postMessage({
         channel: originalChannelId,
-        user: userId,
-        thread_ts: originalThreadTs,
-        text: "CHOIR has received your message. Please proceed with the document update in DM.",
+        ...(isThreadMention && { thread_ts: event.thread_ts }),
+        text: "Thank you for the request. Let's discuss the update in a separate channel.",
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: "CHOIR has received your message. Please proceed with the document update in DM."
+              text: "Thank you for the request. Let's discuss the update in a separate channel."
+            }
+          }
+        ]
+      });
+
+      // Send ephemeral message with DM shortcut
+      await client.chat.postEphemeral({
+        channel: originalChannelId,
+        user: userId,
+        ...(isThreadMention && { thread_ts: event.thread_ts }),
+        text: "Please press the button below to proceed with the document update.",
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "Please press the button below to proceed with the document update."
             }
           },
           {
@@ -43,7 +59,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
                 type: "button",
                 text: {
                   type: "plain_text",
-                  text: "Open DM",
+                  text: "Document Update",
                   emoji: true
                 },
                 style: "primary",
@@ -75,34 +91,50 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     }) as MessageResult;
 
     // 스레드 메시지인 경우 replies API를 사용하여 스레드 히스토리를 가져옴
-    const historyResult = event.thread_ts ? 
+    const historyResult = isThreadMention ? 
       await client.conversations.replies({
         channel: originalChannelId,
         ts: event.thread_ts,
-        limit: 5,
+        limit: 20,
         inclusive: true // 원본 메시지 포함
       }) :
       await client.conversations.history({
         channel: originalChannelId,
-        limit: 5,
-      });
+        limit: 20,
+    });
 
     if (historyResult.messages?.length) {
-      // 시간 순으로 정렬 (오래된 순)
-      const messages = [...(historyResult.messages ?? [])].sort((a, b) => {
-        const tsA = parseFloat(a.ts || '0');
-        const tsB = parseFloat(b.ts || '0');
-        return tsA - tsB;
-      });
+      // 시간 순으로 정렬 (오래된 순) 및 봇 메시지 필터링
+      const messages = [...(historyResult.messages ?? [])]
+        .sort((a, b) => {
+          const tsA = parseFloat(a.ts || '0');
+          const tsB = parseFloat(b.ts || '0');
+          return tsA - tsB;  // 오래된 메시지가 먼저 오도록 정렬
+        });
+
+      // 봇이 아닌 메시지만 필터링
+      const nonBotMessages = await Promise.all(
+        messages.map(async (msg: any) => {
+          if (!msg.user) return null;
+          const isBot = await isBotUser(msg.user, client);
+          return isBot ? null : msg;
+        })
+      );
 
       const slackMessages = (
         await Promise.all(
-          messages.map((msg: any) => createSlackMessageWithName(msg, client))
+          nonBotMessages
+            .filter((msg): msg is any => msg !== null)
+            .map((msg: any) => createSlackMessageWithName(msg, client))
         )
       ).filter((msg): msg is SlackMessage => msg !== null);
 
+
+      // 시간순 정렬 상태 유지하면서 마지막 5개 선택
+      const limitedSlackMessages = slackMessages.slice(-5);
+
       const messageOptions = await Promise.all(
-        slackMessages.map(formatSlackMessageBlock)
+        limitedSlackMessages.map(formatSlackMessageBlock)
       );
 
       // Convert checkbox options to Slack API format
@@ -110,6 +142,9 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         text: option.text,
         value: option.value,
       }));
+
+      // Get channel name
+      const channelName = await getChannelName(originalChannelId, client);
 
       const messageBlocks = [
         {
@@ -124,7 +159,9 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "*Select Messages to Update*",
+            text: isThreadMention ?
+              `Here are recent replies in this thread from ${channelName}. Select replies to use for document update.` : 
+              `Here are recent messages from ${channelName}. Select messages to use for document update.`,
           },
         },
         {
@@ -140,7 +177,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           ],
         },
       ];
-      
+
       // Delete progress message
       try {
         await client.chat.delete({
@@ -169,7 +206,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
                 action_id: "select_messages",
                 value: JSON.stringify({
                   originalChannelId,
-                  originalThreadTs,
+                  originalThreadTs: event.thread_ts,  // 스레드 컨텍스트가 필요한 경우에만 전달
                   messageTs: progressMessage.ts
                 })
               },

@@ -43,7 +43,7 @@ const createChatCompletion = async (
   options: ChatCompletionOptions = {}
 ) => {
   const {
-    model = "gpt-4o",
+    model = "gpt-4o-mini",
     temperature = 0.2,
     max_tokens = 1000,
     function_name = "None",
@@ -96,7 +96,7 @@ When answering, please follow these guidelines:
 Document content to reference:\n${context}`,
       },
       ...(messages as ChatCompletionMessageParam[]),
-  ]);
+  ], {debug: true});
 };
 
 // Process message text to handle user and bot mentions

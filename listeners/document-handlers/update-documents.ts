@@ -54,26 +54,20 @@ const applySelectedToGithubAction = async ({
   await ack();
 
   try {
-    const userId = body.user.id;
+    const rawValue = body.actions[0].value;
+    if (!rawValue) {
+      throw new Error("No value provided");
+    }
+
+    const value = JSON.parse(rawValue);
+    const userId = value.userId || body.user.id;
     const channelId = body.channel?.id;
 
     if (!channelId) {
       throw new Error("채널 ID를 찾을 수 없습니다");
     }
 
-    // 선택된 노드 ID 가져오기
-    const selectedNodeIds = getSelectedNodeIds(userId);
-
-    if (!selectedNodeIds || selectedNodeIds.length === 0) {
-      await client.chat.postEphemeral({
-        channel: channelId,
-        user: userId,
-        text: "No documents selected for update. Please select documents first.",
-      });
-      return;
-    }
-
-    // 문서 업데이트 정보 가져오기
+    // 저장된 모든 document updates 가져오기 (더 이상 selectedNodeIds 필요 없음)
     const documentUpdates = getStoredDocumentUpdates(userId);
 
     if (!documentUpdates || documentUpdates.length === 0) {
@@ -85,24 +79,18 @@ const applySelectedToGithubAction = async ({
       return;
     }
 
-    // 선택된 노드에 해당하는 업데이트만 필터링
-    const selectedUpdates = documentUpdates.filter((update: DocumentUpdate) =>
-      selectedNodeIds.includes(update.nodeId)
-    );
+    console.log(`Found ${documentUpdates.length} document updates for user ${userId}`);
 
-    if (selectedUpdates.length === 0) {
-      await client.chat.postEphemeral({
-        channel: channelId,
-        user: userId,
-        text: "No updates found for selected documents. Please try selecting different documents.",
-      });
-      return;
-    }
+    // 모든 업데이트 사용 (선택된 노드 필터링 제거)
+    const selectedUpdates = documentUpdates;
 
     // GitHub 서비스 인스턴스 가져오기
     const githubService = GithubService.getInstance();
 
     // 각 문서 업데이트 처리
+    const successfulUpdates: string[] = [];
+    const failedUpdates: string[] = [];
+
     for (const update of selectedUpdates) {
       try {
         // GitHub URL에서 owner와 repo 추출
@@ -120,17 +108,29 @@ const applySelectedToGithubAction = async ({
           message: `Update ${update.fileName} based on Slack discussion`,
         });
 
+        successfulUpdates.push(update.fileName);
         console.log(`Successfully updated ${update.fileName}`);
       } catch (error) {
+        failedUpdates.push(update.fileName);
         console.error(`Error updating ${update.fileName}:`, error);
       }
     }
 
-    // 성공 메시지 전송
+    // 결과 메시지 생성
+    let resultMessage = "";
+    if (successfulUpdates.length > 0) {
+      resultMessage += `✅ Successfully updated ${successfulUpdates.length} file(s):\n${successfulUpdates.map(f => `• ${f}`).join('\n')}`;
+    }
+    if (failedUpdates.length > 0) {
+      if (resultMessage) resultMessage += "\n\n";
+      resultMessage += `❌ Failed to update ${failedUpdates.length} file(s):\n${failedUpdates.map(f => `• ${f}`).join('\n')}`;
+    }
+
+    // 결과 메시지 전송
     await client.chat.postEphemeral({
       channel: channelId,
       user: userId,
-      text: "Selected document updates have been applied to GitHub successfully.",
+      text: resultMessage || "Document update process completed.",
     });
   } catch (error) {
     console.error("Error applying updates to GitHub:", error);

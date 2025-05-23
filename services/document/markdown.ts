@@ -51,12 +51,79 @@ function generateNodeId(node: Node, prefix = ""): string {
 }
 
 /**
+ * AST 노드를 마크다운 형식으로 변환 (링크 등 유지, 이스케이프 방지)
+ */
+function nodeToMarkdown(node: any): string {
+  if (!node) return '';
+  
+  if (node.type === 'text') {
+    return node.value || '';
+  }
+  
+  if (node.type === 'link') {
+    const text = node.children ? node.children.map((child: any) => nodeToMarkdown(child)).join('') : '';
+    const url = node.url || '';
+    return `[${text}](${url})`;
+  }
+  
+  if (node.type === 'strong') {
+    const text = node.children ? node.children.map((child: any) => nodeToMarkdown(child)).join('') : '';
+    return `**${text}**`;
+  }
+  
+  if (node.type === 'emphasis') {
+    const text = node.children ? node.children.map((child: any) => nodeToMarkdown(child)).join('') : '';
+    return `*${text}*`;
+  }
+  
+  if (node.type === 'inlineCode') {
+    return `\`${node.value || ''}\``;
+  }
+  
+  // 기본적으로 자식 노드들을 재귀적으로 처리
+  if (node.children && Array.isArray(node.children)) {
+    return node.children.map((child: any) => nodeToMarkdown(child)).join('');
+  }
+  
+  return node.value || '';
+}
+
+/**
  * 마크다운을 파싱하여 DocumentTree로 변환
  */
 export function parseMarkdownToTree(markdown: string, fileName?: string): DocumentTree {
   // 마크다운을 MDAST로 파싱
-  const processor = unified().use(remarkParse);
-  const root = processor.parse(markdown) as Root;
+  const processor = unified()
+    .use(remarkParse)
+    .use(() => (tree) => {
+      // 단락과 리스트 아이템의 내용을 하나의 텍스트로 처리
+      visit(tree, ['paragraph', 'listItem'], (node: any) => {
+        // 노드가 리스트 아이템인 경우, 첫 번째 paragraph 자식을 찾음
+        if (node.type === 'listItem') {
+          const paragraphNode = node.children.find((child: any) => child.type === 'paragraph');
+          if (paragraphNode) {
+            // paragraph의 전체 내용을 마크다운 형식으로 변환 (링크 유지)
+            const fullText = nodeToMarkdown(paragraphNode);
+            // paragraph의 자식을 단일 텍스트 노드로 교체
+            paragraphNode.children = [{
+              type: 'text',
+              value: fullText
+            }];
+          }
+        } else {
+          // 일반 단락인 경우도 마크다운 형식으로 변환
+          const fullText = nodeToMarkdown(node);
+          node.children = [{
+            type: 'text',
+            value: fullText
+          }];
+        }
+      });
+      
+      return tree;
+    });
+
+  const root = processor.runSync(processor.parse(markdown)) as Root;
 
   // 문서 트리 초기화
   const docTree: DocumentTree = {
@@ -163,15 +230,64 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
  * DocumentTree를 마크다운으로 변환
  */
 export function treeToMarkdown(docTree: DocumentTree): string {
-  // MDAST를 마크다운으로 변환
-  const processor = unified().use(remarkStringify, {
-    bullet: "*",
-    listItemIndent: "one",
-    emphasis: "_",
-    strong: "**",
-  } as any);
+  // 커스텀 AST to Markdown 변환
+  function astToMarkdown(node: any, depth: number = 0): string {
+    if (!node) return '';
+    
+    const indent = '  '.repeat(depth);
+    
+    switch (node.type) {
+      case 'root':
+        return node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('\n') : '';
+        
+      case 'heading':
+        const headingLevel = '#'.repeat(node.depth || 1);
+        const headingText = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('') : '';
+        return `${headingLevel} ${headingText}`;
+        
+      case 'paragraph':
+        const paragraphText = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('') : '';
+        return paragraphText;
+        
+      case 'list':
+        const listItems = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('\n') : '';
+        return listItems;
+        
+      case 'listItem':
+        const bullet = node.ordered ? '1.' : '*';
+        const itemContent = node.children ? node.children.map((child: any) => astToMarkdown(child, depth + 1)).join('\n') : '';
+        return `${indent}${bullet} ${itemContent}`;
+        
+      case 'blockquote':
+        const quoteContent = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('\n') : '';
+        return quoteContent.split('\n').map((line: string) => `> ${line}`).join('\n');
+        
+      case 'code':
+        const language = node.lang || '';
+        const codeContent = node.value || '';
+        return `\`\`\`${language}\n${codeContent}\n\`\`\``;
+        
+      case 'text':
+        return node.value || '';
+        
+      case 'thematicBreak':
+        return '---';
+        
+      default:
+        // 알 수 없는 노드 타입의 경우 자식을 처리
+        if (node.children && Array.isArray(node.children)) {
+          return node.children.map((child: any) => astToMarkdown(child, depth)).join('');
+        }
+        return node.value || '';
+    }
+  }
 
-  return processor.stringify(docTree.root).toString().trim();
+  const markdown = astToMarkdown(docTree.root);
+  
+  // 빈 줄 정리
+  return markdown
+    .replace(/\n{3,}/g, '\n\n')  // 3개 이상의 연속 줄바꿈을 2개로
+    .trim();
 }
 
 /**
@@ -405,7 +521,7 @@ export async function convertMarkdownToSlackText(
     return "---\n";
   };
 
-  // 헤딩은 Slack에서 굵은 텍스트 처리 - 헤딩 내용이 이미 문서에 포함되어 있어 중복될 수 있으므로 제거
+  // 헤딩은 Slack에서 굵은 텍스트 처리
   renderer.heading = ({ text, depth }: MarkedTokens.Heading) => {
     // 첫 번째 헤딩은 완전히 제거 (이미 UI에 표시되므로 중복 방지)
     if (!firstHeadingFound) {
@@ -435,7 +551,10 @@ export async function convertMarkdownToSlackText(
 
   // 목록
   renderer.list = ({ items, ordered }: MarkedTokens.List) => {
-    return `${items.map((item) => item.raw).join("\n")}\n`;
+    return items.map((item, index) => {
+      const bullet = ordered ? `${index + 1}.` : "•";
+      return `${bullet} ${item.text}`;
+    }).join("\n") + "\n\n";
   };
 
   // 코드 블록
@@ -446,6 +565,16 @@ export async function convertMarkdownToSlackText(
   // 인라인 코드
   renderer.codespan = ({ text }: MarkedTokens.Codespan) => {
     return `\`${text}\``;
+  };
+
+  // 강조 (bold)
+  renderer.strong = ({ text }: MarkedTokens.Strong) => {
+    return `*${text}*`;
+  };
+
+  // 이탤릭
+  renderer.em = ({ text }: MarkedTokens.Em) => {
+    return `_${text}_`;
   };
 
   // 일반 텍스트
@@ -461,6 +590,7 @@ export async function convertMarkdownToSlackText(
   let slackText = await marked.parse(markdown, {
     renderer,
     gfm: true,
+    breaks: true
   });
 
   // HTML 태그 제거 추가 처리
@@ -470,6 +600,9 @@ export async function convertMarkdownToSlackText(
 
   // 여러 개의 연속된 줄바꿈을 최대 2개로 정리
   slackText = slackText.replace(/\n{3,}/g, "\n\n");
+
+  // 마크다운 볼드(**) 를 Slack 볼드(*)로 변환
+  slackText = slackText.replace(/\*\*([^*]+)\*\*/g, "*$1*");
 
   return slackText.trim();
 }
@@ -496,4 +629,29 @@ export function updateDocTreeWithChanges(
 
   // 업데이트된 트리를 마크다운으로 변환
   return treeToMarkdown(updatedTree);
+}
+
+/**
+ * 임베딩을 위한 마크다운 전처리
+ * 마크다운 링크에서 텍스트만 추출하고 URL 제거
+ */
+export function preprocessMarkdownForEmbedding(markdown: string): string {
+  let processed = markdown;
+  
+  // 마크다운 링크 [텍스트](URL)를 텍스트만 남기고 제거
+  processed = processed.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  
+  // 일반 URL 제거 (http:// 또는 https://로 시작하는 URL)
+  processed = processed.replace(/https?:\/\/[^\s<>"']+/g, '');
+  
+  // 이메일 주소 제거 (선택적)
+  // processed = processed.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '');
+  
+  // 여러 공백을 하나로 정리
+  processed = processed.replace(/\s+/g, ' ');
+  
+  // 앞뒤 공백 제거
+  processed = processed.trim();
+  
+  return processed;
 }

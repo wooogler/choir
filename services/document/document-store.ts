@@ -87,6 +87,7 @@ export const updateDocumentContent = (
   const userUpdates = storedDocumentUpdates.get(userId);
   
   if (!userUpdates || !userUpdates.documentUpdates[index]) {
+    console.log(`[Error] Failed to find document update for user ${userId}, index ${index}`);
     return false;
   }
   
@@ -95,8 +96,13 @@ export const updateDocumentContent = (
   
   // 업데이트된 콘텐츠 변경
   update.updatedNodeContent = newContent;
+  update.newContent = newContent; // newContent 필드도 함께 업데이트
   
-  // 필요한 경우 diffBlock 업데이트 로직 구현 (이 부분은 나중에 구현)
+  console.log("=== Document Store Update ===");
+  console.log(`File: ${update.fileName}`);
+  console.log(`Section: ${update.markdownSection}`);
+  console.log("Content updated successfully");
+  console.log("=== End Document Store Update ===");
   
   return true;
 };
