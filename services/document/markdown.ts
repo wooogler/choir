@@ -254,7 +254,7 @@ export function treeToMarkdown(docTree: DocumentTree): string {
         return listItems;
         
       case 'listItem':
-        const bullet = node.ordered ? '1.' : '*';
+        const bullet = node.ordered ? '1.' : '-';
         const itemContent = node.children ? node.children.map((child: any) => astToMarkdown(child, depth + 1)).join('\n') : '';
         return `${indent}${bullet} ${itemContent}`;
         
