@@ -5,8 +5,9 @@ import type {
   BlockAction,
   UsersSelectAction,
 } from "@slack/bolt";
-import { DocumentUpdate, getStoredDocumentUpdates, getSelectedNodeIds } from "services/document";
+import { DocumentUpdate, getStoredDocumentUpdates, getSelectedNodeIds, updateDocTreeWithChanges } from "services/document";
 import GithubService from "services/github";
+import { VectorStoreService } from "services/vector/main-service";
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();
@@ -87,32 +88,53 @@ const applySelectedToGithubAction = async ({
     // GitHub 서비스 인스턴스 가져오기
     const githubService = GithubService.getInstance();
 
-    // 각 문서 업데이트 처리
+    // 파일별로 업데이트 그룹화
+    const updatesByFile = new Map<string, DocumentUpdate[]>();
+    
+    for (const update of selectedUpdates) {
+      if (!updatesByFile.has(update.fileName)) {
+        updatesByFile.set(update.fileName, []);
+      }
+      updatesByFile.get(update.fileName)!.push(update);
+    }
+
+    // 각 파일별로 업데이트 처리
     const successfulUpdates: string[] = [];
     const failedUpdates: string[] = [];
 
-    for (const update of selectedUpdates) {
+    for (const [fileName, fileUpdates] of updatesByFile.entries()) {
       try {
+        // VectorStoreService에서 원본 파일 가져오기
+        const vectorStore = VectorStoreService.getInstance();
+        const markdownFile = vectorStore.getMarkdownFile(fileName);
+        
+        if (!markdownFile) {
+          throw new Error(`파일을 찾을 수 없습니다: ${fileName}`);
+        }
+
+        // 문서 트리에 변경사항 적용하여 전체 마크다운 생성
+        const updatedMarkdown = updateDocTreeWithChanges(markdownFile.tree, fileUpdates);
+
         // GitHub URL에서 owner와 repo 추출
-        const githubUrl = update.githubUrl;
+        const githubUrl = fileUpdates[0].githubUrl;
         const [owner, repo] = githubUrl
           .replace("https://github.com/", "")
           .split("/");
 
-        // 파일 업데이트
+        // 전체 파일 업데이트
         await githubService.updateMarkdownFile({
           owner,
           repo,
-          path: update.fileName,
-          content: update.updatedNodeContent,
-          message: `Update ${update.fileName} based on Slack discussion`,
+          path: fileName,
+          content: updatedMarkdown,
+          message: `Update ${fileName} based on Slack discussion`,
         });
 
-        successfulUpdates.push(update.fileName);
-        console.log(`Successfully updated ${update.fileName}`);
+        successfulUpdates.push(fileName);
+        console.log(`Successfully updated ${fileName} with ${fileUpdates.length} changes`);
       } catch (error) {
-        failedUpdates.push(update.fileName);
-        console.error(`Error updating ${update.fileName}:`, error);
+        failedUpdates.push(fileName);
+        console.error(`Error updating ${fileName}:`, error);
       }
     }
 

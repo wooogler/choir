@@ -137,8 +137,8 @@ export async function formatSlackMessageBlock(message: SlackMessage, truncate: b
   // 전체 displayText를 70자로 제한 (truncate가 true인 경우에만)
   const fullDisplayText = `*${message.username || "사용자"}* ${timestamp}\n${message.text}`;
   const displayText = truncate && fullDisplayText.length > 70
-    ? fullDisplayText.substring(0, 70) + "..."
-    : fullDisplayText;
+      ? fullDisplayText.substring(0, 70) + "..."
+      : fullDisplayText;
 
   // 메시지를 저장하고 키를 반환
   const key = storeMessage(message);

@@ -132,7 +132,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
 
       // 전체 메시지 저장 (Load More를 위해)
       const allMessageKeys = slackMessages.map(msg => storeMessage(msg));
-      
+
       // 시간순 정렬 상태 유지하면서 마지막 5개 선택
       const limitedSlackMessages = slackMessages.slice(-5);
 

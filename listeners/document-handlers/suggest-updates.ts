@@ -405,14 +405,14 @@ const suggestUpdatesCallback = async ({
     // DM에 진행 중 메시지가 있다면 삭제
     const progressTs = getProgressMessageTimestamp(userId);
     if (progressTs) {
-      try {
-        await client.chat.delete({
-          channel: dmChannelId,
+    try {
+      await client.chat.delete({
+        channel: dmChannelId,
           ts: progressTs
-        });
+      });
         deleteProgressMessageTimestamp(userId);
-      } catch (deleteError) {
-        console.error("진행 중 메시지 삭제 실패:", deleteError);
+    } catch (deleteError) {
+      console.error("진행 중 메시지 삭제 실패:", deleteError);
       }
     }
 
