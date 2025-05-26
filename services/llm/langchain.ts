@@ -361,33 +361,57 @@ function getHeadingPathForNode(
   headingMap: Map<string, string>,
   sectionToHeadings: Map<string, ExtendedNode[]>
 ): string[] {
+  // 현재 노드가 속한 섹션 ID 찾기
+  let targetSectionId: string | undefined;
+  
+  if (is(node, "heading")) {
+    targetSectionId = (node as Heading & ExtendedNode).sectionId;
+  } else if (node.sectionId) {
+    targetSectionId = node.sectionId;
+  }
+
+  if (!targetSectionId) {
+    return [];
+  }
+
+  // 섹션 계층 구조를 역추적하여 전체 경로 구성
+  return buildSectionHierarchy(targetSectionId, sectionToHeadings, headingMap);
+}
+
+/**
+ * 섹션 ID로부터 계층적 헤딩 경로를 구성하는 함수
+ */
+function buildSectionHierarchy(
+  sectionId: string,
+  sectionToHeadings: Map<string, ExtendedNode[]>,
+  headingMap: Map<string, string>
+): string[] {
   const path: string[] = [];
-  const seenSections = new Set<string>();
+  const currentHeadings = sectionToHeadings.get(sectionId);
+  
+  if (!currentHeadings || currentHeadings.length === 0) {
+    return [];
+  }
 
-  // 1. 먼저 조상 노드들에서 헤딩 찾기 (계층 순서대로)
-  for (const ancestor of ancestors) {
-    if (is(ancestor, "heading")) {
-      const headingText = toString(ancestor);
-      if (!path.includes(headingText)) {
-        path.push(headingText);
-      }
-    } else if (ancestor.sectionId && headingMap.has(ancestor.sectionId) && !seenSections.has(ancestor.sectionId)) {
-      const headingText = headingMap.get(ancestor.sectionId)!;
-      if (!path.includes(headingText)) {
-        path.push(headingText);
-        seenSections.add(ancestor.sectionId);
+  const currentHeading = currentHeadings[0] as Heading & ExtendedNode;
+  const currentHeadingText = toString(currentHeading);
+  
+  // 부모 섹션들을 재귀적으로 찾아서 경로 구성
+  if (currentHeading.parentId) {
+    // 부모 헤딩 찾기
+    for (const [parentSectionId, parentHeadings] of sectionToHeadings.entries()) {
+      if (parentHeadings.length > 0 && parentHeadings[0].id === currentHeading.parentId) {
+        // 부모 섹션의 계층 경로를 재귀적으로 구성
+        const parentPath = buildSectionHierarchy(parentSectionId, sectionToHeadings, headingMap);
+        path.push(...parentPath);
+        break;
       }
     }
   }
-
-  // 2. 현재 노드가 헤딩이 아니고 sectionId가 있다면 해당 섹션의 헤딩 추가
-  if (!is(node, "heading") && node.sectionId && headingMap.has(node.sectionId) && !seenSections.has(node.sectionId)) {
-    const headingText = headingMap.get(node.sectionId)!;
-    if (!path.includes(headingText)) {
-      path.push(headingText);
-    }
-  }
-
+  
+  // 현재 헤딩 추가
+  path.push(currentHeadingText);
+  
   return path;
 }
 
