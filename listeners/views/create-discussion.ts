@@ -4,6 +4,7 @@ import { getSessionData } from "services/common";
 import { DocumentDiff } from "services/document";
 import { formatTimestampToDateString, getManagers } from "services/slack";
 import { getWorkspaceId } from "services/slack";
+import { formatSectionPathWithLinks } from "services/document/section-utils";
 
 
 interface Message {
@@ -160,7 +161,25 @@ const createDiscussionRoomCallback = async ({
               {
                 type: "divider",
               },
-              ...fileDiffs.map((diff: DocumentDiff) => diff.diffBlock),
+              ...fileDiffs.flatMap((diff: DocumentDiff) => {
+                // 각 diff에 대해 섹션 정보와 diff 블록을 함께 표시
+                const sectionInfo = formatSectionPathWithLinks({
+                  headingPath: diff.headingPath,
+                  sectionName: diff.markdownSection,
+                  githubUrl: diff.githubUrl
+                } as any);
+                
+                return [
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: `*Section:* ${sectionInfo}`,
+                    },
+                  },
+                  diff.diffBlock
+                ];
+              }),
               {
                 type: "divider",
               },

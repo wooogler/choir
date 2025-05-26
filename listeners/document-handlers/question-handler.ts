@@ -6,6 +6,7 @@ import { SlackMessage } from "services/slack";
 import { VectorStoreService } from "services/vector/main-service";
 import { convertMarkdownToSlackText } from "services/document/markdown";
 import { DocumentEnhancer } from "services/web-content/document-enhancer";
+import { formatSectionPathWithLinks } from "services/document/section-utils";
 
 /**
  * 질문 메시지 처리
@@ -207,11 +208,12 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       const documentInfo = await Promise.all(relevantDocs
         .map(async (doc, index) => {
           const metadata = doc.metadata;
-          const fileInfo = metadata.fileName ? 
+          const fileInfo = metadata.fileName && metadata.githubUrl ? 
             `*File:* <${metadata.githubUrl}|${metadata.fileName}>\n` : "";
-          const sectionInfo = metadata.sectionName ? 
-            `*Section:* <${metadata.githubUrl}#${metadata.sectionName.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-')}|${metadata.sectionName}>\n` : 
-            "*Section:* Main Content\n";
+          
+          // 새로운 유틸리티 함수를 사용하여 섹션 경로 포맷팅
+          const sectionPath = formatSectionPathWithLinks(metadata);
+          const sectionInfo = `*Section:* ${sectionPath}\n`;
 
           // 문서 내용 미리보기를 Slack 형식으로 변환
           let contentPreview =

@@ -10,6 +10,8 @@ import { DocumentTree } from "services/document";
 import { createDocumentsFromTree } from "services/llm";
 import { DocumentEnhancer } from "services/web-content/document-enhancer";
 import { preprocessMarkdownForEmbedding } from "services/document/markdown";
+import { EnhancedSearchService } from "./enhanced-search";
+import { SlackMessage } from "services/slack";
 
 
 /**
@@ -23,6 +25,7 @@ export class VectorStoreService {
   private embeddingService: EmbeddingService;
   private cacheManager: VectorCacheManager;
   private searchService: SearchService;
+  private enhancedSearchService: EnhancedSearchService;
 
   // 상태 관련 필드
   private store: MemoryVectorStore | null = null;
@@ -41,6 +44,7 @@ export class VectorStoreService {
 
     // SearchService는 store가 초기화된 후에 생성됨
     this.searchService = null as any;
+    this.enhancedSearchService = null as any;
 
     console.info("VectorStoreService instance created");
   }
@@ -228,6 +232,7 @@ export class VectorStoreService {
       // 검색 서비스 초기화
       this.searchService = new SearchService(this.store, this.embeddingService);
       this.searchService.buildSearchIndices(this.documents);
+      this.enhancedSearchService = new EnhancedSearchService(this);
 
       console.info(
         `Successfully built vector store with ${this.documents.length} documents`
@@ -320,6 +325,7 @@ export class VectorStoreService {
       // 검색 서비스 초기화
       this.searchService = new SearchService(this.store, this.embeddingService);
       this.searchService.buildSearchIndices(this.documents);
+      this.enhancedSearchService = new EnhancedSearchService(this);
 
       console.info(
         `Successfully restored vector store from cache with ${this.documents.length} documents`
@@ -455,6 +461,7 @@ export class VectorStoreService {
       );
 
       console.info(`Search found ${results.length} results`);
+      console.info(results.map((result) => result.pageContent).join("\n--------------------------------\n"));
 
       if (results.length === 0) {
         console.warn(
@@ -529,6 +536,24 @@ export class VectorStoreService {
   public findDocumentsByEntity(entity: string): Document<DocumentMetadata>[] {
     this.checkInitialized();
     return this.searchService.findDocumentsByEntity(entity);
+  }
+
+  /**
+   * 메시지 기반 향상된 검색 - 메타데이터를 활용한 스마트 검색
+   */
+  public async smartSearchForMessages(
+    messages: SlackMessage[], 
+    k: number = 5
+  ): Promise<Document<DocumentMetadata>[]> {
+    this.checkInitialized();
+    
+    if (!this.enhancedSearchService) {
+      console.warn("Enhanced search service not initialized, falling back to basic search");
+      const query = messages.map(msg => msg.text).join("\n");
+      return await this.similaritySearch(query, k);
+    }
+
+    return await this.enhancedSearchService.performEnhancedSearch(messages, k);
   }
 
   /**

@@ -1,4 +1,4 @@
-import { createSlackMessageWithName, formatSlackMessageBlock, SlackMessage, getChannelName, isBotUser } from "services/slack";
+import { createSlackMessageWithName, formatSlackMessageBlock, formatSlackMessageSection, SlackMessage, getChannelName, isBotUser, storeMessage } from "services/slack";
 import { WebClient } from "@slack/web-api";
 
 interface MessageResult {
@@ -95,12 +95,12 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       await client.conversations.replies({
         channel: originalChannelId,
         ts: event.thread_ts,
-        limit: 20,
+        limit: 50, // 더 많은 메시지 가져오기
         inclusive: true // 원본 메시지 포함
       }) :
       await client.conversations.history({
         channel: originalChannelId,
-        limit: 20,
+        limit: 50, // 더 많은 메시지 가져오기
     });
 
     if (historyResult.messages?.length) {
@@ -130,11 +130,14 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       ).filter((msg): msg is SlackMessage => msg !== null);
 
 
+      // 전체 메시지 저장 (Load More를 위해)
+      const allMessageKeys = slackMessages.map(msg => storeMessage(msg));
+      
       // 시간순 정렬 상태 유지하면서 마지막 5개 선택
       const limitedSlackMessages = slackMessages.slice(-5);
 
       const messageOptions = await Promise.all(
-        limitedSlackMessages.map(formatSlackMessageBlock)
+        limitedSlackMessages.map(msg => formatSlackMessageBlock(msg, true))
       );
 
       // Convert checkbox options to Slack API format
@@ -193,7 +196,23 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         channel: dmChannelId,
         text: "Please select messages to update the document.",
         blocks: [
-          ...messageBlocks,
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "Document Update",
+              emoji: true
+            }
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: isThreadMention ?
+                `Here are recent replies in this thread from ${channelName}. Click the button below to select messages for document update.` : 
+                `Here are recent messages from ${channelName}. Click the button below to select messages for document update.`,
+            },
+          },
           {
             type: "actions",
             elements: [
@@ -201,13 +220,16 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
                 type: "button",
                 text: {
                   type: "plain_text",
-                  text: "Suggest Document Updates",
+                  text: "Select Messages",
                 },
-                action_id: "select_messages",
+                action_id: "open_message_selection_modal",
                 value: JSON.stringify({
                   originalChannelId,
-                  originalThreadTs: event.thread_ts,  // 스레드 컨텍스트가 필요한 경우에만 전달
-                  messageTs: progressMessage.ts
+                  originalThreadTs: event.thread_ts,
+                  messageKeys: messageOptions.map(option => option.value),
+                  channelName,
+                  currentLimit: 5,
+                  allMessageKeys: allMessageKeys
                 })
               },
             ],

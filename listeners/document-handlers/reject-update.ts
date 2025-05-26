@@ -4,6 +4,12 @@ import type {
   BlockButtonAction,
 } from "@slack/bolt";
 import { removeDocumentUpdate } from "services/document/document-store";
+import { 
+  getLastMessageTimestamp, 
+  deleteLastMessageTimestamp,
+  getProgressMessageTimestamp,
+  deleteProgressMessageTimestamp
+} from "services/common";
 import suggestUpdatesCallback from "./suggest-updates";
 
 /**
@@ -33,16 +39,35 @@ export const rejectUpdateCallback = async ({
     const parsedValue = JSON.parse(value);
     const { index, messageKeys, originalChannelId, originalThreadTs, rejectIndex } = parsedValue;
 
-    // 이전 메시지 삭제
-    const lastMessageTs = body.message?.ts;
+    // 이전 메시지 삭제 (저장된 타임스탬프 사용)
+    const lastMessageTs = getLastMessageTimestamp(userId);
     if (lastMessageTs) {
       try {
         await client.chat.delete({
           channel: dmChannelId,
           ts: lastMessageTs
         });
+        // 삭제 성공 시 타임스탬프 제거
+        deleteLastMessageTimestamp(userId);
       } catch (error) {
         console.error("이전 메시지 삭제 실패:", error);
+        // 삭제 실패해도 타임스탬프는 제거 (다음에 다시 시도하지 않도록)
+        deleteLastMessageTimestamp(userId);
+      }
+    }
+
+    // 진행 중 메시지도 삭제
+    const progressTs = getProgressMessageTimestamp(userId);
+    if (progressTs) {
+      try {
+        await client.chat.delete({
+          channel: dmChannelId,
+          ts: progressTs
+        });
+        deleteProgressMessageTimestamp(userId);
+      } catch (error) {
+        console.error("진행 중 메시지 삭제 실패:", error);
+        deleteProgressMessageTimestamp(userId);
       }
     }
 

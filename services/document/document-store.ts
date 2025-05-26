@@ -7,6 +7,7 @@ export interface DocumentUpdate {
   fileName: string;
   githubUrl: string;
   markdownSection: string;
+  headingPath?: string[]; // 섹션 계층 경로
   hasChanges: boolean;
   nodeContent: string;
   updatedNodeContent: string;

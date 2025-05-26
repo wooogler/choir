@@ -131,15 +131,14 @@ export async function createSlackMessageWithName(
   };
 }
 
-export async function formatSlackMessageBlock(message: SlackMessage) {
+export async function formatSlackMessageBlock(message: SlackMessage, truncate: boolean = true) {
   const timestamp = new Date(Number(message.ts) * 1000).toLocaleTimeString();
 
-  // 전체 displayText를 70자로 제한
+  // 전체 displayText를 70자로 제한 (truncate가 true인 경우에만)
   const fullDisplayText = `*${message.username || "사용자"}* ${timestamp}\n${message.text}`;
-  const truncatedDisplayText =
-    fullDisplayText.length > 70
-      ? fullDisplayText.substring(0, 70) + "..."
-      : fullDisplayText;
+  const displayText = truncate && fullDisplayText.length > 70
+    ? fullDisplayText.substring(0, 70) + "..."
+    : fullDisplayText;
 
   // 메시지를 저장하고 키를 반환
   const key = storeMessage(message);
@@ -147,7 +146,7 @@ export async function formatSlackMessageBlock(message: SlackMessage) {
   return {
     text: {
       type: "mrkdwn",
-      text: truncatedDisplayText,
+      text: displayText,
     },
     value: key, // 메시지 키만 전달
   };
@@ -460,4 +459,31 @@ export async function getChannelName(channelId: string, client: WebClient): Prom
     console.error(`채널 정보를 가져오는 중 오류 발생: ${channelId}`, error);
     return "this channel";
   }
+}
+
+// 전체 메시지를 섹션 블록으로 포맷팅하는 새로운 함수
+export async function formatSlackMessageSection(message: SlackMessage) {
+  const timestamp = new Date(Number(message.ts) * 1000).toLocaleString();
+  const key = storeMessage(message);
+
+  return {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: `*${message.username || "사용자"}* • ${timestamp}\n${message.text}`
+    },
+    accessory: {
+      type: "checkboxes",
+      action_id: "select_message",
+      options: [
+        {
+          text: {
+            type: "plain_text",
+            text: "Select"
+          },
+          value: key
+        }
+      ]
+    }
+  };
 }

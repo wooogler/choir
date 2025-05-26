@@ -17,6 +17,8 @@ import {
 } from "./vector-store/vector-store-management";
 import { handleCheckMessages } from "./general/check-messages";
 import { handleSelectMessages } from "./general/select-messages";
+import { handleOpenMessageSelectionModal } from "./general/open-message-selection-modal";
+import { handleLoadMoreMessages } from "./general/load-more-messages";
 
 const register = (app: App) => {
   app.action("start_discussion", startDiscussionCallback);
@@ -41,6 +43,8 @@ const register = (app: App) => {
   // 메시지 선택 메시지
   app.action("check_messages", handleCheckMessages);
   app.action("select_messages", handleSelectMessages);
+  app.action("open_message_selection_modal", handleOpenMessageSelectionModal);
+  app.action("load_more_messages", handleLoadMoreMessages);
 };
 
 export default { register };
