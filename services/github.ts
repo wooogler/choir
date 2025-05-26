@@ -489,170 +489,142 @@ class GithubService {
   }
 }
 
-// GitHub에 선택된 문서 업데이트 적용
-export async function applySelectedToGithub({
+/**
+ * Slack 메시지들을 처리하여 구조화된 커밋 메시지를 생성합니다.
+ */
+async function createCommitMessage(
+  fileName: string,
+  userId: string,
+  nodeIds: string[],
+  allMessages: SlackMessage[],
+  client: WebClient
+): Promise<string> {
+  // 유저 ID를 유저 이름으로 변환
+  const messagesWithUsernames = await convertUserIdsToNames(
+    allMessages,
+    client
+  );
+
+  // 멘션을 유저 이름으로 치환
+  const messagesWithReplacedMentions = await Promise.all(
+    messagesWithUsernames.map(async (message) => {
+      const replacedText = await replaceMentionsInText(message.text, client);
+      return {
+        ...message,
+        text: replacedText,
+      } as SlackMessage;
+    })
+  );
+
+  // 커밋 메시지 생성
+  const commitMessageJson = {
+    fileName,
+    updateType: "document_update",
+    source: "choir_app",
+    timestamp: new Date().toISOString(),
+    updatedBy: userId,
+    nodeIds,
+    messages: messagesWithReplacedMentions,
+  };
+
+  return JSON.stringify(commitMessageJson);
+}
+
+/**
+ * 문서 업데이트들을 GitHub에 적용합니다.
+ */
+export async function applyDocumentUpdatesToGithub({
   userId,
-  channelId,
-  client,
-  selectedNodeIds,
   documentUpdates,
-  vectorStore,
-  validMessages,
+  client,
 }: {
   userId: string;
-  channelId: string;
-  client: WebClient;
-  selectedNodeIds: string[];
   documentUpdates: DocumentUpdate[];
-  vectorStore: VectorStoreService;
-  validMessages: SlackMessage[];
+  client: WebClient;
 }): Promise<{ fileName: string; success: boolean; message: string }[]> {
-  // 결과 저장 배열
-  const results: { fileName: string; success: boolean; message: string }[] = [];
+  const successfulUpdates: string[] = [];
+  const failedUpdates: string[] = [];
 
-  // 파일별로 그룹화된 노드 ID
-  const nodesByFile = new Map<
-    string,
-    {
-      nodeIds: string[];
-      githubUrl: string;
-      fileName: string;
-      documentUpdates: any[];
+  // 파일별로 업데이트 그룹화
+  const updatesByFile = new Map<string, DocumentUpdate[]>();
+  
+  for (const update of documentUpdates) {
+    if (!updatesByFile.has(update.fileName)) {
+      updatesByFile.set(update.fileName, []);
     }
-  >();
+    updatesByFile.get(update.fileName)!.push(update);
+  }
 
-  // document update 데이터에서 선택된 노드 정보 찾기
-  for (const nodeId of selectedNodeIds) {
-    // documentUpdates에서 해당 노드 ID에 대한 업데이트 찾기
-    const update = documentUpdates.find((update) => update.nodeId === nodeId);
+  // GitHub 서비스 인스턴스 가져오기
+  const githubService = GithubService.getInstance();
+  const vectorStore = VectorStoreService.getInstance();
 
-    if (update) {
-      const fileName = update.fileName;
-      const githubUrl = update.githubUrl;
-
-      // 파일별 그룹에 노드 ID 추가
-      if (!nodesByFile.has(fileName)) {
-        nodesByFile.set(fileName, {
-          nodeIds: [],
-          githubUrl,
-          fileName,
-          documentUpdates: [],
-        });
+  // 각 파일별로 업데이트 처리
+  for (const [fileName, fileUpdates] of updatesByFile.entries()) {
+    try {
+      // VectorStoreService에서 원본 파일 가져오기
+      const markdownFile = vectorStore.getMarkdownFile(fileName);
+      
+      if (!markdownFile) {
+        throw new Error(`파일을 찾을 수 없습니다: ${fileName}`);
       }
 
-      nodesByFile.get(fileName)!.nodeIds.push(nodeId);
-      nodesByFile.get(fileName)!.documentUpdates.push(update);
-    } else {
-      console.log(`노드 ID ${nodeId}에 대한 업데이트 정보를 찾을 수 없습니다.`);
-    }
-  }
+      // 문서 트리에 변경사항 적용하여 전체 마크다운 생성
+      const updatedMarkdown = updateDocTreeWithChanges(markdownFile.tree, fileUpdates);
 
-  // GitHub 서비스 인스턴스 생성
-  const githubService = GithubService.getInstance();
-
-  // 파일별로 업데이트 실행
-  for (const [fileName, fileData] of nodesByFile.entries()) {
-    console.log(
-      `'${fileName}' 파일의 ${fileData.nodeIds.length}개 노드 업데이트 중...`
-    );
-
-    // 마크다운 파일 가져오기
-    const markdownFile = vectorStore.getMarkdownFile(fileName);
-    if (!markdownFile) {
-      console.error(`파일을 찾을 수 없습니다: ${fileName}`);
-      results.push({
+      // Slack 메시지들을 commit message에 포함
+      const allMessages = fileUpdates.flatMap(update => update.messages || []);
+      
+      // 구조화된 커밋 메시지 생성 (유저명 변환 및 멘션 처리 포함)
+      const commitMessage = await createCommitMessage(
         fileName,
-        success: false,
-        message: `❌ ${fileName} 파일 업데이트 실패: 파일을 찾을 수 없습니다.`,
-      });
-      continue;
-    }
+        userId,
+        fileUpdates.map(update => update.nodeId),
+        allMessages,
+        client
+      );
 
-    let docTree = markdownFile.tree;
-    let modified = false;
+      // GitHub URL에서 owner와 repo 추출
+      const githubUrl = fileUpdates[0].githubUrl;
+      const [owner, repo] = githubUrl
+        .replace("https://github.com/", "")
+        .split("/");
 
-    // GitHub URL에서 owner와 repo 추출
-    const githubInfo = parseGithubUrl(fileData.githubUrl);
-    if (!githubInfo) {
-      console.error(`유효한 GitHub URL이 아닙니다: ${fileData.githubUrl}`);
-      results.push({
-        fileName,
-        success: false,
-        message: `❌ ${fileName} 파일 업데이트 실패: 유효한 GitHub URL이 아닙니다.`,
-      });
-      continue;
-    }
-
-    // 선택된 모든 노드에 대해 업데이트 적용
-    for (const update of fileData.documentUpdates) {
-      const nodeId = update.nodeId;
-      const updatedNodeContent = update.updatedNodeContent;
-
-      // 노드 콘텐츠 업데이트
-      docTree = updateNodeContent(docTree, nodeId, updatedNodeContent);
-    }
-
-    // 업데이트된 마크다운 생성
-    const updatedMarkdown = updateDocTreeWithChanges(
-      docTree,
-      fileData.documentUpdates
-    );
-
-    // 유저 ID를 유저 이름으로 변환
-    const messagesWithUsernames = await convertUserIdsToNames(
-      validMessages,
-      client
-    );
-
-    // 멘션을 유저 이름으로 치환
-    const messagesWithReplacedMentions = await Promise.all(
-      messagesWithUsernames.map(async (message) => {
-        const replacedText = await replaceMentionsInText(message.text, client);
-        return {
-          ...message,
-          text: replacedText,
-        } as SlackMessage;
-      })
-    );
-
-    // 커밋 메시지 생성
-    const commitMessageJson = {
-      fileName,
-      updateType: "document_update",
-      source: "choir_app",
-      timestamp: new Date().toISOString(),
-      updatedBy: userId,
-      nodeIds: fileData.nodeIds,
-      messages: messagesWithReplacedMentions,
-    };
-
-    try {
-      // 실제 GitHub 업데이트 수행
-      const result = await githubService.updateMarkdownFile({
-        owner: githubInfo.owner,
-        repo: githubInfo.repo,
+      // 전체 파일 업데이트
+      await githubService.updateMarkdownFile({
+        owner,
+        repo,
         path: fileName,
         content: updatedMarkdown,
-        message: JSON.stringify(commitMessageJson),
+        message: commitMessage,
       });
 
-      console.log(`✅ ${fileName} 파일이 성공적으로 업데이트되었습니다!`);
-      results.push({
-        fileName,
-        success: true,
-        message: `✅ ${fileName} 파일이 성공적으로 업데이트되었습니다!`,
-      });
+      successfulUpdates.push(fileName);
+      console.log(`Successfully updated ${fileName} with ${fileUpdates.length} changes`);
     } catch (error) {
-      console.error(`${fileName} 파일 업데이트 중 오류 발생:`, error);
-      results.push({
-        fileName,
-        success: false,
-        message: `❌ ${fileName} 파일 업데이트 실패: ${
-          error instanceof Error ? error.message : "알 수 없는 오류"
-        }`,
-      });
+      failedUpdates.push(fileName);
+      console.error(`Error updating ${fileName}:`, error);
     }
   }
+
+  // 결과 반환
+  const results: { fileName: string; success: boolean; message: string }[] = [];
+  
+  successfulUpdates.forEach(fileName => {
+    results.push({
+      fileName,
+      success: true,
+      message: `✅ Successfully updated ${fileName}`,
+    });
+  });
+
+  failedUpdates.forEach(fileName => {
+    results.push({
+      fileName,
+      success: false,
+      message: `❌ Failed to update ${fileName}`,
+    });
+  });
 
   return results;
 }
