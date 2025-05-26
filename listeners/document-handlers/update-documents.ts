@@ -5,8 +5,8 @@ import type {
   BlockAction,
   UsersSelectAction,
 } from "@slack/bolt";
-import { DocumentUpdate, getStoredDocumentUpdates, getSelectedNodeIds, updateDocTreeWithChanges } from "services/document";
-import GithubService from "services/github";
+import { DocumentUpdate, getStoredDocumentUpdates, getSelectedNodeIds } from "services/document";
+import { applyDocumentUpdatesToGithub } from "services/github";
 import { VectorStoreService } from "services/vector/main-service";
 
 // Store user selection state
@@ -45,6 +45,8 @@ const selectUserCallback = async ({
 };
 
 export { selectUserCallback };
+
+
 
 // Apply changes to GitHub
 const applySelectedToGithubAction = async ({
@@ -85,58 +87,16 @@ const applySelectedToGithubAction = async ({
     // 모든 업데이트 사용 (선택된 노드 필터링 제거)
     const selectedUpdates = documentUpdates;
 
-    // GitHub 서비스 인스턴스 가져오기
-    const githubService = GithubService.getInstance();
+    // GitHub에 문서 업데이트 적용
+    const results = await applyDocumentUpdatesToGithub({
+      userId,
+      documentUpdates: selectedUpdates,
+      client,
+    });
 
-    // 파일별로 업데이트 그룹화
-    const updatesByFile = new Map<string, DocumentUpdate[]>();
-    
-    for (const update of selectedUpdates) {
-      if (!updatesByFile.has(update.fileName)) {
-        updatesByFile.set(update.fileName, []);
-      }
-      updatesByFile.get(update.fileName)!.push(update);
-    }
-
-    // 각 파일별로 업데이트 처리
-    const successfulUpdates: string[] = [];
-    const failedUpdates: string[] = [];
-
-    for (const [fileName, fileUpdates] of updatesByFile.entries()) {
-      try {
-        // VectorStoreService에서 원본 파일 가져오기
-        const vectorStore = VectorStoreService.getInstance();
-        const markdownFile = vectorStore.getMarkdownFile(fileName);
-        
-        if (!markdownFile) {
-          throw new Error(`파일을 찾을 수 없습니다: ${fileName}`);
-        }
-
-        // 문서 트리에 변경사항 적용하여 전체 마크다운 생성
-        const updatedMarkdown = updateDocTreeWithChanges(markdownFile.tree, fileUpdates);
-
-        // GitHub URL에서 owner와 repo 추출
-        const githubUrl = fileUpdates[0].githubUrl;
-        const [owner, repo] = githubUrl
-          .replace("https://github.com/", "")
-          .split("/");
-
-        // 전체 파일 업데이트
-        await githubService.updateMarkdownFile({
-          owner,
-          repo,
-          path: fileName,
-          content: updatedMarkdown,
-          message: `Update ${fileName} based on Slack discussion`,
-        });
-
-        successfulUpdates.push(fileName);
-        console.log(`Successfully updated ${fileName} with ${fileUpdates.length} changes`);
-      } catch (error) {
-        failedUpdates.push(fileName);
-        console.error(`Error updating ${fileName}:`, error);
-      }
-    }
+    // 결과 분석
+    const successfulUpdates = results.filter(r => r.success).map(r => r.fileName);
+    const failedUpdates = results.filter(r => !r.success).map(r => r.fileName);
 
     // 결과 메시지 생성
     let resultMessage = "";
