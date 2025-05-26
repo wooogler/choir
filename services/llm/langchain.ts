@@ -98,28 +98,8 @@ export function createDocumentsFromTree(
       }
     }
 
-    // 섹션 헤딩인 경우 (Context를 추가하기 위한 특별 처리)
+    // 섹션 헤딩인 경우 - Document로 생성하지 않음 (헤딩 자체는 업데이트 대상이 아니므로)
     if (is(node, "heading")) {
-      const headingNode = node as Heading & ExtendedNode;
-      const headingText = toString(headingNode);
-
-      // 섹션 헤딩은 documents에 추가하지 않음
-      // documents.push(
-      //   new Document({
-      //     pageContent: headingText,
-      //     metadata: {
-      //       fileName,
-      //       nodeId,
-      //       sectionId: headingNode.sectionId,
-      //       nodeType: "heading",
-      //       githubUrl,
-      //       headingPath,
-      //       ancestors: ancestors.map((a) => a.id as string),
-      //       depth: ancestors.length,
-      //       importance: importance + 0.1, // 헤딩은 중요도 가중치 추가
-      //     },
-      //   })
-      // );
       return;
     }
 
@@ -130,7 +110,7 @@ export function createDocumentsFromTree(
       if (!text.trim()) return; // 빈 단락은 건너뜀
 
       // 계층적 문맥 구성
-      const contextPrefix = formatHeadingContext(headingPath);
+      const contextPrefix = formatHeadingContext(headingPath, fileName);
 
       // 엔티티 추출
       const entities = extractEntities(text);
@@ -170,6 +150,7 @@ export function createDocumentsFromTree(
               totalChunks: chunks.length > 1 ? chunks.length : undefined,
               importance,
               entityMentions: entities,
+              originalContent: text, // 컨텍스트 제외한 원본 내용 저장
             },
           })
         );
@@ -184,7 +165,7 @@ export function createDocumentsFromTree(
       if (!text.trim()) return; // 빈 리스트 아이템은 건너뜀
 
       // 계층적 문맥 구성
-      const contextPrefix = formatHeadingContext(headingPath);
+      const contextPrefix = formatHeadingContext(headingPath, fileName);
 
       // 엔티티 추출
       const entities = extractEntities(text);
@@ -214,6 +195,7 @@ export function createDocumentsFromTree(
             depth: ancestors.length,
             importance: importance + 0.05, // 리스트 아이템은 약간 중요도 증가
             entityMentions: entities,
+            originalContent: text, // 컨텍스트 제외한 원본 내용 저장
           },
         })
       );
@@ -227,7 +209,7 @@ export function createDocumentsFromTree(
       if (!text.trim()) return; // 빈 코드 블록은 건너뜀
 
       // 계층적 문맥 구성
-      const contextPrefix = formatHeadingContext(headingPath);
+      const contextPrefix = formatHeadingContext(headingPath, fileName);
       const lang = codeNode.lang ? `Language: ${codeNode.lang}\n` : "";
 
       // 엔티티 추출 (코드에서는 함수명, 변수명 등)
@@ -270,6 +252,7 @@ export function createDocumentsFromTree(
               importance: importance + 0.1, // 코드 블록은 중요도 증가
               entityMentions: entities,
               codeLanguage: codeNode.lang || undefined,
+              originalContent: text, // 컨텍스트 제외한 원본 내용 저장
             },
           })
         );
@@ -284,7 +267,7 @@ export function createDocumentsFromTree(
       if (!text.trim()) return; // 빈 블록쿼트는 건너뜀
 
       // 계층적 문맥 구성
-      const contextPrefix = formatHeadingContext(headingPath);
+      const contextPrefix = formatHeadingContext(headingPath, fileName);
 
       // 엔티티 추출
       const entities = extractEntities(text);
@@ -316,6 +299,7 @@ export function createDocumentsFromTree(
               totalChunks: chunks.length > 1 ? chunks.length : undefined,
               importance: importance + 0.05, // 인용구는 약간 중요도 증가
               entityMentions: entities,
+              originalContent: text, // 컨텍스트 제외한 원본 내용 저장
             },
           })
         );
@@ -323,15 +307,6 @@ export function createDocumentsFromTree(
       return;
     }
   });
-
-  // 섹션별 요약 Document 생성
-  // createSectionSummaryDocuments(
-  //   docTree,
-  //   headingMap,
-  //   sectionToHeadings,
-  //   fileName,
-  //   githubUrl
-  // ).forEach((doc) => documents.push(doc));
 
   return documents;
 }
@@ -387,29 +362,29 @@ function getHeadingPathForNode(
   sectionToHeadings: Map<string, ExtendedNode[]>
 ): string[] {
   const path: string[] = [];
+  const seenSections = new Set<string>();
 
-  // 현재 노드의 섹션 ID가 있으면 해당 섹션의 헤딩 텍스트 추가
-  if (node.sectionId && headingMap.has(node.sectionId)) {
-    path.push(headingMap.get(node.sectionId)!);
-  }
-
-  // 조상 노드들 중 헤딩이거나 섹션ID가 있는 노드들의 헤딩 텍스트 추가
+  // 1. 먼저 조상 노드들에서 헤딩 찾기 (계층 순서대로)
   for (const ancestor of ancestors) {
-    // 헤딩 노드인 경우
     if (is(ancestor, "heading")) {
       const headingText = toString(ancestor);
       if (!path.includes(headingText)) {
-        // 중복 방지
-        path.unshift(headingText);
+        path.push(headingText);
       }
-    }
-    // 섹션ID가 있는 노드인 경우
-    else if (ancestor.sectionId && headingMap.has(ancestor.sectionId)) {
+    } else if (ancestor.sectionId && headingMap.has(ancestor.sectionId) && !seenSections.has(ancestor.sectionId)) {
       const headingText = headingMap.get(ancestor.sectionId)!;
       if (!path.includes(headingText)) {
-        // 중복 방지
-        path.unshift(headingText);
+        path.push(headingText);
+        seenSections.add(ancestor.sectionId);
       }
+    }
+  }
+
+  // 2. 현재 노드가 헤딩이 아니고 sectionId가 있다면 해당 섹션의 헤딩 추가
+  if (!is(node, "heading") && node.sectionId && headingMap.has(node.sectionId) && !seenSections.has(node.sectionId)) {
+    const headingText = headingMap.get(node.sectionId)!;
+    if (!path.includes(headingText)) {
+      path.push(headingText);
     }
   }
 
@@ -420,16 +395,16 @@ function getHeadingPathForNode(
  * 헤딩 경로를 포매팅하여 문맥 접두사로 만듭니다.
  * 이 함수는 계층적 헤딩 정보를 문서 콘텐츠에 추가해 RAG 성능을 향상시킬 수 있습니다.
  */
-function formatHeadingContext(headingPath: string[]): string {
-  // 헤딩 경로가 없거나 비어있으면 빈 문자열 반환
-  if (!headingPath || headingPath.length === 0) return "";
-
-  // 새로운 요구사항에 따라 헤딩을 콘텐츠에 포함하지 않음
-  // 이 접두사는 메타데이터의 headingPath 필드에 이미 포함되어 있으므로 중복할 필요가 없음
-  return "";
-
-  // 원래 구현 (주석 처리)
-  // return `${headingPath.join(" > ")}\n\n`;
+function formatHeadingContext(headingPath: string[], fileName: string): string {
+  // 파일 정보와 헤딩 경로를 포함한 컨텍스트 생성
+  const fileContext = `File: ${fileName}`;
+  const pathContext = headingPath && headingPath.length > 0 
+    ? `Path: ${headingPath.join(" > ")}` 
+    : "";
+  
+  return [fileContext, pathContext]
+    .filter(Boolean)
+    .join("\n") + (fileContext || pathContext ? "\n\n" : "");
 }
 
 /**
@@ -765,71 +740,7 @@ function calculateImportance(
   return Math.min(1, Math.max(0, score));
 }
 
-/**
- * 섹션별 요약 Document 생성 함수
- */
-function createSectionSummaryDocuments(
-  docTree: DocumentTree,
-  headingMap: Map<string, string>,
-  sectionToHeadings: Map<string, ExtendedNode[]>,
-  fileName: string,
-  githubUrl: string
-): Document<DocumentMetadata>[] {
-  const documents: Document<DocumentMetadata>[] = [];
 
-  // 각 섹션별로 요약 Document 생성
-  for (const [sectionId, headings] of sectionToHeadings.entries()) {
-    if (headings.length === 0) continue;
-
-    const headingNode = headings[0] as Heading & ExtendedNode;
-    const headingText = toString(headingNode);
-
-    // 해당 섹션에 속한 모든 노드 찾기
-    const sectionNodes: ExtendedNode[] = [];
-    visit(docTree.root, (node: ExtendedNode) => {
-      if (node.sectionId === sectionId) {
-        sectionNodes.push(node);
-      }
-    });
-
-    if (sectionNodes.length === 0) continue;
-
-    // 섹션 내용 수집
-    let sectionContent = "";
-    for (const node of sectionNodes) {
-      if (
-        is(node, "paragraph") ||
-        is(node, "listItem") ||
-        is(node, "blockquote")
-      ) {
-        sectionContent += toString(node) + "\n\n";
-      } else if (is(node, "code")) {
-        sectionContent += "Code Block: " + (node as Code).lang + "\n";
-      }
-    }
-
-    if (!sectionContent.trim()) continue;
-
-    // 섹션 요약 Document 생성
-    documents.push(
-      new Document({
-        pageContent: `# ${headingText}\n\n${sectionContent.trim()}`,
-        metadata: {
-          fileName,
-          nodeId: `section-summary-${sectionId}`,
-          nodeType: "section-summary",
-          sectionId,
-          githubUrl,
-          headingPath: [headingText],
-          importance: 0.8, // 섹션 요약은 높은 중요도
-          entityMentions: extractEntities(sectionContent),
-        },
-      })
-    );
-  }
-
-  return documents;
-}
 
 // 섹션 이름 가져오기 함수 수정
 function getSectionName(

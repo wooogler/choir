@@ -238,6 +238,8 @@ export interface DocumentDiff {
   nodeId: string;
   fileName: string;
   markdownSection: string;
+  headingPath?: string[];
+  githubUrl?: string;
   diffBlock: any;
   hasChanges: boolean;
 }
@@ -266,6 +268,8 @@ export async function generateDocumentDiffs(
           nodeId: update.nodeId,
           fileName: update.fileName,
           markdownSection: update.markdownSection || "전체 문서",
+          headingPath: update.headingPath,
+          githubUrl: update.githubUrl,
           diffBlock,
           hasChanges: diffHasChanges,
         });

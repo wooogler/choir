@@ -30,6 +30,8 @@ export interface DocumentMetadata {
   chunkIndex?: number;
   totalChunks?: number;
   entityMentions?: string[];
+  headingPath?: string[]; // 섹션 계층 경로 (예: ["section 1", "subsection 2", "subsubsection 3"])
+  originalContent?: string; // 컨텍스트 정보가 제외된 원본 내용 (LLM 업데이트용)
   webContent?: Array<{
     url: string;
     title: string;
@@ -92,3 +94,5 @@ export class VectorStoreError extends Error {
     this.code = options?.code || "UNKNOWN_ERROR";
   }
 }
+
+

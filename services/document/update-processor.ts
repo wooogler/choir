@@ -11,6 +11,7 @@ export interface ProcessedDocument {
   fileName: string;
   githubUrl: string;
   sectionName: string;
+  headingPath?: string[]; // 섹션 계층 경로
   nodeId: string;
   nodeContent: string;
   updatedNodeContent: string;
@@ -54,7 +55,8 @@ export async function processDocument(
       return null;
     }
 
-    const nodeContent = doc.pageContent || "";
+    // LLM 업데이트를 위해 원본 내용 사용 (컨텍스트 정보 제외)
+    const nodeContent = doc.metadata.originalContent || doc.pageContent || "";
     const updatedNodeContent = await editMarkdownWithUserMessages(
       nodeContent,
       validMessages,
@@ -87,6 +89,7 @@ export async function processDocument(
       fileName,
       githubUrl: doc.metadata.githubUrl,
       sectionName: doc.metadata.sectionName || "",
+      headingPath: doc.metadata.headingPath,
       nodeId,
       nodeContent,
       updatedNodeContent: updatedNodeContent || nodeContent,

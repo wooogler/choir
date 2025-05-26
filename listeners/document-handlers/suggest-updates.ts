@@ -19,9 +19,14 @@ import { SlackMessage } from "services/slack";
 import { checkVectorStoreHealth } from "services/vector/health-check";
 import { VectorStoreService } from "services/vector/main-service";
 import { DocumentMetadata } from "services/vector/types";
-
-// 마지막으로 보낸 메시지의 타임스탬프를 저장하는 Map
-const lastMessageTimestamps = new Map<string, string>();
+import { formatSectionPathWithLinks } from "services/document/section-utils";
+import { 
+  setLastMessageTimestamp, 
+  getLastMessageTimestamp,
+  setProgressMessageTimestamp,
+  getProgressMessageTimestamp,
+  deleteProgressMessageTimestamp
+} from "services/common";
 
 const suggestUpdatesCallback = async ({
   ack,
@@ -51,7 +56,7 @@ const suggestUpdatesCallback = async ({
     const dmChannelId = dmResult.channel.id;
 
     // 이전 메시지의 버튼들 제거
-    const lastMessageTs = lastMessageTimestamps.get(userId);
+    const lastMessageTs = getLastMessageTimestamp(userId);
     if (lastMessageTs && dmChannelId) {
       try {
         // 이전 메시지 가져오기
@@ -138,6 +143,11 @@ const suggestUpdatesCallback = async ({
       text: "Preparing document update suggestions...",
     });
 
+    // 진행 중 메시지 타임스탬프 저장
+    if (progressMessage.ts) {
+      setProgressMessageTimestamp(userId, progressMessage.ts);
+    }
+
     // 벡터 스토어 상태 검사
     const healthCheckResult = await checkVectorStoreHealth(client, dmChannelId);
     if (!healthCheckResult.isHealthy) {
@@ -158,10 +168,8 @@ const suggestUpdatesCallback = async ({
     // 첫 번째 제안인 경우에만 유사도 검색 실행
     const vectorStore = VectorStoreService.getInstance();
     if (currentIndex === 0) {
-      searchResults = await vectorStore.similaritySearch(
-        validMessages.map((msg) => msg.text).join("\n"),
-        5
-      );
+      // 메타데이터를 활용한 향상된 검색 사용
+      searchResults = await vectorStore.smartSearchForMessages(validMessages, 5);
 
       if (!searchResults || searchResults.length === 0) {
         await client.chat.postMessage({
@@ -188,6 +196,20 @@ const suggestUpdatesCallback = async ({
     const processedDoc = await processDocument(currentDoc, validMessages, client, vectorStore);
 
     if (!processedDoc || !processedDoc.hasChanges) {
+      // 진행 중 메시지 삭제
+      const progressTs = getProgressMessageTimestamp(userId);
+      if (progressTs) {
+        try {
+          await client.chat.delete({
+            channel: dmChannelId,
+            ts: progressTs
+          });
+          deleteProgressMessageTimestamp(userId);
+        } catch (deleteError) {
+          console.error("진행 중 메시지 삭제 실패:", deleteError);
+        }
+      }
+
       // 변경사항이 없는 경우 다음 문서로 넘어감
       await suggestUpdatesCallback({
         ack: async () => {},
@@ -213,6 +235,7 @@ const suggestUpdatesCallback = async ({
       fileName: processedDoc.fileName,
       githubUrl: processedDoc.githubUrl,
       markdownSection: processedDoc.sectionName || "Main Content",
+      headingPath: processedDoc.headingPath,
       hasChanges: processedDoc.hasChanges,
       nodeContent: processedDoc.nodeContent,
       updatedNodeContent: processedDoc.updatedNodeContent,
@@ -254,12 +277,18 @@ const suggestUpdatesCallback = async ({
     }
 
     // 파일 이름과 섹션 정보 추가
+    const sectionInfo = formatSectionPathWithLinks({
+      headingPath: processedDoc.headingPath,
+      sectionName: processedDoc.sectionName,
+      githubUrl: processedDoc.githubUrl
+    } as DocumentMetadata);
+    
     blocks.push(
       {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*File:* <${processedDoc.githubUrl}|${processedDoc.fileName}>\n*Section:* ${processedDoc.sectionName ? `<${processedDoc.githubUrl}#${processedDoc.sectionName.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-')}|${processedDoc.sectionName}>` : "문서 본문"}`
+          text: `*File:* <${processedDoc.githubUrl}|${processedDoc.fileName}>\n*Section:* ${sectionInfo}`
         }
       },
       processedDoc.diffBlock,
@@ -374,13 +403,17 @@ const suggestUpdatesCallback = async ({
     blocks.push(documentActions);
 
     // DM에 진행 중 메시지가 있다면 삭제
-    try {
-      await client.chat.delete({
-        channel: dmChannelId,
-        ts: progressMessage.ts as string
-      });
-    } catch (deleteError) {
-      console.error("진행 중 메시지 삭제 실패:", deleteError);
+    const progressTs = getProgressMessageTimestamp(userId);
+    if (progressTs) {
+      try {
+        await client.chat.delete({
+          channel: dmChannelId,
+          ts: progressTs
+        });
+        deleteProgressMessageTimestamp(userId);
+      } catch (deleteError) {
+        console.error("진행 중 메시지 삭제 실패:", deleteError);
+      }
     }
 
     // 업데이트 제안 메시지 전송
@@ -394,7 +427,7 @@ const suggestUpdatesCallback = async ({
 
     // 새로운 메시지의 타임스탬프 저장
     if (result.ts) {
-      lastMessageTimestamps.set(userId, result.ts);
+      setLastMessageTimestamp(userId, result.ts);
     }
 
   } catch (error) {
