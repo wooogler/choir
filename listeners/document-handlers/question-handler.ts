@@ -191,15 +191,59 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       }
     }
 
-    // 응답 메시지 전송
+    // 응답 메시지 전송 (Ask Managers 버튼 없이)
+    const responseBlocks = [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: response
+        }
+      }
+    ];
+
     const result = await client.chat.postMessage({
       channel: event.channel,
       ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
       text: response,
       mrkdwn: true,
-      blocks: mainBlocks,
+      blocks: responseBlocks,
       unfurl_links: false,
       unfurl_media: false
+    });
+
+    // 응답 메시지가 완전히 전송된 후 약간의 지연을 두고 Ask Managers 버튼을 전송
+    await new Promise(resolve => setTimeout(resolve, 100)); // 100ms 지연
+    
+    await client.chat.postEphemeral({
+      channel: event.channel,
+      user: event.user,
+      text: `Would you like to discuss this question with managers? ${managersText}`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `Would you like to discuss this question with managers? ${managersText}`
+          }
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "Ask Managers",
+                emoji: true,
+              },
+              style: "primary",
+              action_id: "start_consultation",
+              value: sessionId,
+            },
+          ],
+        }
+      ]
     });
 
     // 관련 문서 정보를 응답의 스레드에 추가
@@ -208,29 +252,41 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       const documentInfo = await Promise.all(relevantDocs
         .map(async (doc, index) => {
           const metadata = doc.metadata;
-          const fileInfo = metadata.fileName && metadata.githubUrl ? 
-            `*File:* <${metadata.githubUrl}|${metadata.fileName}>\n` : "";
           
-          // 새로운 유틸리티 함수를 사용하여 섹션 경로 포맷팅
-          const sectionPath = formatSectionPathWithLinks(metadata);
-          const sectionInfo = `*Section:* ${sectionPath}\n`;
+          // Section은 sectionName만 표시하되 링크 포함
+          let sectionInfo = "";
+          if (metadata.sectionName) {
+            const sectionWithLink = formatSectionPathWithLinks(metadata);
+            // 전체 경로에서 마지막 부분만 추출 (> 기준으로 분할 후 마지막 요소)
+            const parts = sectionWithLink.split(' > ');
+            const lastSection = parts[parts.length - 1].trim();
+            sectionInfo = `*Section:* ${lastSection}\n`;
+          }
 
-          // 문서 내용 미리보기를 Slack 형식으로 변환
-          let contentPreview =
-            doc.pageContent.length > 500
-              ? `${doc.pageContent.substring(0, 500)}...`
-              : doc.pageContent;
+          // 문서 내용에서 메타데이터 부분 제거
+          let contentPreview = doc.pageContent;
+          
+          // "File: xxx\nPath: xxx\n\n" 패턴 제거
+          contentPreview = contentPreview.replace(/^File:.*?\n.*?\n\n/, '');
+          
+          // "(To be continued)" 제거
+          contentPreview = contentPreview.replace(/\(To be continued\)/g, '');
+          
+          // 길이 제한 및 Slack 형식 변환
+          if (contentPreview.length > 500) {
+            contentPreview = `${contentPreview.substring(0, 500)}...`;
+          }
           
           contentPreview = await convertMarkdownToSlackText(contentPreview);
 
-          return `*Reference Document ${index + 1}*\n${fileInfo}${sectionInfo}*Related Content:*\n\`\`\`${contentPreview}\`\`\`\n`;
+          return `*Reference ${index + 1}*\n${sectionInfo}\n\`\`\`${contentPreview}\`\`\`\n`;
         }));
 
       // 문서 정보를 응답의 스레드에 추가
       await client.chat.postMessage({
         channel: event.channel,
         thread_ts: result.ts,
-        text: `*Reference Document Information:*\n\n${documentInfo.join("\n")}`,
+        text: `${documentInfo.join("\n")}`,
         mrkdwn: true,
         unfurl_links: false,
         unfurl_media: false
