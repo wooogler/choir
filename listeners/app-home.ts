@@ -1,5 +1,5 @@
 import type { App, AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
-import { getManagers, isManager, getWorkspaceId, isWorkspaceOwner, getGithubRepo } from "services/slack";
+import { getManagers, isManager, getWorkspaceId, isWorkspaceOwner, getGithubRepo, getQAChannel, getChannelName } from "services/slack";
 import { VectorStoreService } from "services/vector/main-service";
 
 const appHomeOpenedCallback = async ({
@@ -154,6 +154,78 @@ const appHomeOpenedCallback = async ({
                   text: "Cancel",
                 },
               },
+            },
+          ],
+        },
+        {
+          type: "divider",
+        }
+      );
+    }
+
+    // Q&A Channel configuration section
+    const qaChannelBlocks = [];
+
+    // Show Q&A channel configuration UI only for managers or workspace owners
+    if (isUserManager || isOwner) {
+      // Get current Q&A channel info
+      const qaChannelId = await getQAChannel(workspaceId, client);
+      let qaChannelName = "No channel selected";
+      
+      if (qaChannelId) {
+        try {
+          const channelInfo = await client.conversations.info({ channel: qaChannelId });
+          qaChannelName = channelInfo.channel?.name || "Unknown channel";
+        } catch (error) {
+          logger.warn(`Could not get Q&A channel name for ${qaChannelId}:`, error);
+          qaChannelName = "Unknown channel";
+        }
+      }
+
+      qaChannelBlocks.push(
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: "💬 Q&A Channel Configuration",
+            emoji: true,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Current Q&A Channel:* ${qaChannelId ? `#${qaChannelName}` : qaChannelName}`,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "Select a channel where CHOIR will forward questions when users click 'Ask to Channel'.",
+          },
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "channels_select",
+              placeholder: {
+                type: "plain_text",
+                text: "Select Q&A Channel",
+                emoji: true,
+              },
+              action_id: "select_qa_channel",
+            },
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "Set Q&A Channel",
+                emoji: true,
+              },
+              style: "primary",
+              action_id: "set_qa_channel",
             },
           ],
         },
@@ -341,6 +413,7 @@ const appHomeOpenedCallback = async ({
       ...homeBlocks,
       ...managerManagementBlocks,
       ...managerBlocks,
+      ...qaChannelBlocks,
       ...vectorStoreBlocks,
       ...githubBlocks,
     ];

@@ -1,5 +1,7 @@
-import { createSlackMessageWithName, formatSlackMessageBlock, formatSlackMessageSection, SlackMessage, getChannelName, isBotUser, storeMessage } from "services/slack";
+import { createSlackMessageWithName, SlackMessage, getChannelName, isBotUser, getWorkspaceId, isManager, getManagers, getUserName } from "services/slack";
 import { WebClient } from "@slack/web-api";
+import { generateSessionId, storeSessionData, SessionType } from "services/common";
+import { extractKnowledgeFromMessages } from "services/llm/knowledge-extractor";
 
 interface MessageResult {
   ts: string;
@@ -8,7 +10,7 @@ interface MessageResult {
 }
 
 /**
- * 업데이트 요청 메시지 처리
+ * Handle update request message with automatic knowledge extraction
  */
 export async function handleUpdateRequestMessage(client: WebClient, event: any, logger: any) {
   try {
@@ -16,40 +18,174 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     const originalChannelId = event.channel;
     const isThreadMention = !!event.thread_ts;
     
-    try {
-      // Get bot info
-      const authTest = await client.auth.test();
-      const botUserId = authTest.user_id;
-      const teamId = authTest.team_id;
+    // Show loading message in the original channel/thread
+    const loadingMessage = await client.chat.postMessage({
+      channel: originalChannelId,
+      ...(isThreadMention && { thread_ts: event.thread_ts }),
+      text: "🔍 Analyzing the last 10 messages to extract knowledge...",
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "🔍 Analyzing the last 10 messages to extract knowledge..."
+          }
+        }
+      ]
+    });
 
-      // 스레드에서 멘션된 경우 해당 스레드에, 아닌 경우 채널에 직접 메시지 전송
-      await client.chat.postMessage({
+    if (!loadingMessage.ts) {
+      throw new Error("Failed to post loading message");
+    }
+
+    // Get message history (last 10 messages)
+    const historyResult = isThreadMention ? 
+      await client.conversations.replies({
         channel: originalChannelId,
-        ...(isThreadMention && { thread_ts: event.thread_ts }),
-        text: "Thank you for the request. Let's discuss the update in a separate channel.",
+        ts: event.thread_ts,
+        limit: 15, // Get more to filter out bot messages
+        inclusive: true
+      }) :
+      await client.conversations.history({
+        channel: originalChannelId,
+        limit: 15, // Get more to filter out bot messages
+      });
+
+    if (!historyResult.messages?.length) {
+      await client.chat.update({
+        channel: originalChannelId,
+        ts: loadingMessage.ts,
+        text: "❌ No messages found to analyze.",
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: "Thank you for the request. Let's discuss the update in a separate channel."
+              text: "❌ No messages found to analyze."
+            }
+          }
+        ]
+      });
+      return false;
+    }
+
+    // Sort messages by timestamp (oldest first) and filter out bot messages
+    const messages = [...(historyResult.messages ?? [])]
+      .sort((a, b) => {
+        const tsA = parseFloat(a.ts || '0');
+        const tsB = parseFloat(b.ts || '0');
+        return tsA - tsB;
+      });
+
+    // Filter out bot messages
+    const nonBotMessages = await Promise.all(
+      messages.map(async (msg: any) => {
+        if (!msg.user) return null;
+        const isBot = await isBotUser(msg.user, client);
+        return isBot ? null : msg;
+      })
+    );
+
+    const slackMessages = (
+      await Promise.all(
+        nonBotMessages
+          .filter((msg): msg is any => msg !== null)
+          .map((msg: any) => createSlackMessageWithName(msg, client))
+      )
+    ).filter((msg): msg is SlackMessage => msg !== null);
+
+    // Take the last 10 non-bot messages
+    const last10Messages = slackMessages.slice(-10);
+
+    if (last10Messages.length === 0) {
+      await client.chat.update({
+        channel: originalChannelId,
+        ts: loadingMessage.ts,
+        text: "❌ No user messages found to analyze.",
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "❌ No user messages found to analyze."
+            }
+          }
+        ]
+      });
+      return false;
+    }
+
+    try {
+      // Extract knowledge from messages
+      const extractionResult = await extractKnowledgeFromMessages(last10Messages);
+      
+      // Generate session ID for this knowledge extraction
+      const sessionId = generateSessionId("knowledge_extraction");
+      
+      // Get channel name for display
+      const channelName = await getChannelName(originalChannelId, client);
+
+      // Get initial extractor's display name
+      const extractorInfo = await client.users.info({ user: userId });
+      const extractorName = extractorInfo.user?.profile?.display_name || extractorInfo.user?.real_name || extractorInfo.user?.name || "Unknown User";
+      const extractTime = new Date().toLocaleString();
+
+      // Check if user is a manager
+      const workspaceId = await getWorkspaceId(client);
+      const isUserManager = isManager(workspaceId, userId);
+
+      // Get managers for the message
+      const managers = getManagers(workspaceId);
+      let managerText = "managers";
+      if (managers.length > 0) {
+        // Get first manager's name as example
+        const firstManagerName = await getUserName(managers[0], client);
+        managerText = managers.length === 1 ? firstManagerName : `${firstManagerName} and other managers`;
+      }
+
+      // Delete the loading message first
+      await client.chat.delete({
+        channel: originalChannelId,
+        ts: loadingMessage.ts
+      });
+
+      // First: Send public message with the suggested update content
+      const publicMessage = await client.chat.postMessage({
+        channel: originalChannelId,
+        ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
+        text: `Sure! I'll suggest the following update to ${managerText}.`,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `Sure! I'll suggest the following update to ${managerText}.`
+            }
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*Suggested Update*\n\`\`\`${extractionResult.cleanContent}\`\`\``
             }
           }
         ]
       });
 
-      // Send ephemeral message with DM shortcut
-      await client.chat.postEphemeral({
+      // Wait 1 second to ensure the public message appears first
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Second: Send ephemeral message with buttons for the requester only
+      const ephemeralMessage = await client.chat.postEphemeral({
         channel: originalChannelId,
         user: userId,
-        ...(isThreadMention && { thread_ts: event.thread_ts }),
-        text: "Please press the button below to proceed with the document update.",
+        text: "You can edit the suggested update if needed.",
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: "Please press the button below to proceed with the document update."
+              text: "You can edit the suggested update if needed."
             }
           },
           {
@@ -59,187 +195,88 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
                 type: "button",
                 text: {
                   type: "plain_text",
-                  text: "Document Update",
+                  text: "Edit",
+                  emoji: true
+                },
+                action_id: "edit_extracted_knowledge",
+                value: sessionId
+              }
+            ]
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "When you're ready, click Suggest Update to confirm."
+            }
+          },
+          {
+            type: "actions",
+            elements: [
+              {
+                type: "button",
+                text: {
+                  type: "plain_text",
+                  text: "Suggest Update",
                   emoji: true
                 },
                 style: "primary",
-                url: `slack://user?team=${teamId}&id=${botUserId}&tab=messages`
+                action_id: isUserManager ? "apply_extracted_knowledge" : "pass_knowledge_to_manager",
+                value: sessionId
+              },
+              {
+                type: "button",
+                text: {
+                  type: "plain_text",
+                  text: "Cancel",
+                  emoji: true
+                },
+                style: "danger",
+                action_id: "cancel_knowledge_extraction",
+                value: sessionId
               }
             ]
           }
         ]
       });
-    } catch (reactionError) {
-      logger.warn("Failed to add reaction or send ephemeral message:", reactionError);
-    }
-    
-    // Open DM channel
-    const dmResult = await client.conversations.open({
-      users: userId
-    });
-    
-    if (!dmResult.ok || !dmResult.channel?.id) {
-      throw new Error("Failed to open DM channel");
-    }
-    
-    const dmChannelId = dmResult.channel.id;
-    
-    // Show progress message in DM
-    const progressMessage = await client.chat.postMessage({
-      channel: dmChannelId,
-      text: "Loading message history...",
-    }) as MessageResult;
 
-    // 스레드 메시지인 경우 replies API를 사용하여 스레드 히스토리를 가져옴
-    const historyResult = isThreadMention ? 
-      await client.conversations.replies({
+      // Store session data
+      storeSessionData(sessionId, {
+        originalChannelId,
+        originalThreadTs: event.thread_ts,
+        userId,
+        extractedKnowledge: extractionResult.cleanContent, // Store clean content for editing
+        detailedKnowledge: extractionResult.detailedContent, // Store detailed content for source viewing
+        knowledgeItem: extractionResult.knowledgeItem, // Store structured data
+        messages: last10Messages,
+        publicMessageTs: publicMessage.ts, // Store public message timestamp for updates
+        lastEditedBy: userId, // Track who initially extracted the knowledge
+        lastEditedAt: new Date().toISOString() // Track when it was initially extracted
+      }, SessionType.CONSULTATION);
+
+      return true;
+
+    } catch (extractionError) {
+      logger.error("Error extracting knowledge:", extractionError);
+      
+      await client.chat.update({
         channel: originalChannelId,
-        ts: event.thread_ts,
-        limit: 50, // 더 많은 메시지 가져오기
-        inclusive: true // 원본 메시지 포함
-      }) :
-      await client.conversations.history({
-        channel: originalChannelId,
-        limit: 50, // 더 많은 메시지 가져오기
-    });
-
-    if (historyResult.messages?.length) {
-      // 시간 순으로 정렬 (오래된 순) 및 봇 메시지 필터링
-      const messages = [...(historyResult.messages ?? [])]
-        .sort((a, b) => {
-          const tsA = parseFloat(a.ts || '0');
-          const tsB = parseFloat(b.ts || '0');
-          return tsA - tsB;  // 오래된 메시지가 먼저 오도록 정렬
-        });
-
-      // 봇이 아닌 메시지만 필터링
-      const nonBotMessages = await Promise.all(
-        messages.map(async (msg: any) => {
-          if (!msg.user) return null;
-          const isBot = await isBotUser(msg.user, client);
-          return isBot ? null : msg;
-        })
-      );
-
-      const slackMessages = (
-        await Promise.all(
-          nonBotMessages
-            .filter((msg): msg is any => msg !== null)
-            .map((msg: any) => createSlackMessageWithName(msg, client))
-        )
-      ).filter((msg): msg is SlackMessage => msg !== null);
-
-
-      // 전체 메시지 저장 (Load More를 위해)
-      const allMessageKeys = slackMessages.map(msg => storeMessage(msg));
-
-      // 시간순 정렬 상태 유지하면서 마지막 5개 선택
-      const limitedSlackMessages = slackMessages.slice(-5);
-
-      const messageOptions = await Promise.all(
-        limitedSlackMessages.map(msg => formatSlackMessageBlock(msg, true))
-      );
-
-      // Convert checkbox options to Slack API format
-      const checkboxOptions = messageOptions.map((option) => ({
-        text: option.text,
-        value: option.value,
-      }));
-
-      // Get channel name
-      const channelName = await getChannelName(originalChannelId, client);
-
-      const messageBlocks = [
-        {
-          type: "header",
-          text: {
-            type: "plain_text",
-            text: "Document Update",
-            emoji: true
-          }
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: isThreadMention ?
-              `Here are recent replies in this thread from ${channelName}. Select replies to use for document update.` : 
-              `Here are recent messages from ${channelName}. Select messages to use for document update.`,
-          },
-        },
-        {
-          type: "actions",
-          block_id: "message_selection",
-          elements: [
-            {
-              type: "checkboxes",
-              action_id: "check_messages",
-              options: checkboxOptions,
-              initial_options: checkboxOptions,
-            },
-          ],
-        },
-      ];
-
-      // Delete progress message
-      try {
-        await client.chat.delete({
-          channel: dmChannelId,
-          ts: progressMessage.ts
-        });
-      } catch (deleteError) {
-        logger.error("Failed to delete progress message:", deleteError);
-      }
-
-      // Send message selection UI in DM
-      await client.chat.postMessage({
-        channel: dmChannelId,
-        text: "Please select messages to update the document.",
+        ts: loadingMessage.ts,
+        text: "❌ Failed to extract knowledge from messages.",
         blocks: [
-          {
-            type: "header",
-            text: {
-              type: "plain_text",
-              text: "Document Update",
-              emoji: true
-            }
-          },
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: isThreadMention ?
-                `Here are recent replies in this thread from ${channelName}. Click the button below to select messages for document update.` : 
-                `Here are recent messages from ${channelName}. Click the button below to select messages for document update.`,
-            },
-          },
-          {
-            type: "actions",
-            elements: [
-              {
-                type: "button",
-                text: {
-                  type: "plain_text",
-                  text: "Select Messages",
-                },
-                action_id: "open_message_selection_modal",
-                value: JSON.stringify({
-                  originalChannelId,
-                  originalThreadTs: event.thread_ts,
-                  messageKeys: messageOptions.map(option => option.value),
-                  channelName,
-                  currentLimit: 5,
-                  allMessageKeys: allMessageKeys
-                })
-              },
-            ],
-          },
-        ],
-      }) as MessageResult;
-
-      return true;
+              text: `❌ Failed to extract knowledge from messages: ${extractionError instanceof Error ? extractionError.message : "Unknown error"}`
+            }
+          }
+        ]
+      });
+      
+      return false;
     }
-    return false;
+
   } catch (error) {
     logger.error("Error handling update request message:", error);
     throw error;

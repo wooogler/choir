@@ -9,13 +9,11 @@ import { processDocument } from "services/document/update-processor";
 import { 
   storeDocumentUpdates, 
   getSearchResults, 
-  removeDocumentUpdate,
   getStoredDocumentUpdates,
   DocumentUpdate,
   storeSearchResults
 } from "services/document/document-store";
-import { getStoredMessages } from "services/slack";
-import { SlackMessage } from "services/slack";
+import { SlackMessage, getManagers, getWorkspaceId, isManager } from "services/slack";
 import { checkVectorStoreHealth } from "services/vector/health-check";
 import { VectorStoreService } from "services/vector/main-service";
 import { DocumentMetadata } from "services/vector/types";
@@ -27,6 +25,43 @@ import {
   getProgressMessageTimestamp,
   deleteProgressMessageTimestamp
 } from "services/common";
+
+/**
+ * Check if a channel contains any managers
+ */
+async function channelHasManagers(client: any, channelId: string, workspaceId: string): Promise<boolean> {
+  try {
+    const managers = getManagers(workspaceId);
+    if (managers.length === 0) return false;
+
+    const membersResult = await client.conversations.members({
+      channel: channelId
+    });
+
+    if (!membersResult.ok || !membersResult.members) return false;
+
+    return membersResult.members.some((memberId: string) => managers.includes(memberId));
+  } catch (error) {
+    console.error("Error checking channel managers:", error);
+    return false;
+  }
+}
+
+/**
+ * Create a link to the original message using Slack permalink format
+ */
+function createMessageLink(workspaceUrl: string, channelId: string, messageTs?: string): string {
+  // Remove trailing slash from workspace URL if present
+  const baseUrl = workspaceUrl.replace(/\/$/, '');
+  
+  if (messageTs) {
+    // Convert timestamp format (remove the dot)
+    const encodedTs = messageTs.replace('.', '');
+    return `${baseUrl}/archives/${channelId}/p${encodedTs}`;
+  } else {
+    return `${baseUrl}/archives/${channelId}`;
+  }
+}
 
 const suggestUpdatesCallback = async ({
   ack,
@@ -55,11 +90,38 @@ const suggestUpdatesCallback = async ({
 
     const dmChannelId = dmResult.channel.id;
 
+    // Clean up previous processing messages in DM
+    try {
+      const dmHistory = await client.conversations.history({
+        channel: dmChannelId,
+        limit: 10
+      });
+
+      if (dmHistory.messages) {
+        for (const message of dmHistory.messages) {
+          // Delete processing messages and "suggestions will appear" messages
+          if (message.text?.includes("Processing knowledge and generating document updates") ||
+              message.text?.includes("Your document update suggestions will appear here shortly") ||
+              message.text?.includes("Preparing document update suggestions")) {
+            try {
+              await client.chat.delete({
+                channel: dmChannelId,
+                ts: message.ts!
+              });
+            } catch (deleteError) {
+              console.error("Failed to delete processing message:", deleteError);
+            }
+          }
+        }
+      }
+    } catch (historyError) {
+      console.error("Failed to fetch DM history for cleanup:", historyError);
+    }
+
     // 이전 메시지의 버튼들 제거
     const lastMessageTs = getLastMessageTimestamp(userId);
     if (lastMessageTs && dmChannelId) {
       try {
-        // 이전 메시지 가져오기
         const history = await client.conversations.history({
           channel: dmChannelId,
           latest: lastMessageTs,
@@ -70,7 +132,6 @@ const suggestUpdatesCallback = async ({
         if (history.messages && history.messages.length > 0) {
           const previousMessage = history.messages[0];
           if (previousMessage.blocks) {
-            // actions 블록을 제외한 나머지 블록만 유지
             const updatedBlocks = previousMessage.blocks.filter((block: any) => 
               block.type !== "actions"
             ) as (KnownBlock | Block)[];
@@ -96,16 +157,15 @@ const suggestUpdatesCallback = async ({
 
     const parsedValue = JSON.parse(value);
     let currentIndex = 0;
-    let validMessages: SlackMessage[] = [];
     let searchResults: Document<DocumentMetadata>[] = [];
     let isFirstSuggestion = true;
+    let knowledgeContent = "";
 
-    // 원본 채널 및 스레드 정보 (기본값은 현재 이벤트의 채널과 스레드)
+    // 원본 채널 및 스레드 정보
     let contextChannelId = originalChannelId;
     let contextThreadTs = originalThreadTs;
 
     if (parsedValue) {
-      // 원본 채널 및 스레드 정보가 있으면 저장
       if (parsedValue.originalChannelId) {
         contextChannelId = parsedValue.originalChannelId;
       }
@@ -114,28 +174,41 @@ const suggestUpdatesCallback = async ({
         contextThreadTs = parsedValue.originalThreadTs;
       }
 
+      knowledgeContent = parsedValue.knowledgeContent || "";
+
       // Next Suggestion 버튼에서 온 경우
       if ("index" in parsedValue) {
         currentIndex = parsedValue.index;
-        validMessages = getStoredMessages(parsedValue.messageKeys);
         searchResults = getSearchResults(userId);
         isFirstSuggestion = false;
-      } else {
-        // 새로운 업데이트 시작인 경우
-        if (parsedValue.messageKeys && Array.isArray(parsedValue.messageKeys)) {
-          validMessages = getStoredMessages(parsedValue.messageKeys);
-        }
       }
     }
 
-    // 메시지가 없는 경우
-    if (validMessages.length === 0) {
+    // 사용자 정보와 workspace 정보 가져오기
+    const userInfo = await client.users.info({
+      user: userId
+    });
+    const workspaceId = await getWorkspaceId(client);
+    const isSlackAdmin = userInfo.user?.is_admin || userInfo.user?.is_owner;
+    const isSystemManager = isManager(workspaceId, userId);
+    const isCurrentUserManager = isSlackAdmin || isSystemManager;
+
+    // 지식 내용이 없는 경우
+    if (!knowledgeContent) {
       await client.chat.postMessage({
         channel: dmChannelId,
-        text: "Please select messages to update the document. Go back to the original conversation and select messages before trying again.",
+        text: "No knowledge content found. Please try the knowledge extraction again.",
       });
       return;
     }
+
+    // 가상의 메시지 생성 (지식 추출용)
+    const validMessages: SlackMessage[] = [{
+      userId: "knowledge_extraction",
+      username: "Knowledge Extraction",
+      text: knowledgeContent,
+      ts: Date.now().toString()
+    }];
 
     // DM에 진행 중 메시지 표시
     const progressMessage = await client.chat.postMessage({
@@ -143,7 +216,6 @@ const suggestUpdatesCallback = async ({
       text: "Preparing document update suggestions...",
     });
 
-    // 진행 중 메시지 타임스탬프 저장
     if (progressMessage.ts) {
       setProgressMessageTimestamp(userId, progressMessage.ts);
     }
@@ -168,18 +240,16 @@ const suggestUpdatesCallback = async ({
     // 첫 번째 제안인 경우에만 유사도 검색 실행
     const vectorStore = VectorStoreService.getInstance();
     if (currentIndex === 0) {
-      // 메타데이터를 활용한 향상된 검색 사용
-      searchResults = await vectorStore.smartSearchForMessages(validMessages, 5);
+      searchResults = await vectorStore.similaritySearch(knowledgeContent, 5);
 
       if (!searchResults || searchResults.length === 0) {
         await client.chat.postMessage({
           channel: dmChannelId,
-          text: "No relevant documents found for the selected messages. Please try with different messages or contact an administrator.",
+          text: "No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.",
         });
         return;
       }
 
-      // 검색 결과 저장
       storeSearchResults(userId, searchResults);
     }
 
@@ -218,9 +288,9 @@ const suggestUpdatesCallback = async ({
           actions: [{
             value: JSON.stringify({
               index: currentIndex + 1,
-              messageKeys: validMessages.map(msg => `${msg.userId}-${msg.ts}`),
               originalChannelId: contextChannelId,
-              originalThreadTs: contextThreadTs
+              originalThreadTs: contextThreadTs,
+              knowledgeContent: knowledgeContent
             })
           }]
         },
@@ -258,7 +328,6 @@ const suggestUpdatesCallback = async ({
       currentUpdates.push(documentUpdate);
     }
     
-    // 업데이트된 배열 저장
     storeDocumentUpdates(userId, currentUpdates);
 
     // UI 블록 생성
@@ -273,6 +342,40 @@ const suggestUpdatesCallback = async ({
           text: "Suggestions",
           emoji: true
         }
+      });
+
+      // Knowledge 내용 표시
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Knowledge:*\n\`\`\`${knowledgeContent}\`\`\``
+        }
+      });
+
+      // 원본 메시지 링크 추가 (매니저가 포함된 채널인 경우)
+      const hasManagers = await channelHasManagers(client, contextChannelId, workspaceId);
+      
+      if (hasManagers) {
+        // workspace URL 가져오기
+        const authInfo = await client.auth.test();
+        const workspaceUrl = authInfo.url;
+        
+        if (workspaceUrl) {
+          const messageLink = createMessageLink(workspaceUrl, contextChannelId, contextThreadTs);
+          blocks.push({
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `📍 <${messageLink}|View original discussion> for context`
+            }
+          });
+        }
+      }
+
+      // 구분선 추가
+      blocks.push({
+        type: "divider"
       });
     }
 
@@ -322,10 +425,10 @@ const suggestUpdatesCallback = async ({
             action_id: "suggest_updates",
             value: JSON.stringify({
               index: currentIndex + 1,
-              messageKeys: validMessages.map(msg => `${msg.userId}-${msg.ts}`),
               originalChannelId: contextChannelId,
               originalThreadTs: contextThreadTs,
-              action: "keep"
+              action: "keep",
+              knowledgeContent: knowledgeContent
             })
           },
           {
@@ -339,23 +442,15 @@ const suggestUpdatesCallback = async ({
             action_id: "reject_update",
             value: JSON.stringify({
               index: currentIndex + 1,
-              messageKeys: validMessages.map(msg => `${msg.userId}-${msg.ts}`),
               originalChannelId: contextChannelId,
               originalThreadTs: contextThreadTs,
-              rejectIndex: currentIndex
+              rejectIndex: currentIndex,
+              knowledgeContent: knowledgeContent
             })
           }
         ]
       }
     );
-
-    // 사용자 정보 가져오기
-    const userInfo = await client.users.info({
-      user: userId
-    });
-
-    // Manager 여부 확인 (is_admin 또는 is_owner가 true인 경우)
-    const isManager = userInfo.user?.is_admin || userInfo.user?.is_owner;
 
     // 문서 액션 버튼 추가
     const documentActions = {
@@ -365,7 +460,7 @@ const suggestUpdatesCallback = async ({
     };
 
     // Manager인 경우에만 Update Documents 버튼 추가
-    if (isManager) {
+    if (isCurrentUserManager) {
       documentActions.elements.push({
         type: "button",
         text: {
@@ -388,7 +483,7 @@ const suggestUpdatesCallback = async ({
       type: "button",
       text: {
         type: "plain_text",
-        text: isManager ? "Discuss with Members" : "Discuss with Managers",
+        text: isCurrentUserManager ? "Discuss with Members" : "Discuss with Managers",
         emoji: true
       },
       action_id: "start_discussion",
@@ -405,14 +500,14 @@ const suggestUpdatesCallback = async ({
     // DM에 진행 중 메시지가 있다면 삭제
     const progressTs = getProgressMessageTimestamp(userId);
     if (progressTs) {
-    try {
-      await client.chat.delete({
-        channel: dmChannelId,
+      try {
+        await client.chat.delete({
+          channel: dmChannelId,
           ts: progressTs
-      });
+        });
         deleteProgressMessageTimestamp(userId);
-    } catch (deleteError) {
-      console.error("진행 중 메시지 삭제 실패:", deleteError);
+      } catch (deleteError) {
+        console.error("진행 중 메시지 삭제 실패:", deleteError);
       }
     }
 

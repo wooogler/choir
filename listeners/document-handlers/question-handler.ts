@@ -1,6 +1,6 @@
 import { generateSessionId, SessionType, storeSessionData } from "services/common";
-import { generateCompletion } from "services/llm";
-import { createGitbookSectionLink, getManagers, getUserName } from "services/slack";
+import { answerQuestion } from "services/llm";
+import { createGitbookSectionLink, getManagers, getUserName, getQAChannel, getChannelName } from "services/slack";
 import { getWorkspaceId } from "services/slack";
 import { SlackMessage } from "services/slack";
 import { VectorStoreService } from "services/vector/main-service";
@@ -55,15 +55,32 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       return doc;
     });
 
+    // 워크스페이스 이름 가져오기
+    let workspaceName = "";
+    try {
+      const teamInfo = await client.team.info();
+      workspaceName = teamInfo.team?.name || "";
+    } catch (error) {
+      logger.warn("Could not get workspace name:", error);
+    }
+
     // 응답 생성
-    let response = await generateCompletion(
+    let response = await answerQuestion(
       userMessage,
       historyResult.messages || [],
-      relevantDocs
+      relevantDocs,
+      client,
+      workspaceName
     );
 
     // 마크다운을 Slack 형식으로 변환
     response = await convertMarkdownToSlackText(response || '');
+
+    // 공유용 깔끔한 응답 (참조 문구 없이)
+    const cleanResponseForSharing = response;
+    
+    // 실제 표시용 응답 (참조 문구 포함)
+    const displayResponse = response + "\n\nIf you'd like to read the original document, please refer to the sources linked in the reply.";
 
     // 대화 히스토리에서 모든 고유 사용자 ID 추출
     const historyUsers = new Set<string>();
@@ -99,7 +116,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     validMessages.push({
       userId: "bot",
       username: "CHOIR",
-      text: response,
+      text: cleanResponseForSharing,
       ts: (Math.floor(Date.now() / 1000) + "." + Date.now() % 1000),
     });
 
@@ -110,71 +127,44 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       return tsB - tsA;
     });
 
-    // 워크스페이스 ID와 매니저 목록 가져오기
+    // 워크스페이스 ID와 Q&A 채널 정보 가져오기
     const workspaceId = await getWorkspaceId(client);
-    const managers = getManagers(workspaceId);
+    const qaChannelId = await getQAChannel(workspaceId, client);
     
-    // 매니저 표시용 형식 지정
-    let managersText = "";
-    if (managers && managers.length > 0) {
-      // 매니저 이름 가져오기
-      const managerNames = await Promise.all(
-        managers.map(async (uid: string) => {
-          const name = await getUserName(uid, client);
-          return `*${name}*`;
-        })
-      );
-      managersText = managerNames.join(", ");
+    // Q&A 채널 표시용 형식 지정
+    let qaChannelText = "";
+    let qaChannelName = "";
+    if (qaChannelId) {
+      try {
+        const channelInfo = await client.conversations.info({ channel: qaChannelId });
+        qaChannelName = channelInfo.channel?.name || "unknown";
+        qaChannelText = `#${qaChannelName}`;
+      } catch (error) {
+        logger.warn(`Could not get Q&A channel name for ${qaChannelId}:`, error);
+        qaChannelText = "Unknown channel";
+        qaChannelName = "";
+      }
     } else {
-      managersText = "No managers available";
+      qaChannelText = "No Q&A channel configured";
+      qaChannelName = "";
     }
 
     // 세션 ID 생성
     const sessionId = generateSessionId("consultation");
 
-    // 세션 데이터 저장
+    // 세션 데이터 저장 (Q&A 채널 정보 포함, 공유용으로는 깔끔한 응답 사용)
     storeSessionData(
       sessionId,
       {
         stakeholders: Array.from(historyUsers),
         validMessages: validMessages,
+        qaChannelId: qaChannelId,
+        originalQuestion: userMessage,
+        botResponse: cleanResponseForSharing,
+        originalChannelId: event.channel,
       },
       SessionType.CONSULTATION
     );
-
-    // 채널에 응답 메시지 전송
-    const mainBlocks = [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: response
-        }
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `Would you like to discuss this question with managers? ${managersText}`
-        }
-      },
-      {
-        type: "actions",
-        elements: [
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "Ask Managers",
-              emoji: true,
-            },
-            style: "primary",
-            action_id: "start_consultation",
-            value: sessionId,
-          },
-        ],
-      }
-    ];
 
     // 질문이 스레드에서 왔는지 확인
     const isThreadQuestion = event.thread_ts !== undefined;
@@ -197,7 +187,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         type: "section",
         text: {
           type: "mrkdwn",
-          text: response
+          text: displayResponse
         }
       }
     ];
@@ -205,46 +195,67 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     const result = await client.chat.postMessage({
       channel: event.channel,
       ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
-      text: response,
+      text: displayResponse,
       mrkdwn: true,
       blocks: responseBlocks,
       unfurl_links: false,
       unfurl_media: false
     });
 
-    // 응답 메시지가 완전히 전송된 후 약간의 지연을 두고 Ask Managers 버튼을 전송
-    await new Promise(resolve => setTimeout(resolve, 100)); // 100ms 지연
+    // 응답 메시지가 완전히 전송된 후 약간의 지연을 두고 공유 버튼을 전송
+    await new Promise(resolve => setTimeout(resolve, 500)); // 500ms 지연
     
-    await client.chat.postEphemeral({
-      channel: event.channel,
-      user: event.user,
-      text: `Would you like to discuss this question with managers? ${managersText}`,
-      blocks: [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `Would you like to discuss this question with managers? ${managersText}`
-          }
+    // 공유 버튼 요소들 생성
+    const actionElements = [];
+    
+    // Q&A 채널이 설정된 경우에만 Q&A 채널 버튼 추가
+    if (qaChannelId && qaChannelName) {
+      actionElements.push({
+        type: "button",
+        text: {
+          type: "plain_text",
+          text: "Ask the Q&A Channel",
+          emoji: true,
         },
-        {
-          type: "actions",
-          elements: [
-            {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: "Ask Managers",
-                emoji: true,
-              },
-              style: "primary",
-              action_id: "start_consultation",
-              value: sessionId,
-            },
-          ],
-        }
-      ]
+        style: "primary",
+        action_id: "ask_to_channel_modal",
+        value: sessionId,
+      });
+    }
+    
+    // 개인 메시지 버튼은 항상 추가
+    actionElements.push({
+      type: "button",
+      text: {
+        type: "plain_text",
+        text: "Ask in Private",
+        emoji: true,
+      },
+      action_id: "ask_to_others_modal",
+      value: sessionId,
     });
+    
+    // 버튼이 있는 경우에만 공유 메시지 표시
+    if (actionElements.length > 0) {
+      await client.chat.postEphemeral({
+        channel: event.channel,
+        user: event.user,
+        text: `💬 Want to discuss this with others?`,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `💬 Want to discuss this with others?`
+            }
+          },
+          {
+            type: "actions",
+            elements: actionElements,
+          }
+        ]
+      });
+    }
 
     // 관련 문서 정보를 응답의 스레드에 추가
     if (result.ts && relevantDocs.length > 0) {
@@ -253,14 +264,36 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         .map(async (doc, index) => {
           const metadata = doc.metadata;
           
-          // Section은 sectionName만 표시하되 링크 포함
-          let sectionInfo = "";
-          if (metadata.sectionName) {
-            const sectionWithLink = formatSectionPathWithLinks(metadata);
-            // 전체 경로에서 마지막 부분만 추출 (> 기준으로 분할 후 마지막 요소)
-            const parts = sectionWithLink.split(' > ');
-            const lastSection = parts[parts.length - 1].trim();
-            sectionInfo = `*Section:* ${lastSection}\n`;
+          // Source 정보를 [파일명] > [섹션명] 형태로 표시
+          let sourceInfo = "";
+          if (metadata.fileName || metadata.sectionName) {
+            const parts = [];
+            
+            // 파일명 (링크 포함)
+            if (metadata.fileName && metadata.githubUrl) {
+              parts.push(`<${metadata.githubUrl}|${metadata.fileName}>`);
+            } else if (metadata.fileName) {
+              parts.push(metadata.fileName);
+            }
+            
+            // 섹션명 (링크 포함)
+            if (metadata.sectionName) {
+              if (metadata.githubUrl && metadata.headingPath) {
+                // GitHub 링크에 헤딩 앵커 추가 (headingPath가 배열인 경우 조인)
+                const headingString = Array.isArray(metadata.headingPath) 
+                  ? metadata.headingPath.join('-') 
+                  : metadata.headingPath;
+                const headingAnchor = headingString.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '');
+                const sectionUrl = `${metadata.githubUrl}#${headingAnchor}`;
+                parts.push(`<${sectionUrl}|${metadata.sectionName}>`);
+              } else {
+                parts.push(metadata.sectionName);
+              }
+            }
+            
+            if (parts.length > 0) {
+              sourceInfo = `*Source:* ${parts.join(' > ')}\n`;
+            }
           }
 
           // 문서 내용에서 메타데이터 부분 제거
@@ -279,7 +312,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           
           contentPreview = await convertMarkdownToSlackText(contentPreview);
 
-          return `*Reference ${index + 1}*\n${sectionInfo}\n\`\`\`${contentPreview}\`\`\`\n`;
+          return `*Reference ${index + 1}*\n${sourceInfo}\n\`\`\`${contentPreview}\`\`\`\n`;
         }));
 
       // 문서 정보를 응답의 스레드에 추가

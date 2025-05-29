@@ -18,10 +18,42 @@ const formatContext = (docs: any[]) => {
     .join("\n\n");
 };
 
-// Process message history
-const processMessageHistory = (messages: any[]) => {
-  return messages
-    .filter((msg) => msg.text && !msg.subtype)
+// Process message history with filtering and mention processing
+const processMessageHistory = async (messages: any[], client?: WebClient) => {
+  const filteredMessages = messages.filter((msg) => {
+    // Basic filters
+    if (!msg.text || msg.subtype) return false;
+    
+    // Filter out loading and temporary messages
+    const loadingPatterns = [
+      "Searching relevant documents",
+      "Preparing document update suggestions",
+      "Processing knowledge and generating",
+      ":mag:",
+      ":brain:",
+      "Extracting knowledge from",
+      "Analyzing conversation"
+    ];
+    
+    // Check if message contains any loading patterns
+    const isLoadingMessage = loadingPatterns.some(pattern => 
+      msg.text.includes(pattern)
+    );
+    
+    return !isLoadingMessage;
+  });
+
+  // Process mentions if client is provided
+  const processedMessages = client 
+    ? await Promise.all(
+        filteredMessages.map(async (msg) => ({
+          ...msg,
+          text: await processMessageText(msg.text, client)
+        }))
+      )
+    : filteredMessages;
+
+  return processedMessages
     .reverse()
     .map((msg) => ({
       role: msg.bot_id ? "assistant" : "user",
@@ -29,16 +61,17 @@ const processMessageHistory = (messages: any[]) => {
     }));
 };
 
-interface ChatCompletionOptions {
+export interface ChatCompletionOptions {
   model?: string;
   temperature?: number;
   max_tokens?: number;
   function_name?: string;
   debug?: boolean;
+  response_format?: { type: "text" | "json_object" };
 }
 
 // Create chat completion with OpenAI
-const createChatCompletion = async (
+export const createChatCompletion = async (
   messages: ChatCompletionMessageParam[],
   options: ChatCompletionOptions = {}
 ) => {
@@ -48,6 +81,7 @@ const createChatCompletion = async (
     max_tokens = 1000,
     function_name = "None",
     debug = false,
+    response_format,
   } = options;
 
   const completion = await openai.chat.completions.create({
@@ -55,6 +89,7 @@ const createChatCompletion = async (
     messages,
     temperature,
     max_tokens,
+    ...(response_format && { response_format }),
   });
 
   const response = completion.choices[0].message.content;
@@ -71,40 +106,16 @@ const createChatCompletion = async (
   return response;
 };
 
-// Generate completion with context
-export const generateCompletion = async (
-  userMessage: string,
-  messageHistory: any[],
-  relevantDocs: any[]
-) => {
-  const context = formatContext(relevantDocs);
-  const messages = processMessageHistory(messageHistory);
-
-  return createChatCompletion([
-      {
-        role: "system",
-      content: `You are an AI assistant that provides answers based on the lab's documentation.
-Please refer to the following document content to answer user questions.
-
-When answering, please follow these guidelines:
-1. Cite and explain the relevant parts of the documentation you're referencing.
-2. If the information is not found in the documents, respond with "I cannot find this information in the documentation."
-3. Keep your answers concise and clear.
-4. Include document sources when necessary.
-5. Format code examples using markdown syntax.
-
-Document content to reference:\n${context}`,
-      },
-      ...(messages as ChatCompletionMessageParam[]),
-  ], {debug: true});
-};
-
 // Process message text to handle user and bot mentions
 export async function processMessageText(text: string, client: WebClient): Promise<string> {
   // Regular expression to find all user/bot mentions like <@U089Q1VAB3J>
   const mentionRegex = /<@([A-Z0-9]+)>/g;
   let matches;
   let processedText = text;
+  
+  // Get current bot user ID
+  const authResult = await client.auth.test();
+  const currentBotId = authResult.user_id;
   
   // Collect all unique user IDs mentioned in the text
   const mentionedIds = new Set<string>();
@@ -117,8 +128,13 @@ export async function processMessageText(text: string, client: WebClient): Promi
     const isBot = await isBotUser(userId, client);
     
     if (isBot) {
-      // Remove bot mentions completely
-      processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), '');
+      if (userId === currentBotId) {
+        // Replace current chatbot mention with @CHOIR
+        processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), '@CHOIR');
+      } else {
+        // Remove other bot mentions completely
+        processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), '');
+      }
     } else {
       // Replace user mentions with their names
       const userName = await getUserName(userId, client);
@@ -128,6 +144,53 @@ export async function processMessageText(text: string, client: WebClient): Promi
   
   return processedText.trim();
 }
+
+// Generate completion with context
+export const answerQuestion = async (
+  userMessage: string,
+  messageHistory: any[],
+  relevantDocs: any[],
+  client?: WebClient,
+  workspaceName?: string
+) => {
+  const context = formatContext(relevantDocs);
+  const messages = await processMessageHistory(messageHistory, client);
+  
+  // Get today's date
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  const response = await createChatCompletion([
+      {
+        role: "system",
+      content: `You are CHOIR, a helpful AI assistant for the lab/organization. Think of yourself as a knowledgeable senior student or friendly professor who's always ready to help with questions.
+
+I have access to the organization's documentation and knowledge base, so I can help you find information and provide guidance based on what we have documented.
+
+Context Information:
+- Today's date: ${today}
+${workspaceName ? `- Workspace: ${workspaceName}` : ''}
+
+When answering, please follow these guidelines:
+1. Be friendly, approachable, and helpful - like a senior colleague who genuinely wants to help
+2. Provide clear and practical answers based on the documentation
+3. If multiple documents contain conflicting information, prioritize the first document in the list
+4. If I can't find the information in our documentation, I'll let you know honestly: "I couldn't find this information in our current documentation"
+5. When users mention @CHOIR, that's me! Feel free to be conversational
+6. Use a warm, academic tone - professional but not overly formal
+
+Here's the relevant documentation I can reference:
+${context}`,
+      },
+      ...(messages as ChatCompletionMessageParam[]),
+  ], {debug: true});
+
+  return response;
+};
 
 export async function editMarkdownWithUserMessages(
   markdown: string,

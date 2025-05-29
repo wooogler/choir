@@ -236,6 +236,9 @@ interface GithubRepoInfo {
 
 const githubRepoStore = new Map<string, GithubRepoInfo>();
 
+// Q&A 채널 저장소
+const qaChannelStore = new Map<string, string>();
+
 /**
  * GitHub 저장소 정보를 저장합니다.
  * @param workspaceId 워크스페이스 ID
@@ -255,6 +258,50 @@ export function storeGithubRepo(
  */
 export function getGithubRepo(workspaceId: string): GithubRepoInfo | undefined {
   return githubRepoStore.get(workspaceId);
+}
+
+/**
+ * Q&A 채널을 설정합니다.
+ * @param workspaceId 워크스페이스 ID
+ * @param channelId 채널 ID
+ */
+export function setQAChannel(workspaceId: string, channelId: string): void {
+  qaChannelStore.set(workspaceId, channelId);
+}
+
+/**
+ * Q&A 채널 정보를 가져옵니다.
+ * @param workspaceId 워크스페이스 ID
+ * @param client Slack WebClient (채널 존재 확인용, 선택사항)
+ * @returns 채널 ID 또는 undefined
+ */
+export async function getQAChannel(workspaceId: string, client?: WebClient): Promise<string | undefined> {
+  let qaChannelId = qaChannelStore.get(workspaceId);
+  
+  // Q&A 채널이 설정되지 않은 경우 기본값으로 #qna 채널 찾기
+  if (!qaChannelId && client) {
+    try {
+      const channelsList = await client.conversations.list({
+        types: 'public_channel',
+        exclude_archived: true
+      });
+      
+      // #qna 채널 찾기
+      const qnaChannel = channelsList.channels?.find(channel => 
+        channel.name === 'qna' && !channel.is_archived
+      );
+      
+      if (qnaChannel?.id) {
+        // 찾은 #qna 채널을 기본 Q&A 채널로 설정
+        setQAChannel(workspaceId, qnaChannel.id);
+        qaChannelId = qnaChannel.id;
+      }
+    } catch (error) {
+      console.error("Error finding default qna channel:", error);
+    }
+  }
+  
+  return qaChannelId;
 }
 
 /**
@@ -486,4 +533,204 @@ export async function formatSlackMessageSection(message: SlackMessage) {
       ]
     }
   };
+}
+
+/**
+ * Q&A 채널용 메시지를 생성합니다 (응답 가능 여부에 따라 다른 형식)
+ * @param channelName 채널 이름
+ * @param questionerId 질문자 ID
+ * @param question 질문 내용
+ * @param response CHOIR의 응답
+ * @returns 메시지 블록 배열
+ */
+export function createQAChannelMessage(
+  channelName: string,
+  questionerId: string,
+  question: string,
+  response: string
+) {
+  // CHOIR가 답변할 수 없는 경우인지 확인
+  const couldNotAnswer = response.includes("I couldn't find this information in our current documentation");
+  
+  if (couldNotAnswer) {
+    // 답변 불가능한 경우
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `Hi, #${channelName}\nA team member asked the following question and this was my response.`
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Question:*\n\`\`\`${question}\`\`\``
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `However, I was not able to answer the question. Could anyone help?`
+        }
+      }
+    ];
+  } else {
+    // 답변 가능한 경우
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `Hi, #${channelName}\nA team member asked the following question and this was my response.`
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Question:*\n\`\`\`${question}\`\`\``
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*My response:*\n\`\`\`${response}\`\`\``
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `The team member has a follow up discussion on my answer. Could anyone help?`
+        }
+      }
+    ];
+  }
+}
+
+/**
+ * Q&A 채널용 미리보기 텍스트를 생성합니다
+ * @param channelName 채널 이름
+ * @param questionerId 질문자 ID
+ * @param question 질문 내용
+ * @param response CHOIR의 응답
+ * @returns 미리보기 텍스트
+ */
+export function createQAChannelPreview(
+  channelName: string,
+  questionerId: string,
+  question: string,
+  response: string
+): string {
+  const couldNotAnswer = response.includes("I couldn't find this information in our current documentation");
+  
+  if (couldNotAnswer) {
+    return `Hi, #${channelName}\nA team member asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. Could anyone help?`;
+  } else {
+    return `Hi, #${channelName}\nA team member asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nThe team member has a follow up discussion on my answer. Could anyone help?`;
+  }
+}
+
+/**
+ * 개인 메시지용 블록을 생성합니다 (응답 가능 여부에 따라 다른 형식)
+ * @param recipientId 받는 사람 ID
+ * @param questionerId 질문자 ID
+ * @param question 질문 내용
+ * @param response CHOIR의 응답
+ * @returns 메시지 블록 배열
+ */
+export function createPrivateMessage(
+  recipientId: string,
+  questionerId: string,
+  question: string,
+  response: string
+) {
+  // CHOIR가 답변할 수 없는 경우인지 확인
+  const couldNotAnswer = response.includes("I couldn't find this information in our current documentation");
+  
+  if (couldNotAnswer) {
+    // 답변 불가능한 경우
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `Hi there!\nA team member asked me the following question and shared my response with you.`
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Question:*\n\`\`\`${question}\`\`\``
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `However, I was not able to answer the question. The team member would like your help with this question.`
+        }
+      }
+    ];
+  } else {
+    // 답변 가능한 경우
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `Hi there!\nA team member asked me the following question and shared my response with you.`
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Question:*\n\`\`\`${question}\`\`\``
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*My response:*\n\`\`\`${response}\`\`\``
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `The team member would like to discuss this with you. Could you help them?`
+        }
+      }
+    ];
+  }
+}
+
+/**
+ * 개인 메시지용 미리보기 텍스트를 생성합니다
+ * @param recipientName 받는 사람 이름 (preview에서는 실제 이름 사용)
+ * @param questionerName 질문자 이름
+ * @param question 질문 내용
+ * @param response CHOIR의 응답
+ * @returns 미리보기 텍스트
+ */
+export function createPrivateMessagePreview(
+  recipientName: string,
+  questionerName: string,
+  question: string,
+  response: string
+): string {
+  const couldNotAnswer = response.includes("I couldn't find this information in our current documentation");
+  
+  if (couldNotAnswer) {
+    return `Hi there!\nA team member asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. The team member would like your help with this question.`;
+  } else {
+    return `Hi there!\nA team member asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nThe team member would like to discuss this with you. Could you help them?`;
+  }
 }
