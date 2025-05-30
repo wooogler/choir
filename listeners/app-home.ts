@@ -131,6 +131,34 @@ const appHomeOpenedCallback = async ({
               type: "button",
               text: {
                 type: "plain_text",
+                text: "Normalize Markdown",
+                emoji: true,
+              },
+              style: "primary",
+              action_id: "normalize_markdown_files",
+              confirm: {
+                title: {
+                  type: "plain_text",
+                  text: "Normalize Markdown Files",
+                },
+                text: {
+                  type: "plain_text",
+                  text: "This will convert all markdown files to tree format and back to markdown, standardizing the formatting. This may change newlines, list styles, etc.",
+                },
+                confirm: {
+                  type: "plain_text",
+                  text: "Normalize",
+                },
+                deny: {
+                  type: "plain_text",
+                  text: "Cancel",
+                },
+              },
+            },
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
                 text: "Emergency Reset",
                 emoji: true,
               },

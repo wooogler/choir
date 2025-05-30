@@ -495,13 +495,23 @@ class GithubService {
 async function createCommitMessage(
   fileName: string,
   userId: string,
-  nodeIds: string[],
-  allMessages: SlackMessage[],
+  nodeId: string,
+  knowledgeContent: string,
+  sourceMessages: SlackMessage[],
   client: WebClient
 ): Promise<string> {
+  // 유저 정보 가져오기
+  let updatedByUserName = "Unknown User";
+  try {
+    const userInfo = await client.users.info({ user: userId });
+    updatedByUserName = userInfo.user?.real_name || userInfo.user?.name || "Unknown User";
+  } catch (error) {
+    console.error("Failed to get user info for commit message:", error);
+  }
+
   // 유저 ID를 유저 이름으로 변환
   const messagesWithUsernames = await convertUserIdsToNames(
-    allMessages,
+    sourceMessages,
     client
   );
 
@@ -520,10 +530,10 @@ async function createCommitMessage(
   const commitMessageJson = {
     fileName,
     updateType: "document_update",
-    source: "choir_app",
+    knowledge: knowledgeContent,
     timestamp: new Date().toISOString(),
-    updatedBy: userId,
-    nodeIds,
+    updatedBy: updatedByUserName,
+    nodeId: nodeId,
     messages: messagesWithReplacedMentions,
   };
 
@@ -545,9 +555,7 @@ export async function applyDocumentUpdatesToGithub({
   const successfulUpdates: string[] = [];
   const failedUpdates: string[] = [];
 
-  // 파일별로 업데이트 그룹화
   const updatesByFile = new Map<string, DocumentUpdate[]>();
-  
   for (const update of documentUpdates) {
     if (!updatesByFile.has(update.fileName)) {
       updatesByFile.set(update.fileName, []);
@@ -555,74 +563,82 @@ export async function applyDocumentUpdatesToGithub({
     updatesByFile.get(update.fileName)!.push(update);
   }
 
-  // GitHub 서비스 인스턴스 가져오기
   const githubService = GithubService.getInstance();
   const vectorStore = VectorStoreService.getInstance();
 
-  // 각 파일별로 업데이트 처리
   for (const [fileName, fileUpdates] of updatesByFile.entries()) {
     try {
-      // VectorStoreService에서 원본 파일 가져오기
       const markdownFile = vectorStore.getMarkdownFile(fileName);
-      
       if (!markdownFile) {
-        throw new Error(`파일을 찾을 수 없습니다: ${fileName}`);
+        throw new Error(`File not found in vector store: ${fileName}`);
       }
 
-      // 문서 트리에 변경사항 적용하여 전체 마크다운 생성
-      const updatedMarkdown = updateDocTreeWithChanges(markdownFile.tree, fileUpdates);
+      // 1. Generate the full markdown content to be saved to GitHub
+      // updateDocTreeWithChanges uses the original tree and applies updates to generate new markdown string
+      const updatedMarkdownForGithub = updateDocTreeWithChanges(markdownFile.tree, fileUpdates);
 
-      // Slack 메시지들을 commit message에 포함
       const allMessages = fileUpdates.flatMap(update => update.messages || []);
-      
-      // 구조화된 커밋 메시지 생성 (유저명 변환 및 멘션 처리 포함)
       const commitMessage = await createCommitMessage(
         fileName,
         userId,
-        fileUpdates.map(update => update.nodeId),
+        fileUpdates[0].nodeId,
+        fileUpdates[0].knowledgeContent || fileUpdates[0].updatedNodeContent,
         allMessages,
         client
       );
 
-      // GitHub URL에서 owner와 repo 추출
       const githubUrl = fileUpdates[0].githubUrl;
-      const [owner, repo] = githubUrl
-        .replace("https://github.com/", "")
-        .split("/");
+      const parsedUrl = parseGithubUrl(githubUrl); // Use parseGithubUrl
+      if (!parsedUrl) {
+        throw new Error(`Invalid GitHub URL: ${githubUrl}`);
+      }
+      const { owner, repo, path: repoPath } = parsedUrl; // repoPath might be different from fileName if file is in a subdirectory
 
-      // 전체 파일 업데이트
+      // 2. Update file on GitHub first
       await githubService.updateMarkdownFile({
         owner,
         repo,
-        path: fileName,
-        content: updatedMarkdown,
+        path: markdownFile.path, // Use the correct path from the loaded markdownFile object
+        content: updatedMarkdownForGithub,
         message: commitMessage,
       });
+      console.log(`Successfully updated ${fileName} on GitHub.`);
+
+      // 3. If GitHub update is successful, then update the vector store
+      try {
+        // fileUpdates contains nodeId and the new raw content for that node (updatedNodeContent)
+        const vectorUpdateSuccess = await vectorStore.updateSpecificNodes(fileName, fileUpdates);
+        if (vectorUpdateSuccess) {
+          console.log(`Successfully updated vector store for ${fileName}`);
+        } else {
+          console.warn(`Failed to update vector store for ${fileName}, but GitHub update was successful.`);
+          // Decide if this should be a partial success or count as failure for the file
+        }
+      } catch (vectorError) {
+        console.error(`Error updating vector store for ${fileName} after GitHub success:`, vectorError);
+        // Decide if this should be a partial success or count as failure for the file
+      }
 
       successfulUpdates.push(fileName);
-      console.log(`Successfully updated ${fileName} with ${fileUpdates.length} changes`);
     } catch (error) {
       failedUpdates.push(fileName);
-      console.error(`Error updating ${fileName}:`, error);
+      console.error(`Error processing updates for ${fileName}:`, error);
     }
   }
 
-  // 결과 반환
   const results: { fileName: string; success: boolean; message: string }[] = [];
-  
   successfulUpdates.forEach(fileName => {
     results.push({
       fileName,
       success: true,
-      message: `✅ Successfully updated ${fileName}`,
+      message: `✅ Successfully updated ${fileName} on GitHub and attempted vector store sync.`,
     });
   });
-
   failedUpdates.forEach(fileName => {
     results.push({
       fileName,
       success: false,
-      message: `❌ Failed to update ${fileName}`,
+      message: `❌ Failed to update ${fileName}. Check logs for details.`,
     });
   });
 

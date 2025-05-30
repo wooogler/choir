@@ -252,6 +252,41 @@ ${processedMessages
   return responseContent?.replace(/<\/?markdown>/g, '') ?? markdown;
 }
 
+export async function editMarkdownWithKnowledge(
+  markdown: string,
+  knowledgeContent: string
+) {
+  const responseContent = await createChatCompletion([
+      {
+        role: "system",
+      content: `As a document editor, modify this markdown document with the provided knowledge.
+
+Key rules:
+1. Update information: Directly modify existing content when needed and only add important new information
+2. Keep it concise: Make minimal edits while maintaining the document's original style and tone
+3. When knowledge contradicts existing content, replace the existing content with new information
+4. Never include user identifiers or names
+5. Return only the edited markdown without explanations or tags
+6. Focus on incorporating the knowledge into the most relevant section of the document`,
+      },
+      {
+        role: "user",
+        content: `<markdown>${markdown}</markdown>
+<knowledge>
+${knowledgeContent}
+</knowledge>`,
+      },
+  ], {
+    model: "gpt-4o-mini",
+    temperature: 0,
+    function_name: "editMarkdownWithKnowledge",
+    debug: true,
+  });
+  
+  // Remove any markdown tags from the response
+  return responseContent?.replace(/<\/?markdown>/g, '') ?? markdown;
+}
+
 export async function classifyMessageIntent(message: string): Promise<"question" | "update_request"> {
   const result = await createChatCompletion([
       {

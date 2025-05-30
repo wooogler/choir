@@ -14,6 +14,7 @@ import { diagnoseVectorStoreAction } from "./vector-store/vector-store-diagnosis
 import {
   rebuildVectorCacheAction,
   resetVectorStoreAction,
+  normalizeMarkdownFilesAction,
 } from "./vector-store/vector-store-management";
 import { handleCheckMessages } from "./general/check-messages";
 import { handleSelectMessages } from "./general/select-messages";
@@ -39,6 +40,7 @@ const register = (app: App) => {
   // 벡터 스토어 관리 액션 등록
   app.action("rebuild_vector_cache", rebuildVectorCacheAction);
   app.action("reset_vector_store", resetVectorStoreAction);
+  app.action("normalize_markdown_files", normalizeMarkdownFilesAction);
 
   // 메시지 선택 메시지
   app.action("check_messages", handleCheckMessages);

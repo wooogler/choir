@@ -144,7 +144,6 @@ const applyExtractedKnowledgeCallback = async ({
 
     // Get team_id and bot_id for the slack:// URL
     const authInfo = await client.auth.test();
-    logger.info("Auth test response:", JSON.stringify(authInfo, null, 2));
     
     const teamId = authInfo.team_id;
     const botUserId = authInfo.user_id;
@@ -205,6 +204,18 @@ const applyExtractedKnowledgeCallback = async ({
       ]
     });
 
+    // Prepare source messages based on knowledgeItem.source indices
+    let sourceMessages = [];
+    if (sessionData.knowledgeItem?.source && sessionData.messages) {
+      sourceMessages = sessionData.knowledgeItem.source.map((messageIndex: number) => {
+        return sessionData.messages[messageIndex - 1]; // Convert to 0-based index
+      }).filter(Boolean); // Remove any undefined entries
+    }
+
+    // Update session data with source messages for easier access
+    sessionData.sourceMessages = sourceMessages;
+    storeSessionData(sessionId, sessionData, SessionType.CONSULTATION);
+
     // Call existing suggest updates callback with the knowledge as a "message"
     await suggestUpdatesCallback({
       ack: async () => {},
@@ -217,7 +228,8 @@ const applyExtractedKnowledgeCallback = async ({
               originalChannelId: sessionData.originalChannelId,
               originalThreadTs: sessionData.originalThreadTs,
               action: "generate_updates",
-              knowledgeContent: sessionData.extractedKnowledge
+              knowledgeContent: sessionData.extractedKnowledge,
+              sessionId: sessionId // sessionId만 전달
             })
           }
         ],

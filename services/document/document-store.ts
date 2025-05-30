@@ -17,6 +17,7 @@ export interface DocumentUpdate {
   newContent: string;
   messages: SlackMessage[];
   timestamp: string;
+  knowledgeContent?: string; // knowledge extraction에서 나온 내용
 }
 
 // documentUpdates를 저장하기 위한 Map (userId -> { documentUpdates, thread_ts, channel_id })
@@ -30,6 +31,9 @@ const selectedNodeIds = new Map<string, Set<string>>();
 
 // 검색 결과를 저장하기 위한 Map (userId -> Document<DocumentMetadata>[])
 const searchResultsStorage = new Map<string, Document<DocumentMetadata>[]>();
+
+// Store user search results
+const userSearchResults = new Map<string, Document<DocumentMetadata>[]>();
 
 // 사용자의 documentUpdates 가져오기
 export const getStoredDocumentUpdates = (userId: string): DocumentUpdate[] => {
@@ -139,18 +143,18 @@ export const setSelectedNodeIds = (userId: string, nodeIds: string[]): void => {
 };
 
 // 검색 결과 저장하기
-export function storeSearchResults(userId: string, results: Document<DocumentMetadata>[]) {
-  searchResultsStorage.set(userId, results);
+export function storeSearchResults(userId: string, searchResults: Document<DocumentMetadata>[]): void {
+  userSearchResults.set(userId, searchResults);
 }
 
 // 검색 결과 가져오기
 export function getSearchResults(userId: string): Document<DocumentMetadata>[] {
-  return searchResultsStorage.get(userId) || [];
+  return userSearchResults.get(userId) || [];
 }
 
 // 검색 결과 삭제하기
 export function clearSearchResults(userId: string) {
-  searchResultsStorage.delete(userId);
+  userSearchResults.delete(userId);
 }
 
 // 특정 문서 업데이트 삭제하기
@@ -172,3 +176,21 @@ export const removeDocumentUpdate = (
   
   return true;
 };
+
+export function updateSearchResultDocument(userId: string, updatedDocument: Document<DocumentMetadata>): void {
+  const searchResults = getSearchResults(userId);
+  const docIndex = searchResults.findIndex(
+    doc => doc.metadata?.nodeId === updatedDocument.metadata?.nodeId
+  );
+  
+  if (docIndex !== -1) {
+    searchResults[docIndex] = updatedDocument;
+    storeSearchResults(userId, searchResults);
+    console.info(`Updated search result document for node: ${updatedDocument.metadata?.nodeId}`);
+  }
+}
+
+export function updateSearchResultsForFile(userId: string, updatedFile: any): void {
+  // 이 함수는 현재 벡터 스토어 업데이트로 충분하므로 빈 구현
+  console.info(`Search results will be updated through vector store for file: ${updatedFile.name}`);
+}

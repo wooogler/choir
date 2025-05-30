@@ -12,6 +12,8 @@ import { DocumentEnhancer } from "services/web-content/document-enhancer";
 import { preprocessMarkdownForEmbedding } from "services/document/markdown";
 import { EnhancedSearchService } from "./enhanced-search";
 import { SlackMessage } from "services/slack";
+import { parseMarkdownToTree } from "services/document";
+import { formatHeadingContext } from "../llm/langchain";
 
 
 /**
@@ -804,5 +806,364 @@ export class VectorStoreService {
    */
   public getMarkdownFile(fileName: string): MarkdownFile | undefined {
     return this.markdownFiles.find((file) => file.name === fileName);
+  }
+
+  /**
+   * 현재 로드된 마크다운 파일들로부터 GitHub 저장소 정보 추출
+   */
+  public extractRepoInfoFromFiles(): { owner: string; repo: string; url: string; path: string } | null {
+    if (!this.markdownFiles || this.markdownFiles.length === 0) {
+      return null;
+    }
+
+    const firstFile = this.markdownFiles[0];
+    if (!firstFile.githubUrl) {
+      return null;
+    }
+
+    // GitHub URL에서 owner, repo 추출
+    const urlMatch = firstFile.githubUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    if (!urlMatch || urlMatch.length < 3) {
+      return null;
+    }
+
+    return {
+      owner: urlMatch[1],
+      repo: urlMatch[2],
+      url: `https://github.com/${urlMatch[1]}/${urlMatch[2]}`,
+      path: "" // 기본값으로 루트 경로
+    };
+  }
+
+  /**
+   * 단일 파일 업데이트 후 벡터 스토어 갱신
+   */
+  public async updateSingleFile(updatedFile: MarkdownFile): Promise<boolean> {
+    try {
+      console.info(`Updating vector store for file: ${updatedFile.name}`);
+
+      if (!this.isInitialized || !this.store || !this.documents) {
+        console.error("Vector store not initialized");
+        return false;
+      }
+
+      // 기존 파일 찾기 및 업데이트
+      const fileIndex = this.markdownFiles.findIndex(file => file.name === updatedFile.name);
+      if (fileIndex === -1) {
+        console.error(`File not found in markdown files: ${updatedFile.name}`);
+        return false;
+      }
+
+      // 마크다운 파일 업데이트
+      this.markdownFiles[fileIndex] = updatedFile;
+
+      // 해당 파일의 기존 문서들 제거
+      const documentsToRemove = this.documents.filter(
+        doc => doc.metadata?.fileName === updatedFile.name
+      );
+
+      // 새로운 문서들 생성
+      const newDocuments = await this.prepareDocumentsFromSingleFile(updatedFile);
+      
+      if (newDocuments.length === 0) {
+        console.warn(`No documents generated from updated file: ${updatedFile.name}`);
+        return false;
+      }
+
+      // 새로운 임베딩 생성
+      const texts = newDocuments.map(doc => {
+        const preprocessedContent = preprocessMarkdownForEmbedding(doc.pageContent);
+        return preprocessedContent;
+      });
+
+      const newEmbeddings = await this.embeddingService.createEmbeddings(texts);
+      
+      if (!newEmbeddings || newEmbeddings.length === 0) {
+        console.error("Failed to create embeddings for updated file");
+        return false;
+      }
+
+      // 기존 문서들을 새 문서들로 교체
+      this.documents = this.documents.filter(doc => doc.metadata?.fileName !== updatedFile.name);
+      this.documents.push(...newDocuments);
+
+      // 벡터 스토어 재구축 (현재는 전체 재구축, 향후 부분 업데이트로 최적화 가능)
+      const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
+      this.store = new MemoryVectorStore(openAIEmbeddings);
+      
+      // 모든 문서의 임베딩 다시 생성 (현재 한계)
+      const allTexts = this.documents.map(doc => preprocessMarkdownForEmbedding(doc.pageContent));
+      const allEmbeddings = await this.embeddingService.createEmbeddings(allTexts);
+      
+      // 벡터 스토어에 로드
+      const success = await this.embeddingService.loadEmbeddingsToVectorStore(
+        this.store,
+        this.documents,
+        allEmbeddings
+      );
+
+      if (!success) {
+        console.error("Failed to reload embeddings to vector store");
+        return false;
+      }
+
+      // 검색 서비스 재초기화
+      this.searchService = new SearchService(this.store, this.embeddingService);
+      this.searchService.buildSearchIndices(this.documents);
+      this.enhancedSearchService = new EnhancedSearchService(this);
+
+      // 캐시 업데이트
+      try {
+        const documentTrees = new Map<string, DocumentTree>();
+        this.markdownFiles.forEach((file) => {
+          if (file.tree) {
+            documentTrees.set(file.name, file.tree);
+          }
+        });
+
+        await this.cacheManager.saveEmbeddingsCache({
+          documents: this.documents,
+          embeddings: allEmbeddings,
+          contentHash: await this.cacheManager.generateContentHash(this.markdownFiles),
+          timestamp: Date.now(),
+          documentTrees,
+        });
+
+        console.info("Successfully updated cache after file update");
+      } catch (cacheError) {
+        console.error("Failed to update cache:", cacheError);
+        // 캐시 업데이트 실패해도 벡터 스토어 업데이트는 성공으로 처리
+      }
+
+      console.info(`Successfully updated vector store for ${updatedFile.name}`);
+      return true;
+
+    } catch (error) {
+      console.error("Error updating single file in vector store:", error);
+      return false;
+    }
+  }
+
+  /**
+   * 단일 파일에서 문서 생성
+   */
+  private async prepareDocumentsFromSingleFile(file: MarkdownFile): Promise<Document<DocumentMetadata>[]> {
+    try {
+      if (!file.tree) {
+        console.warn(`No document tree found for file: ${file.name}`);
+        return [];
+      }
+
+      const documents = createDocumentsFromTree(file.tree, file.githubUrl, file.name);
+      console.info(`Generated ${documents.length} documents from ${file.name}`);
+      
+      return documents;
+    } catch (error) {
+      console.error(`Error preparing documents from file ${file.name}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * 특정 문서들을 업데이트 (부분 업데이트)
+   */
+  public async updateSpecificDocuments(updatedFile: MarkdownFile): Promise<boolean> {
+    try {
+      console.info(`Updating specific documents for file: ${updatedFile.name}`);
+
+      if (!this.isInitialized || !this.store || !this.documents) {
+        console.error("Vector store not initialized");
+        return false;
+      }
+
+      // 기존 파일 찾기 및 업데이트
+      const fileIndex = this.markdownFiles.findIndex(file => file.name === updatedFile.name);
+      if (fileIndex === -1) {
+        console.error(`File not found in markdown files: ${updatedFile.name}`);
+        return false;
+      }
+
+      // 마크다운 파일 업데이트
+      this.markdownFiles[fileIndex] = updatedFile;
+
+      // 해당 파일의 새로운 문서들 생성
+      const newDocuments = await this.prepareDocumentsFromSingleFile(updatedFile);
+      
+      if (newDocuments.length === 0) {
+        console.warn(`No documents generated from updated file: ${updatedFile.name}`);
+        return false;
+      }
+
+      // 기존 문서들에서 해당 파일의 문서만 교체 (node ID 매핑 유지)
+      const oldDocuments = this.documents.filter(doc => doc.metadata?.fileName === updatedFile.name);
+      
+      // node ID를 기준으로 매핑하여 내용만 업데이트
+      for (const newDoc of newDocuments) {
+        const oldDocIndex = this.documents.findIndex(
+          doc => doc.metadata?.fileName === updatedFile.name && 
+                 doc.metadata?.nodeId === newDoc.metadata?.nodeId
+        );
+        
+        if (oldDocIndex !== -1) {
+          // 기존 문서의 내용만 업데이트 (node ID 유지)
+          this.documents[oldDocIndex] = {
+            ...this.documents[oldDocIndex],
+            pageContent: newDoc.pageContent,
+            metadata: {
+              ...this.documents[oldDocIndex].metadata,
+              ...newDoc.metadata
+            }
+          };
+          console.info(`Updated document content for node: ${newDoc.metadata?.nodeId}`);
+        }
+      }
+
+      console.info(`Successfully updated documents for ${updatedFile.name}`);
+      return true;
+
+    } catch (error) {
+      console.error("Error updating specific documents:", error);
+      return false;
+    }
+  }
+
+  /**
+   * 기존 트리에서 특정 노드들만 업데이트 (node ID 유지)
+   */
+  public async updateSpecificNodes(fileName: string, documentUpdates: any[]): Promise<boolean> {
+    try {
+      console.info(`Updating specific nodes for file: ${fileName}`);
+
+      if (!this.isInitialized || !this.store || !this.documents) {
+        console.error("Vector store not initialized");
+        return false;
+      }
+
+      const fileIndex = this.markdownFiles.findIndex(file => file.name === fileName);
+      if (fileIndex === -1) {
+        console.error(`File not found in markdown files: ${fileName}`);
+        return false;
+      }
+
+      const markdownFile = this.markdownFiles[fileIndex];
+      let updatedTree = markdownFile.tree;
+
+      let documentsChanged = false;
+
+      for (const update of documentUpdates) {
+        const nodeId = update.nodeId;
+        const newContentForNode = update.updatedNodeContent; // This is the raw new markdown content for the node
+
+        if (updatedTree.nodeMap.has(nodeId)) {
+          const { updateNodeContent } = await import("services/document/markdown");
+          updatedTree = updateNodeContent(updatedTree, nodeId, newContentForNode);
+          console.info(`Updated node ${nodeId} content in tree`);
+
+          const docIndex = this.documents.findIndex(
+            doc => doc.metadata?.fileName === fileName && 
+                   doc.metadata?.nodeId === nodeId
+          );
+
+          if (docIndex !== -1) {
+            const docToUpdate = this.documents[docIndex];
+            const metadata = docToUpdate.metadata as DocumentMetadata;
+            
+            // Reconstruct pageContent with context prefix
+            const contextPrefix = formatHeadingContext(metadata.headingPath || [], metadata.fileName || fileName);
+            const newPageContent = contextPrefix + newContentForNode;
+
+            if (this.documents[docIndex].pageContent !== newPageContent) {
+              this.documents[docIndex] = {
+                ...docToUpdate,
+                pageContent: newPageContent,
+                metadata: {
+                  ...metadata,
+                  originalContent: newContentForNode, // Update originalContent as well
+                }
+              };
+              console.info(`Updated in-memory document pageContent for node: ${nodeId}`);
+              documentsChanged = true;
+            } else {
+              console.info(`In-memory document pageContent for node: ${nodeId} already up-to-date.`);
+            }
+          } else {
+            console.warn(`Document for node ${nodeId} not found in this.documents`);
+          }
+        } else {
+          console.warn(`Node ${nodeId} not found in tree`);
+        }
+      }
+
+      this.markdownFiles[fileIndex] = {
+        ...markdownFile,
+        tree: updatedTree
+      };
+
+      if (!documentsChanged && documentUpdates.length > 0) {
+        console.info("No actual changes to document pageContents, vector store rebuild might not be necessary if embeddings depend only on pageContent.");
+        // Optionally, one might decide to skip rebuilding if no pageContent actually changed.
+        // For now, we proceed to ensure tree changes are also reflected in cache if generateContentHash depends on tree.
+      }
+
+      // Rebuild vector store, search services, and cache
+      console.info("Rebuilding vector store and search services with updated documents...");
+      const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
+      
+      const allTexts = this.documents.map(doc => {
+        const preprocessedContent = preprocessMarkdownForEmbedding(doc.pageContent);
+        return preprocessedContent;
+      });
+      const allEmbeddings = await this.embeddingService.createEmbeddings(allTexts);
+      
+      if (!allEmbeddings || allEmbeddings.length === 0) {
+        console.error("Failed to create embeddings for updated documents");
+        return false; 
+      }
+
+      this.store = new MemoryVectorStore(openAIEmbeddings);
+      const loadSuccess = await this.embeddingService.loadEmbeddingsToVectorStore(
+        this.store,
+        this.documents,
+        allEmbeddings
+      );
+
+      if (!loadSuccess) {
+        console.error("Failed to load new embeddings to vector store");
+        return false; 
+      }
+
+      this.searchService = new SearchService(this.store, this.embeddingService);
+      this.searchService.buildSearchIndices(this.documents);
+      this.enhancedSearchService = new EnhancedSearchService(this);
+      console.info("Successfully rebuilt vector store and search services.");
+
+      try {
+        console.info("Updating cache with new embeddings and document trees...");
+        const documentTrees = new Map<string, DocumentTree>();
+        this.markdownFiles.forEach((file) => {
+          if (file.tree) {
+            documentTrees.set(file.name, file.tree);
+          }
+        });
+
+        await this.cacheManager.saveEmbeddingsCache({
+          documents: this.documents,
+          embeddings: allEmbeddings,
+          contentHash: await this.cacheManager.generateContentHash(this.markdownFiles),
+          timestamp: Date.now(),
+          documentTrees,
+        });
+        console.info("Successfully updated cache.");
+      } catch (cacheError) {
+        console.error("Failed to update cache after specific node updates:", cacheError);
+      }
+
+      console.info(`Successfully processed ${documentUpdates.length} updates for ${fileName} and rebuilt vector store.`);
+      return true;
+
+    } catch (error) {
+      console.error("Error updating specific nodes and vector store:", error);
+      return false;
+    }
   }
 }

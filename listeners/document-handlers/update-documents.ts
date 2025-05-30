@@ -8,6 +8,7 @@ import type {
 import { DocumentUpdate, getStoredDocumentUpdates, getSelectedNodeIds } from "services/document";
 import { applyDocumentUpdatesToGithub } from "services/github";
 import { VectorStoreService } from "services/vector/main-service";
+import { formatSectionPathWithLinks } from "services/document/section-utils";
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();
@@ -65,6 +66,7 @@ const applySelectedToGithubAction = async ({
     const value = JSON.parse(rawValue);
     const userId = value.userId || body.user.id;
     const channelId = body.channel?.id;
+    const { originalChannelId, originalThreadTs, fileName, githubUrl, sectionName, headingPath, diffBlock } = value;
 
     if (!channelId) {
       throw new Error("채널 ID를 찾을 수 없습니다");
@@ -98,33 +100,82 @@ const applySelectedToGithubAction = async ({
     const successfulUpdates = results.filter(r => r.success).map(r => r.fileName);
     const failedUpdates = results.filter(r => !r.success).map(r => r.fileName);
 
-    // 결과 메시지 생성
-    let resultMessage = "";
-    if (successfulUpdates.length > 0) {
-      resultMessage += `✅ Successfully updated ${successfulUpdates.length} file(s):\n${successfulUpdates.map(f => `• ${f}`).join('\n')}`;
-    }
-    if (failedUpdates.length > 0) {
-      if (resultMessage) resultMessage += "\n\n";
-      resultMessage += `❌ Failed to update ${failedUpdates.length} file(s):\n${failedUpdates.map(f => `• ${f}`).join('\n')}`;
-    }
-
-    // 결과 메시지 전송
-    await client.chat.postEphemeral({
-      channel: channelId,
-      user: userId,
-      text: resultMessage || "Document update process completed.",
+    // DM 채널 열기
+    const dmResult = await client.conversations.open({
+      users: userId
     });
+
+    if (dmResult.ok && dmResult.channel?.id) {
+      // 결과 메시지 생성 - 단일 파일이므로 간단하게 표시
+      let resultMessage = "";
+      if (successfulUpdates.length > 0) {
+        const fileName = successfulUpdates[0];
+        resultMessage = `✅ Successfully updated *${fileName}*`;
+      }
+      if (failedUpdates.length > 0) {
+        const fileName = failedUpdates[0];
+        resultMessage = `❌ Failed to update *${fileName}*`;
+      }
+
+      // DM으로 결과 메시지 전송
+      await client.chat.postMessage({
+        channel: dmResult.channel.id,
+        text: resultMessage || "Document update process completed.",
+      });
+
+      // 성공한 경우 원본 채널에도 업데이트 내용 공유
+      if (successfulUpdates.length > 0 && originalChannelId && diffBlock) {
+        try {
+          // 섹션 정보 포맷팅
+          const sectionInfo = formatSectionPathWithLinks({
+            headingPath,
+            sectionName,
+            githubUrl
+          } as any);
+
+          const updateBlocks = [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `✅ *Document Updated*\n*File:* <${githubUrl}|${fileName}>\n*Section:* ${sectionInfo}`
+              }
+            },
+            diffBlock
+          ];
+
+          await client.chat.postMessage({
+            channel: originalChannelId,
+            ...(originalThreadTs ? { thread_ts: originalThreadTs } : {}),
+            text: `✅ Document Updated: ${fileName}`,
+            blocks: updateBlocks,
+            unfurl_links: false,
+            unfurl_media: false
+          });
+        } catch (channelError) {
+          console.error("Failed to post update to original channel:", channelError);
+        }
+      }
+    }
   } catch (error) {
     console.error("Error applying updates to GitHub:", error);
 
-    if (body.channel?.id) {
-      await client.chat.postEphemeral({
-        channel: body.channel.id,
-        user: body.user.id,
-        text: `An error occurred while applying updates to GitHub: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
+    // DM 채널 열기
+    try {
+      const dmResult = await client.conversations.open({
+        users: body.user.id
       });
+      
+      if (dmResult.ok && dmResult.channel?.id) {
+        await client.chat.postMessage({
+          channel: dmResult.channel.id,
+          text: `❌ An error occurred while updating the document: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
+        });
+      }
+    } catch (dmError) {
+      console.error("Failed to send error message to DM:", dmError);
     }
   }
 };

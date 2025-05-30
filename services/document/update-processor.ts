@@ -1,7 +1,7 @@
 import { Document } from "@langchain/core/documents";
 import { WebClient } from "@slack/web-api";
 import { DocumentMetadata } from "services/vector/types";
-import { editMarkdownWithUserMessages } from "services/llm";
+import { editMarkdownWithKnowledge } from "services/llm";
 import { convertMarkdownToSlackText } from "./markdown";
 import { createDiffBlock } from "services/slack";
 import { SlackMessage } from "services/slack";
@@ -29,6 +29,7 @@ export interface ProcessedDocument {
 
 export async function processDocument(
   doc: Document<DocumentMetadata>,
+  knowledgeContent: string,
   validMessages: SlackMessage[],
   client: WebClient,
   vectorStore: VectorStoreService
@@ -57,10 +58,9 @@ export async function processDocument(
 
     // LLM 업데이트를 위해 원본 내용 사용 (컨텍스트 정보 제외)
     const nodeContent = doc.metadata.originalContent || doc.pageContent || "";
-    const updatedNodeContent = await editMarkdownWithUserMessages(
+    const updatedNodeContent = await editMarkdownWithKnowledge(
       nodeContent,
-      validMessages,
-      client
+      knowledgeContent
     );
 
     const oldSlackText = await convertMarkdownToSlackText(nodeContent);

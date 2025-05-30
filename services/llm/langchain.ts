@@ -419,7 +419,7 @@ function buildSectionHierarchy(
  * 헤딩 경로를 포매팅하여 문맥 접두사로 만듭니다.
  * 이 함수는 계층적 헤딩 정보를 문서 콘텐츠에 추가해 RAG 성능을 향상시킬 수 있습니다.
  */
-function formatHeadingContext(headingPath: string[], fileName: string): string {
+export function formatHeadingContext(headingPath: string[], fileName: string): string {
   // 파일 정보와 헤딩 경로를 포함한 컨텍스트 생성
   const fileContext = `File: ${fileName}`;
   const pathContext = headingPath && headingPath.length > 0 

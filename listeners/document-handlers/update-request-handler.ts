@@ -20,14 +20,14 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     
     // Show loading message in the original channel/thread
     const loadingMessage = await client.chat.postMessage({
-      channel: originalChannelId,
-      ...(isThreadMention && { thread_ts: event.thread_ts }),
+        channel: originalChannelId,
+        ...(isThreadMention && { thread_ts: event.thread_ts }),
       text: "🔍 Analyzing the last 10 messages to extract knowledge...",
-      blocks: [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
             text: "🔍 Analyzing the last 10 messages to extract knowledge..."
           }
         }
@@ -62,37 +62,37 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
             text: {
               type: "mrkdwn",
               text: "❌ No messages found to analyze."
-            }
+              }
           }
         ]
       });
       return false;
     }
-
+    
     // Sort messages by timestamp (oldest first) and filter out bot messages
-    const messages = [...(historyResult.messages ?? [])]
-      .sort((a, b) => {
-        const tsA = parseFloat(a.ts || '0');
-        const tsB = parseFloat(b.ts || '0');
+      const messages = [...(historyResult.messages ?? [])]
+        .sort((a, b) => {
+          const tsA = parseFloat(a.ts || '0');
+          const tsB = parseFloat(b.ts || '0');
         return tsA - tsB;
-      });
+        });
 
     // Filter out bot messages
-    const nonBotMessages = await Promise.all(
-      messages.map(async (msg: any) => {
-        if (!msg.user) return null;
-        const isBot = await isBotUser(msg.user, client);
-        return isBot ? null : msg;
-      })
-    );
+      const nonBotMessages = await Promise.all(
+        messages.map(async (msg: any) => {
+          if (!msg.user) return null;
+          const isBot = await isBotUser(msg.user, client);
+          return isBot ? null : msg;
+        })
+      );
 
-    const slackMessages = (
-      await Promise.all(
-        nonBotMessages
-          .filter((msg): msg is any => msg !== null)
-          .map((msg: any) => createSlackMessageWithName(msg, client))
-      )
-    ).filter((msg): msg is SlackMessage => msg !== null);
+      const slackMessages = (
+        await Promise.all(
+          nonBotMessages
+            .filter((msg): msg is any => msg !== null)
+            .map((msg: any) => createSlackMessageWithName(msg, client))
+        )
+      ).filter((msg): msg is SlackMessage => msg !== null);
 
     // Take the last 10 non-bot messages
     const last10Messages = slackMessages.slice(-10);
@@ -121,7 +121,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       
       // Generate session ID for this knowledge extraction
       const sessionId = generateSessionId("knowledge_extraction");
-      
+
       // Get channel name for display
       const channelName = await getChannelName(originalChannelId, client);
 
@@ -157,15 +157,15 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         blocks: [
           {
             type: "section",
-            text: {
+          text: {
               type: "mrkdwn",
               text: `Sure! I'll suggest the following update to ${managerText}.`
-            }
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
+          }
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
               text: `*Suggested Update*\n\`\`\`${extractionResult.cleanContent}\`\`\``
             }
           }
@@ -187,11 +187,11 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
               type: "mrkdwn",
               text: "You can edit the suggested update if needed."
             }
-          },
-          {
-            type: "actions",
-            elements: [
-              {
+        },
+        {
+          type: "actions",
+          elements: [
+            {
                 type: "button",
                 text: {
                   type: "plain_text",
@@ -242,7 +242,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
 
       // Store session data
       storeSessionData(sessionId, {
-        originalChannelId,
+                  originalChannelId,
         originalThreadTs: event.thread_ts,
         userId,
         extractedKnowledge: extractionResult.cleanContent, // Store clean content for editing

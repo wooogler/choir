@@ -3,6 +3,7 @@ import { handleIncomingMessage } from "./document-handlers/message-handler";
 import suggestUpdatesCallback from "./document-handlers/suggest-updates";
 import { rejectUpdateCallback } from "./document-handlers/reject-update";
 import { applySelectedToGithubAction } from "./document-handlers/update-documents";
+import cancelDocumentUpdatesCallback from "./actions/cancel-document-updates";
 
 /**
  * 앱 멘션 처리 콜백
@@ -34,6 +35,7 @@ const register = (app: App) => {
   app.action("suggest_updates", suggestUpdatesCallback);
   app.action("reject_update", rejectUpdateCallback);
   app.action("apply_to_document", applySelectedToGithubAction);
+  app.action("cancel_document_updates", cancelDocumentUpdatesCallback);
 };
 
 export default { register }; 
