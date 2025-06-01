@@ -13,6 +13,7 @@ import knowledgeExtractionActions from "./listeners/actions/knowledge-extraction
 import { VectorStoreService } from "services/vector/main-service";
 import { getGithubRepo, getWorkspaceId, setupInitialManager } from "services/slack";
 import { handleClearChat } from "./listeners/commands/clear-chat";
+import knowledgeEditManagerModal from "./listeners/views/knowledge-edit-manager-modal";
 
 dotenv.config();
 
@@ -94,6 +95,7 @@ updateEditorModalActions.register(app);
 
 // Register knowledge extraction actions
 knowledgeExtractionActions.register(app);
+knowledgeEditManagerModal.register(app);
 
 // Register commands
 app.command("/clear-choir-chat", handleClearChat);

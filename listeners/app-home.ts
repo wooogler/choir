@@ -44,44 +44,48 @@ const appHomeOpenedCallback = async ({
           const name =
             userInfo.user?.real_name || userInfo.user?.name || "Unknown User";
 
-          managerBlocks.push({
+          const sectionBlock: any = {
             type: "section",
             text: {
               type: "mrkdwn",
               text: `• <@${managerId}> (${name})`,
             },
-            accessory: isUserManager
-              ? {
-                  type: "button",
-                  text: {
-                    type: "plain_text",
-                    text: "Remove Permission",
-                    emoji: true,
-                  },
-                  style: "danger",
-                  value: managerId,
-                  action_id: "remove_manager_permission",
-                  confirm: {
-                    title: {
-                      type: "plain_text",
-                      text: "Remove Manager Permission",
-                    },
-                    text: {
-                      type: "mrkdwn",
-                      text: `Do you want to remove manager permission from *<@${managerId}>*?`,
-                    },
-                    confirm: {
-                      type: "plain_text",
-                      text: "Remove",
-                    },
-                    deny: {
-                      type: "plain_text",
-                      text: "Cancel",
-                    },
-                  },
-                }
-              : null,
-          });
+          };
+
+          // Add accessory only if user is manager
+          if (isUserManager) {
+            sectionBlock.accessory = {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "Remove Permission",
+                emoji: true,
+              },
+              style: "danger",
+              value: managerId,
+              action_id: "remove_manager_permission",
+              confirm: {
+                title: {
+                  type: "plain_text",
+                  text: "Remove Manager Permission",
+                },
+                text: {
+                  type: "mrkdwn",
+                  text: `Do you want to remove manager permission from *<@${managerId}>*?`,
+                },
+                confirm: {
+                  type: "plain_text",
+                  text: "Remove",
+                },
+                deny: {
+                  type: "plain_text",
+                  text: "Cancel",
+                },
+              },
+            };
+          }
+
+          managerBlocks.push(sectionBlock);
         } catch (error) {
           logger.error(`Failed to get user info for ${managerId}:`, error);
         }

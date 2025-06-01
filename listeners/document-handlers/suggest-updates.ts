@@ -11,7 +11,8 @@ import {
   getSearchResults, 
   getStoredDocumentUpdates,
   DocumentUpdate,
-  storeSearchResults
+  storeSearchResults,
+  clearSearchResults
 } from "services/document/document-store";
 import { SlackMessage, getWorkspaceId, getManagers } from "services/slack";
 import { checkVectorStoreHealth } from "services/vector/health-check";
@@ -52,7 +53,7 @@ async function channelHasManagers(client: any, channelId: string, workspaceId: s
 /**
  * Create a link to the original message using Slack permalink format
  */
-function createMessageLink(workspaceUrl: string, channelId: string, messageTs?: string): string {
+export function createMessageLink(workspaceUrl: string, channelId: string, messageTs?: string): string {
   // Remove trailing slash from workspace URL if present
   const baseUrl = workspaceUrl.replace(/\/$/, '');
   
@@ -69,63 +70,58 @@ const suggestUpdatesCallback = async ({
   ack,
   body,
   client,
+  logger
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   await ack();
 
+  const userId = body.user.id;
+  const currentDmChannelId = body.channel?.id;
+  const messageTsOfButtonClicked = body.container?.message_ts;
+  const vectorStore = VectorStoreService.getInstance();
+
   try {
-    const userId = body.user.id;
-    const originalChannelId = body.channel?.id;
-    const originalThreadTs = body.container.thread_ts;
+    if (messageTsOfButtonClicked && currentDmChannelId) {
+      try {
+        const history = await client.conversations.history({
+          channel: currentDmChannelId,
+          latest: messageTsOfButtonClicked,
+          inclusive: true,
+          limit: 1
+        });
 
-    if (!originalChannelId) {
-      throw new Error("Channel ID not found");
-    }
+        if (history.messages && history.messages.length > 0) {
+          const originalMessage = history.messages[0];
+          if (originalMessage.blocks) {
+            const updatedBlocks = originalMessage.blocks.filter((block: any) => 
+              block.type !== "actions"
+            );
+            const textForUpdate = updatedBlocks.length < originalMessage.blocks.length 
+              ? `Processing... (Buttons removed)` 
+              : originalMessage.text || "Processing document updates...";
 
-    // DM 채널 열기
-    const dmResult = await client.conversations.open({
-      users: userId
-    });
-
-    if (!dmResult.ok || !dmResult.channel?.id) {
-      throw new Error("DM 채널을 열 수 없습니다");
-    }
-
-    const dmChannelId = dmResult.channel.id;
-
-    // Clean up previous processing messages in DM
-    try {
-      const dmHistory = await client.conversations.history({
-        channel: dmChannelId,
-        limit: 10
-      });
-
-      if (dmHistory.messages) {
-        for (const message of dmHistory.messages) {
-          // Delete processing messages and "suggestions will appear" messages
-          if (message.text?.includes("Processing knowledge and generating document updates") ||
-              message.text?.includes("Your document update suggestions will appear here shortly") ||
-              message.text?.includes("Preparing document update suggestions")) {
-            try {
-              await client.chat.delete({
-                channel: dmChannelId,
-                ts: message.ts!
-              });
-            } catch (deleteError) {
-              console.error("Failed to delete processing message:", deleteError);
+            if (updatedBlocks.length < originalMessage.blocks.length) {
+                await client.chat.update({
+                    channel: currentDmChannelId,
+                    ts: messageTsOfButtonClicked,
+                    blocks: updatedBlocks as (KnownBlock | Block)[],
+                    text: textForUpdate 
+                });
+                logger.info(`Removed buttons from message ${messageTsOfButtonClicked} in channel ${currentDmChannelId}`);
+            } else {
+                logger.info(`Buttons already removed or not found in message ${messageTsOfButtonClicked}`);
             }
           }
         }
+      } catch (error) {
+        logger.error(`Failed to update (remove buttons from) message ${messageTsOfButtonClicked}:`, error);
       }
-    } catch (historyError) {
-      console.error("Failed to fetch DM history for cleanup:", historyError);
     }
 
-    // 이전 메시지의 버튼들 제거
     const lastMessageTs = getLastMessageTimestamp(userId);
-    if (lastMessageTs && dmChannelId) {
+    if (lastMessageTs && currentDmChannelId && lastMessageTs !== messageTsOfButtonClicked) { 
       try {
         const history = await client.conversations.history({
-          channel: dmChannelId,
+          channel: currentDmChannelId,
           latest: lastMessageTs,
           inclusive: true,
           limit: 1
@@ -136,155 +132,159 @@ const suggestUpdatesCallback = async ({
           if (previousMessage.blocks) {
             const updatedBlocks = previousMessage.blocks.filter((block: any) => 
               block.type !== "actions"
-            ) as (KnownBlock | Block)[];
-
-            await client.chat.update({
-              channel: dmChannelId,
-              ts: lastMessageTs,
-              blocks: updatedBlocks,
-              text: previousMessage.text || "이전 업데이트 제안"
-            });
+            );
+            if (updatedBlocks.length < previousMessage.blocks.length) {
+                await client.chat.update({
+                    channel: currentDmChannelId,
+                    ts: lastMessageTs,
+                    blocks: updatedBlocks as (KnownBlock | Block)[],
+                    text: previousMessage.text || "Previous suggestion (buttons removed)"
+                });
+            }
           }
         }
       } catch (error) {
-        console.error("이전 메시지 업데이트 실패:", error);
+        console.error("Error updating previous suggestion message (removing buttons):", error);
       }
     }
-
-    // value 파싱
+    
     const value = body.actions?.[0]?.value;
     if (!value) {
       throw new Error("Button value not found");
     }
-
     const parsedValue = JSON.parse(value);
+
     let currentIndex = 0;
     let searchResults: Document<DocumentMetadata>[] = [];
     let isFirstSuggestion = true;
-    let knowledgeContent = "";
+    let knowledgeContent = parsedValue.knowledgeContent || "";
     let sourceMessages: SlackMessage[] = [];
-    let sessionId: string | undefined;
+    let sessionId = parsedValue.sessionId;
 
-    // 원본 채널 및 스레드 정보
-    let contextChannelId = originalChannelId;
-    let contextThreadTs = originalThreadTs;
-
-    if (parsedValue) {
-      if (parsedValue.originalChannelId) {
-        contextChannelId = parsedValue.originalChannelId;
-      }
-      
-      if (parsedValue.originalThreadTs) {
-        contextThreadTs = parsedValue.originalThreadTs;
-      }
-
-      knowledgeContent = parsedValue.knowledgeContent || "";
-      sessionId = parsedValue.sessionId;
-      
-      // sessionId가 있으면 sessionData에서 sourceMessages 가져오기
-      if (sessionId) {
+    // Moved from top: Attempt to delete the initial message from passKnowledgeToManagerCallback if applicable
+    if (isFirstSuggestion && sessionId && currentDmChannelId) { // currentDmChannelId check for safety
+      const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+      // userId is the manager who clicked "Start Document Update", already defined at the top of suggestUpdatesCallback
+      const managerOriginalMessageInfo = sessionData?.managerMessageInfo?.[userId]; 
+      if (managerOriginalMessageInfo && managerOriginalMessageInfo.ts && managerOriginalMessageInfo.channel === currentDmChannelId) {
         try {
-          const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
-          if (sessionData?.sourceMessages) {
-            sourceMessages = sessionData.sourceMessages;
+          await client.chat.delete({
+            channel: managerOriginalMessageInfo.channel,
+            ts: managerOriginalMessageInfo.ts,
+          });
+          logger.info(`Deleted initial manager notification message ${managerOriginalMessageInfo.ts} in channel ${managerOriginalMessageInfo.channel}`);
+          if (sessionData.managerMessageInfo) { 
+            delete sessionData.managerMessageInfo[userId]; 
+            storeSessionData(sessionId, sessionData, SessionType.CONSULTATION);
           }
-        } catch (error) {
-          console.warn("Failed to get sourceMessages from sessionData:", error);
-        }
-      }
-      
-      // 호환성을 위해 직접 전달된 sourceMessages도 확인 (fallback)
-      if (sourceMessages.length === 0 && parsedValue.sourceMessages) {
-        sourceMessages = parsedValue.sourceMessages;
-      }
-
-      // Next Suggestion 버튼에서 온 경우
-      if ("index" in parsedValue) {
-        currentIndex = parsedValue.index;
-        searchResults = getSearchResults(userId);
-        isFirstSuggestion = false;
-        
-        // action이 "keep"인 경우 이전 suggestion을 문서에 적용
-        if (parsedValue.action === "keep" && parsedValue.currentNodeId) {
-          try {
-            // 이전 suggestion의 문서 업데이트 적용
-            await applySelectedToGithubAction({
-              ack: async () => {},
-              body: {
-                ...body,
-                actions: [{
-                  value: JSON.stringify({
-                    userId: userId,
-                    originalChannelId: contextChannelId,
-                    originalThreadTs: contextThreadTs,
-                    nodeId: parsedValue.currentNodeId
-                  })
-                }]
-              },
-              client,
-              logger: console
-            } as any);
-
-            // 성공하면 원본 채널에 업데이트 내용 포스트
-            if (contextChannelId && parsedValue.currentNodeId) {
-              try {
-                // 저장된 document updates에서 해당 nodeId의 정보 가져오기
-                const storedUpdates = getStoredDocumentUpdates(userId);
-                const currentUpdate = storedUpdates.find(update => update.nodeId === parsedValue.currentNodeId);
-                
-                if (currentUpdate && currentUpdate.diffBlock) {
-                  // 섹션 정보 포맷팅
-                  const sectionInfo = formatSectionPathWithLinks({
-                    headingPath: currentUpdate.headingPath,
-                    sectionName: currentUpdate.markdownSection,
-                    githubUrl: currentUpdate.githubUrl
-                  } as any);
-
-                  const updateBlocks = [
-                    {
-                      type: "section",
-                      text: {
-                        type: "mrkdwn",
-                        text: `✅ *Document Updated*\n*File:* <${currentUpdate.githubUrl}|${currentUpdate.fileName}>\n*Section:* ${sectionInfo}`
-                      }
-                    },
-                    currentUpdate.diffBlock
-                  ];
-
-                  await client.chat.postMessage({
-                    channel: contextChannelId,
-                    ...(contextThreadTs ? { thread_ts: contextThreadTs } : {}),
-                    text: `✅ Document Updated: ${currentUpdate.fileName}`,
-                    blocks: updateBlocks,
-                    unfurl_links: false,
-                    unfurl_media: false
-                  });
-                }
-              } catch (channelError) {
-                console.error("Failed to post update to original channel:", channelError);
-              }
-            }
-          } catch (error) {
-            console.error("Failed to apply previous suggestion:", error);
-            // 에러가 있어도 다음 suggestion으로 계속 진행
-          }
+        } catch (deleteError) {
+          logger.error(`Failed to delete initial manager notification message for session ${sessionId}: ${deleteError}`);
         }
       }
     }
 
-    // 사용자 정보와 workspace 정보 가져오기
-    const workspaceId = await getWorkspaceId(client);
+    let knowledgeSourceChannelId = parsedValue.originalChannelId;
+    let knowledgeSourceThreadTs = parsedValue.originalThreadTs;
 
-    // 지식 내용이 없는 경우
+    if (!currentDmChannelId) {
+      throw new Error("DM Channel ID not found in current context");
+    }
+
+    if (sessionId) {
+      try {
+        const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+        if (sessionData?.sourceMessages) {
+          sourceMessages = sessionData.sourceMessages;
+        }
+        if (!knowledgeSourceChannelId && sessionData?.originalChannelId) knowledgeSourceChannelId = sessionData.originalChannelId;
+        if (!knowledgeSourceThreadTs && sessionData?.originalThreadTs) knowledgeSourceThreadTs = sessionData.originalThreadTs;
+
+      } catch (error) {
+        console.warn("Failed to get sourceMessages from sessionData:", error);
+      }
+    }
+    if (sourceMessages.length === 0 && parsedValue.sourceMessages) {
+      sourceMessages = parsedValue.sourceMessages;
+    }
+
+    if (typeof parsedValue.index === 'number') { 
+      currentIndex = parsedValue.index;
+      searchResults = getSearchResults(userId);
+      isFirstSuggestion = false; 
+      
+      if (parsedValue.action === "keep" && parsedValue.currentNodeId) {
+        try {
+          await applySelectedToGithubAction({
+            ack: async () => {},
+            body: {
+              ...body,
+              actions: [{
+                value: JSON.stringify({
+                  userId: userId,
+                  originalChannelId: knowledgeSourceChannelId,
+                  originalThreadTs: knowledgeSourceThreadTs,
+                  nodeId: parsedValue.currentNodeId
+                })
+              }]
+            },
+            client,
+            logger
+          } as any);
+
+          if (knowledgeSourceChannelId && parsedValue.currentNodeId) {
+            try {
+              const storedUpdates = getStoredDocumentUpdates(userId);
+              const currentUpdate = storedUpdates.find(update => update.nodeId === parsedValue.currentNodeId);
+              if (currentUpdate && currentUpdate.diffBlock) {
+                const sectionInfo = formatSectionPathWithLinks({
+                  headingPath: currentUpdate.headingPath,
+                  sectionName: currentUpdate.markdownSection,
+                  githubUrl: currentUpdate.githubUrl
+                } as any);
+                const updateBlocks = [
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: `✅ *Document Updated*
+*File:* <${currentUpdate.githubUrl}|${currentUpdate.fileName}>
+*Section:* ${sectionInfo}`
+                    }
+                  },
+                  currentUpdate.diffBlock
+                ];
+                await client.chat.postMessage({
+                  channel: knowledgeSourceChannelId,
+                  ...(knowledgeSourceThreadTs ? { thread_ts: knowledgeSourceThreadTs } : {}),
+                  text: `✅ Document Updated: ${currentUpdate.fileName}`,
+                  blocks: updateBlocks,
+                  unfurl_links: false,
+                  unfurl_media: false
+                });
+              }
+            } catch (channelError) {
+              console.error("Failed to post update to original channel:", channelError);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to apply previous suggestion:", error);
+        }
+      }
+    } else {
+      isFirstSuggestion = true;
+      currentIndex = 0;
+      clearSearchResults(userId);
+      storeDocumentUpdates(userId, []);
+    }
+
     if (!knowledgeContent) {
       await client.chat.postMessage({
-        channel: dmChannelId,
-        text: "No knowledge content found. Please try the knowledge extraction again.",
+        channel: currentDmChannelId,
+        text: "No knowledge content found. Please try again.",
       });
       return;
     }
 
-    // 실제 source messages 사용, 없는 경우 가상 메시지 생성
     const validMessages: SlackMessage[] = sourceMessages.length > 0 
       ? sourceMessages 
       : [{
@@ -294,53 +294,47 @@ const suggestUpdatesCallback = async ({
           ts: Date.now().toString()
         }];
 
-    // DM에 진행 중 메시지 표시
-    const progressMessage = await client.chat.postMessage({
-      channel: dmChannelId,
-      text: "Preparing document update suggestions...",
-    });
-
-    if (progressMessage.ts) {
-      setProgressMessageTimestamp(userId, progressMessage.ts);
+    if (isFirstSuggestion) {
+        const progressMessage = await client.chat.postMessage({
+            channel: currentDmChannelId,
+            text: "Preparing document update suggestions...",
+        });
+        if (progressMessage.ts) {
+            setProgressMessageTimestamp(userId, progressMessage.ts);
+        }
     }
 
-    // 벡터 스토어 상태 검사
-    const healthCheckResult = await checkVectorStoreHealth(client, dmChannelId);
+    const healthCheckResult = await checkVectorStoreHealth(client, currentDmChannelId);
     if (!healthCheckResult.isHealthy) {
       if (healthCheckResult.blocks) {
         await client.chat.postMessage({
-          channel: dmChannelId,
+          channel: currentDmChannelId,
           blocks: healthCheckResult.blocks
         });
       } else if (healthCheckResult.message) {
         await client.chat.postMessage({
-          channel: dmChannelId,
+          channel: currentDmChannelId,
           text: healthCheckResult.message
         });
       }
       return;
     }
 
-    // 첫 번째 제안인 경우에만 유사도 검색 실행
-    const vectorStore = VectorStoreService.getInstance();
     if (currentIndex === 0) {
       searchResults = await vectorStore.similaritySearch(knowledgeContent, 5);
-
       if (!searchResults || searchResults.length === 0) {
         await client.chat.postMessage({
-          channel: dmChannelId,
+          channel: currentDmChannelId,
           text: "No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.",
         });
         return;
       }
-
       storeSearchResults(userId, searchResults);
     }
 
-    // 현재 인덱스의 문서 처리
     if (currentIndex >= searchResults.length) {
       await client.chat.postMessage({
-        channel: dmChannelId,
+        channel: currentDmChannelId,
         text: "No more documents to update.",
       });
       return;
@@ -350,12 +344,11 @@ const suggestUpdatesCallback = async ({
     const processedDoc = await processDocument(currentDoc, knowledgeContent, validMessages, client, vectorStore);
 
     if (!processedDoc || !processedDoc.hasChanges) {
-      // 진행 중 메시지 삭제
       const progressTs = getProgressMessageTimestamp(userId);
       if (progressTs) {
         try {
           await client.chat.delete({
-            channel: dmChannelId,
+            channel: currentDmChannelId,
             ts: progressTs
           });
           deleteProgressMessageTimestamp(userId);
@@ -363,8 +356,7 @@ const suggestUpdatesCallback = async ({
           console.error("진행 중 메시지 삭제 실패:", deleteError);
         }
       }
-
-      // 변경사항이 없는 경우 다음 문서로 넘어감
+      
       await suggestUpdatesCallback({
         ack: async () => {},
         body: {
@@ -372,19 +364,19 @@ const suggestUpdatesCallback = async ({
           actions: [{
             value: JSON.stringify({
               index: currentIndex + 1,
-              originalChannelId: contextChannelId,
-              originalThreadTs: contextThreadTs,
+              originalChannelId: knowledgeSourceChannelId,
+              originalThreadTs: knowledgeSourceThreadTs,
               knowledgeContent: knowledgeContent,
               sessionId: sessionId
             })
           }]
         },
-        client
+        client,
+        logger
       } as any);
       return;
     }
 
-    // processedDoc을 DocumentUpdate 형태로 변환
     const documentUpdate: DocumentUpdate = {
       index: currentIndex,
       fileName: processedDoc.fileName,
@@ -402,155 +394,151 @@ const suggestUpdatesCallback = async ({
       timestamp: new Date().toISOString(),
       knowledgeContent: knowledgeContent
     };
-
-    // 현재 사용자의 document updates 가져오기
-    const currentUpdates = getStoredDocumentUpdates(userId);
     
-    // 새로운 업데이트 추가 (기존 인덱스 업데이트하거나 새로 추가)
+    const currentUpdates = getStoredDocumentUpdates(userId);
     const existingUpdateIndex = currentUpdates.findIndex(update => update.nodeId === documentUpdate.nodeId);
     if (existingUpdateIndex >= 0) {
       currentUpdates[existingUpdateIndex] = documentUpdate;
     } else {
       currentUpdates.push(documentUpdate);
     }
-    
     storeDocumentUpdates(userId, currentUpdates);
 
-    // UI 블록 생성
     const blocks = [];
 
-    // 첫 번째 제안일 때만 헤더 추가
     if (isFirstSuggestion) {
-      blocks.push({
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: "Suggestions",
-          emoji: true
-        }
-      });
-
-      // Knowledge 내용 표시
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*Knowledge:*\n\`\`\`${knowledgeContent}\`\`\``
-        }
-      });
-
-      // 원본 메시지 링크 추가 (매니저가 포함된 채널인 경우)
-      const hasManagers = await channelHasManagers(client, contextChannelId, workspaceId);
-      
-      if (hasManagers) {
-        // workspace URL 가져오기
-        const authInfo = await client.auth.test();
-        const workspaceUrl = authInfo.url;
-        
-        if (workspaceUrl) {
-          const messageLink = createMessageLink(workspaceUrl, contextChannelId, contextThreadTs);
-          blocks.push({
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `📍 <${messageLink}|View original discussion> for context`
-            }
-          });
+      let headerText = "Document Update";
+      if (sessionId) {
+        const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+        if (sessionData && sessionData.userName) {
+          headerText = `Document Update from ${sessionData.userName}`;
+        } else if (sessionData && sessionData.userId) {
+          // Fallback to userId if userName is not available for some reason
+          headerText = `Document Update from <@${sessionData.userId}>`;
         }
       }
-
-      // 구분선 추가
       blocks.push({
-        type: "divider"
+        type: "header",
+        text: { type: "plain_text", text: headerText, emoji: true }
       });
+
+      // OR if it's the very first interaction (no previous message from passKnowledgeToManager)
+      // For now, simplify: if isManagerDMContext, these were in the preceding message from passKnowledgeToManager.
+      blocks.push({
+        type: "section",
+        text: { type: "mrkdwn", text: `*Knowledge:*
+\`\`\`${knowledgeContent}\`\`\`` }
+      });
+      // Ensure sessionId is valid before trying to get sessionDataForLink
+      if (knowledgeSourceChannelId && sessionId) { 
+        const sessionDataForLink = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+        const messageLink = sessionDataForLink?.originalMessageLink;
+
+        if (messageLink) {
+            try {
+                blocks.push({
+                    type: "section",
+                    text: { type: "mrkdwn", text: `📍 <${messageLink}|View original discussion> for context` }
+                });
+            } catch (linkError) {
+                logger.warn(`Error adding original discussion link (already created) in suggestUpdatesCallback: ${linkError}`);
+            }
+        } else {
+            logger.warn(`originalMessageLink not found in sessionData for session ${sessionId}`);
+        }
+      } else if (!sessionId && knowledgeSourceChannelId) {
+        // Fallback to creating link if sessionId is not available but knowledgesourcechannelId is.
+        // This case might be rare if flow always includes sessionId for managers.
+        const authInfo = await client.auth.test();
+        const workspaceUrl = authInfo.url;
+        if (workspaceUrl) {
+            try {
+                const convInfo = await client.conversations.info({ channel: knowledgeSourceChannelId });
+                if (convInfo.ok && convInfo.channel && (!convInfo.channel.is_private || convInfo.channel.is_member)) {
+                    const fallbackMessageLink = createMessageLink(workspaceUrl, knowledgeSourceChannelId, knowledgeSourceThreadTs);
+                    blocks.push({
+                        type: "section",
+                        text: { type: "mrkdwn", text: `📍 <${fallbackMessageLink}|View original discussion> for context (fallback link)` }
+                    });
+                }
+            } catch (linkError) {
+                logger.warn(`Could not create fallback original discussion link in suggestUpdatesCallback: ${linkError}`);
+            }
+        }
+      }
+      blocks.push({ type: "divider" });
     }
 
-    // 파일 이름과 섹션 정보 추가
+    const suggestionNumber = currentIndex + 1;
     const sectionInfo = formatSectionPathWithLinks({
       headingPath: processedDoc.headingPath,
       sectionName: processedDoc.sectionName,
       githubUrl: processedDoc.githubUrl
     } as DocumentMetadata);
     
-    blocks.push(
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*File:* <${processedDoc.githubUrl}|${processedDoc.fileName}>\n*Section:* ${sectionInfo}`
-        }
-      },
-      processedDoc.diffBlock,
-      {
-        type: "actions",
-        elements: [
-          {
+    const actionButtons = [
+        {
             type: "button",
-            text: {
-              type: "plain_text",
-              text: "Edit",
-              emoji: true
-            },
+            text: { type: "plain_text", text: "Edit", emoji: true },
             action_id: "edit_update",
             value: JSON.stringify({
-              index: currentIndex,
-              nodeId: processedDoc.nodeId,
-              fileName: processedDoc.fileName,
-              nodeContent: processedDoc.nodeContent,
-              updatedNodeContent: processedDoc.updatedNodeContent
+                index: currentIndex,
+                nodeId: processedDoc.nodeId,
+                fileName: processedDoc.fileName,
+                nodeContent: processedDoc.nodeContent,
+                updatedNodeContent: processedDoc.updatedNodeContent,
+                originalChannelId: knowledgeSourceChannelId,
+                originalThreadTs: knowledgeSourceThreadTs,
+                sessionId: sessionId
             })
-          },
-          {
+        },
+        {
             type: "button",
-            text: {
-              type: "plain_text",
-              text: "Update Document",
-              emoji: true
-            },
+            text: { type: "plain_text", text: "Update Document", emoji: true },
             style: "primary",
             action_id: "suggest_updates",
             value: JSON.stringify({
-              index: currentIndex + 1,
-              originalChannelId: contextChannelId,
-              originalThreadTs: contextThreadTs,
-              action: "keep",
-              knowledgeContent: knowledgeContent,
-              sessionId: sessionId,
-              currentNodeId: processedDoc.nodeId,
-              fileName: processedDoc.fileName,
-              githubUrl: processedDoc.githubUrl,
-              sectionName: processedDoc.sectionName,
-              headingPath: processedDoc.headingPath,
-              diffBlock: processedDoc.diffBlock
+                index: currentIndex + 1,
+                action: "keep",
+                knowledgeContent: knowledgeContent,
+                sessionId: sessionId,
+                currentNodeId: processedDoc.nodeId,
+                fileName: processedDoc.fileName,
+                githubUrl: processedDoc.githubUrl,
+                sectionName: processedDoc.sectionName,
+                headingPath: processedDoc.headingPath,
+                diffBlock: processedDoc.diffBlock,
+                originalChannelId: knowledgeSourceChannelId,
+                originalThreadTs: knowledgeSourceThreadTs
             })
-          },
-          {
+        },
+        {
             type: "button",
-            text: {
-              type: "plain_text",
-              text: "Cancel",
-              emoji: true
-            },
+            text: { type: "plain_text", text: "Cancel", emoji: true },
             style: "danger",
             action_id: "cancel_document_updates",
             value: JSON.stringify({
-              userId: userId,
-              originalChannelId: contextChannelId,
-              originalThreadTs: contextThreadTs,
-              index: currentIndex,
-              isFirstSuggestion: isFirstSuggestion
+                userId: userId,
+                originalChannelId: knowledgeSourceChannelId,
+                originalThreadTs: knowledgeSourceThreadTs,
+                index: currentIndex,
+                isFirstSuggestion: isFirstSuggestion,
+                sessionId: sessionId 
             })
-          }
-        ]
-      }
+        }
+    ];
+
+    blocks.push(
+      { type: "section", text: { type: "mrkdwn", text: `*Suggestion ${suggestionNumber}* : <${processedDoc.githubUrl}|${processedDoc.fileName}> - ${sectionInfo}` } },
+      processedDoc.diffBlock,
+      { type: "actions", elements: actionButtons }
     );
 
-    // DM에 진행 중 메시지가 있다면 삭제
     const progressTs = getProgressMessageTimestamp(userId);
     if (progressTs) {
       try {
         await client.chat.delete({
-          channel: dmChannelId,
+          channel: currentDmChannelId,
           ts: progressTs
         });
         deleteProgressMessageTimestamp(userId);
@@ -559,48 +547,29 @@ const suggestUpdatesCallback = async ({
       }
     }
 
-    // 업데이트 제안 메시지 전송
     const result = await client.chat.postMessage({
-      channel: dmChannelId,
+      channel: currentDmChannelId!,
       blocks: blocks,
       unfurl_links: false,
       unfurl_media: false,
       text: "Document Update Suggestions"
     });
 
-    // 새로운 메시지의 타임스탬프 저장
     if (result.ts) {
       setLastMessageTimestamp(userId, result.ts);
     }
 
   } catch (error) {
-    console.error("문서 업데이트 제안 중 오류 발생:", error);
-
-    try {
-      const dmResult = await client.conversations.open({
-        users: body.user.id
-      });
-      
-      if (dmResult.ok && dmResult.channel?.id) {
-        await client.chat.postMessage({
-          channel: dmResult.channel.id,
-          text: `문서 업데이트 제안 중 오류가 발생했습니다: ${
-            error instanceof Error ? error.message : "알 수 없는 오류"
-          }`
-        });
-      }
-    } catch (dmError) {
-      console.error("DM 전송 오류:", dmError);
-      
-      if (body.channel?.id) {
-        await client.chat.postEphemeral({
-          channel: body.channel.id,
-          user: body.user.id,
-          text: `문서 업데이트 제안 중 오류가 발생했습니다: ${
-            error instanceof Error ? error.message : "알 수 없는 오류"
-          }`
-        });
-      }
+    console.error("suggestUpdatesCallback에서 오류:", error);
+    if (currentDmChannelId) {
+        try {
+            await client.chat.postMessage({
+                channel: currentDmChannelId,
+                text: `문서 업데이트 제안 중 오류가 발생했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`
+            });
+        } catch (dmError) {
+            console.error("DM 전송 오류:", dmError);
+        }
     }
   }
 };
