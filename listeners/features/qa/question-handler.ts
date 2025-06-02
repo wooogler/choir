@@ -1,5 +1,5 @@
 import { generateSessionId, SessionType, storeSessionData } from "services/common";
-import { answerQuestion } from "services/llm";
+import { answerQuestion } from "services/llm/qa-service";
 import { createGitbookSectionLink, getManagers, getUserName, getQAChannel, getChannelName } from "services/slack";
 import { getWorkspaceId } from "services/slack";
 import { SlackMessage } from "services/slack";

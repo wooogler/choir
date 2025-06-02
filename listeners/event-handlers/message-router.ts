@@ -1,6 +1,7 @@
-import { classifyMessageIntent } from "services/llm";
-import { handleQuestionMessage } from "../features/qa";
-import { handleUpdateRequestMessage } from "../features/document-update";
+import { classifyMessageIntent } from "services/llm/document-editor";
+import { handleQuestionMessage } from "../features/qa/question-handler";
+import { handleUpdateRequestMessage } from "../features/document-update/extract-knowledge/update-request-handler";
+import { isManager, getWorkspaceId } from "services/slack";
 
 /**
  * 메시지 처리를 위한 공통 함수

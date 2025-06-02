@@ -5,7 +5,7 @@ import type {
   BlockButtonAction,
 } from "@slack/bolt";
 import type { KnownBlock, Block } from "@slack/web-api";
-import { processDocument } from "services/document/update-processor";
+import { processDocument, ProcessedDocument } from "services/document/update-processor";
 import { 
   storeDocumentUpdates, 
   getSearchResults, 
@@ -28,27 +28,6 @@ import {
 } from "services/common";
 import { applySelectedToGithubAction } from "../apply-document/update-documents";
 import { getSessionData, SessionType, storeSessionData } from "services/common";
-
-/**
- * Check if a channel contains any managers
- */
-async function channelHasManagers(client: any, channelId: string, workspaceId: string): Promise<boolean> {
-  try {
-    const managers = getManagers(workspaceId);
-    if (managers.length === 0) return false;
-
-    const membersResult = await client.conversations.members({
-      channel: channelId
-    });
-
-    if (!membersResult.ok || !membersResult.members) return false;
-
-    return membersResult.members.some((memberId: string) => managers.includes(memberId));
-  } catch (error) {
-    console.error("Error checking channel managers:", error);
-    return false;
-  }
-}
 
 /**
  * Create a link to the original message using Slack permalink format
@@ -157,29 +136,20 @@ export const suggestUpdatesCallback = async ({
     let currentIndex = 0;
     let searchResults: Document<DocumentMetadata>[] = [];
     let isFirstSuggestion = true;
-    let knowledgeContent = parsedValue.knowledgeContent || "";
+    let knowledgeContent = parsedValue.knowledgeContent;
     let sourceMessages: SlackMessage[] = [];
     let sessionId = parsedValue.sessionId;
 
-    // Moved from top: Attempt to delete the initial message from passKnowledgeToManagerCallback if applicable
-    if (isFirstSuggestion && sessionId && currentDmChannelId) { // currentDmChannelId check for safety
-      const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
-      // userId is the manager who clicked "Start Document Update", already defined at the top of suggestUpdatesCallback
-      const managerOriginalMessageInfo = sessionData?.managerMessageInfo?.[userId]; 
-      if (managerOriginalMessageInfo && managerOriginalMessageInfo.ts && managerOriginalMessageInfo.channel === currentDmChannelId) {
-        try {
-          await client.chat.delete({
-            channel: managerOriginalMessageInfo.channel,
-            ts: managerOriginalMessageInfo.ts,
-          });
-          logger.info(`Deleted initial manager notification message ${managerOriginalMessageInfo.ts} in channel ${managerOriginalMessageInfo.channel}`);
-          if (sessionData.managerMessageInfo) { 
-            delete sessionData.managerMessageInfo[userId]; 
-            storeSessionData(sessionId, sessionData, SessionType.CONSULTATION);
-          }
-        } catch (deleteError) {
-          logger.error(`Failed to delete initial manager notification message for session ${sessionId}: ${deleteError}`);
+    if (parsedValue.action === "keep") {
+      if (sessionId) {
+        const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+        if (sessionData?.extractedKnowledge) {
+          knowledgeContent = sessionData.extractedKnowledge;
+        } else {
+          logger.warn(`Extracted knowledge not found in session data for session ${sessionId} when action is "keep". This might lead to issues if not handled elsewhere.`);
         }
+      } else {
+        logger.error("SessionId not found when action is 'keep'. Cannot retrieve knowledgeContent.");
       }
     }
 
@@ -213,55 +183,76 @@ export const suggestUpdatesCallback = async ({
       isFirstSuggestion = false; 
       
       if (parsedValue.action === "keep" && parsedValue.currentNodeId) {
+        const storedUpdates = getStoredDocumentUpdates(userId);
+        const currentUpdate = storedUpdates.find(update => update.index === (currentIndex - 1) && update.nodeId === parsedValue.currentNodeId);
+
+        if (!currentUpdate) {
+          logger.error(`Could not find stored document update for index ${currentIndex -1} and nodeId ${parsedValue.currentNodeId}`);
+          await client.chat.postMessage({
+            channel: currentDmChannelId!,
+            text: "❌ Error: Could not retrieve the details for this update. Please try again or skip."
+          });
+          return;
+        }
+        
+        const githubActionValue = {
+          userId: userId, 
+          originalChannelId: currentUpdate.originalChannelId, 
+          originalThreadTs: currentUpdate.originalThreadTs,   
+          nodeId: currentUpdate.nodeId,
+          suggestionType: currentUpdate.suggestionType,
+          appendedNodeContent: currentUpdate.appendedNodeContent, 
+          originalLastNodeContent: currentUpdate.originalLastNodeContent,
+          updatedNodeContent: currentUpdate.updatedNodeContent 
+        };
+
         try {
           await applySelectedToGithubAction({
             ack: async () => {},
             body: {
               ...body,
               actions: [{
-                value: JSON.stringify({
-                  userId: userId,
-                  originalChannelId: knowledgeSourceChannelId,
-                  originalThreadTs: knowledgeSourceThreadTs,
-                  nodeId: parsedValue.currentNodeId
-                })
+                value: JSON.stringify(githubActionValue)
               }]
             },
             client,
             logger
           } as any);
 
-          if (knowledgeSourceChannelId && parsedValue.currentNodeId) {
+          if (currentUpdate.originalChannelId && currentUpdate.nodeId) {
             try {
-              const storedUpdates = getStoredDocumentUpdates(userId);
-              const currentUpdate = storedUpdates.find(update => update.nodeId === parsedValue.currentNodeId);
-              if (currentUpdate && currentUpdate.diffBlock) {
-                const sectionInfo = formatSectionPathWithLinks({
-                  headingPath: currentUpdate.headingPath,
-                  sectionName: currentUpdate.markdownSection,
-                  githubUrl: currentUpdate.githubUrl
-                } as any);
-                const updateBlocks = [
-                  {
-                    type: "section",
-                    text: {
-                      type: "mrkdwn",
-                      text: `✅ *Document Updated*
-*File:* <${currentUpdate.githubUrl}|${currentUpdate.fileName}>
-*Section:* ${sectionInfo}`
-                    }
-                  },
-                  currentUpdate.diffBlock
-                ];
-                await client.chat.postMessage({
-                  channel: knowledgeSourceChannelId,
-                  ...(knowledgeSourceThreadTs ? { thread_ts: knowledgeSourceThreadTs } : {}),
-                  text: `✅ Document Updated: ${currentUpdate.fileName}`,
-                  blocks: updateBlocks,
-                  unfurl_links: false,
-                  unfurl_media: false
-                });
+              let blocks = [];
+              let notificationText = "";
+              const sectionInfo = formatSectionPathWithLinks({
+                headingPath: currentUpdate.headingPath,
+                sectionName: currentUpdate.markdownSection,
+                githubUrl: currentUpdate.githubUrl
+              } as any);
+
+              if (currentUpdate.suggestionType === "APPEND") {
+                notificationText = `✅ New Content Appended: ${currentUpdate.fileName}`;
+                blocks.push(
+                  { type: "section", text: { type: "mrkdwn", text: `✅ *New Content Appended to Document*\n*File:* <${currentUpdate.githubUrl}|${currentUpdate.fileName}>\n*Section:* ${sectionInfo}` } }
+                );
+              } else {
+                notificationText = `✅ Document Updated: ${currentUpdate.fileName}`;
+                blocks.push(
+                  { type: "section", text: { type: "mrkdwn", text: `✅ *Document Updated*\n*File:* <${currentUpdate.githubUrl}|${currentUpdate.fileName}>\n*Section:* ${sectionInfo}` } }
+                );
               }
+
+              blocks.push(
+                { type: "section", text: { type: "mrkdwn", text: notificationText } }
+              );
+
+              await client.chat.postMessage({
+                channel: currentUpdate.originalChannelId!,
+                ...(currentUpdate.originalThreadTs ? { thread_ts: currentUpdate.originalThreadTs } : {}),
+                text: notificationText,
+                blocks: blocks,
+                unfurl_links: false,
+                unfurl_media: false
+              });
             } catch (channelError) {
               console.error("Failed to post update to original channel:", channelError);
             }
@@ -341,7 +332,7 @@ export const suggestUpdatesCallback = async ({
     }
 
     const currentDoc = searchResults[currentIndex];
-    const processedDoc = await processDocument(currentDoc, knowledgeContent, validMessages, client, vectorStore);
+    const processedDoc: ProcessedDocument | null = await processDocument(currentDoc, knowledgeContent, validMessages, client, vectorStore);
 
     if (!processedDoc || !processedDoc.hasChanges) {
       const progressTs = getProgressMessageTimestamp(userId);
@@ -366,7 +357,7 @@ export const suggestUpdatesCallback = async ({
               index: currentIndex + 1,
               originalChannelId: knowledgeSourceChannelId,
               originalThreadTs: knowledgeSourceThreadTs,
-              knowledgeContent: knowledgeContent,
+              ...(parsedValue.action !== "keep" && { knowledgeContent: knowledgeContent }),
               sessionId: sessionId
             })
           }]
@@ -377,7 +368,7 @@ export const suggestUpdatesCallback = async ({
       return;
     }
 
-    const documentUpdate: DocumentUpdate = {
+    const documentUpdateEntry: DocumentUpdate = {
       index: currentIndex,
       fileName: processedDoc.fileName,
       githubUrl: processedDoc.githubUrl,
@@ -388,23 +379,31 @@ export const suggestUpdatesCallback = async ({
       updatedNodeContent: processedDoc.updatedNodeContent,
       diffBlock: processedDoc.diffBlock,
       nodeId: processedDoc.nodeId,
-      oldContent: processedDoc.nodeContent,
-      newContent: processedDoc.updatedNodeContent,
+      oldContent: processedDoc.oldContent,
+      newContent: processedDoc.newContent,
       messages: validMessages,
       timestamp: new Date().toISOString(),
-      knowledgeContent: knowledgeContent
+      knowledgeContent: knowledgeContent,
+      originalChannelId: knowledgeSourceChannelId,
+      originalThreadTs: knowledgeSourceThreadTs,
+      suggestionType: processedDoc.suggestionType,
+      ...(processedDoc.suggestionType === "APPEND" && {
+        originalLastNodeContent: processedDoc.originalLastNodeContent,
+        appendedNodeContent: processedDoc.appendedNodeContent,
+        updatedNodeContent: processedDoc.originalLastNodeContent,
+      })
     };
     
     const currentUpdates = getStoredDocumentUpdates(userId);
-    const existingUpdateIndex = currentUpdates.findIndex(update => update.nodeId === documentUpdate.nodeId);
+    const existingUpdateIndex = currentUpdates.findIndex(update => update.nodeId === documentUpdateEntry.nodeId && update.index === currentIndex);
     if (existingUpdateIndex >= 0) {
-      currentUpdates[existingUpdateIndex] = documentUpdate;
+      currentUpdates[existingUpdateIndex] = documentUpdateEntry;
     } else {
-      currentUpdates.push(documentUpdate);
+      currentUpdates.push(documentUpdateEntry);
     }
     storeDocumentUpdates(userId, currentUpdates);
 
-    const blocks = [];
+    const blocks: (KnownBlock | Block)[] = [];
 
     if (isFirstSuggestion) {
       let headerText = "Document Update";
@@ -426,7 +425,7 @@ export const suggestUpdatesCallback = async ({
       // For now, simplify: if isManagerDMContext, these were in the preceding message from passKnowledgeToManager.
       blocks.push({
         type: "section",
-        text: { type: "mrkdwn", text: `*Knowledge:*
+        text: { type: "mrkdwn", text: `*Content:*
 \`\`\`${knowledgeContent}\`\`\`` }
       });
       // Ensure sessionId is valid before trying to get sessionDataForLink
@@ -476,60 +475,56 @@ export const suggestUpdatesCallback = async ({
       githubUrl: processedDoc.githubUrl
     } as DocumentMetadata);
     
+    let suggestionTitleText = "";
+    if (processedDoc.suggestionType === "APPEND") {
+      suggestionTitleText = `🆕 *New Content Suggestion (Append) ${suggestionNumber}* : <${processedDoc.githubUrl}|${processedDoc.fileName}> - ${sectionInfo}`;
+    } else {
+      suggestionTitleText = `📝 *Update Suggestion ${suggestionNumber}* : <${processedDoc.githubUrl}|${processedDoc.fileName}> - ${sectionInfo}`;
+    }
+
+    const editButtonValue = {
+      index: currentIndex,
+      nodeId: processedDoc.nodeId,
+      fileName: processedDoc.fileName,
+      suggestionType: processedDoc.suggestionType,
+      originalChannelId: knowledgeSourceChannelId,
+      originalThreadTs: knowledgeSourceThreadTs,
+      sessionId: sessionId,
+      ...(processedDoc.suggestionType === "UPDATE" && {
+        nodeContent: processedDoc.nodeContent,
+        updatedNodeContent: processedDoc.updatedNodeContent
+      }),
+      ...(processedDoc.suggestionType === "APPEND" && {
+        originalLastNodeContent: processedDoc.originalLastNodeContent,
+        appendedNodeContent: processedDoc.appendedNodeContent
+      })
+    };
+
+    const updateButtonValue = {
+      index: currentIndex + 1, 
+      action: "keep",
+      sessionId: sessionId, 
+      currentNodeId: processedDoc.nodeId, 
+    };
+
+    const cancelButtonValue = {
+      userId: userId,
+      originalChannelId: knowledgeSourceChannelId,
+      originalThreadTs: knowledgeSourceThreadTs,
+      index: currentIndex,
+      isFirstSuggestion: isFirstSuggestion,
+      sessionId: sessionId,
+      suggestionType: processedDoc.suggestionType
+    };
+
     const actionButtons = [
-        {
-            type: "button",
-            text: { type: "plain_text", text: "Edit", emoji: true },
-            action_id: "edit_update",
-            value: JSON.stringify({
-                index: currentIndex,
-                nodeId: processedDoc.nodeId,
-                fileName: processedDoc.fileName,
-                nodeContent: processedDoc.nodeContent,
-                updatedNodeContent: processedDoc.updatedNodeContent,
-                originalChannelId: knowledgeSourceChannelId,
-                originalThreadTs: knowledgeSourceThreadTs,
-                sessionId: sessionId
-            })
-        },
-        {
-            type: "button",
-            text: { type: "plain_text", text: "Update Document", emoji: true },
-            style: "primary",
-            action_id: "suggest_updates",
-            value: JSON.stringify({
-                index: currentIndex + 1,
-                action: "keep",
-                knowledgeContent: knowledgeContent,
-                sessionId: sessionId,
-                currentNodeId: processedDoc.nodeId,
-                fileName: processedDoc.fileName,
-                githubUrl: processedDoc.githubUrl,
-                sectionName: processedDoc.sectionName,
-                headingPath: processedDoc.headingPath,
-                diffBlock: processedDoc.diffBlock,
-                originalChannelId: knowledgeSourceChannelId,
-                originalThreadTs: knowledgeSourceThreadTs
-            })
-        },
-        {
-            type: "button",
-            text: { type: "plain_text", text: "Cancel", emoji: true },
-            style: "danger",
-            action_id: "cancel_document_updates",
-            value: JSON.stringify({
-                userId: userId,
-                originalChannelId: knowledgeSourceChannelId,
-                originalThreadTs: knowledgeSourceThreadTs,
-                index: currentIndex,
-                isFirstSuggestion: isFirstSuggestion,
-                sessionId: sessionId 
-            })
-        }
+        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: "Edit", emoji: true }, action_id: "edit_update", value: JSON.stringify(editButtonValue) },
+        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: processedDoc.suggestionType === "APPEND" ? "Append to Document" : "Update Document", emoji: true }, style: "primary" as "primary", action_id: "suggest_updates", value: JSON.stringify(updateButtonValue) },
+        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: "Skip / Reject", emoji: true }, style: "danger" as "danger", action_id: "cancel_document_updates", value: JSON.stringify(cancelButtonValue) }
     ];
 
     blocks.push(
-      { type: "section", text: { type: "mrkdwn", text: `*Suggestion ${suggestionNumber}* : <${processedDoc.githubUrl}|${processedDoc.fileName}> - ${sectionInfo}` } },
+      { type: "section", text: { type: "mrkdwn", text: suggestionTitleText } },
       processedDoc.diffBlock,
       { type: "actions", elements: actionButtons }
     );

@@ -9,15 +9,22 @@ export interface DocumentUpdate {
   markdownSection: string;
   headingPath?: string[]; // 섹션 계층 경로
   hasChanges: boolean;
-  nodeContent: string;
-  updatedNodeContent: string;
+  nodeContent: string; // 원본 노드 내용 (APPEND의 경우 마지막 노드 내용으로 간주될 수 있음)
+  updatedNodeContent: string; // UPDATE 시 LLM이 변경한 전체 내용, APPEND 시에는 추가된 내용이 여기에 포함될 수도, 혹은 별도 필드.
   diffBlock: any; // TODO: Define proper type for diffBlock
   nodeId: string;
-  oldContent: string;
-  newContent: string;
+  oldContent: string; // Slack 미리보기용 원본
+  newContent: string; // Slack 미리보기용 변경/추가된 내용
   messages: SlackMessage[];
   timestamp: string;
   knowledgeContent?: string; // knowledge extraction에서 나온 내용
+  originalChannelId?: string; // 지식 출처 채널 ID
+  originalThreadTs?: string;  // 지식 출처 스레드 TS
+
+  // For APPEND suggestion type
+  suggestionType: "UPDATE" | "APPEND";
+  originalLastNodeContent?: string; // APPEND 시 원본 마지막 노드 내용 (마크다운)
+  appendedNodeContent?: string; // APPEND 시 새로 생성된/추가될 노드 내용 (마크다운)
 }
 
 // documentUpdates를 저장하기 위한 Map (userId -> { documentUpdates, thread_ts, channel_id })

@@ -70,7 +70,7 @@ export async function handleKnowledgeEditManagerModal({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*From:* <@${sessionData.userId}> (Original requester: ${sessionData.userName || 'Unknown User'})\n*Knowledge:*\n\`\`\`${editedKnowledge.trim()}\`\`\``
+            text: `*From:* <@${sessionData.userId}> (Original requester: ${sessionData.userName || 'Unknown User'})\n*Content:*\n\`\`\`${editedKnowledge.trim()}\`\`\``
           }
         }
       ];

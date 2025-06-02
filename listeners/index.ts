@@ -22,10 +22,6 @@ const registerListeners = (app: App) => {
   registerQAFeature(app);
   registerDocumentUpdateFeature(app);
   registerPreferencesFeature(app);
-  // registerKnowledgeExtractionFeature(app); // knowledge-extraction은 아직
-
-  // actions.register(app); // 삭제
-  // views.register(app); // 삭제
 };
 
 export default registerListeners;

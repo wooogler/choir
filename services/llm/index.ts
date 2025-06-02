@@ -1,2 +1,18 @@
 export * from "./langchain";
-export * from "./completions"; 
+
+// Core completion functionality
+export { createChatCompletion } from "./completions";
+export type { ChatCompletionOptions } from "./completions";
+
+// Q&A related functions
+export { answerQuestion, processMessageText } from "./qa-service";
+
+// Document editing functions
+export { 
+  editMarkdownWithUserMessages, 
+  editMarkdownWithKnowledge, 
+  classifyMessageIntent 
+} from "./document-editor";
+
+// Content generation functions
+export { createNewContentFromKnowledge } from "./content-generator"; 
