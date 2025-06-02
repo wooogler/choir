@@ -1,14 +1,14 @@
-import type { App, AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
+import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
 import { 
   updateDocumentContent, 
   convertMarkdownToSlackText,
-} from "../../services/document";
-import { createDiffBlock } from "../../services/slack";
+} from "../../../services/document"; // 경로 수정
+import { createDiffBlock } from "../../../services/slack"; // 경로 수정
 
 /**
  * 모달에서 제출된 내용을 처리합니다.
  */
-const handleUpdateEditorSubmission = async ({
+export const handleUpdateEditorSubmission = async ({
   ack,
   body,
   view,
@@ -125,9 +125,3 @@ const handleUpdateEditorSubmission = async ({
     }
   }
 };
-
-const register = (app: App) => {
-  app.view("update_editor_submission", handleUpdateEditorSubmission);
-};
-
-export default { register };

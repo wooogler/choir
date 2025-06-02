@@ -1,17 +1,31 @@
 import type { App } from "@slack/bolt";
-import actions from "./actions";
-import appHome from "./app-home";
-import views from "./views";
-import mentions from "./mentions";
-import dms from "./dms";
+// import actions from "./actions"; // 삭제 예정
+import appHomeHandler from "./event-handlers/app-home-handler";
+// import views from "./views"; // 삭제 예정
+import mentionHandler from "./event-handlers/mention-handler";
+import dmHandler from "./event-handlers/dm-handler";
+import { clearChatCommand, handleClearChat } from "./event-handlers/command-handler";
+
+import { registerQAFeature } from "./features/qa";
+import { registerDocumentUpdateFeature } from "./features/document-update";
+import { registerPreferencesFeature } from "./features/preferences";
+// import { registerKnowledgeExtractionFeature } from "./features/knowledge-extraction"; // knowledge-extraction은 아직
 
 const registerListeners = (app: App) => {
-  // 모든 리스너 등록
-  actions.register(app);
-  appHome.register(app);
-  views.register(app);
-  mentions.register(app);
-  dms.register(app);
+  // Event Handlers
+  appHomeHandler.register(app);
+  mentionHandler.register(app); // mention-handler 내부에서 일부 document-update 액션을 직접 등록하고 있음. 이를 document-update feature로 옮길지 검토 필요.
+  dmHandler.register(app);
+  app.command(clearChatCommand.command, handleClearChat);
+
+  // Feature-based Actions/Views
+  registerQAFeature(app);
+  registerDocumentUpdateFeature(app);
+  registerPreferencesFeature(app);
+  // registerKnowledgeExtractionFeature(app); // knowledge-extraction은 아직
+
+  // actions.register(app); // 삭제
+  // views.register(app); // 삭제
 };
 
 export default registerListeners;

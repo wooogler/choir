@@ -66,7 +66,7 @@ export function createMessageLink(workspaceUrl: string, channelId: string, messa
   }
 }
 
-const suggestUpdatesCallback = async ({
+export const suggestUpdatesCallback = async ({
   ack,
   body,
   client,

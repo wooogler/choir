@@ -232,9 +232,3 @@ export async function handleKnowledgeEditManagerModal({
     });
   }
 }
-
-const register = (app: any) => {
-  app.view("knowledge_edit_manager_modal", handleKnowledgeEditManagerModal);
-};
-
-export default { register };

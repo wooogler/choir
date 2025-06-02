@@ -1,6 +1,6 @@
 import { classifyMessageIntent } from "services/llm";
-import { handleQuestionMessage } from "./question-handler";
-import { handleUpdateRequestMessage } from "./update-request-handler";
+import { handleQuestionMessage } from "../features/qa";
+import { handleUpdateRequestMessage } from "../features/document-update";
 
 /**
  * 메시지 처리를 위한 공통 함수

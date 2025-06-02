@@ -1,11 +1,11 @@
-import type { App, AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
+import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
 import { getSessionData, SessionType } from "services/common";
 import { getUserName, createQAChannelMessage } from "services/slack";
 
 /**
  * 채널 선택 모달 제출 처리
  */
-const askToChannelSubmitCallback = async ({
+export const askToChannelSubmitCallback = async ({
   ack,
   body,
   view,
@@ -68,10 +68,4 @@ const askToChannelSubmitCallback = async ({
   } catch (error) {
     logger.error("Error submitting channel selection:", error);
   }
-};
-
-const register = (app: App) => {
-  app.view("ask_to_channel_submit", askToChannelSubmitCallback);
-};
-
-export default { register }; 
+}; 

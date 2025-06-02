@@ -1,11 +1,11 @@
-import type { App, AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
+import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
 import { getSessionData, SessionType } from "services/common";
 import { getUserName, createPrivateMessage } from "services/slack";
 
 /**
  * 멤버 선택 모달 제출 처리
  */
-const askToOthersSubmitCallback = async ({
+export const askToOthersSubmitCallback = async ({
   ack,
   body,
   view,
@@ -66,10 +66,4 @@ const askToOthersSubmitCallback = async ({
   } catch (error) {
     logger.error("Error submitting member selection:", error);
   }
-};
-
-const register = (app: App) => {
-  app.view("ask_to_others_submit", askToOthersSubmitCallback);
-};
-
-export default { register }; 
+}; 

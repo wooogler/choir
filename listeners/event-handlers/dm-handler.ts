@@ -1,5 +1,5 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from "@slack/bolt";
-import { handleIncomingMessage } from "./document-handlers/message-handler";
+import { handleIncomingMessage } from "./message-router";
 
 /**
  * DM 메시지 처리 콜백

@@ -3,17 +3,9 @@ import * as dotenv from "dotenv";
 import registerListeners from "./listeners";
 
 import GithubService from "./services/github";
-import startDiscussionCallback from "./listeners/actions/discussion/start-discussion";
-import startConsultationCallback from "./listeners/actions/discussion/start-consultation";
-import qaChannelActions from "./listeners/actions/qa-channel-actions";
-import askToChannelModalActions from "./listeners/actions/modals/ask-to-channel-modal";
-import askToOthersModalActions from "./listeners/actions/modals/ask-to-others-modal";
-import updateEditorModalActions from "./listeners/actions/modals/update-editor-modal";
-import knowledgeExtractionActions from "./listeners/actions/knowledge-extraction-actions";
+
 import { VectorStoreService } from "services/vector/main-service";
 import { getGithubRepo, getWorkspaceId, setupInitialManager } from "services/slack";
-import { handleClearChat } from "./listeners/commands/clear-chat";
-import knowledgeEditManagerModal from "./listeners/views/knowledge-edit-manager-modal";
 
 dotenv.config();
 
@@ -82,23 +74,6 @@ app.event('app_home_opened', async ({ event, client, logger }) => {
     logger.error('Error publishing home tab:', error);
   }
 });
-
-// Register listeners
-app.action("start_discussion", startDiscussionCallback);
-app.action("start_consultation", startConsultationCallback);
-
-// Register Q&A channel actions
-qaChannelActions.register(app);
-askToChannelModalActions.register(app);
-askToOthersModalActions.register(app);
-updateEditorModalActions.register(app);
-
-// Register knowledge extraction actions
-knowledgeExtractionActions.register(app);
-knowledgeEditManagerModal.register(app);
-
-// Register commands
-app.command("/clear-choir-chat", handleClearChat);
 
 /** Start Bolt App */
 (async () => {

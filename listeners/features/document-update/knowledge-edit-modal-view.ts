@@ -5,7 +5,6 @@ import type {
 } from "@slack/bolt";
 import { getSessionData, SessionType, storeSessionData } from "services/common";
 import { getChannelName, getManagers, getWorkspaceId, getUserName } from "services/slack";
-import suggestUpdatesCallback from "../document-handlers/suggest-updates";
 
 /**
  * Handle knowledge edit modal submission

@@ -1,9 +1,9 @@
-import type { App, AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
+import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
 
 /**
  * 문서 업데이트 제안 편집 모달을 표시합니다.
  */
-const showUpdateEditorModal = async ({
+export const showUpdateEditorModal = async ({
   ack,
   body,
   client,
@@ -107,9 +107,3 @@ const showUpdateEditorModal = async ({
     }
   }
 };
-
-const register = (app: App) => {
-  app.action("edit_update", showUpdateEditorModal);
-};
-
-export default { register }; 

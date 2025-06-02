@@ -3,12 +3,12 @@ import type {
   SlackActionMiddlewareArgs,
   BlockButtonAction,
 } from "@slack/bolt";
-import { getLastMessageTimestamp, getProgressMessageTimestamp, deleteProgressMessageTimestamp } from "services/common";
+import { getLastMessageTimestamp, getProgressMessageTimestamp, deleteProgressMessageTimestamp } from "../../../services/common";
 
 /**
  * Handle "Cancel" button click in document update suggestions
  */
-const cancelDocumentUpdatesCallback = async ({
+export const cancelDocumentUpdatesCallback = async ({
   ack,
   body,
   client,
@@ -206,6 +206,4 @@ const cancelDocumentUpdatesCallback = async ({
       logger.error("Failed to send error message:", dmError);
     }
   }
-};
-
-export default cancelDocumentUpdatesCallback; 
+}; 

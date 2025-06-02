@@ -1,11 +1,11 @@
-import type { App, AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
+import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
 import { getSessionData, SessionType } from "services/common";
-import { getManagers, getWorkspaceId, getUserName, createPrivateMessagePreview } from "services/slack";
+import { getQAChannel, getWorkspaceId, createQAChannelPreview } from "services/slack";
 
 /**
- * 멤버 선택 모달 열기
+ * 채널 선택 모달 열기
  */
-const askToOthersModalCallback = async ({
+export const askToChannelModalCallback = async ({
   ack,
   body,
   client,
@@ -25,7 +25,17 @@ const askToOthersModalCallback = async ({
     }
 
     const workspaceId = await getWorkspaceId(client);
-    const managers = getManagers(workspaceId);
+    const qaChannelId = await getQAChannel(workspaceId, client);
+
+    // Q&A 채널이 설정되지 않은 경우 에러 처리
+    if (!qaChannelId) {
+      await client.chat.postEphemeral({
+        channel: body.channel?.id || "",
+        user: body.user.id,
+        text: "❌ No Q&A channel is configured. Please ask an admin to set up a Q&A channel.",
+      });
+      return;
+    }
 
     // 세션 데이터 가져오기 (preview용)
     const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
@@ -38,13 +48,19 @@ const askToOthersModalCallback = async ({
       return;
     }
 
-    // 질문자 이름 가져오기
-    const questionerName = await getUserName(body.user.id, client);
+    // Q&A 채널 이름 가져오기
+    let channelName = "qna";
+    try {
+      const channelInfo = await client.conversations.info({ channel: qaChannelId });
+      channelName = channelInfo.channel?.name || "qna";
+    } catch (error) {
+      logger.warn(`Could not get Q&A channel name for ${qaChannelId}:`, error);
+    }
 
-    // Preview 생성 (공통 함수 사용 - 샘플 수신자명 사용)
-    const previewText = createPrivateMessagePreview(
-      "Selected person(s)",
-      questionerName,
+    // Preview 생성 (공통 함수 사용)
+    const previewText = createQAChannelPreview(
+      channelName,
+      body.user.id,
       sessionData.originalQuestion,
       sessionData.botResponse
     );
@@ -53,16 +69,16 @@ const askToOthersModalCallback = async ({
       trigger_id: body.trigger_id,
       view: {
         type: "modal",
-        callback_id: "ask_to_others_submit",
-        private_metadata: sessionId,
+        callback_id: "ask_to_channel_submit",
+        private_metadata: JSON.stringify({ sessionId, qaChannelId }), // Q&A 채널 ID 포함
         title: {
           type: "plain_text",
-          text: "🔒 Ask in Private",
+          text: "📢 Share with Q&A",
           emoji: true
         },
         submit: {
           type: "plain_text",
-          text: "Send Privately",
+          text: "Post to Channel",
           emoji: true
         },
         close: {
@@ -75,25 +91,7 @@ const askToOthersModalCallback = async ({
             type: "section",
             text: {
               type: "mrkdwn",
-              text: "🔒 *Who would you like to ask privately?*\n_They'll receive this Q&A as a direct message for private discussion._"
-            }
-          },
-          {
-            type: "input",
-            block_id: "users_select",
-            element: {
-              type: "multi_users_select",
-              action_id: "users",
-              placeholder: {
-                type: "plain_text",
-                text: "Choose people to share with..."
-              },
-              ...(managers.length > 0 && { initial_users: managers })
-            },
-            label: {
-              type: "plain_text",
-              text: "👤 People",
-              emoji: true
+              text: `📢 *Ready to share this Q&A with #${channelName}?*\n_This will post the question and my response to help others in the channel._`
             }
           },
           {
@@ -117,9 +115,9 @@ const askToOthersModalCallback = async ({
       }
     });
 
-    logger.info(`Others selection modal opened for session ${sessionId}`);
+    logger.info(`Channel selection modal opened for session ${sessionId}`);
   } catch (error) {
-    logger.error("Error opening others selection modal:", error);
+    logger.error("Error opening channel selection modal:", error);
     
     await client.chat.postEphemeral({
       channel: body.channel?.id || "",
@@ -128,9 +126,3 @@ const askToOthersModalCallback = async ({
     });
   }
 };
-
-const register = (app: App) => {
-  app.action("ask_to_others_modal", askToOthersModalCallback);
-};
-
-export default { register }; 
