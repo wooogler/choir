@@ -26,7 +26,7 @@ import {
   getProgressMessageTimestamp,
   deleteProgressMessageTimestamp
 } from "services/common";
-import { applySelectedToGithubAction } from "./update-documents";
+import { applySelectedToGithubAction } from "../apply-document/update-documents";
 import { getSessionData, SessionType, storeSessionData } from "services/common";
 
 /**

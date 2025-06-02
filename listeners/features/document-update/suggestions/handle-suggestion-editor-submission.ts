@@ -2,13 +2,13 @@ import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
 import { 
   updateDocumentContent, 
   convertMarkdownToSlackText,
-} from "../../../services/document"; // 경로 수정
-import { createDiffBlock } from "../../../services/slack"; // 경로 수정
+} from "../../../../services/document"; // 경로 수정
+import { createDiffBlock } from "../../../../services/slack"; // 경로 수정
 
 /**
  * 모달에서 제출된 내용을 처리합니다.
  */
-export const handleUpdateEditorSubmission = async ({
+export const handleSuggestionEditorSubmission = async ({
   ack,
   body,
   view,
@@ -124,4 +124,4 @@ export const handleUpdateEditorSubmission = async ({
       console.error("Error sending error message:", dmError);
     }
   }
-};
+}; 

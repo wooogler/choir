@@ -3,7 +3,7 @@ import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } 
 /**
  * 문서 업데이트 제안 편집 모달을 표시합니다.
  */
-export const showUpdateEditorModal = async ({
+export const showSuggestionEditorModal = async ({
   ack,
   body,
   client,
@@ -106,4 +106,4 @@ export const showUpdateEditorModal = async ({
       console.error("Error sending error message:", dmError);
     }
   }
-};
+}; 

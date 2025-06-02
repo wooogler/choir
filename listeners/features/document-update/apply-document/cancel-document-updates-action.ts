@@ -3,7 +3,7 @@ import type {
   SlackActionMiddlewareArgs,
   BlockButtonAction,
 } from "@slack/bolt";
-import { getLastMessageTimestamp, getProgressMessageTimestamp, deleteProgressMessageTimestamp } from "../../../services/common";
+import { getLastMessageTimestamp, getProgressMessageTimestamp, deleteProgressMessageTimestamp } from "../../../../services/common";
 
 /**
  * Handle "Cancel" button click in document update suggestions
@@ -206,4 +206,4 @@ export const cancelDocumentUpdatesCallback = async ({
       logger.error("Failed to send error message:", dmError);
     }
   }
-}; 
+};

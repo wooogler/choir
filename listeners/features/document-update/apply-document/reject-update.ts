@@ -10,7 +10,7 @@ import {
   getProgressMessageTimestamp,
   deleteProgressMessageTimestamp
 } from "services/common";
-import suggestUpdatesCallback from "./suggest-updates";
+import suggestUpdatesCallback from "../suggestions/suggest-updates";
 
 /**
  * 문서 업데이트 제안을 거절하고 다음 제안을 보여주는 핸들러
