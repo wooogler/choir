@@ -90,28 +90,66 @@ export async function applyDocumentChanges({
         continue;
       }
 
-      // 노드 내용 업데이트
+      // 노드 내용 업데이트 또는 추가
       for (const update of fileData.documentUpdates) {
-        docTree = updateNodeContent(
-          docTree,
-          update.nodeId,
-          update.updatedNodeContent
-        );
+        if (update.suggestionType === "APPEND" && update.appendedNodeContent) {
+          // APPEND: 새로운 노드를 추가
+          const success = await vectorStore.appendSpecificNode(
+            fileName,
+            update.nodeId,
+            update.appendedNodeContent
+          );
+          if (!success) {
+            throw new Error(`Failed to append node ${update.nodeId} in ${fileName}`);
+          }
+        } else {
+          // UPDATE: 기존 노드 업데이트
+          docTree = updateNodeContent(
+            docTree,
+            update.nodeId,
+            update.updatedNodeContent
+          );
+        }
       }
 
-      // 마크다운으로 변환
-      const updatedMarkdown = updateDocTreeWithChanges(
-        docTree,
-        fileData.documentUpdates
-      );
+      // APPEND가 아닌 경우에만 전통적인 마크다운 변환 및 GitHub 업데이트
+      const hasUpdateOperations = fileData.documentUpdates.some(update => update.suggestionType !== "APPEND");
+      
+      if (hasUpdateOperations) {
+        // 마크다운으로 변환
+        const updatedMarkdown = updateDocTreeWithChanges(
+          docTree,
+          fileData.documentUpdates.filter(update => update.suggestionType !== "APPEND")
+        );
 
-      // GitHub에 업데이트
-      await githubService.updateMarkdownFile({
-        owner: githubInfo.owner,
-        repo: githubInfo.repo,
-        path: fileName,
-        content: updatedMarkdown,
-      });
+        // GitHub에 업데이트
+        await githubService.updateMarkdownFile({
+          owner: githubInfo.owner,
+          repo: githubInfo.repo,
+          path: fileName,
+          content: updatedMarkdown,
+        });
+      }
+
+      // APPEND 작업이 있는 경우 GitHub 업데이트
+      const hasAppendOperations = fileData.documentUpdates.some(update => update.suggestionType === "APPEND");
+      
+      if (hasAppendOperations) {
+        // 업데이트된 트리에서 전체 마크다운 생성
+        const markdownFile = vectorStore.getMarkdownFile(fileName);
+        if (markdownFile) {
+          const { treeToMarkdown } = await import("./markdown");
+          const fullUpdatedMarkdown = treeToMarkdown(markdownFile.tree);
+
+          // GitHub에 업데이트
+          await githubService.updateMarkdownFile({
+            owner: githubInfo.owner,
+            repo: githubInfo.repo,
+            path: fileName,
+            content: fullUpdatedMarkdown,
+          });
+        }
+      }
 
       results.push({
         fileName,

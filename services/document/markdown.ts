@@ -399,6 +399,8 @@ export function updateNodeContent(
  * 노드를 root 트리 구조에서도 업데이트
  */
 function updateNodeInRootTree(tree: DocumentTree, node: ExtendedNode): void {
+  console.log(`[DEBUG] updateNodeInRootTree: 루트 트리 업데이트 시작`, {nodeId: node.id, nodeType: node.type});
+  
   // 노드가 root 트리에 있는 실제 노드 찾기
   function findAndUpdateNodeInRoot(
     rootNode: Parent & ExtendedNode,
@@ -408,6 +410,7 @@ function updateNodeInRootTree(tree: DocumentTree, node: ExtendedNode): void {
     if (rootNode.id === targetId) {
       // 현재 노드를 찾았으므로 업데이트 (이 경우는 루트 자체가 대상인 드문 경우)
       Object.assign(rootNode, node);
+      console.log(`[DEBUG] updateNodeInRootTree: 루트에서 직접 노드 업데이트`, {targetId});
       return true;
     }
 
@@ -424,6 +427,7 @@ function updateNodeInRootTree(tree: DocumentTree, node: ExtendedNode): void {
       if (child.id === targetId) {
         // 자식 노드를 업데이트된 노드로 교체
         rootNode.children[i] = node;
+        console.log(`[DEBUG] updateNodeInRootTree: 자식 노드 교체 완료`, {targetId, position: i});
         return true;
       }
 
@@ -441,7 +445,8 @@ function updateNodeInRootTree(tree: DocumentTree, node: ExtendedNode): void {
   // root에서 노드 업데이트 시작
   if (node.id) {
     // id가 있는 경우만 업데이트 시도
-    findAndUpdateNodeInRoot(tree.root, node.id);
+    const found = findAndUpdateNodeInRoot(tree.root, node.id);
+    console.log(`[DEBUG] updateNodeInRootTree: 루트 트리 업데이트 결과`, {nodeId: node.id, found});
   }
 
   // 기존 부모 노드 업데이트 로직 유지 (nodeMap 업데이트)
@@ -654,4 +659,143 @@ export function preprocessMarkdownForEmbedding(markdown: string): string {
   processed = processed.trim();
   
   return processed;
+}
+
+/**
+ * 지정된 노드 바로 뒤에 새로운 sibling 노드를 추가 - APPEND 기능용
+ */
+export function appendNodeContent(
+  docTree: DocumentTree,
+  referenceNodeId: string,
+  newContent: string
+): DocumentTree {
+  // 원본 트리의 깊은 복사본 생성
+  const newTree: DocumentTree = {
+    title: docTree.title,
+    nodeMap: new Map(docTree.nodeMap),
+    sectionMap: new Map(docTree.sectionMap),
+    root: JSON.parse(JSON.stringify(docTree.root)),
+  };
+
+  const referenceNode = newTree.nodeMap.get(referenceNodeId);
+  if (!referenceNode) return newTree; // 참조 노드가 없으면 변경되지 않은 복사본 반환
+
+  // 새 노드 생성 - 참조 노드와 같은 타입으로
+  let newNode: ExtendedNode;
+  const newNodeId = `${referenceNodeId}_append_${Date.now()}`;
+
+  if (is(referenceNode, "paragraph")) {
+    // 단락 노드 생성
+    newNode = {
+      type: "paragraph",
+      children: [
+        {
+          type: "text",
+          value: newContent
+        }
+      ],
+      id: newNodeId,
+      fileName: (referenceNode as ExtendedNode).fileName,
+      parentId: (referenceNode as ExtendedNode).parentId,
+      sectionId: (referenceNode as ExtendedNode).sectionId
+    } as Paragraph & ExtendedNode;
+  } else if (is(referenceNode, "listItem")) {
+    // 리스트 아이템 노드 생성
+    const refExtNode = referenceNode as ListItem & ExtendedNode;
+    newNode = {
+      type: "listItem",
+      children: [
+        {
+          type: "paragraph",
+          children: [
+            {
+              type: "text",
+              value: newContent
+            }
+          ]
+        }
+      ],
+      id: newNodeId,
+      fileName: refExtNode.fileName,
+      parentId: refExtNode.parentId,
+      sectionId: refExtNode.sectionId,
+      isListItem: true,
+      listItemIndex: (refExtNode.listItemIndex || 0) + 1 // 다음 인덱스
+    } as ListItem & ExtendedNode;
+  } else {
+    // 지원하지 않는 노드 타입
+    console.warn(`Unsupported node type for append: ${referenceNode.type}`);
+    return newTree;
+  }
+
+  // 노드맵에 새 노드 추가
+  newTree.nodeMap.set(newNodeId, newNode);
+
+  // 부모 노드에서 참조 노드 바로 뒤에 새 노드 삽입
+  insertNodeAfterReference(newTree, referenceNodeId, newNode);
+
+  console.log(`새로운 ${newNode.type} 노드 (ID: ${newNodeId})가 ${referenceNodeId} 뒤에 추가되었습니다`);
+
+  return newTree;
+}
+
+/**
+ * 부모 노드에서 참조 노드 바로 뒤에 새 노드를 삽입
+ */
+function insertNodeAfterReference(
+  tree: DocumentTree,
+  referenceNodeId: string,
+  newNode: ExtendedNode
+): void {
+  const referenceNode = tree.nodeMap.get(referenceNodeId);
+  if (!referenceNode || !referenceNode.parentId) {
+    console.log(`[DEBUG] insertNodeAfterReference: 참조 노드 또는 부모 ID 없음`, {referenceNodeId, hasParentId: !!referenceNode?.parentId});
+    return;
+  }
+
+  const parentNode = tree.nodeMap.get(referenceNode.parentId);
+  if (!parentNode || !Array.isArray((parentNode as any).children)) {
+    console.log(`[DEBUG] insertNodeAfterReference: 부모 노드 또는 children 배열 없음`, {parentId: referenceNode.parentId, hasChildren: !!((parentNode as any)?.children)});
+    return;
+  }
+
+  // 부모 노드의 자식 배열에서 참조 노드의 인덱스 찾기
+  const parentChildren = (parentNode as any).children;
+  const referenceIndex = parentChildren.findIndex((child: any) => child.id === referenceNodeId);
+  
+  if (referenceIndex === -1) {
+    console.log(`[DEBUG] insertNodeAfterReference: 참조 노드를 부모의 children에서 찾을 수 없음`, {referenceNodeId, parentChildrenIds: parentChildren.map((c: any) => c.id || 'no-id')});
+    return;
+  }
+
+  console.log(`[DEBUG] insertNodeAfterReference: 새 노드 삽입 중`, {
+    referenceNodeId,
+    newNodeId: newNode.id,
+    referenceIndex,
+    parentChildrenCountBefore: parentChildren.length
+  });
+
+  // 참조 노드 바로 뒤에 새 노드 삽입
+  parentChildren.splice(referenceIndex + 1, 0, newNode);
+
+  console.log(`[DEBUG] insertNodeAfterReference: 삽입 완료`, {
+    parentChildrenCountAfter: parentChildren.length,
+    newNodePosition: referenceIndex + 1
+  });
+
+  // 리스트 아이템의 경우 인덱스 재조정
+  if (is(parentNode, "list")) {
+    parentChildren.forEach((child: any, index: number) => {
+      if (is(child, "listItem")) {
+        (child as ListItem & ExtendedNode).listItemIndex = index;
+      }
+    });
+  }
+
+  // 부모 노드 업데이트
+  tree.nodeMap.set(referenceNode.parentId, parentNode);
+
+  // 루트 트리에서도 업데이트
+  updateNodeInRootTree(tree, parentNode);
+  console.log(`[DEBUG] insertNodeAfterReference: 루트 트리 업데이트 완료`);
 }

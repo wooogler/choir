@@ -568,55 +568,97 @@ export async function applyDocumentUpdatesToGithub({
 
   for (const [fileName, fileUpdates] of updatesByFile.entries()) {
     try {
-      const markdownFile = vectorStore.getMarkdownFile(fileName);
-      if (!markdownFile) {
+      let currentMarkdownFile = vectorStore.getMarkdownFile(fileName);
+      if (!currentMarkdownFile) {
         throw new Error(`File not found in vector store: ${fileName}`);
       }
 
-      // 1. Generate the full markdown content to be saved to GitHub
-      // updateDocTreeWithChanges uses the original tree and applies updates to generate new markdown string
-      const updatedMarkdownForGithub = updateDocTreeWithChanges(markdownFile.tree, fileUpdates);
+      // APPEND와 UPDATE 작업을 분리 처리
+      const appendOperations = fileUpdates.filter(update => update.suggestionType === "APPEND");
+      const updateOperations = fileUpdates.filter(update => update.suggestionType !== "APPEND");
+
+      // 1. APPEND 작업 먼저 처리 (벡터 스토어 내의 트리 업데이트)
+      if (appendOperations.length > 0) {
+        for (const appendUpdate of appendOperations) {
+          if (appendUpdate.appendedNodeContent) {
+            const success = await vectorStore.appendSpecificNode(
+              fileName,
+              appendUpdate.nodeId,
+              appendUpdate.appendedNodeContent
+            );
+            if (!success) {
+              throw new Error(`Failed to append node ${appendUpdate.nodeId} in ${fileName}`);
+            }
+          }
+        }
+        // APPEND 작업 후 최신 MarkdownFile 객체를 다시 가져옴
+        currentMarkdownFile = vectorStore.getMarkdownFile(fileName);
+        if (!currentMarkdownFile) {
+          throw new Error(`File not found in vector store after APPEND: ${fileName}`);
+        }
+      }
+
+      // 2. 최종 마크다운 생성
+      let updatedMarkdownForGithub: string;
+      const { treeToMarkdown } = await import("services/document/markdown");
+
+      if (updateOperations.length > 0) {
+        // UPDATE 작업이 있으면, (APPEND가 이미 적용된) 현재 트리에 UPDATE를 적용
+        updatedMarkdownForGithub = updateDocTreeWithChanges(currentMarkdownFile.tree, updateOperations);
+      } else {
+        // APPEND만 있었던 경우, (APPEND가 이미 적용된) 현재 트리를 마크다운으로 변환
+        console.log(`[DEBUG] APPEND 후 트리 상태 (UPDATE 없음):`);
+        console.log(`- 노드 맵 크기: ${currentMarkdownFile.tree.nodeMap.size}`);
+        console.log(`- 새로 추가된 노드들:`, Array.from(currentMarkdownFile.tree.nodeMap.keys()).filter(id => id.includes('_append_')));
+        
+        updatedMarkdownForGithub = treeToMarkdown(currentMarkdownFile.tree);
+        
+        console.log(`[DEBUG] 변환된 마크다운 길이 (UPDATE 없음): ${updatedMarkdownForGithub.length}`);
+        console.log(`[DEBUG] 마크다운 미리보기 (마지막 200자, UPDATE 없음):`);
+        console.log(updatedMarkdownForGithub.slice(-200));
+      }
 
       const allMessages = fileUpdates.flatMap(update => update.messages || []);
       const commitMessage = await createCommitMessage(
         fileName,
         userId,
-        fileUpdates[0].nodeId,
-        fileUpdates[0].knowledgeContent || fileUpdates[0].updatedNodeContent,
+        fileUpdates[0].nodeId, // 커밋 메시지용 대표 nodeId는 그대로 첫 번째 요소 사용
+        fileUpdates[0].knowledgeContent || fileUpdates[0].updatedNodeContent || fileUpdates[0].appendedNodeContent || "Updated content",
         allMessages,
         client
       );
 
       const githubUrl = fileUpdates[0].githubUrl;
-      const parsedUrl = parseGithubUrl(githubUrl); // Use parseGithubUrl
+      const parsedUrl = parseGithubUrl(githubUrl);
       if (!parsedUrl) {
         throw new Error(`Invalid GitHub URL: ${githubUrl}`);
       }
-      const { owner, repo, path: repoPath } = parsedUrl; // repoPath might be different from fileName if file is in a subdirectory
+      const { owner, repo, path: repoPath } = parsedUrl;
 
-      // 2. Update file on GitHub first
+      // 3. GitHub에 최종 업데이트
       await githubService.updateMarkdownFile({
         owner,
         repo,
-        path: markdownFile.path, // Use the correct path from the loaded markdownFile object
+        path: currentMarkdownFile.path, // 최신 파일 경로 사용
         content: updatedMarkdownForGithub,
         message: commitMessage,
       });
+
       console.log(`Successfully updated ${fileName} on GitHub.`);
 
-      // 3. If GitHub update is successful, then update the vector store
-      try {
-        // fileUpdates contains nodeId and the new raw content for that node (updatedNodeContent)
-        const vectorUpdateSuccess = await vectorStore.updateSpecificNodes(fileName, fileUpdates);
-        if (vectorUpdateSuccess) {
-          console.log(`Successfully updated vector store for ${fileName}`);
-        } else {
-          console.warn(`Failed to update vector store for ${fileName}, but GitHub update was successful.`);
-          // Decide if this should be a partial success or count as failure for the file
+      // 4. GitHub 업데이트 성공 후, 최종적으로 벡터 스토어의 문서 내용 및 임베딩 업데이트 (UPDATE 작업에 대해서만)
+      // APPEND는 이미 vectorStore.appendSpecificNode에서 처리됨
+      if (updateOperations.length > 0) {
+        try {
+          const vectorUpdateSuccess = await vectorStore.updateSpecificNodes(fileName, updateOperations);
+          if (vectorUpdateSuccess) {
+            console.log(`Successfully updated vector store for ${fileName} (UPDATE operations).`);
+          } else {
+            console.warn(`Failed to update vector store for ${fileName} (UPDATE operations), but GitHub update was successful.`);
+          }
+        } catch (vectorError) {
+          console.error(`Error updating vector store for ${fileName} (UPDATE operations) after GitHub success:`, vectorError);
         }
-      } catch (vectorError) {
-        console.error(`Error updating vector store for ${fileName} after GitHub success:`, vectorError);
-        // Decide if this should be a partial success or count as failure for the file
       }
 
       successfulUpdates.push(fileName);

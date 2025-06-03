@@ -20,12 +20,32 @@ export const showSuggestionEditorModal = async ({
 
     // 버튼의 value에서 필요한 정보 파싱
     const actionValue = JSON.parse(value);
-    const { nodeContent, updatedNodeContent } = actionValue;
+    const suggestionType = actionValue.suggestionType || "UPDATE";
+
+    let nodeContent = "";
+    let editableContent = "";
+    let modalTitle = "Edit Update Suggestion";
+    let originalLabel = "*Original Content:*";
+    let editableLabel = "Updated Content";
+
+    if (suggestionType === "APPEND") {
+      // APPEND의 경우 originalLastNodeContent와 appendedNodeContent 사용
+      nodeContent = actionValue.originalLastNodeContent || "";
+      editableContent = actionValue.appendedNodeContent || "";
+      modalTitle = "Edit Append Content";
+      originalLabel = "*Reference content (will be followed by):*";
+      editableLabel = "New content to add after it";
+    } else {
+      // UPDATE의 경우 기존 방식 유지
+      nodeContent = actionValue.nodeContent || "";
+      editableContent = actionValue.updatedNodeContent || "";
+    }
 
     // 필수 값 확인
-    if (!nodeContent || !updatedNodeContent) {
+    if (!nodeContent || !editableContent) {
       console.log("nodeContent", nodeContent);
-      console.log("updatedNodeContent", updatedNodeContent);
+      console.log("editableContent", editableContent);
+      console.log("suggestionType", suggestionType);
       throw new Error("필수 콘텐츠 값이 누락되었습니다");
     }
 
@@ -39,20 +59,22 @@ export const showSuggestionEditorModal = async ({
           messageTs: body.message?.ts,
           channelId: body.channel?.id,
           nodeContent,
+          editableContent,
+          suggestionType,
           index: actionValue.index,
           fileName: actionValue.fileName,
           nodeId: actionValue.nodeId
         }),
         title: {
           type: "plain_text",
-          text: "Edit Update Suggestion",
+          text: modalTitle,
         },
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: "*Original Content:*",
+              text: originalLabel,
             },
           },
           {
@@ -67,13 +89,13 @@ export const showSuggestionEditorModal = async ({
             block_id: "updated_content_block",
             label: {
               type: "plain_text",
-              text: "Updated Content",
+              text: editableLabel,
             },
             element: {
               type: "plain_text_input",
               action_id: "updated_content_input",
               multiline: true,
-              initial_value: updatedNodeContent,
+              initial_value: editableContent,
             },
           }
         ],

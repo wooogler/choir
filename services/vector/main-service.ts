@@ -1166,4 +1166,118 @@ export class VectorStoreService {
       return false;
     }
   }
+
+  /**
+   * 특정 노드 뒤에 새로운 노드를 추가 (APPEND 기능)
+   */
+  public async appendSpecificNode(fileName: string, referenceNodeId: string, appendedContent: string): Promise<boolean> {
+    try {
+      console.info(`Appending new node after ${referenceNodeId} for file: ${fileName}`);
+
+      if (!this.isInitialized || !this.store || !this.documents) {
+        console.error("Vector store not initialized");
+        return false;
+      }
+
+      const fileIndex = this.markdownFiles.findIndex(file => file.name === fileName);
+      if (fileIndex === -1) {
+        console.error(`File not found in markdown files: ${fileName}`);
+        return false;
+      }
+
+      const markdownFile = this.markdownFiles[fileIndex];
+      let updatedTree = markdownFile.tree;
+
+      // 새로운 노드 추가
+      const { appendNodeContent } = await import("services/document/markdown");
+      updatedTree = appendNodeContent(updatedTree, referenceNodeId, appendedContent);
+      console.info(`Appended new node after ${referenceNodeId} in tree`);
+
+      // 새로운 노드의 메타데이터 생성
+      const referenceNode = updatedTree.nodeMap.get(referenceNodeId);
+      if (!referenceNode) {
+        console.error(`Reference node ${referenceNodeId} not found`);
+        return false;
+      }
+
+      // 새로 추가된 노드들을 찾아서 documents 배열에 추가
+      let documentsChanged = false;
+      const existingNodeIds = new Set(this.documents
+        .filter(doc => doc.metadata?.fileName === fileName)
+        .map(doc => doc.metadata?.nodeId)
+        .filter(Boolean));
+
+      for (const [nodeId, node] of updatedTree.nodeMap) {
+        if (!existingNodeIds.has(nodeId) && nodeId.includes('_append_')) {
+          // 새로 추가된 APPEND 노드
+          const extNode = node as any; // ExtendedNode type
+          
+          const metadata: DocumentMetadata = {
+            fileName: fileName,
+            githubUrl: markdownFile.githubUrl,
+            sectionName: extNode.sectionId ? 
+              "Section" : "", // 간단하게 처리
+            headingPath: [], // TODO: 적절한 headingPath 설정
+            nodeId: nodeId,
+            originalContent: appendedContent
+          };
+
+          const contextPrefix = formatHeadingContext(metadata.headingPath || [], fileName);
+          const newDocument = new Document({
+            pageContent: contextPrefix + appendedContent,
+            metadata
+          });
+
+          this.documents.push(newDocument);
+          documentsChanged = true;
+          console.info(`Added new document for appended node: ${nodeId}`);
+        }
+      }
+
+      // 마크다운 파일 업데이트
+      this.markdownFiles[fileIndex] = {
+        ...markdownFile,
+        tree: updatedTree
+      };
+
+      // 벡터 스토어 재구축
+      if (documentsChanged) {
+        console.info("Rebuilding vector store with new appended content...");
+        const embeddings = await this.embeddingService.createEmbeddings(
+          this.documents.map(doc => doc.pageContent)
+        );
+
+        this.store = await MemoryVectorStore.fromDocuments(this.documents, this.embeddingService.getEmbeddingAPI());
+        console.info("Vector store rebuilt successfully with appended content.");
+
+        // 캐시 업데이트
+        try {
+          const documentTrees = new Map<string, DocumentTree>();
+          this.markdownFiles.forEach((file) => {
+            if (file.tree) {
+              documentTrees.set(file.name, file.tree);
+            }
+          });
+
+          await this.cacheManager.saveEmbeddingsCache({
+            documents: this.documents,
+            embeddings,
+            contentHash: await this.cacheManager.generateContentHash(this.markdownFiles),
+            timestamp: Date.now(),
+            documentTrees,
+          });
+          console.info("Successfully updated cache with appended content.");
+        } catch (cacheError) {
+          console.error("Failed to update cache after append:", cacheError);
+        }
+      }
+
+      console.info(`Successfully appended new node after ${referenceNodeId} for ${fileName}`);
+      return true;
+
+    } catch (error) {
+      console.error("Error appending node:", error);
+      return false;
+    }
+  }
 }

@@ -163,9 +163,23 @@ export const suggestUpdatesCallback = async ({
     if (sessionId) {
       try {
         const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
-        if (sessionData?.sourceMessages) {
+        console.log(`[DEBUG] Session data found:`, {
+          sessionId,
+          hasSourceMessages: !!(sessionData?.sourceMessages),
+          sourceMessagesLength: sessionData?.sourceMessages?.length || 0,
+          hasMessages: !!(sessionData?.messages),
+          messagesLength: sessionData?.messages?.length || 0
+        });
+        
+        if (sessionData?.sourceMessages && sessionData.sourceMessages.length > 0) {
           sourceMessages = sessionData.sourceMessages;
+          console.log(`[DEBUG] Using session sourceMessages:`, sourceMessages.length);
+        } else if (sessionData?.messages && sessionData.messages.length > 0) {
+          // sourceMessages가 없으면 일반 messages를 fallback으로 사용
+          sourceMessages = sessionData.messages;
+          console.log(`[DEBUG] Using session messages as fallback:`, sourceMessages.length);
         }
+        
         if (!knowledgeSourceChannelId && sessionData?.originalChannelId) knowledgeSourceChannelId = sessionData.originalChannelId;
         if (!knowledgeSourceThreadTs && sessionData?.originalThreadTs) knowledgeSourceThreadTs = sessionData.originalThreadTs;
 
@@ -173,8 +187,36 @@ export const suggestUpdatesCallback = async ({
         console.warn("Failed to get sourceMessages from sessionData:", error);
       }
     }
+    
     if (sourceMessages.length === 0 && parsedValue.sourceMessages) {
       sourceMessages = parsedValue.sourceMessages;
+      console.log(`[DEBUG] Using parsedValue sourceMessages:`, sourceMessages.length);
+    }
+
+    let validMessages: SlackMessage[];
+    if (sourceMessages.length > 0) {
+      // 실제 source messages가 있는 경우
+      validMessages = sourceMessages;
+      console.log(`[DEBUG] Using actual source messages:`, validMessages.map(m => `${m.username}(${m.userId}): ${m.text.substring(0, 50)}...`));
+    } else {
+      // source messages가 없는 경우: 실제 userId와 username 사용
+      console.warn(`[DEBUG] No source messages found, creating fallback message with actual userId: ${userId}`);
+      
+      // 실제 사용자 이름 가져오기
+      let actualUsername = "User";
+      try {
+        const userInfo = await client.users.info({ user: userId });
+        actualUsername = userInfo.user?.real_name || userInfo.user?.name || "User";
+      } catch (error) {
+        console.warn("Failed to get username for fallback message:", error);
+      }
+      
+      validMessages = [{
+        userId: userId, // ✅ 실제 사용자 ID 사용
+        username: actualUsername, // ✅ 실제 사용자 이름 사용
+        text: `Knowledge extracted: ${knowledgeContent}`, // ✅ knowledge가 추출된 것임을 명시
+        ts: Date.now().toString()
+      }];
     }
 
     if (typeof parsedValue.index === 'number') { 
@@ -275,15 +317,6 @@ export const suggestUpdatesCallback = async ({
       });
       return;
     }
-
-    const validMessages: SlackMessage[] = sourceMessages.length > 0 
-      ? sourceMessages 
-      : [{
-          userId: "knowledge_extraction",
-          username: "Knowledge Extraction",
-          text: knowledgeContent,
-          ts: Date.now().toString()
-        }];
 
     if (isFirstSuggestion) {
         const progressMessage = await client.chat.postMessage({
@@ -520,7 +553,7 @@ export const suggestUpdatesCallback = async ({
     const actionButtons = [
         { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: "Edit", emoji: true }, action_id: "edit_update", value: JSON.stringify(editButtonValue) },
         { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: processedDoc.suggestionType === "APPEND" ? "Append to Document" : "Update Document", emoji: true }, style: "primary" as "primary", action_id: "suggest_updates", value: JSON.stringify(updateButtonValue) },
-        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: "Skip / Reject", emoji: true }, style: "danger" as "danger", action_id: "cancel_document_updates", value: JSON.stringify(cancelButtonValue) }
+        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: "Cancel", emoji: true }, style: "danger" as "danger", action_id: "cancel_document_updates", value: JSON.stringify(cancelButtonValue) }
     ];
 
     blocks.push(

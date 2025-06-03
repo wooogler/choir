@@ -75,10 +75,11 @@ export async function editMarkdownWithKnowledge(
 Key rules:
 1. Update information: Directly modify existing content when needed and only add important new information
 2. Keep it concise: Make minimal edits while maintaining the document's original style and tone
-3. When knowledge contradicts existing content, replace the existing content with new information
-4. Never include user identifiers or names
-5. Return only the edited markdown without explanations or tags
-6. Focus on incorporating the knowledge into the most relevant section of the document`,
+3. When knowledge contradicts existing content, completely replace the conflicting content with the new information (do not keep both)
+4. If the knowledge is already covered or adds no new value, return the original document unchanged (do not add redundant content)
+5. Never include user identifiers or names
+6. Return only the edited markdown without explanations or tags
+7. Focus on incorporating the knowledge into the most relevant section of the document`,
       },
       {
         role: "user",
