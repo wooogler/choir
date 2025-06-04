@@ -203,7 +203,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     });
 
     // 응답 메시지가 완전히 전송된 후 약간의 지연을 두고 공유 버튼을 전송
-    await new Promise(resolve => setTimeout(resolve, 500)); // 500ms 지연
+    await new Promise(resolve => setTimeout(resolve, 1000)); // 1초 지연
     
     // 공유 버튼 요소들 생성
     const actionElements = [];

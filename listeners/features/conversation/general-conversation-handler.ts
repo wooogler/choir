@@ -27,7 +27,6 @@ export async function handleGeneralConversationMessage(
 
     await client.chat.postMessage({
       channel: event.channel,
-      ...(event.channel_type !== 'im' ? { thread_ts: event.ts } : {}),
       text: replyText,
       blocks: [
         {

@@ -10,10 +10,9 @@ import { isManager, getWorkspaceId } from "services/slack";
  */
 export async function handleIncomingMessage(client: any, event: any, message: string, logger: any) {
   try {
-    // CHOIR 페르소나를 반영한 로딩 메시지 전송
+    // CHOIR 페르소나를 반영한 로딩 메시지 전송 (채널에 표시)
     const loadingMessage = await client.chat.postMessage({
       channel: event.channel,
-      ...(event.channel_type !== "im" ? { thread_ts: event.ts } : {}),
       text: "🤔 Let me think about how I can best help you with that..."
     });
 
