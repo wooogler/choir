@@ -99,11 +99,11 @@ ${knowledgeContent}
   return responseContent?.replace(/<\/?markdown>/g, '') ?? markdown;
 }
 
-export async function classifyMessageIntent(message: string): Promise<"question" | "update_request"> {
+export async function classifyMessageIntent(message: string): Promise<"question" | "update_request" | "general_conversation"> {
   const result = await createChatCompletion([
       {
         role: "system",
-        content: "Classify the user message as either a 'question' (asking for information) or 'update_request' (asking to save/store information). Respond with only 'question' or 'update_request'."
+        content: "Classify the user message as 'question' (asking for information), 'update_request' (containing new knowledge, information, or facts that could be documented, or explicitly asking to save/store information), or 'general_conversation' (a general statement, greeting, or chit-chat without substantial new information). \n\nUpdate_request includes: direct requests to save information, suggestions for document changes, AND statements containing new knowledge, facts, decisions, tools being used, processes, or any information that could be valuable for documentation.\n\nExamples of update_request:\n- 'I will use Microsoft Teams for online meeting'\n- 'We decided to switch to React for the frontend'\n- 'The API endpoint is now https://api.example.com'\n- 'Please save this information'\n- 'This document needs to be updated'\n\nRespond with only 'question', 'update_request', or 'general_conversation'."
       },
       {
         role: "user",
@@ -111,9 +111,16 @@ export async function classifyMessageIntent(message: string): Promise<"question"
       }
   ], {
     temperature: 0.1,
-    max_tokens: 10,
+    max_tokens: 15,
     function_name: "classifyMessageIntent",
   });
 
-  return result?.trim().toLowerCase() === "update_request" ? "update_request" : "question";
+  const classification = result?.trim().toLowerCase();
+  if (classification === "update_request") {
+    return "update_request";
+  } else if (classification === "question") {
+    return "question";
+  } else {
+    return "general_conversation";
+  }
 } 

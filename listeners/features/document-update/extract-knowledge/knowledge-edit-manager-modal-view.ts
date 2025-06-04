@@ -27,7 +27,7 @@ export async function handleKnowledgeEditManagerModal({
       throw new Error("No session ID found in modal metadata for manager edit");
     }
 
-    const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+    const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       await client.chat.postMessage({
         channel: userId,
@@ -50,7 +50,7 @@ export async function handleKnowledgeEditManagerModal({
     sessionData.extractedKnowledge = editedKnowledge.trim();
     sessionData.lastEditedBy = userId; // Mark manager as last editor
     sessionData.lastEditedAt = new Date().toISOString();
-    storeSessionData(sessionId, sessionData, SessionType.CONSULTATION);
+    storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
 
     logger.info(`Knowledge for session ${sessionId} edited by manager ${userId}`);
 

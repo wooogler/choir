@@ -38,7 +38,7 @@ export const askToChannelModalCallback = async ({
     }
 
     // 세션 데이터 가져오기 (preview용)
-    const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+    const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       await client.chat.postEphemeral({
         channel: body.channel?.id || "",

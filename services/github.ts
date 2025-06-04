@@ -649,14 +649,14 @@ export async function applyDocumentUpdatesToGithub({
       // 4. GitHub 업데이트 성공 후, 최종적으로 벡터 스토어의 문서 내용 및 임베딩 업데이트 (UPDATE 작업에 대해서만)
       // APPEND는 이미 vectorStore.appendSpecificNode에서 처리됨
       if (updateOperations.length > 0) {
-        try {
+      try {
           const vectorUpdateSuccess = await vectorStore.updateSpecificNodes(fileName, updateOperations);
-          if (vectorUpdateSuccess) {
+        if (vectorUpdateSuccess) {
             console.log(`Successfully updated vector store for ${fileName} (UPDATE operations).`);
-          } else {
+        } else {
             console.warn(`Failed to update vector store for ${fileName} (UPDATE operations), but GitHub update was successful.`);
-          }
-        } catch (vectorError) {
+        }
+      } catch (vectorError) {
           console.error(`Error updating vector store for ${fileName} (UPDATE operations) after GitHub success:`, vectorError);
         }
       }

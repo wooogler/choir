@@ -7,14 +7,14 @@
 
 // 세션 타입 열거형
 export enum SessionType {
-  DISCUSSION = "discussion",
-  CONSULTATION = "consultation",
+  DOCUMENT_UPDATE = "document_update",     // 문서 업데이트/지식 추출 세션
+  NEW_SECTION = "new_section"              // 새 섹션 생성 세션
 }
 
 // 세션 타입별 데이터를 저장할 Map (메모리 기반 저장소)
 const sessionStores = {
-  [SessionType.DISCUSSION]: new Map<string, any>(),
-  [SessionType.CONSULTATION]: new Map<string, any>(),
+  [SessionType.DOCUMENT_UPDATE]: new Map<string, any>(),
+  [SessionType.NEW_SECTION]: new Map<string, any>()
 };
 
 /**
@@ -27,7 +27,7 @@ const sessionStores = {
 export function storeSessionData(
   sessionId: string,
   data: any,
-  sessionType: SessionType = SessionType.DISCUSSION,
+  sessionType: SessionType = SessionType.DOCUMENT_UPDATE,
   expirationMs: number = 30 * 60 * 1000
 ): void {
   const sessionStore = sessionStores[sessionType];
@@ -64,7 +64,7 @@ export function storeSessionData(
  */
 export function getSessionData(
   sessionId: string,
-  sessionType: SessionType = SessionType.DISCUSSION
+  sessionType: SessionType = SessionType.DOCUMENT_UPDATE
 ): any {
   const sessionStore = sessionStores[sessionType];
   const session = sessionStore.get(sessionId);
@@ -87,7 +87,7 @@ export function getSessionData(
  */
 export function removeSessionData(
   sessionId: string,
-  sessionType: SessionType = SessionType.DISCUSSION
+  sessionType: SessionType = SessionType.DOCUMENT_UPDATE
 ): boolean {
   const sessionStore = sessionStores[sessionType];
   const session = sessionStore.get(sessionId);

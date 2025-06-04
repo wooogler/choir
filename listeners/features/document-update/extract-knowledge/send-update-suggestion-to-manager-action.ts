@@ -1,14 +1,14 @@
 import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
 import { getSessionData, SessionType, storeSessionData } from "../../../../services/common";
-import { getManagers, getWorkspaceId, getChannelName } from "../../../../services/slack";
+import { getManagers, getWorkspaceId, getChannelName, getUserName } from "../../../../services/slack";
 import { createMessageLink } from "../suggestions/suggest-updates";
 import { WebClient } from "@slack/web-api";
 import { Logger } from "@slack/bolt";
 
 /**
- * Handle "Pass Knowledge to Manager" button click
+ * Handle "Pass Suggestion to Manager" button click
  */
-export const passKnowledgeToManagerCallback = async ({
+export const sendUpdateSuggestionToManagerCallback = async ({
   ack,
   body,
   client,
@@ -22,16 +22,16 @@ export const passKnowledgeToManagerCallback = async ({
     if (!sessionId) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ Invalid session. Please try the knowledge extraction again.",
+        text: "❌ Invalid session. Please try submitting your suggestion again.",
       });
       return;
     }
 
-    const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+    const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ Session data not found. Please try the knowledge extraction again.",
+        text: "❌ Session data not found. Please try submitting your suggestion again.",
       });
       return;
     }
@@ -48,14 +48,19 @@ export const passKnowledgeToManagerCallback = async ({
     }
 
     const userInfo = await client.users.info({ user: body.user.id });
-    const userName = userInfo.user?.profile?.display_name || userInfo.user?.real_name || userInfo.user?.name || "Unknown User";
+    // Ensure userName is fetched correctly, fallback to a generic term if needed.
+    const userName = userInfo.user?.profile?.display_name || userInfo.user?.real_name || userInfo.user?.name || "A team member";
 
     sessionData.userId = body.user.id;
-    sessionData.userName = userName;
+    sessionData.userName = userName; // 세션 데이터에도 사용자 이름 저장 (취소 등 다른 액션에서 사용 가능)
 
     if (!sessionData.managerMessageInfo) {
       sessionData.managerMessageInfo = {};
     }
+
+    // CHOIR의 메시지 템플릿
+    const choirGreeting = `Hi there! I'm CHOIR, your friendly documentation assistant. 👋\n\n*${userName}* has a suggestion for updating our documents, and I'm helping to pass it along for review.`;
+    const choirCallToAction = `Could you please take a look and decide on the next steps? You can edit the suggested content or start the update process directly from here.`;
 
     for (const managerId of managers) {
       try {
@@ -88,6 +93,13 @@ export const passKnowledgeToManagerCallback = async ({
 
         const blocks: any[] = [
           {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: choirGreeting
+            }
+          },
+          {
             type: "header",
             text: {
               type: "plain_text",
@@ -99,14 +111,14 @@ export const passKnowledgeToManagerCallback = async ({
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `*From:* <@${body.user.id}> (${userName})`
+              text: `*From:* *${userName}*`
             }
           },
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `*Content:*\n\`\`\`${sessionData.extractedKnowledge}\`\`\``
+              text: `*Suggestion:*\n\`\`\`${sessionData.extractedKnowledge}\`\`\``
             }
           }
         ];
@@ -115,14 +127,22 @@ export const passKnowledgeToManagerCallback = async ({
           blocks.push(originalMessageLinkBlock);
         }
         
-        blocks.push({
+        blocks.push(
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: choirCallToAction
+            }
+          },
+          {
           type: "actions",
           elements: [
             {
               type: "button" as "button",
               text: {
                 type: "plain_text" as "plain_text",
-                text: "Edit Knowledge",
+                text: "✏️ Edit Suggestion",
                 emoji: true
               },
               action_id: "open_knowledge_edit_manager_modal",
@@ -132,7 +152,7 @@ export const passKnowledgeToManagerCallback = async ({
               type: "button" as "button",
               text: {
                 type: "plain_text" as "plain_text",
-                text: "Start Document Update",
+                text: "🚀 Start Update Process",
                 emoji: true
               },
               style: "primary" as "primary",
@@ -148,11 +168,11 @@ export const passKnowledgeToManagerCallback = async ({
               type: "button" as "button",
               text: {
                 type: "plain_text" as "plain_text",
-                text: "Dismiss",
-                emoji: true
+                text: "Dismiss", 
+                emoji: false
               },
               style: "danger" as "danger",
-              action_id: "cancel_knowledge_extraction", 
+              action_id: "cancel_knowledge_extraction",
               value: sessionId
             }
           ]
@@ -160,7 +180,7 @@ export const passKnowledgeToManagerCallback = async ({
 
         const postedMessage = await client.chat.postMessage({
           channel: managerId,
-          text: `📝 Knowledge passed from ${userName} for document update review.`,
+          text: `📝 New document update suggestion from *${userName}* for your review.`,
           blocks: blocks,
           unfurl_links: false,
           unfurl_media: false,
@@ -173,34 +193,53 @@ export const passKnowledgeToManagerCallback = async ({
           };
         }
       } catch (error) {
-        logger.error(`Failed to send knowledge to manager ${managerId}:`, error);
+        logger.error(`Failed to send suggestion to manager ${managerId}:`, error);
       }
     }
 
-    storeSessionData(sessionId, sessionData, SessionType.CONSULTATION);
+    storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
 
-    await client.chat.postMessage({
-      channel: body.user.id,
-      text: `✅ Knowledge has been passed to ${managers.length} manager(s) for review.`,
-      blocks: [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `✅ Knowledge has been passed to ${managers.length} manager(s) for review.\\n\\nThey will be able to apply the knowledge to update documents or provide feedback.`
+    // 원래 채널에 알림 메시지 전송
+    if (sessionData.originalChannelId) {
+      const originalChannelName = await getChannelName(sessionData.originalChannelId, client);
+      
+      // 매니저 이름 목록을 볼드체로 변환
+      const managerNames = await Promise.all(managers.map(id => getUserName(id, client)));
+      const managerNamesBold = managerNames.map(name => `*${name}*`).join(", ");
+
+      await client.chat.postMessage({
+        channel: sessionData.originalChannelId,
+        text: `✅ Great news, *${userName}*! Your document update suggestion has been successfully sent to our manager(s): ${managerNamesBold}. They'll review it soon! (Sent from channel: #${originalChannelName})`,
+        thread_ts: sessionData.originalThreadTs,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `✅ Great news, *${userName}*! Your document update suggestion has been successfully sent to our manager(s): ${managerNamesBold}. They'll review it soon!
+
+I'll let you know if they have any questions or when the document is updated. Thanks for helping keep our docs accurate! 👍`
+            }
           }
-        }
-      ]
-    });
+        ],
+        unfurl_links: false,
+        unfurl_media: false,
+      });
+    } else {
+      await client.chat.postMessage({
+        channel: body.user.id,
+        text: `✅ Your update suggestion has been passed to ${managers.length} manager(s) for review. They will be able to apply the suggestion to update documents or provide feedback.`
+      });
+    }
 
-    logger.info(`Knowledge passed to managers by user ${body.user.id} for session ${sessionId}`);
+    logger.info(`Update suggestion passed to managers by *${userName}* (ID: ${body.user.id}) for session ${sessionId}`);
 
   } catch (error) {
-    logger.error("Error passing knowledge to managers:", error);
+    logger.error("Error passing update suggestion to managers:", error);
     
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ Failed to pass knowledge to managers: ${error instanceof Error ? error.message : "Unknown error"}`,
+      text: `❌ Failed to pass your update suggestion to managers: ${error instanceof Error ? error.message : "Unknown error"}`,
     });
   }
 }; 

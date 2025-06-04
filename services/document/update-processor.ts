@@ -2,7 +2,7 @@ import { Document } from "@langchain/core/documents";
 import { WebClient } from "@slack/web-api";
 import { DocumentMetadata } from "services/vector/types";
 import { editMarkdownWithKnowledge } from "services/llm/document-editor";
-import { createNewContentFromKnowledge } from "services/llm/content-generator";
+import { createNewContentFromKnowledge, createNewSectionFromKnowledge, NewSectionSuggestion } from "services/llm/content-generator";
 import { convertMarkdownToSlackText } from "./markdown";
 import { createDiffBlock } from "services/slack";
 import { SlackMessage } from "services/slack";
@@ -29,6 +29,7 @@ export interface ProcessedDocument {
   suggestionType: "UPDATE" | "APPEND"; // 제안 유형
   originalLastNodeContent?: string; // APPEND 시 원본 마지막 노드 내용 (마크다운)
   appendedNodeContent?: string; // APPEND 시 새로 생성된 노드 내용 (마크다운)
+  newSectionSuggestion?: NewSectionSuggestion; // APPEND 시 새 섹션 제안
 }
 
 /**
@@ -118,7 +119,16 @@ export async function processDocument(
       finalUpdatedNodeContentForUpdate = llmEditedContent;
       const oldSlackText = await convertMarkdownToSlackText(nodeContent);
       const newSlackText = await convertMarkdownToSlackText(finalUpdatedNodeContentForUpdate);
-      diffBlock = createDiffBlock(oldSlackText, newSlackText);
+      
+      // 변경 사항이 없을 때는 현재 내용과 함께 "변경 없음" 메시지 표시
+      diffBlock = {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Current Content (No Changes Required):*\n\`\`\`${oldSlackText.substring(0, Math.min(oldSlackText.length, 800))}\`\`\`\n\n_This section is already up-to-date with the provided knowledge._`
+        }
+      };
+      
       hasChanges = false; // 실질적 변경 없음
       oldSlackTextForComparison = oldSlackText;
       newSlackTextForComparison = newSlackText;
@@ -154,7 +164,7 @@ export async function processDocument(
       // 4. 그 외의 경우는 UPDATE
       suggestionType = "UPDATE";
       finalUpdatedNodeContentForUpdate = llmEditedContent;
-      const oldSlackText = await convertMarkdownToSlackText(nodeContent);
+    const oldSlackText = await convertMarkdownToSlackText(nodeContent);
       const newSlackText = await convertMarkdownToSlackText(finalUpdatedNodeContentForUpdate || nodeContent);
       diffBlock = createDiffBlock(oldSlackText, newSlackText);
       hasChanges = oldSlackText !== newSlackText;
@@ -198,6 +208,16 @@ export async function processDocument(
     if (suggestionType === "APPEND") {
       result.originalLastNodeContent = nodeContent;
       result.appendedNodeContent = appendedText;
+      
+      // 새 섹션 제안 생성을 위해 모든 마크다운 파일 목록 가져오기
+      const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
+      const availableFiles = allMarkdownFiles.map(file => ({
+        fileName: file.name,
+        githubUrl: file.githubUrl,
+        description: `${file.name} - Documentation file`
+      }));
+      
+      result.newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
     }
 
     // --- 로깅 추가 --- 

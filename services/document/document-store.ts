@@ -113,8 +113,8 @@ export const updateDocumentContent = (
     update.newContent = newContent; // newContent 필드도 함께 업데이트
   } else {
     // UPDATE의 경우 기존 방식 유지
-    update.updatedNodeContent = newContent;
-    update.newContent = newContent; // newContent 필드도 함께 업데이트
+  update.updatedNodeContent = newContent;
+  update.newContent = newContent; // newContent 필드도 함께 업데이트
   }
   
   console.log("=== Document Store Update ===");

@@ -385,6 +385,14 @@ export class VectorStoreService {
 
       // 웹 콘텐츠로 문서 향상
       try {
+        // 개발 환경에서는 웹 콘텐츠 로딩 건너뛰기
+        const isWebContentEnabled = process.env.ENABLE_WEB_CONTENT !== 'false' && process.env.NODE_ENV !== 'development';
+        
+        if (!isWebContentEnabled) {
+          console.info(`Skipping web content enhancement (NODE_ENV: ${process.env.NODE_ENV}, ENABLE_WEB_CONTENT: ${process.env.ENABLE_WEB_CONTENT})`);
+          return allDocuments;
+        }
+
         console.info("Starting document enhancement with web content...");
         const enhancer = DocumentEnhancer.getInstance();
         
@@ -806,6 +814,13 @@ export class VectorStoreService {
    */
   public getMarkdownFile(fileName: string): MarkdownFile | undefined {
     return this.markdownFiles.find((file) => file.name === fileName);
+  }
+
+  /**
+   * 모든 마크다운 파일 가져오기
+   */
+  public getAllMarkdownFiles(): MarkdownFile[] {
+    return this.markdownFiles;
   }
 
   /**

@@ -25,7 +25,7 @@ export async function handleKnowledgeEditModal({
     }
 
     // Get session data
-    const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+    const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       await client.chat.postMessage({
         channel: body.user.id,
@@ -52,7 +52,7 @@ export async function handleKnowledgeEditModal({
     sessionData.lastEditedAt = new Date().toISOString();
     
     // Store updated session data
-    storeSessionData(sessionId, sessionData, SessionType.CONSULTATION);
+    storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
 
     // Update the original preview message in the channel/thread
     try {

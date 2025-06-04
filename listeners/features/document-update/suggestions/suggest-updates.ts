@@ -14,7 +14,7 @@ import {
   storeSearchResults,
   clearSearchResults
 } from "services/document/document-store";
-import { SlackMessage, getWorkspaceId, getManagers } from "services/slack";
+import { SlackMessage, getWorkspaceId, getManagers, getUserName } from "services/slack";
 import { checkVectorStoreHealth } from "services/vector/health-check";
 import { VectorStoreService } from "services/vector/main-service";
 import { DocumentMetadata } from "services/vector/types";
@@ -142,7 +142,7 @@ export const suggestUpdatesCallback = async ({
 
     if (parsedValue.action === "keep") {
       if (sessionId) {
-        const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+        const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
         if (sessionData?.extractedKnowledge) {
           knowledgeContent = sessionData.extractedKnowledge;
         } else {
@@ -162,7 +162,7 @@ export const suggestUpdatesCallback = async ({
 
     if (sessionId) {
       try {
-        const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+        const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
         console.log(`[DEBUG] Session data found:`, {
           sessionId,
           hasSourceMessages: !!(sessionData?.sourceMessages),
@@ -271,21 +271,39 @@ export const suggestUpdatesCallback = async ({
                 githubUrl: currentUpdate.githubUrl
               } as any);
 
-              if (currentUpdate.suggestionType === "APPEND") {
-                notificationText = `✅ New Content Appended: ${currentUpdate.fileName}`;
-                blocks.push(
-                  { type: "section", text: { type: "mrkdwn", text: `✅ *New Content Appended to Document*\n*File:* <${currentUpdate.githubUrl}|${currentUpdate.fileName}>\n*Section:* ${sectionInfo}` } }
-                );
-              } else {
-                notificationText = `✅ Document Updated: ${currentUpdate.fileName}`;
-                blocks.push(
-                  { type: "section", text: { type: "mrkdwn", text: `✅ *Document Updated*\n*File:* <${currentUpdate.githubUrl}|${currentUpdate.fileName}>\n*Section:* ${sectionInfo}` } }
-                );
+              // 업데이트한 사람 정보
+              let updatedBy = "User";
+              if (currentUpdate.messages && currentUpdate.messages.length > 0) {
+                const lastMessage = currentUpdate.messages[currentUpdate.messages.length - 1];
+                updatedBy = lastMessage.username;
               }
 
-              blocks.push(
-                { type: "section", text: { type: "mrkdwn", text: notificationText } }
-              );
+              if (currentUpdate.suggestionType === "APPEND") {
+                notificationText = `✅ New Content Appended by ${updatedBy}: <${currentUpdate.githubUrl}|${currentUpdate.fileName}> - ${sectionInfo}`;
+                blocks.push(
+                  { type: "section", text: { type: "mrkdwn", text: notificationText } }
+                );
+                
+                // APPEND의 경우 새로 추가된 내용만 표시
+                blocks.push(
+                  { type: "section", text: { type: "mrkdwn", text: `*New Content:*\n\`\`\`${currentUpdate.appendedNodeContent}\`\`\`` } }
+                );
+              } else {
+                notificationText = `✅ Document Updated by ${updatedBy}: <${currentUpdate.githubUrl}|${currentUpdate.fileName}> - ${sectionInfo}`;
+                blocks.push(
+                  { type: "section", text: { type: "mrkdwn", text: notificationText } }
+                );
+                
+                // UPDATE의 경우 diffblock 사용
+                if (currentUpdate.diffBlock) {
+                  blocks.push(currentUpdate.diffBlock);
+                } else {
+                  // fallback으로 업데이트된 내용만 표시
+                  blocks.push(
+                    { type: "section", text: { type: "mrkdwn", text: `*Updated Content:*\n\`\`\`${currentUpdate.updatedNodeContent}\`\`\`` } }
+                  );
+                }
+              }
 
               await client.chat.postMessage({
                 channel: currentUpdate.originalChannelId!,
@@ -359,7 +377,9 @@ export const suggestUpdatesCallback = async ({
     if (currentIndex >= searchResults.length) {
       await client.chat.postMessage({
         channel: currentDmChannelId,
-        text: "No more documents to update.",
+        text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
+        unfurl_links: false,
+        unfurl_media: false
       });
       return;
     }
@@ -367,37 +387,26 @@ export const suggestUpdatesCallback = async ({
     const currentDoc = searchResults[currentIndex];
     const processedDoc: ProcessedDocument | null = await processDocument(currentDoc, knowledgeContent, validMessages, client, vectorStore);
 
-    if (!processedDoc || !processedDoc.hasChanges) {
-      const progressTs = getProgressMessageTimestamp(userId);
-      if (progressTs) {
-        try {
-          await client.chat.delete({
-            channel: currentDmChannelId,
-            ts: progressTs
-          });
-          deleteProgressMessageTimestamp(userId);
-        } catch (deleteError) {
-          console.error("진행 중 메시지 삭제 실패:", deleteError);
-        }
+    // 진행 메시지 삭제 (공통 로직)
+    const progressTimestamp = getProgressMessageTimestamp(userId);
+    if (progressTimestamp) {
+      try {
+        await client.chat.delete({
+          channel: currentDmChannelId,
+          ts: progressTimestamp
+        });
+        deleteProgressMessageTimestamp(userId);
+      } catch (deleteError) {
+        console.error("진행 중 메시지 삭제 실패:", deleteError);
       }
-      
-      await suggestUpdatesCallback({
-        ack: async () => {},
-        body: {
-          ...body,
-          actions: [{
-            value: JSON.stringify({
-              index: currentIndex + 1,
-              originalChannelId: knowledgeSourceChannelId,
-              originalThreadTs: knowledgeSourceThreadTs,
-              ...(parsedValue.action !== "keep" && { knowledgeContent: knowledgeContent }),
-              sessionId: sessionId
-            })
-          }]
-        },
-        client,
-        logger
-      } as any);
+    }
+
+    // processedDoc이 null이거나 변경사항이 없어도 사용자에게 표시 (자동 스킵 방지)
+    if (!processedDoc) {
+      await client.chat.postMessage({
+        channel: currentDmChannelId,
+        text: "❌ Error processing document. Skipping to next.",
+      });
       return;
     }
 
@@ -439,66 +448,88 @@ export const suggestUpdatesCallback = async ({
     const blocks: (KnownBlock | Block)[] = [];
 
     if (isFirstSuggestion) {
-      let headerText = "Document Update";
-      if (sessionId) {
-        const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
-        if (sessionData && sessionData.userName) {
-          headerText = `Document Update from ${sessionData.userName}`;
-        } else if (sessionData && sessionData.userId) {
-          // Fallback to userId if userName is not available for some reason
-          headerText = `Document Update from <@${sessionData.userId}>`;
-        }
-      }
+      // CHOIR 소개 및 과정 설명
+      const userName = await getUserName(userId, client);
+      await client.chat.postMessage({
+        channel: currentDmChannelId,
+        text: `👋 Hi *${userName}*! I\'m CHOIR, your documentation assistant. I\'ve analyzed the knowledge you shared and found ${searchResults.length} relevant document${searchResults.length > 1 ? 's' : ''} that might need updates.\n\nI\'ll walk you through each document one by one, showing you exactly what changes I\'m suggesting and why. You can review, edit, or approve each suggestion - you\'re in full control of the process!`,
+        unfurl_links: false,
+        unfurl_media: false
+      });
+
+      const headerText = "Document Update";
       blocks.push({
         type: "header",
         text: { type: "plain_text", text: headerText, emoji: true }
       });
 
-      // OR if it's the very first interaction (no previous message from passKnowledgeToManager)
-      // For now, simplify: if isManagerDMContext, these were in the preceding message from passKnowledgeToManager.
       blocks.push({
         type: "section",
-        text: { type: "mrkdwn", text: `*Content:*
-\`\`\`${knowledgeContent}\`\`\`` }
+        text: { type: "mrkdwn", text: `*Content:*\n\`\`\`${knowledgeContent}\`\`\`` }
       });
-      // Ensure sessionId is valid before trying to get sessionDataForLink
+
+      // 원본 토론 링크 추가
       if (knowledgeSourceChannelId && sessionId) { 
-        const sessionDataForLink = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+        const sessionDataForLink = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
         const messageLink = sessionDataForLink?.originalMessageLink;
 
         if (messageLink) {
-            try {
-                blocks.push({
-                    type: "section",
-                    text: { type: "mrkdwn", text: `📍 <${messageLink}|View original discussion> for context` }
-                });
-            } catch (linkError) {
-                logger.warn(`Error adding original discussion link (already created) in suggestUpdatesCallback: ${linkError}`);
-            }
+          try {
+            blocks.push({
+              type: "section",
+              text: { type: "mrkdwn", text: `📍 <${messageLink}|View original discussion> for context` }
+            });
+          } catch (linkError) {
+            logger.warn(`Error adding original discussion link (already created) in suggestUpdatesCallback: ${linkError}`);
+          }
         } else {
-            logger.warn(`originalMessageLink not found in sessionData for session ${sessionId}`);
+          logger.warn(`originalMessageLink not found in sessionData for session ${sessionId}`);
         }
       } else if (!sessionId && knowledgeSourceChannelId) {
-        // Fallback to creating link if sessionId is not available but knowledgesourcechannelId is.
-        // This case might be rare if flow always includes sessionId for managers.
         const authInfo = await client.auth.test();
         const workspaceUrl = authInfo.url;
         if (workspaceUrl) {
-            try {
-                const convInfo = await client.conversations.info({ channel: knowledgeSourceChannelId });
-                if (convInfo.ok && convInfo.channel && (!convInfo.channel.is_private || convInfo.channel.is_member)) {
-                    const fallbackMessageLink = createMessageLink(workspaceUrl, knowledgeSourceChannelId, knowledgeSourceThreadTs);
-                    blocks.push({
-                        type: "section",
-                        text: { type: "mrkdwn", text: `📍 <${fallbackMessageLink}|View original discussion> for context (fallback link)` }
-                    });
-                }
-            } catch (linkError) {
-                logger.warn(`Could not create fallback original discussion link in suggestUpdatesCallback: ${linkError}`);
+          try {
+            const convInfo = await client.conversations.info({ channel: knowledgeSourceChannelId });
+            if (convInfo.ok && convInfo.channel && (!convInfo.channel.is_private || convInfo.channel.is_member)) {
+              const fallbackMessageLink = createMessageLink(workspaceUrl, knowledgeSourceChannelId, knowledgeSourceThreadTs);
+              blocks.push({
+                type: "section",
+                text: { type: "mrkdwn", text: `📍 <${fallbackMessageLink}|View original discussion> for context (fallback link)` }
+              });
             }
+          } catch (linkError) {
+            logger.warn(`Could not create fallback original discussion link in suggestUpdatesCallback: ${linkError}`);
+          }
         }
       }
       blocks.push({ type: "divider" });
+    }
+
+    // CHOIR의 작업별 설명 메시지
+    let explanationText = "";
+    if (processedDoc.suggestionType === "APPEND") {
+      if (processedDoc.hasChanges) {
+        explanationText = `🔍 I found a section that could benefit from additional content based on your knowledge. I'm suggesting we *append new information* to the existing content rather than replacing it, since the current content is still valuable.\n\n`;
+        
+        // Create New Section 버튼이 있는 경우 추가 설명
+        if (processedDoc.newSectionSuggestion) {
+          explanationText += `💡 *Bonus idea:* I also think your knowledge would make a great standalone section! If you'd like, I can suggest creating a completely new section instead of appending to the existing one. Just click the "Create New Section" button to see my recommendation!\n\n`;
+        }
+      } else {
+        explanationText = `✅ I reviewed this section and it looks good! The existing content already covers what you mentioned, so no changes are needed here.\n\n`;
+        
+        // Create New Section 버튼이 있는 경우 추가 설명
+        if (processedDoc.newSectionSuggestion) {
+          explanationText += `💡 *But here's a thought:* Even though this section is already complete, your knowledge might deserve its own dedicated section! I can suggest where and how to create a new section for your content. Check out the "Create New Section" option below!\n\n`;
+        }
+      }
+    } else {
+      if (processedDoc.hasChanges) {
+        explanationText = `📝 I found some content that could be *updated* to better reflect your knowledge. I'm showing you the specific changes I'd recommend - you can see exactly what would be modified.\n\n`;
+      } else {
+        explanationText = `✅ Great news! This section is already up-to-date with your knowledge. I'm showing you the current content so you can verify it covers what you intended.\n\n`;
+      }
     }
 
     const suggestionNumber = currentIndex + 1;
@@ -514,6 +545,12 @@ export const suggestUpdatesCallback = async ({
     } else {
       suggestionTitleText = `📝 *Update Suggestion ${suggestionNumber}* : <${processedDoc.githubUrl}|${processedDoc.fileName}> - ${sectionInfo}`;
     }
+
+    // CHOIR 설명 메시지 추가
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: explanationText }
+    });
 
     const editButtonValue = {
       index: currentIndex,
@@ -551,9 +588,34 @@ export const suggestUpdatesCallback = async ({
     };
 
     const actionButtons = [
-        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: "Edit", emoji: true }, action_id: "edit_update", value: JSON.stringify(editButtonValue) },
-        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: processedDoc.suggestionType === "APPEND" ? "Append to Document" : "Update Document", emoji: true }, style: "primary" as "primary", action_id: "suggest_updates", value: JSON.stringify(updateButtonValue) },
-        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: "Cancel", emoji: true }, style: "danger" as "danger", action_id: "cancel_document_updates", value: JSON.stringify(cancelButtonValue) }
+        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: "Edit This", emoji: true }, action_id: "edit_update", value: JSON.stringify(editButtonValue) },
+        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: processedDoc.suggestionType === "APPEND" ? "✅ Add Content" : processedDoc.hasChanges ? "✅ Apply Changes" : "✅ Looks Good", emoji: true }, style: "primary" as "primary", action_id: "suggest_updates", value: JSON.stringify(updateButtonValue) },
+        ...(processedDoc.suggestionType === "APPEND" && processedDoc.newSectionSuggestion ? [{
+          type: "button" as "button", 
+          text: { type: "plain_text" as "plain_text", text: "💡 Create New Section", emoji: true }, 
+          action_id: "create_new_section", 
+          value: JSON.stringify((() => {
+            // 새 섹션 데이터를 세션에 저장
+            const newSectionSessionId = `new_section_${userId}_${Date.now()}`;
+            storeSessionData(newSectionSessionId, {
+              sectionTitle: processedDoc.newSectionSuggestion!.sectionTitle,
+              sectionContent: processedDoc.newSectionSuggestion!.sectionContent,
+              recommendedFile: processedDoc.newSectionSuggestion!.recommendedFile,
+              reasoning: processedDoc.newSectionSuggestion!.reasoning,
+              githubUrl: processedDoc.githubUrl,
+              originalChannelId: knowledgeSourceChannelId,
+              originalThreadTs: knowledgeSourceThreadTs,
+              sessionId: sessionId
+            }, SessionType.NEW_SECTION);
+            
+            // 버튼 value에는 sessionId만 저장
+            return {
+              newSectionSessionId,
+              userId
+            };
+          })())
+        }] : []),
+        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: "Stop Review", emoji: false }, style: "danger" as "danger", action_id: "cancel_document_updates", value: JSON.stringify(cancelButtonValue) }
     ];
 
     blocks.push(
@@ -561,19 +623,6 @@ export const suggestUpdatesCallback = async ({
       processedDoc.diffBlock,
       { type: "actions", elements: actionButtons }
     );
-
-    const progressTs = getProgressMessageTimestamp(userId);
-    if (progressTs) {
-      try {
-        await client.chat.delete({
-          channel: currentDmChannelId,
-          ts: progressTs
-        });
-        deleteProgressMessageTimestamp(userId);
-      } catch (deleteError) {
-        console.error("진행 중 메시지 삭제 실패:", deleteError);
-      }
-    }
 
     const result = await client.chat.postMessage({
       channel: currentDmChannelId!,

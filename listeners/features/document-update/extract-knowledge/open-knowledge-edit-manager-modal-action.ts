@@ -19,7 +19,7 @@ export const openKnowledgeEditManagerModalCallback = async ({
       throw new Error("No session ID provided for manager knowledge edit modal");
     }
 
-    const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+    const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       throw new Error("Session data not found for manager knowledge edit modal");
     }

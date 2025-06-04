@@ -163,7 +163,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         botResponse: cleanResponseForSharing,
         originalChannelId: event.channel,
       },
-      SessionType.CONSULTATION
+      SessionType.DOCUMENT_UPDATE
     );
 
     // 질문이 스레드에서 왔는지 확인

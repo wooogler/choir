@@ -221,7 +221,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
                   emoji: true
                 },
                 style: "primary",
-                action_id: isUserManager ? "apply_extracted_knowledge" : "pass_knowledge_to_manager",
+                action_id: isUserManager ? "apply_extracted_knowledge" : "send_update_suggestion_to_manager",
                 value: sessionId
               },
               {
@@ -252,7 +252,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         publicMessageTs: publicMessage.ts, // Store public message timestamp for updates
         lastEditedBy: userId, // Track who initially extracted the knowledge
         lastEditedAt: new Date().toISOString() // Track when it was initially extracted
-      }, SessionType.CONSULTATION);
+      }, SessionType.DOCUMENT_UPDATE);
 
       return true;
 

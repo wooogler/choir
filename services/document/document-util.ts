@@ -104,31 +104,31 @@ export async function applyDocumentChanges({
           }
         } else {
           // UPDATE: 기존 노드 업데이트
-          docTree = updateNodeContent(
-            docTree,
-            update.nodeId,
-            update.updatedNodeContent
-          );
-        }
+        docTree = updateNodeContent(
+          docTree,
+          update.nodeId,
+          update.updatedNodeContent
+        );
+      }
       }
 
       // APPEND가 아닌 경우에만 전통적인 마크다운 변환 및 GitHub 업데이트
       const hasUpdateOperations = fileData.documentUpdates.some(update => update.suggestionType !== "APPEND");
-      
-      if (hasUpdateOperations) {
-        // 마크다운으로 변환
-        const updatedMarkdown = updateDocTreeWithChanges(
-          docTree,
-          fileData.documentUpdates.filter(update => update.suggestionType !== "APPEND")
-        );
 
-        // GitHub에 업데이트
-        await githubService.updateMarkdownFile({
-          owner: githubInfo.owner,
-          repo: githubInfo.repo,
-          path: fileName,
-          content: updatedMarkdown,
-        });
+      if (hasUpdateOperations) {
+      // 마크다운으로 변환
+      const updatedMarkdown = updateDocTreeWithChanges(
+        docTree,
+          fileData.documentUpdates.filter(update => update.suggestionType !== "APPEND")
+      );
+
+      // GitHub에 업데이트
+      await githubService.updateMarkdownFile({
+        owner: githubInfo.owner,
+        repo: githubInfo.repo,
+        path: fileName,
+        content: updatedMarkdown,
+      });
       }
 
       // APPEND 작업이 있는 경우 GitHub 업데이트

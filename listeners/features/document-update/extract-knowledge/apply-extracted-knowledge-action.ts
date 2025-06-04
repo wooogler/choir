@@ -29,7 +29,7 @@ export const applyExtractedKnowledgeCallback = async ({
     }
 
     // Get session data
-    const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+    const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       await client.chat.postMessage({
         channel: body.user.id,
@@ -110,7 +110,7 @@ export const applyExtractedKnowledgeCallback = async ({
 
     // Update session data with source messages for easier access
     sessionData.sourceMessages = sourceMessages;
-    storeSessionData(sessionId, sessionData, SessionType.CONSULTATION);
+    storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
 
     // suggestUpdatesCallback 호출 시 body를 원본 body에서 필요한 부분만 가져오도록 수정
     // 또한, suggestUpdatesCallback이 SlackActionMiddlewareArgs<BlockButtonAction> 타입을 정확히 받도록

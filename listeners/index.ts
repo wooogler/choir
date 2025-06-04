@@ -9,6 +9,7 @@ import { clearChatCommand, handleClearChat } from "./event-handlers/command-hand
 import { registerQAFeature } from "./features/qa";
 import { registerDocumentUpdateFeature } from "./features/document-update";
 import { registerPreferencesFeature } from "./features/preferences";
+import { registerConversationFeature } from "./features/conversation";
 // import { registerKnowledgeExtractionFeature } from "./features/knowledge-extraction"; // knowledge-extraction은 아직
 
 const registerListeners = (app: App) => {
@@ -22,6 +23,7 @@ const registerListeners = (app: App) => {
   registerQAFeature(app);
   registerDocumentUpdateFeature(app);
   registerPreferencesFeature(app);
+  registerConversationFeature(app);
 };
 
 export default registerListeners;

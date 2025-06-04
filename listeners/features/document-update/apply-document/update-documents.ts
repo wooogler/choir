@@ -9,6 +9,7 @@ import { DocumentUpdate, getStoredDocumentUpdates, getSelectedNodeIds } from "se
 import { applyDocumentUpdatesToGithub } from "services/github";
 import { VectorStoreService } from "services/vector/main-service";
 import { formatSectionPathWithLinks } from "services/document/section-utils";
+import { getUserName } from "services/slack";
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();
@@ -106,61 +107,69 @@ const applySelectedToGithubAction = async ({
     });
 
     if (dmResult.ok && dmResult.channel?.id) {
-      // 결과 메시지 생성 - 단일 파일이므로 간단하게 표시
-      let resultMessage = "";
+      // 결과 메시지 생성 - CHOIR 페르소나 적용
+      let resultMessage = "I've finished processing the document updates!"; // 기본 메시지
       if (successfulUpdates.length > 0) {
-        const fileName = successfulUpdates[0];
-        resultMessage = `✅ Successfully updated *${fileName}*`;
+        const fileName = successfulUpdates[0]; // 단일 파일 처리 가정
+        resultMessage = `✅ Great news! I've successfully updated the document: *${fileName}*`;
       }
       if (failedUpdates.length > 0) {
-        const fileName = failedUpdates[0];
-        resultMessage = `❌ Failed to update *${fileName}*`;
+        const fileName = failedUpdates[0]; // 단일 파일 처리 가정
+        if (successfulUpdates.length > 0) {
+          resultMessage += `\nHowever, I ran into a little trouble updating *${fileName}*. You might want to check that one manually.`;
+        } else {
+          resultMessage = `Hm, it looks like I couldn't update *${fileName}*. 😕 You might need to take a look and see what went wrong.`;
+        }
       }
 
       // DM으로 결과 메시지 전송
       await client.chat.postMessage({
         channel: dmResult.channel.id,
-        text: resultMessage || "Document update process completed.",
+        text: resultMessage || "Document update process completed! If there were any issues, I've noted them above.",
       });
 
-      // 성공한 경우 원본 채널에도 업데이트 내용 공유
+      // 성공한 경우 원본 채널에도 업데이트 내용 공유 - CHOIR 페르소나 적용
       if (successfulUpdates.length > 0 && originalChannelId && diffBlock) {
         try {
-          // 섹션 정보 포맷팅
+          const updatedFileName = successfulUpdates[0]; // 성공한 파일 이름 사용
+          const userName = await getUserName(userId, client); // 사용자 이름 가져오기
           const sectionInfo = formatSectionPathWithLinks({
             headingPath,
             sectionName,
             githubUrl
           } as any);
 
+          const channelUpdateText = `🎉 Good news, everyone! *${userName}* just helped me update a document!\\n\\n*File:* <${githubUrl}|${updatedFileName}>\\n*Section:* ${sectionInfo}\\n\\nI've incorporated the latest insights. Teamwork makes the dream work! ✨`;
+
           const updateBlocks = [
             {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `✅ *Document Updated*\n*File:* <${githubUrl}|${fileName}>\n*Section:* ${sectionInfo}`
+                text: channelUpdateText
               }
             },
-            diffBlock
+            diffBlock // 기존 diffBlock 사용
           ];
 
           await client.chat.postMessage({
             channel: originalChannelId,
             ...(originalThreadTs ? { thread_ts: originalThreadTs } : {}),
-            text: `✅ Document Updated: ${fileName}`,
+            text: `✅ Document Updated: ${updatedFileName} by *${userName}* (with CHOIR)`, // 볼드체 적용
             blocks: updateBlocks,
             unfurl_links: false,
             unfurl_media: false
           });
         } catch (channelError) {
           console.error("Failed to post update to original channel:", channelError);
+          // 실패해도 DM은 전송되었으므로 계속 진행
         }
       }
     }
   } catch (error) {
     console.error("Error applying updates to GitHub:", error);
 
-    // DM 채널 열기
+    // DM 채널 열기 - CHOIR 페르소나 적용
     try {
       const dmResult = await client.conversations.open({
         users: body.user.id
@@ -169,9 +178,7 @@ const applySelectedToGithubAction = async ({
       if (dmResult.ok && dmResult.channel?.id) {
         await client.chat.postMessage({
           channel: dmResult.channel.id,
-          text: `❌ An error occurred while updating the document: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
+          text: `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : "Unknown error"}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`,
         });
       }
     } catch (dmError) {

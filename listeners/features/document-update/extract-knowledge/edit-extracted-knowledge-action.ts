@@ -26,7 +26,7 @@ export const editExtractedKnowledgeCallback = async ({
       return;
     }
 
-    const sessionData = getSessionData(sessionId, SessionType.CONSULTATION) as any;
+    const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       await client.chat.postMessage({
         channel: body.user.id,
