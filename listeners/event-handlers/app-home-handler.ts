@@ -1,5 +1,5 @@
 import type { App, AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
-import { getManagers, isManager, getWorkspaceId, isWorkspaceOwner, getGithubRepo, getQAChannel, getChannelName } from "services/slack";
+import { getManagers, isManager, getWorkspaceId, isWorkspaceOwner, getGithubRepo, getQAChannel, getChannelName, getOrganizationDescription, setOrganizationDescription, getOrganizationName, setOrganizationName } from "services/slack";
 import { VectorStoreService } from "services/vector/main-service";
 
 const appHomeOpenedCallback = async ({
@@ -22,6 +22,18 @@ const appHomeOpenedCallback = async ({
 
     // Get current manager list
     const managers = getManagers(workspaceId);
+
+    // Get organization description
+    const organizationDescription = getOrganizationDescription(workspaceId) || "No description set.";
+
+    // Get organization name (default to workspace name if not set)
+    let organizationName = getOrganizationName(workspaceId);
+    if (!organizationName) {
+      // Use workspace name as default
+      const workspaceInfo = await client.auth.test();
+      const teamInfo = await client.team.info();
+      organizationName = teamInfo.team?.name || workspaceInfo.team || "Our Organization";
+    }
 
     // Get manager usernames
     const managerBlocks = [];
@@ -374,6 +386,108 @@ const appHomeOpenedCallback = async ({
     // Manager permission management section
     const managerManagementBlocks = [];
 
+    // Organization Description section
+    const organizationDescriptionBlocks = [];
+    if (isUserManager || isOwner) {
+      organizationDescriptionBlocks.push(
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: "🏢 Organization Settings",
+            emoji: true,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Current Organization Name:*
+${organizationName}`,
+          },
+        },
+        {
+          type: "input",
+          block_id: "organization_name_input_block",
+          element: {
+            type: "plain_text_input",
+            action_id: "organization_name_input",
+            initial_value: organizationName,
+            placeholder: {
+              type: "plain_text",
+              text: "Enter your organization name (e.g., Smith Research Lab, AI Team, etc.)",
+            },
+          },
+          label: {
+            type: "plain_text",
+            text: "Set Organization Name",
+          },
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "Save Name",
+                emoji: true,
+              },
+              style: "primary",
+              action_id: "set_organization_name",
+            },
+          ],
+        },
+        {
+          type: "divider",
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Current Description:*
+${organizationDescription}`,
+          },
+        },
+        {
+          type: "input",
+          block_id: "organization_description_input_block",
+          element: {
+            type: "plain_text_input",
+            action_id: "organization_description_input",
+            multiline: true,
+            initial_value: organizationDescription === "No description set." ? "" : organizationDescription,
+            placeholder: {
+              type: "plain_text",
+              text: "Enter a brief description of your organization, its goals, and common knowledge.",
+            },
+          },
+          label: {
+            type: "plain_text",
+            text: "Set Organization Description",
+          },
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "Save Description",
+                emoji: true,
+              },
+              style: "primary",
+              action_id: "set_organization_description",
+            },
+          ],
+        },
+        {
+          type: "divider",
+        }
+      );
+    }
+
     // Show management UI only for managers or workspace owners
     if (isUserManager || isOwner) {
       managerManagementBlocks.push(
@@ -445,6 +559,7 @@ const appHomeOpenedCallback = async ({
       ...homeBlocks,
       ...managerManagementBlocks,
       ...managerBlocks,
+      ...organizationDescriptionBlocks,
       ...qaChannelBlocks,
       ...vectorStoreBlocks,
       ...githubBlocks,
@@ -465,6 +580,63 @@ const appHomeOpenedCallback = async ({
 
 const register = (app: App) => {
   app.event("app_home_opened", appHomeOpenedCallback);
+
+  // Handler for setting organization name
+  app.action("set_organization_name", async ({ ack, body, client, logger }) => {
+    await ack();
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      // @ts-ignore
+      const newName = body.view.state.values.organization_name_input_block.organization_name_input.value;
+
+      setOrganizationName(workspaceId, newName);
+
+      await client.chat.postEphemeral({
+        user: body.user.id,
+        channel: body.user.id,
+        text: "Organization name updated successfully!",
+      });
+
+    } catch (error) {
+      logger.error("Error setting organization name:", error);
+      await client.chat.postEphemeral({
+        user: body.user.id,
+        channel: body.user.id,
+        text: "Error updating organization name. Please try again.",
+      });
+    }
+  });
+
+  // Handler for setting organization description
+  app.action("set_organization_description", async ({ ack, body, client, logger }) => {
+    await ack();
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      // Correctly access the submitted value from the view state
+      // @ts-ignore
+      const newDescription = body.view.state.values.organization_description_input_block.organization_description_input.value;
+
+      setOrganizationDescription(workspaceId, newDescription);
+
+      // Optionally, refresh the App Home view to show the updated description
+      // This requires triggering an app_home_opened event or directly calling client.views.publish
+      // For simplicity, we'll let the user refresh or wait for the next app_home_opened event.
+      // Or, send a confirmation message
+      await client.chat.postEphemeral({
+        user: body.user.id,
+        channel: body.user.id, // Post to App Home DM
+        text: "Organization description updated successfully!",
+      });
+
+    } catch (error) {
+      logger.error("Error setting organization description:", error);
+      await client.chat.postEphemeral({
+        user: body.user.id,
+        channel: body.user.id,
+        text: "Error updating organization description. Please try again.",
+      });
+    }
+  });
 };
 
 export default { register }; 

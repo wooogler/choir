@@ -99,11 +99,31 @@ ${knowledgeContent}
   return responseContent?.replace(/<\/?markdown>/g, '') ?? markdown;
 }
 
-export async function classifyMessageIntent(message: string): Promise<"question" | "update_request" | "general_conversation"> {
+export async function classifyMessageIntent(message: string, organizationName: string, descOrg: string): Promise<"question" | "update_request" | "general_conversation"> {
+  const systemPrompt = `You are an intelligent agent that answers questions or helps update documents that manages the institutional knowledge or polices of an organization, such as a university research lab.
+Your task is to classify the user message as 'question' (asking for information about the organization), 'update_request' (containing new knowledge, information, or facts that could be documented, or explicitly asking to save/store information about the organization), or 'general_conversation' (a general statement, greeting, or chit-chat without substantial new information, questions that are not necessarily about the organization or the members).
+
+Update_request includes: direct requests to save information about the organization, suggestions for document changes, AND statements containing new knowledge, facts, decisions, tools being used, processes, or any information that could be valuable for documentation.
+
+Examples of update_request:
+
+'I will use Microsoft Teams for online meeting'
+'We decided to switch to React for the frontend'
+'The API endpoint is now https://api.example.com'
+'Please update the document'
+'Please save this information'
+- 'This document needs to be updated'
+
+Respond with only 'question', 'update_request', or 'general_conversation'.
+
+Organization Context:
+${organizationName ? `- Organization: ${organizationName}` : ''}
+${descOrg ? `- About: ${descOrg}` : ''}`;
+
   const result = await createChatCompletion([
       {
         role: "system",
-        content: "Classify the user message as 'question' (asking for information), 'update_request' (containing new knowledge, information, or facts that could be documented, or explicitly asking to save/store information), or 'general_conversation' (a general statement, greeting, or chit-chat without substantial new information). \n\nUpdate_request includes: direct requests to save information, suggestions for document changes, AND statements containing new knowledge, facts, decisions, tools being used, processes, or any information that could be valuable for documentation.\n\nExamples of update_request:\n- 'I will use Microsoft Teams for online meeting'\n- 'We decided to switch to React for the frontend'\n- 'The API endpoint is now https://api.example.com'\n- 'Please save this information'\n- 'This document needs to be updated'\n\nRespond with only 'question', 'update_request', or 'general_conversation'."
+        content: systemPrompt
       },
       {
         role: "user",

@@ -1,6 +1,6 @@
 import { generateSessionId, SessionType, storeSessionData } from "services/common";
 import { answerQuestion } from "services/llm/qa-service";
-import { createGitbookSectionLink, getManagers, getUserName, getQAChannel, getChannelName } from "services/slack";
+import { createGitbookSectionLink, getManagers, getUserName, getQAChannel, getChannelName, getOrganizationName, getOrganizationDescription } from "services/slack";
 import { getWorkspaceId } from "services/slack";
 import { SlackMessage } from "services/slack";
 import { VectorStoreService } from "services/vector/main-service";
@@ -64,13 +64,20 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       logger.warn("Could not get workspace name:", error);
     }
 
+    // Organization 정보 가져오기 (workspaceId는 이미 아래에서 선언되어 있으므로 먼저 가져오기)
+    const workspaceIdForOrg = await getWorkspaceId(client);
+    const organizationName = getOrganizationName(workspaceIdForOrg);
+    const organizationDescription = getOrganizationDescription(workspaceIdForOrg);
+
     // 응답 생성
     let response = await answerQuestion(
       userMessage,
       historyResult.messages || [],
       relevantDocs,
       client,
-      workspaceName
+      workspaceName,
+      organizationName || undefined,
+      organizationDescription || undefined
     );
 
     // 마크다운을 Slack 형식으로 변환

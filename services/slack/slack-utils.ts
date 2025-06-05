@@ -5,6 +5,16 @@ import { SlackMessage } from "services/slack";
 // 메시지를 임시 저장할 Map
 const messageStore = new Map<string, SlackMessage>();
 
+// 관리자 권한 저장소
+// 워크스페이스 관리자(초기 설정자)는 항상 관리자 권한을 가짐
+const managerStore = new Map<string, string[]>();
+
+// Organization name 저장소
+const organizationNameStore = new Map<string, string>();
+
+// Organization description 저장소  
+const organizationDescriptionStore = new Map<string, string>();
+
 export function storeMessage(message: SlackMessage): string {
   const key = `${message.userId}-${message.ts}`;
   messageStore.set(key, message);
@@ -24,10 +34,6 @@ export function getStoredMessages(keys: string[]): SlackMessage[] {
 export function extractKeysFromMessages(messages: SlackMessage[]): string[] {
   return messages.map((msg) => `${msg.userId}-${msg.ts}`);
 }
-
-// 관리자 권한 저장소
-// 워크스페이스 관리자(초기 설정자)는 항상 관리자 권한을 가짐
-const managerStore = new Map<string, string[]>();
 
 /**
  * 사용자가 관리자인지 확인합니다.
@@ -302,6 +308,42 @@ export async function getQAChannel(workspaceId: string, client?: WebClient): Pro
   }
   
   return qaChannelId;
+}
+
+/**
+ * Organization name을 설정합니다.
+ * @param workspaceId 워크스페이스 ID
+ * @param name 조직 이름
+ */
+export function setOrganizationName(workspaceId: string, name: string): void {
+  organizationNameStore.set(workspaceId, name);
+}
+
+/**
+ * Organization name을 가져옵니다.
+ * @param workspaceId 워크스페이스 ID
+ * @returns 조직 이름 또는 null
+ */
+export function getOrganizationName(workspaceId: string): string | null {
+  return organizationNameStore.get(workspaceId) || null;
+}
+
+/**
+ * Organization description을 설정합니다.
+ * @param workspaceId 워크스페이스 ID
+ * @param description 조직 설명
+ */
+export function setOrganizationDescription(workspaceId: string, description: string): void {
+  organizationDescriptionStore.set(workspaceId, description);
+}
+
+/**
+ * Organization description을 가져옵니다.
+ * @param workspaceId 워크스페이스 ID
+ * @returns 조직 설명 또는 null
+ */
+export function getOrganizationDescription(workspaceId: string): string | null {
+  return organizationDescriptionStore.get(workspaceId) || null;
 }
 
 /**

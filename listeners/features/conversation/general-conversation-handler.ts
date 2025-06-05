@@ -1,7 +1,7 @@
 import { WebClient } from '@slack/web-api';
 import { Logger } from '@slack/bolt';
 import { respondToGeneralConversation } from '../../../services/llm/chat-responder';
-import { getUserName } from '../../../services/slack'; // Assuming getUserName is in this path
+import { getUserName, getWorkspaceId, getOrganizationName, getOrganizationDescription, getGithubRepo } from '../../../services/slack'; // Added organization and github functions
 
 /**
  * Handles general conversation messages.
@@ -14,7 +14,27 @@ export async function handleGeneralConversationMessage(
 ): Promise<boolean> {
   try {
     const userName = await getUserName(event.user, client);
-    const replyText = await respondToGeneralConversation(message, userName || 'there');
+    
+    // Get workspace ID and organization information
+    const workspaceId = await getWorkspaceId(client);
+    
+    // Get organization name (default to workspace name if not set)
+    let organizationName = getOrganizationName(workspaceId);
+    if (!organizationName) {
+      // Use workspace name as default
+      const workspaceInfo = await client.auth.test();
+      const teamInfo = await client.team.info();
+      organizationName = teamInfo.team?.name || workspaceInfo.team || "our organization";
+    }
+    
+    // Get organization description
+    const descOrg = getOrganizationDescription(workspaceId) || "";
+    
+    // Get GitHub repository URL
+    const repoInfo = getGithubRepo(workspaceId);
+    const URLtoGithubORWebsite = repoInfo ? repoInfo.url : "";
+
+    const replyText = await respondToGeneralConversation(message, userName || 'there', organizationName, descOrg, URLtoGithubORWebsite);
 
     // 원본 메시지 정보를 JSON으로 인코딩
     const messageData = JSON.stringify({

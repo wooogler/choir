@@ -2,7 +2,7 @@ import { classifyMessageIntent } from "services/llm/document-editor";
 import { handleQuestionMessage } from "../features/qa/question-handler";
 import { handleUpdateRequestMessage } from "../features/document-update/extract-knowledge/update-request-handler";
 import { handleGeneralConversationMessage } from "../features/conversation/general-conversation-handler";
-import { isManager, getWorkspaceId } from "services/slack";
+import { isManager, getWorkspaceId, getOrganizationDescription, getOrganizationName } from "services/slack";
 
 /**
  * 메시지 처리를 위한 공통 함수
@@ -16,8 +16,13 @@ export async function handleIncomingMessage(client: any, event: any, message: st
       text: "🤔 Let me think about how I can best help you with that..."
     });
 
+    // Get organization information
+    const workspaceId = await getWorkspaceId(client);
+    const orgName = getOrganizationName(workspaceId) || "";
+    const orgDescription = getOrganizationDescription(workspaceId) || "";
+
     // 메시지 의도 분류 (질문 또는 업데이트 요청 또는 일반 대화)
-    const messageIntent = await classifyMessageIntent(message);
+    const messageIntent = await classifyMessageIntent(message, orgName, orgDescription);
     logger.info(`Message intent classified as: ${messageIntent}`);
 
     // 로딩 메시지 삭제
