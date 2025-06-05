@@ -64,10 +64,10 @@ export const handleSuggestionEditorSubmission = async ({
     const message = result.messages[0];
     const blocks = JSON.parse(JSON.stringify(message.blocks || []));
 
-    // diff 블록 업데이트 - rich_text 타입 블록 찾기
+    // diff 블록 업데이트 - rich_text 타입 블록 찾기 (rich_text_quote 또는 rich_text_section)
     const diffBlockIndex = blocks.findIndex((block: any) => 
       block.type === "rich_text" && 
-      block.elements?.[0]?.type === "rich_text_section"
+      (block.elements?.[0]?.type === "rich_text_quote" || block.elements?.[0]?.type === "rich_text_section")
     );
 
     if (diffBlockIndex !== -1) {

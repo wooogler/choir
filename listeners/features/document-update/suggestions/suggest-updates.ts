@@ -506,32 +506,6 @@ export const suggestUpdatesCallback = async ({
       blocks.push({ type: "divider" });
     }
 
-    // CHOIR의 작업별 설명 메시지
-    let explanationText = "";
-    if (processedDoc.suggestionType === "APPEND") {
-      if (processedDoc.hasChanges) {
-        explanationText = `🔍 I found a section that could benefit from additional content based on your knowledge. I'm suggesting we *append new information* to the existing content rather than replacing it, since the current content is still valuable.\n\n`;
-        
-        // Create New Section 버튼이 있는 경우 추가 설명
-        if (processedDoc.newSectionSuggestion) {
-          explanationText += `💡 *Bonus idea:* I also think your knowledge would make a great standalone section! If you'd like, I can suggest creating a completely new section instead of appending to the existing one. Just click the "Create New Section" button to see my recommendation!\n\n`;
-        }
-      } else {
-        explanationText = `✅ I reviewed this section and it looks good! The existing content already covers what you mentioned, so no changes are needed here.\n\n`;
-        
-        // Create New Section 버튼이 있는 경우 추가 설명
-        if (processedDoc.newSectionSuggestion) {
-          explanationText += `💡 *But here's a thought:* Even though this section is already complete, your knowledge might deserve its own dedicated section! I can suggest where and how to create a new section for your content. Check out the "Create New Section" option below!\n\n`;
-        }
-      }
-    } else {
-      if (processedDoc.hasChanges) {
-        explanationText = `📝 I found some content that could be *updated* to better reflect your knowledge. I'm showing you the specific changes I'd recommend - you can see exactly what would be modified.\n\n`;
-      } else {
-        explanationText = `✅ Great news! This section is already up-to-date with your knowledge. I'm showing you the current content so you can verify it covers what you intended.\n\n`;
-      }
-    }
-
     const suggestionNumber = currentIndex + 1;
     const sectionInfo = formatSectionPathWithLinks({
       headingPath: processedDoc.headingPath,
@@ -539,18 +513,7 @@ export const suggestUpdatesCallback = async ({
       githubUrl: processedDoc.githubUrl
     } as DocumentMetadata);
     
-    let suggestionTitleText = "";
-    if (processedDoc.suggestionType === "APPEND") {
-      suggestionTitleText = `🆕 *New Content Suggestion (Append) ${suggestionNumber}* : <${processedDoc.githubUrl}|${processedDoc.fileName}> - ${sectionInfo}`;
-    } else {
-      suggestionTitleText = `📝 *Update Suggestion ${suggestionNumber}* : <${processedDoc.githubUrl}|${processedDoc.fileName}> - ${sectionInfo}`;
-    }
-
-    // CHOIR 설명 메시지 추가
-    blocks.push({
-      type: "section",
-      text: { type: "mrkdwn", text: explanationText }
-    });
+    let suggestionTitleText = `📝 *Update Suggestion ${suggestionNumber}* : <${processedDoc.githubUrl}|${processedDoc.fileName}> - ${sectionInfo}`;
 
     const editButtonValue = {
       index: currentIndex,
@@ -589,7 +552,7 @@ export const suggestUpdatesCallback = async ({
 
     const actionButtons = [
         { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: "Edit This", emoji: true }, action_id: "edit_update", value: JSON.stringify(editButtonValue) },
-        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: processedDoc.suggestionType === "APPEND" ? "✅ Add Content" : processedDoc.hasChanges ? "✅ Apply Changes" : "✅ Looks Good", emoji: true }, style: "primary" as "primary", action_id: "suggest_updates", value: JSON.stringify(updateButtonValue) },
+        { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: processedDoc.hasChanges ? "✅ Apply Changes" : "✅ Looks Good", emoji: true }, style: "primary" as "primary", action_id: "suggest_updates", value: JSON.stringify(updateButtonValue) },
         ...(processedDoc.suggestionType === "APPEND" && processedDoc.newSectionSuggestion ? [{
           type: "button" as "button", 
           text: { type: "plain_text" as "plain_text", text: "💡 Create New Section", emoji: true }, 
@@ -618,10 +581,38 @@ export const suggestUpdatesCallback = async ({
         { type: "button" as "button", text: { type: "plain_text" as "plain_text", text: "Stop Review", emoji: false }, style: "danger" as "danger", action_id: "cancel_document_updates", value: JSON.stringify(cancelButtonValue) }
     ];
 
+    // CHOIR의 작업별 설명 메시지
+    let explanationText = "";
+    if (processedDoc.suggestionType === "APPEND") {
+      if (processedDoc.hasChanges) {
+        explanationText = `🔍 I found a section that could benefit from additional content based on your knowledge. I'm suggesting we *append new information* to the existing content rather than replacing it, since the current content is still valuable.`;
+        
+        // Create New Section 버튼이 있는 경우 추가 설명
+        if (processedDoc.newSectionSuggestion) {
+          explanationText += `\n\n💡 *Bonus idea:* I also think your knowledge would make a great standalone section! If you'd like, I can suggest creating a completely new section instead of appending to the existing one. Just click the "Create New Section" button to see my recommendation!`;
+        }
+      } else {
+        explanationText = `✅ I reviewed this section and it looks good! The existing content already covers what you mentioned, so no changes are needed here.`;
+        
+        // Create New Section 버튼이 있는 경우 추가 설명
+        if (processedDoc.newSectionSuggestion) {
+          explanationText += `\n\n💡 *But here's a thought:* Even though this section is already complete, your knowledge might deserve its own dedicated section! I can suggest where and how to create a new section for your content. Check out the "Create New Section" option below!`;
+        }
+      }
+    } else {
+      if (processedDoc.hasChanges) {
+        explanationText = `📝 I found some content that could be *updated* to better reflect your knowledge. I'm showing you the specific changes I'd recommend - you can see exactly what would be modified.`;
+      } else {
+        explanationText = `✅ Great news! This section is already up-to-date with your knowledge. I'm showing you the current content so you can verify it covers what you intended.`;
+      }
+    }
+
     blocks.push(
       { type: "section", text: { type: "mrkdwn", text: suggestionTitleText } },
+      { type: "section", text: { type: "mrkdwn", text: explanationText } },
       processedDoc.diffBlock,
-      { type: "actions", elements: actionButtons }
+      { type: "actions", elements: actionButtons },
+      { type: "divider" }
     );
 
     const result = await client.chat.postMessage({

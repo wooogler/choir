@@ -37,26 +37,17 @@ export interface ProcessedDocument {
  * Shows the reference content and the content to be appended after it.
  */
 export function createAppendSuggestionBlock(originalMarkdown: string, appendedMarkdown: string): any {
-  // For simplicity, we'll just show the raw markdown for now.
-  // In a real scenario, these would also be converted to Slack mrkdwn or split into multiple blocks.
-  const originalPreview = originalMarkdown.length > 500 ? `...${originalMarkdown.slice(-500)}` : originalMarkdown;
-  const appendedPreview = appendedMarkdown.length > 500 ? `${appendedMarkdown.substring(0, 500)}...` : appendedMarkdown;
+  // Create a diff-like display: original content followed by new content (bold)
 
   return {
     type: "rich_text",
     elements: [
       {
-        type: "rich_text_section",
+        type: "rich_text_quote",
         elements: [
-          { type: "text", text: "Reference content (will be followed by):\n", style: { bold: true } },
-          { type: "text", text: originalPreview },
-        ],
-      },
-      {
-        type: "rich_text_section",
-        elements: [
-          { type: "text", text: "\n\nNew content to add after it:\n", style: { bold: true } },
-          { type: "text", text: appendedPreview},
+          { type: "text", text: originalMarkdown },
+          { type: "text", text: "\n\n" },
+          { type: "text", text: appendedMarkdown, style: { bold: true } },
         ],
       },
     ],

@@ -1,7 +1,7 @@
 import { diffArrays } from "diff";
 
 export interface RichTextElement {
-  type: "text" | "rich_text_section" | "divider";
+  type: "text" | "rich_text_section" | "rich_text_quote" | "divider";
   text?: string;
   style?: Record<string, boolean>;
   elements?: RichTextElement[];
@@ -75,6 +75,7 @@ function parseInlineBold(
  *   - old/new 텍스트를 토큰화 후 diff
  *   - removed => strike, added => bold
  *   - 한 덩어리를 "단일 라인"으로 처리 (줄바꿈/불릿 없음)
+ *   - Quote styling 적용으로 다른 내용과 구분
  */
 export function createDiffBlock(oldText: string, newText: string) {
   // 1) 토큰화
@@ -113,7 +114,7 @@ export function createDiffBlock(oldText: string, newText: string) {
     type: "rich_text",
     elements: [
       {
-        type: "rich_text_section",
+        type: "rich_text_quote",
         elements,
       },
     ],
