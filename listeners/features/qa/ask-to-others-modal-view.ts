@@ -42,6 +42,7 @@ export const askToOthersSubmitCallback = async ({
           userId,
           sessionData.originalQuestion,
           sessionData.botResponse,
+          true, // canAnswer - assume true for private sharing
           isAnonymous,
           userName
         );

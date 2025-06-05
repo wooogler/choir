@@ -70,7 +70,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     const organizationDescription = getOrganizationDescription(workspaceIdForOrg);
 
     // 응답 생성
-    let response = await answerQuestion(
+    const answerResult = await answerQuestion(
       userMessage,
       historyResult.messages || [],
       relevantDocs,
@@ -81,13 +81,15 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     );
 
     // 마크다운을 Slack 형식으로 변환
-    response = await convertMarkdownToSlackText(response || '');
+    const response = await convertMarkdownToSlackText(answerResult.response || '');
 
     // 공유용 깔끔한 응답 (참조 문구 없이)
     const cleanResponseForSharing = response;
     
     // 실제 표시용 응답 (참조 문구 포함)
-    const displayResponse = response + "\n\nIf you'd like to read the original document, please refer to the sources linked in the reply.";
+    const displayResponse = answerResult.canAnswer 
+      ? response + "\n\nIf you'd like to read the original document, please refer to the sources linked in the reply."
+      : response;
 
     // 대화 히스토리에서 모든 고유 사용자 ID 추출
     const historyUsers = new Set<string>();
@@ -169,6 +171,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         originalQuestion: userMessage,
         botResponse: cleanResponseForSharing,
         originalChannelId: event.channel,
+        canAnswer: answerResult.canAnswer,
       },
       SessionType.DOCUMENT_UPDATE
     );
@@ -244,16 +247,21 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     
     // 버튼이 있는 경우에만 공유 메시지 표시
     if (actionElements.length > 0) {
+      // 답변 가능 여부에 따라 다른 메시지 제공
+      const ephemeralText = answerResult.canAnswer 
+        ? "💬 Not satisfied with my answer? Want to discuss this further or get more insights?"
+        : "💬 I couldn't find this information in our documentation. Would you like to ask others directly?";
+      
       await client.chat.postEphemeral({
         channel: event.channel,
         user: event.user,
-        text: `💬 Want to discuss this with others?`,
+        text: ephemeralText,
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `💬 Want to discuss this with others?`
+              text: ephemeralText
             }
           },
           {
@@ -264,8 +272,8 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       });
     }
 
-    // 관련 문서 정보를 응답의 스레드에 추가
-    if (result.ts && relevantDocs.length > 0) {
+    // 관련 문서 정보를 응답의 스레드에 추가 (답변 가능한 경우에만)
+    if (result.ts && relevantDocs.length > 0 && answerResult.canAnswer) {
       // 문서 정보를 스레드용으로 포맷
       const documentInfo = await Promise.all(relevantDocs
         .map(async (doc, index) => {

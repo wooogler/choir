@@ -15,15 +15,15 @@ export async function createNewContentFromKnowledge(
   const response = await createChatCompletion([
     {
       role: "system",
-      content: `You are a document content generator. Your task is to create new content that naturally follows existing content.
+      content: `You are a document content generator. Your task is to format knowledge content to naturally follow existing content.
 
 Key rules:
-1. Generate new content that would logically follow the provided existing content
-2. Incorporate the given knowledge into this new content naturally
-3. The new content should be independent and self-contained
-4. Maintain the same style and tone as the existing content
-5. Return only the new content without explanations or formatting tags
-6. Keep the new content concise but informative`
+1. Use ONLY the provided knowledge content with minimal reformatting - do NOT add extra explanations or examples
+2. The content should be primarily the knowledge content itself, not an expanded explanation
+3. Maintain the same style and tone as the existing content
+4. Return only the reformatted knowledge content without additional commentary
+5. Do NOT hallucinate or create new information beyond what's provided in the knowledge
+6. Keep formatting consistent with the existing content style`
     },
     {
       role: "user", 
@@ -33,11 +33,11 @@ ${nodeContent}
 Knowledge to incorporate:
 ${knowledgeContent}
 
-Generate new content that would naturally follow the existing content and incorporates the knowledge.`
+Reformat the knowledge content to naturally follow the existing content. Use ONLY the information provided in the knowledge content.`
     }
   ], {
     model: "gpt-4o-mini",
-    temperature: 0.3,
+    temperature: 0.1,
     max_tokens: 500,
     function_name: "createNewContentFromKnowledge",
     debug: true

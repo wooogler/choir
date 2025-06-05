@@ -93,6 +93,12 @@ export async function processMessageText(text: string, client: WebClient): Promi
   return processedText.trim();
 }
 
+// Interface for answer result
+interface AnswerResult {
+  canAnswer: boolean;
+  response: string;
+}
+
 // Generate completion with context
 export const answerQuestion = async (
   userMessage: string,
@@ -102,7 +108,7 @@ export const answerQuestion = async (
   workspaceName?: string,
   organizationName?: string,
   organizationDescription?: string
-) => {
+): Promise<AnswerResult> => {
   const context = formatContext(relevantDocs);
   const messages = await processMessageHistory(messageHistory, client);
   
@@ -114,10 +120,7 @@ export const answerQuestion = async (
     day: 'numeric'
   });
 
-  const response = await createChatCompletion([
-      {
-        role: "system",
-      content: `You are CHOIR, a helpful AI assistant for ${organizationName || 'the organization'}. Think of yourself as a knowledgeable senior student or friendly professor who's always ready to help with questions.
+  const prompt = `You are CHOIR, a helpful AI assistant for ${organizationName || 'the organization'}. Think of yourself as a knowledgeable senior student or friendly professor who's always ready to help with questions.
 
 I have access to the organization's documentation and knowledge base, so I can help you find information and provide guidance based on what we have documented.
 
@@ -127,22 +130,85 @@ ${organizationDescription ? `- About: ${organizationDescription}` : ''}
 - Today's date: ${today}
 ${workspaceName ? `- Workspace: ${workspaceName}` : ''}
 
-When answering, please follow these guidelines:
-1. Be friendly, approachable, and helpful - like a senior colleague who genuinely wants to help
-2. **Primary focus**: Answer based on the provided documentation below
-3. If multiple documents contain conflicting information, prioritize the first document in the list
-4. **When information is missing from documentation**: 
-   - First, clearly state: "I couldn't find this information in our current documentation"
-   - Then, if you can provide helpful general knowledge, add: "However, based on general knowledge, I can share that..."
-   - This helps identify gaps in our documentation that may need to be filled
-5. When users mention @CHOIR, that's me! Feel free to be conversational
-6. Use a warm, academic tone - professional but not overly formal
+IMPORTANT: First, determine if you can answer the user's question based ONLY on the provided documentation. Do NOT use your general knowledge or make assumptions beyond what's explicitly stated in the documents.
+
+Then respond with a JSON object containing:
+1. "canAnswer": true/false - whether the documentation contains sufficient information to answer the question
+2. "response": your answer based on the documentation, or a friendly explanation that you couldn't find the information
+
+Examples of expected output:
+
+Example 1 (can answer):
+{
+  "canAnswer": true,
+  "response": "According to our documentation, you can submit a pull request by first forking the repository, making your changes, and then creating a pull request from your fork. The process is outlined in our contributing guidelines document."
+}
+
+Example 2 (cannot answer):
+{
+  "canAnswer": false,
+  "response": "I couldn't find information about deployment procedures in our current documentation. This seems like an important topic that would benefit from being documented! Could you ask others who might have this knowledge, or perhaps start a discussion about creating deployment documentation?"
+}
+
+Guidelines for answering:
+- Be friendly, approachable, and helpful - like a senior colleague who genuinely wants to help
+- Answer ONLY based on the provided documentation below - do NOT add general knowledge
+- If multiple documents contain conflicting information, prioritize the first document in the list
+- If you cannot answer based on the documentation, encourage the user to ask others or start a discussion to help improve our documentation
+- When users mention @CHOIR, that's me! Feel free to be conversational
+- Use a warm, academic tone - professional but not overly formal
 
 Here's the relevant documentation I can reference:
-${context}`,
-      },
-      ...(messages as ChatCompletionMessageParam[]),
-  ], {debug: true});
+${context}
 
-  return response;
+User's conversation history:
+${messages.map(m => `${m.role}: ${m.content}`).join('\n')}
+
+Current question: ${userMessage}
+
+Analyze whether you can answer based on the documentation and provide your response as JSON:`;
+
+  const result = await createChatCompletion([
+    {
+      role: "system",
+      content: "You are a helpful documentation assistant that answers questions based only on provided documents. Always respond with a JSON object containing 'canAnswer' (boolean) and 'response' (string)."
+    },
+    {
+      role: "user",
+      content: prompt
+    }
+  ], {
+    model: "gpt-4o",
+    temperature: 0.2,
+    max_tokens: 1000,
+    function_name: "answerQuestion",
+    debug: true,
+    response_format: { type: "json_object" }
+  });
+
+  try {
+    let jsonString = result?.trim() || '{}';
+    
+    // Remove markdown code block markers if present
+    if (jsonString.startsWith('```json')) {
+      jsonString = jsonString.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (jsonString.startsWith('```')) {
+      jsonString = jsonString.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+    
+    const parsed = JSON.parse(jsonString);
+    
+    return {
+      canAnswer: parsed.canAnswer || false,
+      response: parsed.response || "I encountered an error processing your question."
+    };
+  } catch (parseError) {
+    console.warn("Failed to parse JSON response from answerQuestion:", parseError);
+    console.warn("Raw response:", result);
+    
+    return {
+      canAnswer: false,
+      response: "I couldn't find this information in our current documentation. Could you help by asking others or starting a discussion about this topic?"
+    };
+  }
 }; 

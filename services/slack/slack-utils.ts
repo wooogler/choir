@@ -583,6 +583,7 @@ export async function formatSlackMessageSection(message: SlackMessage) {
  * @param questionerId 질문자 ID
  * @param question 질문 내용
  * @param response CHOIR의 응답
+ * @param canAnswer 답변 가능 여부
  * @param isAnonymous 익명 여부 (선택사항)
  * @param questionerName 질문자 이름 (선택사항)
  * @returns 메시지 블록 배열
@@ -592,14 +593,13 @@ export function createQAChannelMessage(
   questionerId: string,
   question: string,
   response: string,
+  canAnswer: boolean,
   isAnonymous?: boolean,
   questionerName?: string
 ) {
-  // CHOIR가 답변할 수 없는 경우인지 확인
-  const couldNotAnswer = response.includes("I couldn't find this information in our current documentation");
   const senderIdentity = isAnonymous ? "A team member" : (questionerName || "A team member");
   
-  if (couldNotAnswer) {
+  if (!canAnswer) {
     // 답변 불가능한 경우
     return [
       {
@@ -665,6 +665,7 @@ export function createQAChannelMessage(
  * @param questionerId 질문자 ID
  * @param question 질문 내용
  * @param response CHOIR의 응답
+ * @param canAnswer 답변 가능 여부
  * @param isAnonymous 익명 여부 (선택사항)
  * @param questionerName 질문자 이름 (선택사항)
  * @returns 미리보기 텍스트
@@ -674,13 +675,13 @@ export function createQAChannelPreview(
   questionerId: string,
   question: string,
   response: string,
+  canAnswer: boolean,
   isAnonymous?: boolean,
   questionerName?: string
 ): string {
-  const couldNotAnswer = response.includes("I couldn't find this information in our current documentation");
   const senderIdentity = isAnonymous ? "A team member" : (questionerName || "A team member");
   
-  if (couldNotAnswer) {
+  if (!canAnswer) {
     return `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. Could anyone help?`;
   } else {
     return `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nThe team member has a follow up discussion on my answer. Could anyone help?`;
@@ -693,6 +694,7 @@ export function createQAChannelPreview(
  * @param questionerId 질문자 ID
  * @param question 질문 내용
  * @param response CHOIR의 응답
+ * @param canAnswer 답변 가능 여부
  * @param isAnonymous 익명 여부 (선택사항)
  * @param questionerName 질문자 이름 (선택사항)
  * @returns 메시지 블록 배열
@@ -702,14 +704,13 @@ export function createPrivateMessage(
   questionerId: string,
   question: string,
   response: string,
+  canAnswer: boolean,
   isAnonymous?: boolean,
   questionerName?: string
 ) {
-  // CHOIR가 답변할 수 없는 경우인지 확인
-  const couldNotAnswer = response.includes("I couldn't find this information in our current documentation");
   const senderIdentity = isAnonymous ? "A team member" : (questionerName || "A team member");
   
-  if (couldNotAnswer) {
+  if (!canAnswer) {
     // 답변 불가능한 경우
     return [
       {
@@ -775,6 +776,7 @@ export function createPrivateMessage(
  * @param questionerName 질문자 이름
  * @param question 질문 내용
  * @param response CHOIR의 응답
+ * @param canAnswer 답변 가능 여부
  * @param isAnonymous 익명 여부 (선택사항)
  * @returns 미리보기 텍스트
  */
@@ -783,12 +785,12 @@ export function createPrivateMessagePreview(
   questionerName: string,
   question: string,
   response: string,
+  canAnswer: boolean,
   isAnonymous?: boolean
 ): string {
-  const couldNotAnswer = response.includes("I couldn't find this information in our current documentation");
   const senderIdentity = isAnonymous ? "A team member" : questionerName;
   
-  if (couldNotAnswer) {
+  if (!canAnswer) {
     return `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. The team member would like your help with this question.`;
   } else {
     return `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nThe team member would like to discuss this with you. Could you help them?`;

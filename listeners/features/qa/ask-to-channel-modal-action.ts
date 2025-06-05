@@ -66,6 +66,7 @@ export const askToChannelModalCallback = async ({
       body.user.id,
       sessionData.originalQuestion,
       sessionData.botResponse,
+      true, // canAnswer - assume true for preview
       false, // not anonymous for preview
       `(*${questionerName}* OR *a team member*)`
     );

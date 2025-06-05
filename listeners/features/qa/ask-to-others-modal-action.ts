@@ -46,7 +46,9 @@ export const askToOthersModalCallback = async ({
       "Selected person(s)",
       `(*${questionerName}* OR *a team member*)`,
       sessionData.originalQuestion,
-      sessionData.botResponse
+      sessionData.botResponse,
+      true, // canAnswer - assume true for preview
+      false // not anonymous for preview
     );
 
     await client.views.open({

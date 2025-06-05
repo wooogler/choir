@@ -47,6 +47,7 @@ export const askToChannelSubmitCallback = async ({
       userId,
       sessionData.originalQuestion,
       sessionData.botResponse,
+      true, // canAnswer - assume true for channel sharing
       isAnonymous,
       userName
     );
