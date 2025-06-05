@@ -41,10 +41,10 @@ export const askToOthersModalCallback = async ({
     // 질문자 이름 가져오기
     const questionerName = await getUserName(body.user.id, client);
 
-    // Preview 생성 (공통 함수 사용 - 샘플 수신자명 사용)
+    // Preview 생성 (static preview with both options shown)
     const previewText = createPrivateMessagePreview(
       "Selected person(s)",
-      questionerName,
+      `(*${questionerName}* OR *a team member*)`,
       sessionData.originalQuestion,
       sessionData.botResponse
     );
@@ -97,10 +97,34 @@ export const askToOthersModalCallback = async ({
             }
           },
           {
+            type: "input",
+            block_id: "anonymous_select",
+            element: {
+              type: "checkboxes",
+              action_id: "anonymous_checkbox_private",
+              options: [
+                {
+                  text: {
+                    type: "plain_text",
+                    text: "Share anonymously (show as 'A team member' instead of your name)"
+                  },
+                  value: "anonymous"
+                }
+              ]
+            },
+            label: {
+              type: "plain_text",
+              text: "🎭 Privacy Options",
+              emoji: true
+            },
+            optional: true
+          },
+          {
             type: "divider"
           },
           {
             type: "section",
+            block_id: "preview_section",
             text: {
               type: "mrkdwn",
               text: "👀 *Here's what will be shared:*"
@@ -108,6 +132,7 @@ export const askToOthersModalCallback = async ({
           },
           {
             type: "section",
+            block_id: "preview_content",
             text: {
               type: "mrkdwn",
               text: previewText
@@ -128,3 +153,4 @@ export const askToOthersModalCallback = async ({
     });
   }
 };
+

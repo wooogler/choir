@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
 import { getSessionData, SessionType } from "services/common";
-import { getQAChannel, getWorkspaceId, createQAChannelPreview } from "services/slack";
+import { getQAChannel, getWorkspaceId, createQAChannelPreview, getUserName } from "services/slack";
 
 /**
  * 채널 선택 모달 열기
@@ -57,12 +57,17 @@ export const askToChannelModalCallback = async ({
       logger.warn(`Could not get Q&A channel name for ${qaChannelId}:`, error);
     }
 
-    // Preview 생성 (공통 함수 사용)
+    // 질문자 이름 가져오기
+    const questionerName = await getUserName(body.user.id, client);
+
+    // Preview 생성 (static preview with both options shown)
     const previewText = createQAChannelPreview(
       channelName,
       body.user.id,
       sessionData.originalQuestion,
-      sessionData.botResponse
+      sessionData.botResponse,
+      false, // not anonymous for preview
+      `(*${questionerName}* OR *a team member*)`
     );
 
     await client.views.open({
@@ -95,10 +100,34 @@ export const askToChannelModalCallback = async ({
             }
           },
           {
+            type: "input",
+            block_id: "anonymous_select",
+            element: {
+              type: "checkboxes",
+              action_id: "anonymous_checkbox_channel",
+              options: [
+                {
+                  text: {
+                    type: "plain_text",
+                    text: "Share anonymously (show as 'A team member' instead of your name)"
+                  },
+                  value: "anonymous"
+                }
+              ]
+            },
+            label: {
+              type: "plain_text",
+              text: "🎭 Privacy Options",
+              emoji: true
+            },
+            optional: true
+          },
+          {
             type: "divider"
           },
           {
             type: "section",
+            block_id: "preview_section",
             text: {
               type: "mrkdwn",
               text: "👀 *Here's what will be shared:*"
@@ -106,6 +135,7 @@ export const askToChannelModalCallback = async ({
           },
           {
             type: "section",
+            block_id: "preview_content",
             text: {
               type: "mrkdwn",
               text: previewText
@@ -126,3 +156,4 @@ export const askToChannelModalCallback = async ({
     });
   }
 };
+

@@ -16,6 +16,7 @@ export const askToChannelSubmitCallback = async ({
 
   try {
     const { sessionId, qaChannelId } = JSON.parse(view.private_metadata);
+    const isAnonymous = (view.state.values.anonymous_select?.anonymous_checkbox_channel?.selected_options?.length || 0) > 0;
     const userId = body.user.id;
 
     if (!sessionId || !qaChannelId) {
@@ -40,18 +41,22 @@ export const askToChannelSubmitCallback = async ({
       logger.warn(`Could not get Q&A channel name for ${qaChannelId}:`, error);
     }
 
-    // 공통 함수를 사용해 메시지 블록 생성
+    // 공통 함수를 사용해 메시지 블록 생성 (anonymous 옵션 포함)
     const messageBlocks = createQAChannelMessage(
       channelName,
       userId,
       sessionData.originalQuestion,
-      sessionData.botResponse
+      sessionData.botResponse,
+      isAnonymous,
+      userName
     );
+
+    const messageText = isAnonymous ? "Q&A from a team member" : `Q&A from ${userName}`;
 
     // Q&A 채널에 메시지 전달
     await client.chat.postMessage({
       channel: qaChannelId,
-      text: `Q&A from ${userName}`,
+      text: messageText,
       blocks: messageBlocks
     });
 

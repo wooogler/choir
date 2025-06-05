@@ -17,6 +17,7 @@ export const askToOthersSubmitCallback = async ({
   try {
     const sessionId = view.private_metadata;
     const selectedUsers = view.state.values.users_select.users.selected_users;
+    const isAnonymous = (view.state.values.anonymous_select?.anonymous_checkbox_private?.selected_options?.length || 0) > 0;
     const userId = body.user.id;
 
     if (!sessionId || !selectedUsers || selectedUsers.length === 0) {
@@ -35,17 +36,21 @@ export const askToOthersSubmitCallback = async ({
     // 선택된 각 멤버에게 DM으로 질문과 답변 전달
     for (const targetUserId of selectedUsers) {
       try {
-        // 공통 함수를 사용해 메시지 블록 생성
+        // 공통 함수를 사용해 메시지 블록 생성 (anonymous 옵션 포함)
         const messageBlocks = createPrivateMessage(
           targetUserId,
           userId,
           sessionData.originalQuestion,
-          sessionData.botResponse
+          sessionData.botResponse,
+          isAnonymous,
+          userName
         );
 
+        const messageText = isAnonymous ? "Private Q&A from a team member" : `Private Q&A from ${userName}`;
+        
         await client.chat.postMessage({
           channel: targetUserId,
-          text: `Private Q&A from ${userName}`,
+          text: messageText,
           blocks: messageBlocks
         });
       } catch (error) {
