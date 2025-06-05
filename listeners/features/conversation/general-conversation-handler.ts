@@ -45,6 +45,7 @@ export async function handleGeneralConversationMessage(
       channelType: event.channel_type
     });
 
+    // Send the main response to everyone
     await client.chat.postMessage({
       channel: event.channel,
       text: replyText,
@@ -55,7 +56,20 @@ export async function handleGeneralConversationMessage(
             type: "mrkdwn",
             text: replyText
           }
-        },
+        }
+      ],
+      unfurl_links: false,
+      unfurl_media: false
+    });
+
+    // Wait 1 second, then send the correction buttons privately to the user
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    await client.chat.postEphemeral({
+      channel: event.channel,
+      user: event.user,
+      text: "💡 If I misunderstood your message, please click one of the buttons below:",
+      blocks: [
         {
           type: "section",
           text: {
@@ -88,9 +102,7 @@ export async function handleGeneralConversationMessage(
             }
           ]
         }
-      ],
-      unfurl_links: false,
-      unfurl_media: false
+      ]
     });
 
     logger.info(`General conversation reply sent to user ${event.user} in channel ${event.channel}`);
