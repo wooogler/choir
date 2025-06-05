@@ -22,13 +22,13 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     const loadingMessage = await client.chat.postMessage({
         channel: originalChannelId,
         ...(isThreadMention && { thread_ts: event.thread_ts }),
-      text: "🔍 Analyzing the last 10 messages to extract knowledge...",
+      text: "🔍 Analyzing recent messages (last 5 minutes) to extract knowledge...",
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-            text: "🔍 Analyzing the last 10 messages to extract knowledge..."
+            text: "🔍 Analyzing recent messages (last 5 minutes) to extract knowledge..."
           }
         }
       ]
@@ -38,17 +38,21 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       throw new Error("Failed to post loading message");
     }
 
-    // Get message history (last 10 messages)
+    // Get message history (last 10 messages within the last 5 minutes)
+    const fiveMinutesAgo = Math.floor((Date.now() - 5 * 60 * 1000) / 1000);
+    
     const historyResult = isThreadMention ? 
       await client.conversations.replies({
         channel: originalChannelId,
         ts: event.thread_ts,
         limit: 15, // Get more to filter out bot messages
-        inclusive: true
+        inclusive: true,
+        oldest: fiveMinutesAgo.toString() // Only get messages from the last 5 minutes
       }) :
       await client.conversations.history({
         channel: originalChannelId,
         limit: 15, // Get more to filter out bot messages
+        oldest: fiveMinutesAgo.toString() // Only get messages from the last 5 minutes
       });
 
     if (!historyResult.messages?.length) {
