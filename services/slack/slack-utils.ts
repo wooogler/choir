@@ -652,7 +652,7 @@ export function createQAChannelMessage(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `The team member has a follow up discussion on my answer. Could anyone help?`
+          text: `I could not answer ${senderIdentity}'s following question. Could someone help me out?`
         }
       }
     ];
@@ -684,7 +684,7 @@ export function createQAChannelPreview(
   if (!canAnswer) {
     return `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. Could anyone help?`;
   } else {
-    return `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nThe team member has a follow up discussion on my answer. Could anyone help?`;
+    return `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nHowever, ${senderIdentity} wants to discuss this with others. Could anyone help?`;
   }
 }
 
