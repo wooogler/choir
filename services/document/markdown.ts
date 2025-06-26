@@ -799,3 +799,130 @@ function insertNodeAfterReference(
   updateNodeInRootTree(tree, parentNode);
   console.log(`[DEBUG] insertNodeAfterReference: 루트 트리 업데이트 완료`);
 }
+
+/**
+ * 새로운 섹션을 트리에 추가 - CREATE NEW SECTION 기능용
+ */
+export function createNewSectionNode(
+  docTree: DocumentTree,
+  sectionTitle: string,
+  sectionBody: string,
+  insertAfterNodeId?: string // 특정 노드 뒤에 삽입 (선택사항)
+): DocumentTree {
+  // 원본 트리의 깊은 복사본 생성
+  const newTree: DocumentTree = {
+    title: docTree.title,
+    nodeMap: new Map(docTree.nodeMap),
+    sectionMap: new Map(docTree.sectionMap),
+    root: JSON.parse(JSON.stringify(docTree.root)),
+  };
+
+  // 새 섹션 ID 생성
+  const newSectionId = `section_${Date.now()}`;
+  
+  // 헤딩 노드 생성 (섹션 제목)
+  const headingNodeId = `${newSectionId}_heading`;
+  const headingNode: Heading & ExtendedNode = {
+    type: "heading",
+    depth: 1, // h2 레벨
+    children: [{ type: "text", value: sectionTitle }],
+    id: headingNodeId,
+    fileName: docTree.title || "unknown",
+    parentId: undefined, // 루트 레벨
+    sectionId: newSectionId
+  };
+
+  // 본문 노드 생성 (섹션 내용)
+  const bodyNodeId = `${newSectionId}_body`;
+  const bodyNode: Paragraph & ExtendedNode = {
+    type: "paragraph",
+    children: [{ type: "text", value: sectionBody }],
+    id: bodyNodeId,
+    fileName: docTree.title || "unknown",
+    parentId: undefined, // 루트 레벨 (헤딩과 동일한 레벨)
+    sectionId: newSectionId
+  };
+
+  // 노드맵에 추가
+  newTree.nodeMap.set(headingNodeId, headingNode);
+  newTree.nodeMap.set(bodyNodeId, bodyNode);
+
+  // 섹션맵에 추가
+  newTree.sectionMap.set(newSectionId, headingNode);
+
+  // 트리 구조에 삽입
+  if (insertAfterNodeId) {
+    // 특정 노드 뒤에 삽입
+    insertSectionAfterNode(newTree, insertAfterNodeId, headingNode, bodyNode);
+  } else {
+    // 문서 끝에 추가
+    appendSectionToEnd(newTree, headingNode, bodyNode);
+  }
+
+  console.log(`새로운 섹션 "${sectionTitle}"이 트리에 추가되었습니다 (ID: ${newSectionId})`);
+
+  return newTree;
+}
+
+/**
+ * 특정 노드 뒤에 섹션 삽입
+ */
+function insertSectionAfterNode(
+  tree: DocumentTree,
+  referenceNodeId: string,
+  headingNode: ExtendedNode,
+  bodyNode: ExtendedNode
+): void {
+  const referenceNode = tree.nodeMap.get(referenceNodeId);
+  if (!referenceNode) {
+    console.warn(`참조 노드를 찾을 수 없음: ${referenceNodeId}, 문서 끝에 추가합니다.`);
+    appendSectionToEnd(tree, headingNode, bodyNode);
+    return;
+  }
+
+  // 참조 노드의 부모 찾기 (없으면 루트)
+  const parentNode = referenceNode.parentId ? 
+    tree.nodeMap.get(referenceNode.parentId) : tree.root;
+
+  if (!parentNode || !Array.isArray((parentNode as any).children)) {
+    console.warn(`부모 노드가 유효하지 않음, 문서 끝에 추가합니다.`);
+    appendSectionToEnd(tree, headingNode, bodyNode);
+    return;
+  }
+
+  const parentChildren = (parentNode as any).children;
+  const referenceIndex = parentChildren.findIndex((child: any) => child.id === referenceNodeId);
+  
+  if (referenceIndex === -1) {
+    console.warn(`참조 노드를 부모의 children에서 찾을 수 없음, 문서 끝에 추가합니다.`);
+    appendSectionToEnd(tree, headingNode, bodyNode);
+    return;
+  }
+
+  // 참조 노드 뒤에 헤딩과 본문 노드 삽입
+  parentChildren.splice(referenceIndex + 1, 0, headingNode, bodyNode);
+
+  // 부모 노드 업데이트
+  if (referenceNode.parentId) {
+    tree.nodeMap.set(referenceNode.parentId, parentNode);
+  }
+
+  console.log(`섹션이 노드 ${referenceNodeId} 뒤에 삽입되었습니다.`);
+}
+
+/**
+ * 문서 끝에 섹션 추가
+ */
+function appendSectionToEnd(
+  tree: DocumentTree,
+  headingNode: ExtendedNode,
+  bodyNode: ExtendedNode
+): void {
+  // 루트 레벨에 섹션 추가
+  if (Array.isArray(tree.root.children)) {
+    tree.root.children.push(headingNode as any, bodyNode as any);
+    console.log(`섹션이 문서 끝에 추가되었습니다.`);
+  } else {
+    console.error("루트 노드의 children이 배열이 아닙니다.");
+  }
+}

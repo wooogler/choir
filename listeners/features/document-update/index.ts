@@ -5,7 +5,7 @@ import { showSuggestionEditorModal } from "./suggestions/show-suggestion-editor-
 import { cancelDocumentUpdatesCallback } from "./apply-document/cancel-document-updates-action"; 
 import { suggestUpdatesCallback } from "./suggestions/suggest-updates"; // Named export
 import { rejectUpdateCallback } from "./apply-document/reject-update"; // Named export from reject-update.ts
-import { applySelectedToGithubAction } from "./apply-document/update-documents"; // Named export from update-documents.ts
+import { applySelectedToGithubAction, handleNewSectionModalSubmission } from "./apply-document/update-documents"; // Named export from update-documents.ts
 import { applyExtractedKnowledgeCallback } from "./extract-knowledge/apply-extracted-knowledge-action";
 import { sendUpdateSuggestionToManagerCallback } from "./extract-knowledge/send-update-suggestion-to-manager-action";
 import { editExtractedKnowledgeCallback } from "./extract-knowledge/edit-extracted-knowledge-action";
@@ -36,6 +36,7 @@ export const registerDocumentUpdateFeature = (app: App) => {
   app.view("update_editor_submission", handleSuggestionEditorSubmission);
   app.view("knowledge_edit_modal", handleKnowledgeEditModal);
   app.view("knowledge_edit_manager_modal", handleKnowledgeEditManagerModal);
+  app.view("new_section_modal", handleNewSectionModalSubmission);
 };
 
 export * from "./extract-knowledge/update-request-handler";

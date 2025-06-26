@@ -1295,4 +1295,75 @@ export class VectorStoreService {
       return false;
     }
   }
+
+  /**
+   * 새로운 섹션을 파일에 추가 - CREATE NEW SECTION 기능용
+   */
+  public async addNewSection(
+    fileName: string,
+    sectionTitle: string,
+    sectionBody: string,
+    insertAfterNodeId?: string
+  ): Promise<boolean> {
+    try {
+      const fileIndex = this.markdownFiles.findIndex(file => file.name === fileName);
+      if (fileIndex === -1) {
+        console.error(`File not found: ${fileName}`);
+        return false;
+      }
+
+      const markdownFile = this.markdownFiles[fileIndex];
+      
+      // 1. 새 섹션 노드 생성
+      const { createNewSectionNode } = await import("services/document/markdown");
+      const updatedTree = createNewSectionNode(
+        markdownFile.tree,
+        sectionTitle,
+        sectionBody,
+        insertAfterNodeId
+      );
+
+      // 2. 새로 추가된 노드들을 벡터 스토어에 추가
+      const existingNodeIds = new Set(markdownFile.tree.nodeMap.keys());
+      let documentsChanged = false;
+
+      for (const [nodeId, node] of updatedTree.nodeMap) {
+        if (!existingNodeIds.has(nodeId)) {
+          // 새로 추가된 노드
+          const extNode = node as any;
+          
+          const metadata: DocumentMetadata = {
+            fileName: fileName,
+            githubUrl: markdownFile.githubUrl,
+            sectionName: extNode.sectionId ? sectionTitle : "",
+            headingPath: [], // TODO: 적절한 headingPath 설정
+            nodeId: nodeId,
+            originalContent: extNode.children?.[0]?.value || ""
+          };
+
+          const contextPrefix = formatHeadingContext(metadata.headingPath || [], fileName);
+          const newDocument = new Document({
+            pageContent: contextPrefix + (extNode.children?.[0]?.value || ""),
+            metadata
+          });
+
+          this.documents.push(newDocument);
+          documentsChanged = true;
+          console.info(`Added new document for section node: ${nodeId}`);
+        }
+      }
+
+      // 3. 마크다운 파일 업데이트
+      this.markdownFiles[fileIndex] = {
+        ...markdownFile,
+        tree: updatedTree
+      };
+
+      console.info(`Successfully added new section "${sectionTitle}" to ${fileName}`);
+      return true;
+    } catch (error) {
+      console.error(`Failed to add new section to ${fileName}:`, error);
+      return false;
+    }
+  }
 }
