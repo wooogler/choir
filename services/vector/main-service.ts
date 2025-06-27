@@ -76,14 +76,25 @@ export class VectorStoreService {
     try {
       this.markdownFiles = markdownFiles;
 
-      // 파일이 없으면 초기화 실패
+      // 파일이 없어도 빈 벡터 스토어로 초기화
       if (!this.markdownFiles.length) {
-        console.error(
-          "No markdown files provided for vector store initialization"
+        console.warn(
+          "No markdown files provided, initializing empty vector store"
         );
-        throw new VectorStoreError("No markdown files provided", {
-          code: "NO_FILES",
-        });
+        
+        // 빈 벡터 스토어 초기화
+        const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
+        this.store = new MemoryVectorStore(openAIEmbeddings);
+        this.documents = [];
+        
+        // 빈 검색 서비스 초기화
+        this.searchService = new SearchService(this.store, this.embeddingService);
+        this.searchService.buildSearchIndices(this.documents);
+        this.enhancedSearchService = new EnhancedSearchService(this);
+        
+        this.isInitialized = true;
+        console.info("Successfully initialized empty vector store");
+        return true;
       }
 
       // 캐시 ID 생성
@@ -170,8 +181,18 @@ export class VectorStoreService {
       // 문서 준비
       this.documents = await this.prepareDocuments(markdownFiles);
       if (this.documents.length === 0) {
-        console.error("No valid documents found to build vector store");
-        return false;
+        console.warn("No valid documents found, initializing empty vector store");
+        // 빈 벡터 스토어 초기화
+        const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
+        this.store = new MemoryVectorStore(openAIEmbeddings);
+        
+        // 빈 검색 서비스 초기화
+        this.searchService = new SearchService(this.store, this.embeddingService);
+        this.searchService.buildSearchIndices(this.documents);
+        this.enhancedSearchService = new EnhancedSearchService(this);
+        
+        console.info("Successfully initialized empty vector store");
+        return true;
       }
 
       // 텍스트 추출 및 임베딩을 위한 전처리

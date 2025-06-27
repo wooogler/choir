@@ -238,6 +238,7 @@ interface GithubRepoInfo {
   repo: string;
   path: string;
   url: string;
+  branch?: string;
 }
 
 const githubRepoStore = new Map<string, GithubRepoInfo>();
@@ -373,9 +374,12 @@ export function parseGithubUrl(url: string): GithubRepoInfo | null {
     const repo = pathSegments[1];
 
     let path = "";
+    let branch = undefined;
 
     // 경로가 있는 경우 (tree/main/path 형식)
     if (pathSegments.length > 3 && pathSegments[2] === "tree") {
+      // branch 정보 추출
+      branch = pathSegments[3];
       // tree/{branch} 이후의 경로를 추출
       path = pathSegments.slice(4).join("/");
     }
@@ -385,6 +389,7 @@ export function parseGithubUrl(url: string): GithubRepoInfo | null {
       repo,
       path,
       url,
+      branch,
     };
   } catch (error) {
     console.error("Error parsing GitHub URL:", error);

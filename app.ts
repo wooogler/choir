@@ -134,13 +134,14 @@ app.event('app_home_opened', async ({ event, client, logger }) => {
 
       // 기본 저장소 설정 (환경에 따라 다르게 설정)
       const defaultRepo = process.env.NODE_ENV === 'development' 
-        ? { owner: 'wooogler', repo: 'assets' }
-        : { owner: 'wooogler', repo: 'makeability-lab-handbook' };
+        ? { owner: 'wooogler', repo: 'assets', branch: 'master' }
+        : { owner: 'wooogler', repo: 'choirlab', branch: 'main' };
 
       const markdownFiles = await githubService.getAllMarkdownFiles({
         owner: defaultRepo.owner,
         repo: defaultRepo.repo,
         path: "",
+        ref: defaultRepo.branch,
       });
 
       await vectorStore.setMarkdownFiles(markdownFiles, {

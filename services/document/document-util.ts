@@ -212,6 +212,7 @@ export interface ProcessFileChangesResult {
   githubInfo?: {
     owner: string;
     repo: string;
+    branch?: string;
   };
 }
 
