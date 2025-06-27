@@ -55,6 +55,10 @@ export const createNewSectionAction = async ({
     
     const copyText = `# ${sectionTitle}\n${formattedFirstLine}${restOfContent ? '\n' + restOfContent : ''}`;
 
+    // 제목과 본문 분리
+    const sectionTitleForEdit = sectionTitle;
+    const sectionBodyForEdit = `${formattedFirstLine}${restOfContent ? '\n' + restOfContent : ''}`;
+
     const modal: ModalView = {
       type: "modal" as "modal",
       callback_id: "new_section_modal",
@@ -65,6 +69,11 @@ export const createNewSectionAction = async ({
       close: {
         type: "plain_text" as "plain_text",
         text: "Maybe Later"
+      },
+      submit: {
+        type: "plain_text" as "plain_text",
+        text: "Submit",
+        emoji: true
       },
       private_metadata: JSON.stringify({
         newSectionSessionId,
@@ -102,17 +111,47 @@ export const createNewSectionAction = async ({
           }
         },
         {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `\`\`\`${copyText}\`\`\``
+          type: "input",
+          block_id: "section_title_input",
+          label: {
+            type: "plain_text",
+            text: "Section Title",
+            emoji: true
+          },
+          element: {
+            type: "plain_text_input",
+            action_id: "section_title",
+            initial_value: sectionTitleForEdit,
+            placeholder: {
+              type: "plain_text",
+              text: "Enter section title..."
+            }
+          }
+        },
+        {
+          type: "input",
+          block_id: "section_body_input",
+          label: {
+            type: "plain_text",
+            text: "Section Content",
+            emoji: true
+          },
+          element: {
+            type: "plain_text_input",
+            action_id: "section_body",
+            initial_value: sectionBodyForEdit,
+            multiline: true,
+            placeholder: {
+              type: "plain_text",
+              text: "Enter section content..."
+            }
           }
         },
         {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "✨ *Ready to add this to your documentation?* Just copy the content above and click the button below - I'll take you directly to the right place in GitHub where you can paste it!"
+            text: "✨ *Ready to add this to your documentation?* Edit the content above if needed, then click the button below - I'll take you directly to the right place in GitHub where you can paste it!"
           }
         },
         {

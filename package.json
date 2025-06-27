@@ -5,7 +5,7 @@
   "main": "dist/app.js",
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node -r tsconfig-paths/register app.ts",
+    "dev": "NODE_ENV=development ts-node -r tsconfig-paths/register app.ts",
     "dev:watch": "nodemon --watch '**/*.ts' --exec 'ts-node -r tsconfig-paths/register' app.ts",
     "dev:prod": "NODE_ENV=production ts-node -r tsconfig-paths/register app.ts",
     "lint": "npx @biomejs/biome check *.ts listeners",
@@ -28,6 +28,9 @@
     "url": "https://github.com/slack-samples/bolt-ts-starter-template/issues"
   },
   "dependencies": {
+    "@azure/identity": "^4.10.1",
+    "@azure/openai": "^2.0.0",
+    "@langchain/azure-openai": "^0.0.11",
     "@langchain/community": "^0.3.27",
     "@langchain/core": "^0.3.36",
     "@langchain/openai": "^0.4.2",

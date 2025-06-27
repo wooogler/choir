@@ -657,7 +657,7 @@ export function createQAChannelMessage(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `I could not answer ${senderIdentity}'s following question. Could someone help me out?`
+          text: `${senderIdentity} would like to discuss this response with others. Could anyone help?`
         }
       }
     ];
