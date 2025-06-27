@@ -2,7 +2,7 @@
 
 This is a generic Bolt for JavaScript (TypeScript) template app used to build out Slack apps.
 
-Before getting started, make sure you have a development workspace where you have permissions to install apps. If you don’t have one setup, go ahead and [create one](https://slack.com/create).
+Before getting started, make sure you have a development workspace where you have permissions to install apps. If you don't have one setup, go ahead and [create one](https://slack.com/create).
 
 ## Installation
 
@@ -21,6 +21,32 @@ Before you can run the app, you'll need to store some environment variables.
 1. Copy `env.sample` to `.env`
 2. Open your apps configuration page from [this list](https://api.slack.com/apps), click _OAuth & Permissions_ in the left hand menu, then copy the _Bot User OAuth Token_ into your `.env` file under `SLACK_BOT_TOKEN`
 3. Click _Basic Information_ from the left hand menu and follow the steps in the _App-Level Tokens_ section to create an app-level token with the `connections:write` scope. Copy that token into your `.env` as `SLACK_APP_TOKEN`.
+
+#### Azure OpenAI Configuration
+
+This app supports Azure OpenAI for AI services. To configure Azure OpenAI:
+
+1. Set up an Azure OpenAI resource in the Azure portal
+2. Create deployments for chat and embeddings models
+3. Add the following environment variables to your `.env` file:
+
+```env
+# Azure OpenAI 설정
+AZURE_OPENAI_API_KEY=your_azure_openai_api_key
+AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com
+AZURE_OPENAI_API_VERSION=2024-10-21
+AZURE_OPENAI_DEPLOYMENT_NAME=your-chat-deployment-name
+AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME=your-embeddings-deployment-name
+
+# 사용할 AI 서비스 선택 (openai 또는 azure)
+AI_PROVIDER=azure
+```
+
+4. Validate your configuration using the provided utility:
+```typescript
+import { validateAzureOpenAIConfig } from 'services/llm';
+validateAzureOpenAIConfig(); // Returns true if configuration is valid
+```
 
 #### Install Dependencies
 

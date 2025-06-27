@@ -4,12 +4,15 @@ import type {
   BlockButtonAction,
   BlockAction,
   UsersSelectAction,
+  SlackViewMiddlewareArgs,
+  ViewSubmitAction,
 } from "@slack/bolt";
 import { DocumentUpdate, getStoredDocumentUpdates, getSelectedNodeIds } from "services/document";
-import { applyDocumentUpdatesToGithub } from "services/github";
 import { VectorStoreService } from "services/vector/main-service";
+import GithubService from "services/github";
+import { parseGithubUrl, getUserName } from "services/slack";
+import { applyDocumentUpdatesToGithub } from "services/github";
 import { formatSectionPathWithLinks } from "services/document/section-utils";
-import { getUserName } from "services/slack";
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();
@@ -188,3 +191,135 @@ const applySelectedToGithubAction = async ({
 };
 
 export { applySelectedToGithubAction };
+
+/**
+ * New section modal submission handler - GitHub update version
+ */
+export const handleNewSectionModalSubmission = async ({
+  ack,
+  body,
+  client,
+  logger
+}: AllMiddlewareArgs & SlackViewMiddlewareArgs<ViewSubmitAction>) => {
+  await ack();
+
+  try {
+    const { user } = body;
+    const { values } = body.view.state;
+    
+    // Extract form values
+    const sectionTitle = values.section_title_input?.section_title?.value || '';
+    const sectionBody = values.section_body_input?.section_body?.value || '';
+    
+    // Extract metadata
+    const metadata = JSON.parse(body.view.private_metadata || '{}');
+    const { recommendedFile, userId, editUrl } = metadata;
+
+    logger.info(`New section modal submitted by user ${user.id}`);
+    logger.info(`Section title: ${sectionTitle}`);
+    logger.info(`Section body length: ${sectionBody.length}`);
+    logger.info(`Recommended file: ${recommendedFile}`);
+
+    if (!sectionTitle || !sectionBody) {
+      await client.chat.postMessage({
+        channel: user.id,
+        text: "❌ Section title and body are required."
+      });
+      return;
+    }
+
+    if (!recommendedFile) {
+      await client.chat.postMessage({
+        channel: user.id,
+        text: "❌ No recommended file found. Please try again."
+      });
+      return;
+    }
+
+    // 벡터 스토어 인스턴스 가져오기
+    const vectorStore = VectorStoreService.getInstance();
+
+    // 1. 벡터 스토어에 새 섹션 추가
+    const success = await vectorStore.addNewSection(
+      recommendedFile,
+      sectionTitle,
+      sectionBody
+    );
+
+    if (!success) {
+      await client.chat.postMessage({
+        channel: user.id,
+        text: `❌ Failed to add new section to vector store for file: ${recommendedFile}`
+      });
+      return;
+    }
+
+    // 2. 업데이트된 마크다운 파일 가져오기
+    const markdownFile = vectorStore.getMarkdownFile(recommendedFile);
+    if (!markdownFile) {
+      await client.chat.postMessage({
+        channel: user.id,
+        text: `❌ Updated markdown file not found: ${recommendedFile}`
+      });
+      return;
+    }
+
+    // 3. 트리를 마크다운으로 변환
+    const { treeToMarkdown } = await import("services/document/markdown");
+    const updatedMarkdown = treeToMarkdown(markdownFile.tree);
+
+    // 4. GitHub URL 파싱
+    const githubUrl = markdownFile.githubUrl;
+    const parsedUrl = parseGithubUrl(githubUrl);
+    if (!parsedUrl) {
+      await client.chat.postMessage({
+        channel: user.id,
+        text: `❌ Invalid GitHub URL: ${githubUrl}`
+      });
+      return;
+    }
+
+    const { owner, repo, path: repoPath } = parsedUrl;
+
+    // 5. 커밋 메시지 생성
+    const userName = await getUserName(userId, client);
+    const commitMessage = `Add new section: ${sectionTitle}
+
+Added by: ${userName}
+File: ${recommendedFile}
+Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''}`;
+
+    // 6. GitHub에 파일 업데이트
+    const githubService = GithubService.getInstance();
+    await githubService.updateMarkdownFile({
+      owner,
+      repo,
+      path: markdownFile.path, // 실제 파일 경로 사용
+      content: updatedMarkdown,
+      message: commitMessage,
+    });
+
+    // 7. 성공 메시지 전송
+    await client.chat.postMessage({
+      channel: user.id,
+      text: `✅ New section "${sectionTitle}" added successfully to GitHub!
+
+📁 *File:* <${githubUrl}|${recommendedFile}>
+📝 *Added by:* ${userName}
+
+🔍 *Preview:*
+\`\`\`# ${sectionTitle}
+${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``
+    });
+
+    logger.info(`Successfully created new section "${sectionTitle}" for ${recommendedFile} and pushed to GitHub`);
+
+  } catch (error) {
+    logger.error("Error handling new section modal submission:", error);
+    
+    await client.chat.postMessage({
+      channel: body.user.id,
+      text: `❌ Failed to process new section submission: ${error instanceof Error ? error.message : "Unknown error"}`
+    });
+  }
+};

@@ -1,6 +1,6 @@
 import { Document } from "@langchain/core/documents";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
-import { OpenAIEmbeddings } from "@langchain/openai";
+import { AzureOpenAIEmbeddings } from "@langchain/azure-openai";
 import { MarkdownFile } from "../github";
 import { VectorCacheManager } from "./cache-manager";
 import { EmbeddingService } from "./embedding-service";
@@ -37,10 +37,10 @@ export class VectorStoreService {
   private cacheId: string = "";
 
   /**
-   * 생성자 - 직접 호출하지 않고 getInstance() 메서드를 사용하세요
+   * 생성자 - Azure OpenAI 설정으로 수정
    */
-  private constructor(openAIApiKey: string = process.env.OPENAI_API_KEY || "") {
-    // 필요한 서비스 컴포넌트 초기화
+  private constructor(openAIApiKey: string = process.env.AZURE_OPENAI_API_KEY || "") {
+    // Azure OpenAI 설정으로 EmbeddingService 초기화
     this.embeddingService = new EmbeddingService(openAIApiKey);
     this.cacheManager = new VectorCacheManager();
 
@@ -48,7 +48,7 @@ export class VectorStoreService {
     this.searchService = null as any;
     this.enhancedSearchService = null as any;
 
-    console.info("VectorStoreService instance created");
+    console.info("VectorStoreService instance created with Azure OpenAI");
   }
 
   /**
@@ -126,13 +126,13 @@ export class VectorStoreService {
         `Building vector store (useCache=${useCache}, forceRefresh=${forceRefresh})`
       );
 
-      const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
+      const azureOpenAIEmbeddings = this.embeddingService.getEmbeddingAPI();
 
       // 캐시 사용하지 않거나 강제 리프레시인 경우 새로 구축
       if (!useCache || forceRefresh) {
         return await this.buildVectorStoreFromFiles(
           markdownFiles,
-          openAIEmbeddings
+          azureOpenAIEmbeddings
         );
       }
 
@@ -142,14 +142,14 @@ export class VectorStoreService {
       // 캐시가 유효하면 캐시에서 복원
       if (isCacheValid) {
         console.info("Valid cache found, loading from cache");
-        return await this.restoreFromCache(openAIEmbeddings);
+        return await this.restoreFromCache(azureOpenAIEmbeddings);
       }
 
       // 유효한 캐시가 없으면 새로 구축
       console.info("No valid cache found, building from files");
       return await this.buildVectorStoreFromFiles(
         markdownFiles,
-        openAIEmbeddings
+        azureOpenAIEmbeddings
       );
     } catch (error) {
       console.error("Error building vector store", error);
@@ -162,7 +162,7 @@ export class VectorStoreService {
    */
   private async buildVectorStoreFromFiles(
     markdownFiles: MarkdownFile[],
-    openAIEmbeddings: OpenAIEmbeddings
+    azureOpenAIEmbeddings: AzureOpenAIEmbeddings
   ): Promise<boolean> {
     try {
       console.info(`Building vector store from ${markdownFiles.length} files`);
@@ -219,7 +219,7 @@ export class VectorStoreService {
       });
 
       // 메모리 벡터 스토어 생성 및 로드
-      this.store = new MemoryVectorStore(openAIEmbeddings);
+      this.store = new MemoryVectorStore(azureOpenAIEmbeddings);
       const success = await this.embeddingService.loadEmbeddingsToVectorStore(
         this.store,
         this.documents,
@@ -250,7 +250,7 @@ export class VectorStoreService {
    * 캐시에서 벡터 스토어 복원
    */
   private async restoreFromCache(
-    openAIEmbeddings: OpenAIEmbeddings
+    azureOpenAIEmbeddings: AzureOpenAIEmbeddings
   ): Promise<boolean> {
     try {
       console.info("Attempting to restore vector store from cache");
@@ -312,7 +312,7 @@ export class VectorStoreService {
       }
 
       // 메모리 벡터 스토어 생성 및 로드
-      this.store = new MemoryVectorStore(openAIEmbeddings);
+      this.store = new MemoryVectorStore(azureOpenAIEmbeddings);
       const success = await this.embeddingService.loadEmbeddingsToVectorStore(
         this.store,
         this.documents,
@@ -903,8 +903,8 @@ export class VectorStoreService {
       this.documents.push(...newDocuments);
 
       // 벡터 스토어 재구축 (현재는 전체 재구축, 향후 부분 업데이트로 최적화 가능)
-      const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
-      this.store = new MemoryVectorStore(openAIEmbeddings);
+      const azureOpenAIEmbeddings = this.embeddingService.getEmbeddingAPI();
+      this.store = new MemoryVectorStore(azureOpenAIEmbeddings);
       
       // 모든 문서의 임베딩 다시 생성 (현재 한계)
       const allTexts = this.documents.map(doc => preprocessMarkdownForEmbedding(doc.pageContent));
@@ -1122,7 +1122,7 @@ export class VectorStoreService {
 
       // Rebuild vector store, search services, and cache
       console.info("Rebuilding vector store and search services with updated documents...");
-      const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
+      const azureOpenAIEmbeddings = this.embeddingService.getEmbeddingAPI();
       
       const allTexts = this.documents.map(doc => {
         const preprocessedContent = preprocessMarkdownForEmbedding(doc.pageContent);
@@ -1135,7 +1135,7 @@ export class VectorStoreService {
         return false; 
       }
 
-      this.store = new MemoryVectorStore(openAIEmbeddings);
+      this.store = new MemoryVectorStore(azureOpenAIEmbeddings);
       const loadSuccess = await this.embeddingService.loadEmbeddingsToVectorStore(
         this.store,
         this.documents,
@@ -1292,6 +1292,77 @@ export class VectorStoreService {
 
     } catch (error) {
       console.error("Error appending node:", error);
+      return false;
+    }
+  }
+
+  /**
+   * 새로운 섹션을 파일에 추가 - CREATE NEW SECTION 기능용
+   */
+  public async addNewSection(
+    fileName: string,
+    sectionTitle: string,
+    sectionBody: string,
+    insertAfterNodeId?: string
+  ): Promise<boolean> {
+    try {
+      const fileIndex = this.markdownFiles.findIndex(file => file.name === fileName);
+      if (fileIndex === -1) {
+        console.error(`File not found: ${fileName}`);
+        return false;
+      }
+
+      const markdownFile = this.markdownFiles[fileIndex];
+      
+      // 1. 새 섹션 노드 생성
+      const { createNewSectionNode } = await import("services/document/markdown");
+      const updatedTree = createNewSectionNode(
+        markdownFile.tree,
+        sectionTitle,
+        sectionBody,
+        insertAfterNodeId
+      );
+
+      // 2. 새로 추가된 노드들을 벡터 스토어에 추가
+      const existingNodeIds = new Set(markdownFile.tree.nodeMap.keys());
+      let documentsChanged = false;
+
+      for (const [nodeId, node] of updatedTree.nodeMap) {
+        if (!existingNodeIds.has(nodeId)) {
+          // 새로 추가된 노드
+          const extNode = node as any;
+          
+          const metadata: DocumentMetadata = {
+            fileName: fileName,
+            githubUrl: markdownFile.githubUrl,
+            sectionName: extNode.sectionId ? sectionTitle : "",
+            headingPath: [], // TODO: 적절한 headingPath 설정
+            nodeId: nodeId,
+            originalContent: extNode.children?.[0]?.value || ""
+          };
+
+          const contextPrefix = formatHeadingContext(metadata.headingPath || [], fileName);
+          const newDocument = new Document({
+            pageContent: contextPrefix + (extNode.children?.[0]?.value || ""),
+            metadata
+          });
+
+          this.documents.push(newDocument);
+          documentsChanged = true;
+          console.info(`Added new document for section node: ${nodeId}`);
+        }
+      }
+
+      // 3. 마크다운 파일 업데이트
+      this.markdownFiles[fileIndex] = {
+        ...markdownFile,
+        tree: updatedTree
+      };
+
+      console.info(`Successfully added new section "${sectionTitle}" to ${fileName}`);
+      return true;
+    } catch (error) {
+      console.error(`Failed to add new section to ${fileName}:`, error);
       return false;
     }
   }
