@@ -6,6 +6,7 @@ import GithubService from "./services/github";
 
 import { VectorStoreService } from "services/vector/main-service";
 import { getGithubRepo, getWorkspaceId, setupInitialManager } from "services/slack";
+import { validateAzureOpenAIConfig, isAzureOpenAIEnabled } from "services/llm";
 
 dotenv.config();
 
@@ -78,6 +79,19 @@ app.event('app_home_opened', async ({ event, client, logger }) => {
 /** Start Bolt App */
 (async () => {
   try {
+    // Azure OpenAI 설정 검증
+    if (isAzureOpenAIEnabled()) {
+      app.logger.info("Azure OpenAI is enabled, validating configuration...");
+      if (!validateAzureOpenAIConfig()) {
+        app.logger.error("Azure OpenAI configuration is invalid. Please check your environment variables.");
+        app.logger.error("Required variables: AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_NAME, AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME");
+        process.exit(1);
+      }
+      app.logger.info("Azure OpenAI configuration is valid");
+    } else {
+      app.logger.info("Azure OpenAI is not enabled. Using default OpenAI configuration.");
+    }
+
     // 워크스페이스 ID 가져오기
     const workspaceId = await getWorkspaceId(app.client);
 

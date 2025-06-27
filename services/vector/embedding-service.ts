@@ -1,4 +1,4 @@
-import { OpenAIEmbeddings } from "@langchain/openai";
+import { AzureOpenAIEmbeddings } from "@langchain/azure-openai";
 import { Document } from "@langchain/core/documents";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import { DocumentMetadata } from "./types";
@@ -7,18 +7,29 @@ import { DocumentMetadata } from "./types";
  * 임베딩 생성 및 관리를 담당하는 서비스 클래스
  */
 export class EmbeddingService {
-  private embeddings: OpenAIEmbeddings;
+  private embeddings: AzureOpenAIEmbeddings;
   private logger: Console;
 
   constructor(
-    apiKey: string = process.env.OPENAI_API_KEY || "",
+    apiKey: string = process.env.AZURE_OPENAI_API_KEY || "",
     logger: Console = console
   ) {
-    this.embeddings = new OpenAIEmbeddings({
-      openAIApiKey: apiKey,
+    this.embeddings = new AzureOpenAIEmbeddings({
+      azureOpenAIApiKey: apiKey,
+      azureOpenAIEndpoint: process.env.AZURE_OPENAI_ENDPOINT || "",
+      azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME || "",
+      azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-10-21",
       batchSize: 512,
     });
     this.logger = logger;
+  }
+
+  /**
+   * Azure OpenAI 엔드포인트에서 인스턴스 이름 추출
+   */
+  private extractInstanceName(endpoint: string): string {
+    const match = endpoint.match(/https:\/\/([^.]+)\.openai\.azure\.com/);
+    return match ? match[1] : "";
   }
 
   /**
@@ -400,9 +411,9 @@ export class EmbeddingService {
   }
 
   /**
-   * OpenAI 임베딩 API 인스턴스 반환
+   * Azure OpenAI 임베딩 API 인스턴스 반환
    */
-  public getEmbeddingAPI(): OpenAIEmbeddings {
+  public getEmbeddingAPI(): AzureOpenAIEmbeddings {
     return this.embeddings;
   }
 }

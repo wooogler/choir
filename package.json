@@ -28,6 +28,9 @@
     "url": "https://github.com/slack-samples/bolt-ts-starter-template/issues"
   },
   "dependencies": {
+    "@azure/identity": "^4.10.1",
+    "@azure/openai": "^2.0.0",
+    "@langchain/azure-openai": "^0.0.11",
     "@langchain/community": "^0.3.27",
     "@langchain/core": "^0.3.36",
     "@langchain/openai": "^0.4.2",
