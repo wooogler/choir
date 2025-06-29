@@ -7,11 +7,13 @@ import { VectorStoreService } from "services/vector/main-service";
 import { convertMarkdownToSlackText } from "services/document/markdown";
 import { DocumentEnhancer } from "services/web-content/document-enhancer";
 import { formatSectionPathWithLinks } from "services/document/section-utils";
+import { logQuestionProcessing } from "services/common/user-interaction-logger";
 
 /**
  * 질문 메시지 처리
  */
 export async function handleQuestionMessage(client: any, event: any, userMessage: string, logger: any) {
+  const startTime = Date.now();
   let loadingMessageTs: string | undefined;
   
   try {
@@ -83,13 +85,31 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     // 마크다운을 Slack 형식으로 변환
     const response = await convertMarkdownToSlackText(answerResult.response || '');
 
+    // 관련 문서 참조 정보 추가
+    let responseWithReferences = response;
+    if (relevantDocs.length > 0) {
+      const references = relevantDocs.map(doc => {
+        const fileName = doc.metadata.fileName || 'Unknown file';
+        const headingPath = doc.metadata.headingPath || '';
+        const sectionPath = formatSectionPathWithLinks(doc.metadata);
+        
+        if (sectionPath) {
+          return `• ${sectionPath}`;
+        } else {
+          return `• ${fileName}${headingPath ? ` - ${headingPath}` : ''}`;
+        }
+      }).join('\n');
+      
+      responseWithReferences = response + '\n\n**References:**\n' + references;
+    }
+
     // 공유용 깔끔한 응답 (참조 문구 없이)
-    const cleanResponseForSharing = response;
+    const cleanResponseForSharing = responseWithReferences;
     
     // 실제 표시용 응답 (참조 문구 포함)
     const displayResponse = answerResult.canAnswer 
-      ? response + "\n\nIf you'd like to read the original document, please refer to the sources linked in the reply."
-      : response;
+      ? responseWithReferences + "\n\nIf you'd like to read the original document, please refer to the sources linked in the reply."
+      : responseWithReferences;
 
     // 대화 히스토리에서 모든 고유 사용자 ID 추출
     const historyUsers = new Set<string>();
@@ -341,9 +361,65 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       });
     }
 
+    // 로그: 성공적인 질문 처리
+    const totalProcessingTime = Date.now() - startTime;
+    
+    // 질문 처리 로그
+    logQuestionProcessing(
+      event.user,
+      workspaceId,
+      event.channel,
+      event.channel_type || 'public',
+      !!event.thread_ts,
+      totalProcessingTime,
+      true,
+      userMessage,
+      relevantDocs.length,
+      answerResult.canAnswer,
+      {
+        sessionId,
+        workspaceName,
+        organizationName: organizationName || undefined,
+        qaChannelId,
+        qaChannelName,
+        responseLength: response.length,
+        historyMessageCount: historyResult.messages?.length || 0,
+        historyUsers: Array.from(historyUsers),
+        hasWebContent: relevantDocs.some(doc => doc.metadata.webContent && doc.metadata.webContent.length > 0),
+        relevantDocs: relevantDocs.map(doc => ({
+          fileName: doc.metadata.fileName,
+          headingPath: doc.metadata.headingPath,
+          hasWebContent: !!(doc.metadata.webContent && doc.metadata.webContent.length > 0)
+        }))
+      }
+    );
+
+    logger.info(`Question answered successfully for user ${event.user} in channel ${event.channel}`);
     return true;
+
   } catch (error) {
-    // 에러 발생 시 로딩 메시지 삭제
+    logger.error('Error in handleQuestionMessage:', error);
+    
+    // 로그: 질문 처리 실패
+    const workspaceId = await getWorkspaceId(client);
+    logQuestionProcessing(
+      event.user,
+      workspaceId,
+      event.channel,
+      event.channel_type || 'public',
+      !!event.thread_ts,
+      Date.now() - startTime,
+      false,
+      userMessage,
+      0,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined
+      }
+    );
+    
+    // 로딩 메시지가 있으면 삭제
     if (loadingMessageTs) {
       try {
         await client.chat.delete({
@@ -355,14 +431,13 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       }
     }
 
-    // 에러 메시지 표시
+    // 에러 메시지 전송
     await client.chat.postMessage({
       channel: event.channel,
       ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
-      text: "Sorry, I encountered an error while processing your question. Please try again. :warning:"
+      text: "Sorry, I encountered an error while processing your question. Please try again later.",
     });
-
-    logger.error("Error handling question message:", error);
-    throw error;
+    
+    return false;
   }
 } 

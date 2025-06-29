@@ -2,6 +2,7 @@ import { createSlackMessageWithName, SlackMessage, getChannelName, isBotUser, ge
 import { WebClient } from "@slack/web-api";
 import { generateSessionId, storeSessionData, SessionType } from "services/common";
 import { extractKnowledgeFromMessages } from "services/llm/knowledge-extractor";
+import { logUpdateRequestProcessing, logKnowledgeExtraction } from "services/common/user-interaction-logger";
 
 interface MessageResult {
   ts: string;
@@ -13,11 +14,12 @@ interface MessageResult {
  * Handle update request message with automatic knowledge extraction
  */
 export async function handleUpdateRequestMessage(client: WebClient, event: any, logger: any) {
+  const startTime = Date.now();
+  const userId = event.user;
+  const originalChannelId = event.channel;
+  const isThreadMention = !!event.thread_ts;
+  
   try {
-    const userId = event.user;
-    const originalChannelId = event.channel;
-    const isThreadMention = !!event.thread_ts;
-    
     // Show loading message in the original channel/thread
     const loadingMessage = await client.chat.postMessage({
         channel: originalChannelId,
@@ -70,6 +72,22 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           }
         ]
       });
+      
+      // 로그: 메시지가 없어서 실패한 경우
+      const workspaceId = await getWorkspaceId(client);
+      logUpdateRequestProcessing(
+        userId,
+        workspaceId,
+        originalChannelId,
+        event.channel_type || 'public',
+        isThreadMention,
+        Date.now() - startTime,
+        false,
+        "No messages found to analyze",
+        "",
+        { error: "No messages found" }
+      );
+      
       return false;
     }
     
@@ -116,6 +134,22 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           }
         ]
       });
+      
+      // 로그: 사용자 메시지가 없어서 실패한 경우
+      const workspaceId = await getWorkspaceId(client);
+      logUpdateRequestProcessing(
+        userId,
+        workspaceId,
+        originalChannelId,
+        event.channel_type || 'public',
+        isThreadMention,
+        Date.now() - startTime,
+        false,
+        "No user messages found to analyze",
+        "",
+        { error: "No user messages found" }
+      );
+      
       return false;
     }
 
@@ -258,6 +292,64 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         lastEditedAt: new Date().toISOString() // Track when it was initially extracted
       }, SessionType.DOCUMENT_UPDATE);
 
+      // 로그: 성공적인 지식 추출
+      const totalProcessingTime = Date.now() - startTime;
+      
+      // 업데이트 요청 처리 로그
+      logUpdateRequestProcessing(
+        userId,
+        workspaceId,
+        originalChannelId,
+        event.channel_type || 'public',
+        isThreadMention,
+        totalProcessingTime,
+        true,
+        `Update request from ${extractorName}`,
+        extractionResult.cleanContent,
+        {
+          sessionId,
+          channelName,
+          extractorName,
+          isUserManager,
+          managersCount: managers.length,
+          sourceMessageCount: last10Messages.length,
+          sourceMessages: last10Messages.map(msg => ({
+            userId: msg.userId,
+            username: msg.username,
+            text: msg.text,
+            ts: msg.ts
+          }))
+        }
+      );
+
+      // 지식 추출 로그
+      logKnowledgeExtraction(
+        userId,
+        workspaceId,
+        originalChannelId,
+        event.channel_type || 'public',
+        isThreadMention,
+        totalProcessingTime,
+        true,
+        extractionResult.cleanContent,
+        last10Messages.length,
+        {
+          sessionId,
+          channelName,
+          extractorName,
+          isUserManager,
+          managersCount: managers.length,
+          sourceMessageCount: last10Messages.length,
+          hasKnowledgeItem: !!extractionResult.knowledgeItem,
+          sourceMessages: last10Messages.map(msg => ({
+            userId: msg.userId,
+            username: msg.username,
+            text: msg.text.substring(0, 200), // 메시지 내용 일부만 저장
+            ts: msg.ts
+          }))
+        }
+      );
+
       return true;
 
     } catch (extractionError) {
@@ -278,11 +370,48 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         ]
       });
       
+      // 로그: 지식 추출 실패
+      const workspaceId = await getWorkspaceId(client);
+      logUpdateRequestProcessing(
+        userId,
+        workspaceId,
+        originalChannelId,
+        event.channel_type || 'public',
+        isThreadMention,
+        Date.now() - startTime,
+        false,
+        "Failed to extract knowledge",
+        "",
+        { 
+          error: extractionError instanceof Error ? extractionError.message : "Unknown error",
+          errorStack: extractionError instanceof Error ? extractionError.stack : undefined
+        }
+      );
+      
       return false;
     }
 
   } catch (error) {
     logger.error("Error handling update request message:", error);
+    
+    // 로그: 전체 처리 실패
+    const workspaceId = await getWorkspaceId(client);
+    logUpdateRequestProcessing(
+      userId,
+      workspaceId,
+      originalChannelId,
+      event.channel_type || 'public',
+      isThreadMention,
+      Date.now() - startTime,
+      false,
+      "Error handling update request",
+      "",
+      { 
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined
+      }
+    );
+    
     throw error;
   }
 } 
