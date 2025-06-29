@@ -15,6 +15,7 @@ import { logQuestionProcessing } from "services/common/user-interaction-logger";
 export async function handleQuestionMessage(client: any, event: any, userMessage: string, logger: any) {
   const startTime = Date.now();
   let loadingMessageTs: string | undefined;
+  let relevantDocs: any[] = [];
   
   try {
     // 로딩 메시지 게시
@@ -42,7 +43,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
 
     // 벡터 스토어에서 관련 문서 가져오기
     const vectorStore = VectorStoreService.getInstance();
-    let relevantDocs = await vectorStore.similaritySearch(userMessage, 3);
+    relevantDocs = await vectorStore.similaritySearch(userMessage, 3);
 
     // 웹 콘텐츠가 있는 문서들의 pageContent를 확장
     relevantDocs = relevantDocs.map(doc => {
@@ -85,31 +86,13 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     // 마크다운을 Slack 형식으로 변환
     const response = await convertMarkdownToSlackText(answerResult.response || '');
 
-    // 관련 문서 참조 정보 추가
-    let responseWithReferences = response;
-    if (relevantDocs.length > 0) {
-      const references = relevantDocs.map(doc => {
-        const fileName = doc.metadata.fileName || 'Unknown file';
-        const headingPath = doc.metadata.headingPath || '';
-        const sectionPath = formatSectionPathWithLinks(doc.metadata);
-        
-        if (sectionPath) {
-          return `• ${sectionPath}`;
-        } else {
-          return `• ${fileName}${headingPath ? ` - ${headingPath}` : ''}`;
-        }
-      }).join('\n');
-      
-      responseWithReferences = response + '\n\n**References:**\n' + references;
-    }
-
     // 공유용 깔끔한 응답 (참조 문구 없이)
-    const cleanResponseForSharing = responseWithReferences;
+    const cleanResponseForSharing = response;
     
     // 실제 표시용 응답 (참조 문구 포함)
     const displayResponse = answerResult.canAnswer 
-      ? responseWithReferences + "\n\nIf you'd like to read the original document, please refer to the sources linked in the reply."
-      : responseWithReferences;
+      ? response + "\n\nIf you'd like to read the original document, please refer to the sources linked in the reply."
+      : response;
 
     // 대화 히스토리에서 모든 고유 사용자 ID 추출
     const historyUsers = new Set<string>();
@@ -386,10 +369,22 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         historyMessageCount: historyResult.messages?.length || 0,
         historyUsers: Array.from(historyUsers),
         hasWebContent: relevantDocs.some(doc => doc.metadata.webContent && doc.metadata.webContent.length > 0),
-        relevantDocs: relevantDocs.map(doc => ({
+        relevantDocs: relevantDocs.map((doc: any) => ({
           fileName: doc.metadata.fileName,
           headingPath: doc.metadata.headingPath,
-          hasWebContent: !!(doc.metadata.webContent && doc.metadata.webContent.length > 0)
+          hasWebContent: !!(doc.metadata.webContent && doc.metadata.webContent.length > 0),
+          // 소스 내용 추가 (webContent가 있으면 1000자 제한, 없으면 전체 내용)
+          sourceContent: (doc.metadata.webContent && doc.metadata.webContent.length > 0) 
+            ? (doc.pageContent.length > 1000 ? doc.pageContent.substring(0, 1000) + '...' : doc.pageContent)
+            : doc.pageContent,
+          // 메타데이터 정보도 포함
+          metadata: {
+            fileName: doc.metadata.fileName,
+            sectionName: doc.metadata.sectionName,
+            headingPath: doc.metadata.headingPath,
+            githubUrl: doc.metadata.githubUrl,
+            webContentLength: doc.metadata.webContent ? doc.metadata.webContent.length : 0
+          }
         }))
       }
     );
@@ -402,6 +397,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     
     // 로그: 질문 처리 실패
     const workspaceId = await getWorkspaceId(client);
+    
     logQuestionProcessing(
       event.user,
       workspaceId,
@@ -411,11 +407,31 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       Date.now() - startTime,
       false,
       userMessage,
-      0,
+      relevantDocs.length,
       false,
       {
         error: error instanceof Error ? error.message : "Unknown error",
-        errorStack: error instanceof Error ? error.stack : undefined
+        errorStack: error instanceof Error ? error.stack : undefined,
+        // relevantDocs가 있는 경우 소스 내용도 포함
+        ...(relevantDocs.length > 0 && {
+          relevantDocs: relevantDocs.map((doc: any) => ({
+            fileName: doc.metadata.fileName,
+            headingPath: doc.metadata.headingPath,
+            hasWebContent: !!(doc.metadata.webContent && doc.metadata.webContent.length > 0),
+            // 소스 내용 추가 (webContent가 있으면 1000자 제한, 없으면 전체 내용)
+            sourceContent: (doc.metadata.webContent && doc.metadata.webContent.length > 0) 
+              ? (doc.pageContent.length > 1000 ? doc.pageContent.substring(0, 1000) + '...' : doc.pageContent)
+              : doc.pageContent,
+            // 메타데이터 정보도 포함
+            metadata: {
+              fileName: doc.metadata.fileName,
+              sectionName: doc.metadata.sectionName,
+              headingPath: doc.metadata.headingPath,
+              githubUrl: doc.metadata.githubUrl,
+              webContentLength: doc.metadata.webContent ? doc.metadata.webContent.length : 0
+            }
+          }))
+        })
       }
     );
     

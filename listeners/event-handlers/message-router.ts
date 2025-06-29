@@ -3,12 +3,17 @@ import { handleQuestionMessage } from "../features/qa/question-handler";
 import { handleUpdateRequestMessage } from "../features/document-update/extract-knowledge/update-request-handler";
 import { handleGeneralConversationMessage } from "../features/conversation/general-conversation-handler";
 import { isManager, getWorkspaceId, getOrganizationDescription, getOrganizationName } from "services/slack";
+import { logMessageProcessing } from "../../services/common/user-interaction-logger";
 
 /**
  * 메시지 처리를 위한 공통 함수
  * 공통으로 사용할 수 있도록 mentions와 dms에서 모두 호출 가능
  */
 export async function handleIncomingMessage(client: any, event: any, message: string, logger: any) {
+  const startTime = Date.now();
+  let messageIntent: string = 'unknown';
+  let routingResult: boolean;
+  
   try {
     // CHOIR 페르소나를 반영한 로딩 메시지 전송 (채널에 표시)
     const loadingMessage = await client.chat.postMessage({
@@ -22,7 +27,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     const orgDescription = await getOrganizationDescription(workspaceId) || "";
 
     // 메시지 의도 분류 (질문 또는 업데이트 요청 또는 일반 대화)
-    const messageIntent = await classifyMessageIntent(message, orgName, orgDescription);
+    messageIntent = await classifyMessageIntent(message, orgName, orgDescription);
     logger.info(`Message intent classified as: ${messageIntent}`);
 
     // 로딩 메시지 삭제
@@ -39,16 +44,61 @@ export async function handleIncomingMessage(client: any, event: any, message: st
 
     if (messageIntent === "question") {
       // 질문으로 처리
-      return await handleQuestionMessage(client, event, message, logger);
+      routingResult = await handleQuestionMessage(client, event, message, logger);
     } else if (messageIntent === "update_request") {
       // 업데이트 요청으로 처리
-      return await handleUpdateRequestMessage(client, event, logger);
+      routingResult = await handleUpdateRequestMessage(client, event, logger);
     } else {
       // 일반 대화로 처리
-      return await handleGeneralConversationMessage(client, event, message, logger);
+      routingResult = await handleGeneralConversationMessage(client, event, message, logger);
     }
+
+    // 성공 로깅
+    logMessageProcessing(
+      event.user,
+      workspaceId,
+      event.channel,
+      event.channel_type || 'public',
+      !!event.thread_ts,
+      Date.now() - startTime,
+      routingResult,
+      message,
+      'message_routing',
+      {
+        messageIntent,
+        orgName,
+        orgDescription,
+        routingSuccess: routingResult
+      }
+    );
+
+    return routingResult;
   } catch (error) {
     logger.error("Error processing message:", error);
+    
+    // 실패 로깅
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      logMessageProcessing(
+        event.user,
+        workspaceId,
+        event.channel,
+        event.channel_type || 'public',
+        !!event.thread_ts,
+        Date.now() - startTime,
+        false,
+        message,
+        'message_routing',
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          messageIntent: messageIntent || 'unknown'
+        }
+      );
+    } catch (logError) {
+      logger.error('Error logging message routing failure:', logError);
+    }
+    
     await client.chat.postMessage({
       channel: event.channel,
       ...(event.channel_type !== "im" ? { thread_ts: event.ts } : {}), // DM이 아닌 경우에만 스레드로 응답

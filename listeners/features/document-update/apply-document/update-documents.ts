@@ -13,6 +13,8 @@ import GithubService from "services/github";
 import { parseGithubUrl, getUserName } from "services/slack";
 import { applyDocumentUpdatesToGithub } from "services/github";
 import { formatSectionPathWithLinks } from "services/document/section-utils";
+import { logButtonClick } from "../../../../services/common/user-interaction-logger";
+import { getWorkspaceId } from "../../../../services/slack";
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();
@@ -59,6 +61,7 @@ const applySelectedToGithubAction = async ({
   body,
   client,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -169,8 +172,57 @@ const applySelectedToGithubAction = async ({
         }
       }
     }
+
+    // 로그: GitHub 업데이트 성공
+    const workspaceId = await getWorkspaceId(client);
+    logButtonClick(
+      userId,
+      workspaceId,
+      channelId,
+      'dm',
+      'apply_to_document',
+      Date.now() - startTime,
+      true,
+      {
+        successfulUpdates,
+        failedUpdates,
+        totalUpdates: selectedUpdates.length,
+        originalChannelId,
+        originalThreadTs,
+        fileName: successfulUpdates[0] || failedUpdates[0]
+      }
+    );
+
+    console.log(`Document updates applied to GitHub for user ${userId}: ${successfulUpdates.length} successful, ${failedUpdates.length} failed`);
+
   } catch (error) {
     console.error("Error applying updates to GitHub:", error);
+
+    // 로그: GitHub 업데이트 실패
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      const value = body.actions?.[0]?.value;
+      const parsedValue = value ? JSON.parse(value) : {};
+      
+      logButtonClick(
+        body.user.id,
+        workspaceId,
+        body.channel?.id || 'dm',
+        'dm',
+        'apply_to_document',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          errorStack: error instanceof Error ? error.stack : undefined,
+          userId: parsedValue?.userId || body.user.id,
+          originalChannelId: parsedValue?.originalChannelId,
+          originalThreadTs: parsedValue?.originalThreadTs
+        }
+      );
+    } catch (logError) {
+      console.error("Failed to log button click error:", logError);
+    }
 
     // DM 채널 열기 - CHOIR 페르소나 적용
     try {

@@ -28,6 +28,7 @@ import {
 } from "services/common";
 import { applySelectedToGithubAction } from "../apply-document/update-documents";
 import { getSessionData, SessionType, storeSessionData } from "services/common";
+import { logButtonClick } from "../../../../services/common/user-interaction-logger";
 
 /**
  * Create a link to the original message using Slack permalink format
@@ -51,6 +52,7 @@ export const suggestUpdatesCallback = async ({
   client,
   logger
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
   await ack();
 
   const userId = body.user.id;
@@ -627,8 +629,61 @@ export const suggestUpdatesCallback = async ({
       setLastMessageTimestamp(userId, result.ts);
     }
 
+    // 로그: 문서 업데이트 제안 성공
+    const workspaceId = await getWorkspaceId(client);
+    logButtonClick(
+      userId,
+      workspaceId,
+      currentDmChannelId || 'dm',
+      'dm',
+      'suggest_updates',
+      Date.now() - startTime,
+      true,
+      {
+        sessionId,
+        currentIndex,
+        isFirstSuggestion,
+        suggestionType: processedDoc.suggestionType,
+        fileName: processedDoc.fileName,
+        hasChanges: processedDoc.hasChanges,
+        searchResultsCount: searchResults.length,
+        knowledgeContentLength: knowledgeContent?.length || 0,
+        originalChannelId: knowledgeSourceChannelId,
+        originalThreadTs: knowledgeSourceThreadTs
+      }
+    );
+
+    logger.info(`Document update suggestion ${currentIndex + 1} sent to user ${userId} for session ${sessionId}`);
+
   } catch (error) {
     console.error("suggestUpdatesCallback에서 오류:", error);
+    
+    // 로그: 문서 업데이트 제안 실패
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      const value = body.actions?.[0]?.value;
+      const parsedValue = value ? JSON.parse(value) : {};
+      
+      logButtonClick(
+        userId,
+        workspaceId,
+        currentDmChannelId || 'dm',
+        'dm',
+        'suggest_updates',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          errorStack: error instanceof Error ? error.stack : undefined,
+          sessionId: parsedValue?.sessionId,
+          currentIndex: parsedValue?.index || 0,
+          isFirstSuggestion: parsedValue?.isFirstSuggestion || false
+        }
+      );
+    } catch (logError) {
+      logger.error("Failed to log button click error:", logError);
+    }
+    
     if (currentDmChannelId) {
         try {
             await client.chat.postMessage({

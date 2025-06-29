@@ -2,6 +2,7 @@ import { WebClient } from '@slack/web-api';
 import { Logger } from '@slack/bolt';
 import { respondToGeneralConversation } from '../../../services/llm/chat-responder';
 import { getUserName, getWorkspaceId, getOrganizationName, getOrganizationDescription, getGithubRepo } from '../../../services/slack'; // Added organization and github functions
+import { logMessageProcessing } from '../../../services/common/user-interaction-logger';
 
 /**
  * Handles general conversation messages.
@@ -12,6 +13,7 @@ export async function handleGeneralConversationMessage(
   message: string,
   logger: Logger
 ): Promise<boolean> {
+  const startTime = Date.now();
   try {
     const userName = await getUserName(event.user, client);
     
@@ -105,16 +107,50 @@ export async function handleGeneralConversationMessage(
       ]
     });
 
+    // 성공 로깅
+    logMessageProcessing(
+      event.user,
+      workspaceId,
+      event.channel,
+      event.channel_type || 'public',
+      !!event.thread_ts,
+      Date.now() - startTime,
+      true,
+      message,
+      'general_conversation',
+      {
+        userName,
+        organizationName,
+        descOrg,
+        githubUrl: URLtoGithubORWebsite,
+        replyTextLength: replyText.length
+      }
+    );
+
     logger.info(`General conversation reply sent to user ${event.user} in channel ${event.channel}`);
     return true;
   } catch (error) {
     logger.error('Error in handleGeneralConversationMessage:', error);
-    // Optionally send an error message to the user
-    // await client.chat.postMessage({
-    //   channel: event.channel,
-    //   ...(event.channel_type !== 'im' ? { thread_ts: event.ts } : {}),
-    //   text: "Sorry, I encountered an error trying to chat. Please try again later.",
-    // });
+    // 실패 로깅
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      logMessageProcessing(
+        event.user,
+        workspaceId,
+        event.channel,
+        event.channel_type || 'public',
+        !!event.thread_ts,
+        Date.now() - startTime,
+        false,
+        message,
+        'general_conversation',
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+        }
+      );
+    } catch (logError) {
+      logger.error('Error logging general conversation failure:', logError);
+    }
     return false;
   }
 } 

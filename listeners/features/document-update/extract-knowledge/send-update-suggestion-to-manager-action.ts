@@ -4,6 +4,7 @@ import { getManagers, getWorkspaceId, getChannelName, getUserName } from "../../
 import { createMessageLink } from "../suggestions/suggest-updates";
 import { WebClient } from "@slack/web-api";
 import { Logger } from "@slack/bolt";
+import { logButtonClick } from "../../../../services/common/user-interaction-logger";
 
 /**
  * Handle "Pass Suggestion to Manager" button click
@@ -14,6 +15,8 @@ export const sendUpdateSuggestionToManagerCallback = async ({
   client,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
+  let workspaceId: string;
   await ack();
 
   try {
@@ -36,7 +39,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
       return;
     }
 
-    const workspaceId = await getWorkspaceId(client);
+    workspaceId = await getWorkspaceId(client);
     const managers = await getManagers(workspaceId);
 
     if (managers.length === 0) {
@@ -186,18 +189,38 @@ export const sendUpdateSuggestionToManagerCallback = async ({
           unfurl_media: false,
         });
 
-        if (postedMessage.ok && postedMessage.ts && postedMessage.channel) {
-          sessionData.managerMessageInfo[managerId] = {
-            ts: postedMessage.ts,
-            channel: postedMessage.channel,
-          };
-        }
+        // Store manager message info for later updates
+        sessionData.managerMessageInfo = {
+          channel: managerId,
+          ts: postedMessage.ts,
+        };
+        storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+
+        // 로그: 매니저 알림 성공
+        logButtonClick(
+          body.user.id,
+          workspaceId,
+          body.channel?.id || 'dm',
+          'dm',
+          'send_update_suggestion_to_manager',
+          Date.now() - startTime,
+          true,
+          {
+            sessionId,
+            managersNotified: managers.length,
+            managerIds: managers,
+            extractedKnowledgeLength: sessionData.extractedKnowledge?.length || 0,
+            originalChannelId: sessionData.originalChannelId,
+            originalThreadTs: sessionData.originalThreadTs,
+            userName
+          }
+        );
+
+        logger.info(`Update suggestion sent to ${managers.length} managers for session ${sessionId}`);
       } catch (error) {
         logger.error(`Failed to send suggestion to manager ${managerId}:`, error);
       }
     }
-
-    storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
 
     // 원래 채널에 알림 메시지 전송
     if (sessionData.originalChannelId) {
@@ -235,11 +258,32 @@ I'll let you know if they have any questions or when the document is updated. Th
     logger.info(`Update suggestion passed to managers by *${userName}* (ID: ${body.user.id}) for session ${sessionId}`);
 
   } catch (error) {
-    logger.error("Error passing update suggestion to managers:", error);
+    logger.error("Error sending update suggestion to managers:", error);
+    
+    // 로그: 매니저 알림 실패
+    try {
+      const workspaceIdForLog = await getWorkspaceId(client);
+      logButtonClick(
+        body.user.id,
+        workspaceIdForLog,
+        body.channel?.id || 'dm',
+        'dm',
+        'send_update_suggestion_to_manager',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          errorStack: error instanceof Error ? error.stack : undefined,
+          sessionId: body.actions[0].value
+        }
+      );
+    } catch (logError) {
+      logger.error("Failed to log button click error:", logError);
+    }
     
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ Failed to pass your update suggestion to managers: ${error instanceof Error ? error.message : "Unknown error"}`,
+      text: "❌ Failed to send your suggestion to managers. Please try again later.",
     });
   }
 }; 
