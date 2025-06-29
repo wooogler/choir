@@ -3,6 +3,7 @@ import { getSessionData, SessionType } from "../../../../services/common";
 import { WebClient } from "@slack/web-api";
 import { Logger } from "@slack/bolt";
 import { getUserName } from "../../../../services/slack";
+import { logButtonClick } from "../../../../services/common/user-interaction-logger";
 
 /**
  * Handle "Cancel" button click during suggestion related flows
@@ -13,6 +14,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
   client,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -29,6 +31,20 @@ export const cancelUpdateSuggestionReviewCallback = async ({
             text: "Sorry, I couldn't process the cancellation because the session ID was missing. Please try again or contact support if this continues."
         });
       }
+      
+      // 로그: 세션 ID 없음
+      logButtonClick(
+        userId,
+        'unknown',
+        body.channel?.id || 'dm',
+        'dm',
+        'cancel_update_suggestion_review',
+        Date.now() - startTime,
+        false,
+        {
+          error: "No session ID provided"
+        }
+      );
       return;
     }
     
@@ -125,6 +141,27 @@ export const cancelUpdateSuggestionReviewCallback = async ({
 
     logger.info(`Update suggestion review cancelled by user ${userId} (${userName}) for session ${sessionId}`);
 
+    // 로그: 성공
+    logButtonClick(
+      userId,
+      'unknown',
+      body.channel?.id || 'dm',
+      'dm',
+      'cancel_update_suggestion_review',
+      Date.now() - startTime,
+      true,
+      {
+        sessionId,
+        shortSessionId,
+        originalUserId: sessionData?.userId,
+        originalChannelId: sessionData?.originalChannelId,
+        originalThreadTs: sessionData?.originalThreadTs,
+        isOriginalSuggester: sessionData?.userId === userId,
+        managersNotified: sessionData?.managerMessageInfo ? Object.keys(sessionData.managerMessageInfo).length : 0,
+        originalMessageUpdated: !!(body.container?.message_ts && body.channel?.id)
+      }
+    );
+
   } catch (error) {
     logger.error("Error cancelling suggestion review:", error);
     
@@ -135,5 +172,21 @@ export const cancelUpdateSuggestionReviewCallback = async ({
           text: `😥 Oops! I couldn't cancel the suggestion review right now. Error: ${error instanceof Error ? error.message : "Unknown error"}. Please try again!`
         });
     }
+
+    // 로그: 실패
+    logButtonClick(
+      body.user.id,
+      'unknown',
+      body.channel?.id || 'dm',
+      'dm',
+      'cancel_update_suggestion_review',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined,
+        sessionId: body.actions[0].value
+      }
+    );
   }
 }; 

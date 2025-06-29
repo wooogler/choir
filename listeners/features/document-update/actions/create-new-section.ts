@@ -5,6 +5,7 @@ import type {
 } from "@slack/bolt";
 import type { ModalView } from "@slack/web-api";
 import { getSessionData, SessionType } from "services/common";
+import { logButtonClick } from "../../../../services/common/user-interaction-logger";
 
 export const createNewSectionAction = async ({
   ack,
@@ -12,6 +13,7 @@ export const createNewSectionAction = async ({
   client,
   logger
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -177,6 +179,29 @@ export const createNewSectionAction = async ({
       view: modal
     });
 
+    // 로그: 성공
+    logButtonClick(
+      body.user.id,
+      'unknown',
+      body.channel?.id || 'dm',
+      'dm',
+      'create_new_section',
+      Date.now() - startTime,
+      true,
+      {
+        newSectionSessionId,
+        sessionId,
+        sectionTitle,
+        sectionContentLength: sectionContent.length,
+        recommendedFile,
+        reasoningLength: reasoning.length,
+        githubUrl,
+        originalChannelId,
+        originalThreadTs,
+        editUrl
+      }
+    );
+
   } catch (error) {
     logger.error("Error creating new section modal:", error);
     
@@ -184,5 +209,21 @@ export const createNewSectionAction = async ({
       channel: body.user.id,
       text: `❌ Failed to open new section modal: ${error instanceof Error ? error.message : "Unknown error"}`
     });
+
+    // 로그: 실패
+    logButtonClick(
+      body.user.id,
+      'unknown',
+      body.channel?.id || 'dm',
+      'dm',
+      'create_new_section',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined,
+        buttonValue: body.actions?.[0]?.value
+      }
+    );
   }
 }; 

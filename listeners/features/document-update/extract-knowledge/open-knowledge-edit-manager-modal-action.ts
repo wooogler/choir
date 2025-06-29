@@ -2,6 +2,7 @@ import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } 
 import { getSessionData, SessionType } from "../../../../services/common";
 import { WebClient } from "@slack/web-api";
 import { Logger } from "@slack/bolt";
+import { logButtonClick } from "../../../../services/common/user-interaction-logger";
 
 /**
  * Handle "Edit Knowledge" button click from a manager's perspective
@@ -12,6 +13,7 @@ export const openKnowledgeEditManagerModalCallback = async ({
   client,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
   await ack();
   try {
     const sessionId = body.actions[0].value;
@@ -72,11 +74,47 @@ export const openKnowledgeEditManagerModalCallback = async ({
       },
     });
     logger.info(`Manager knowledge edit modal opened for session ${sessionId} by manager ${body.user.id}`);
+
+    // 로그: 성공
+    logButtonClick(
+      body.user.id,
+      'unknown',
+      body.channel?.id || 'dm',
+      'dm',
+      'open_knowledge_edit_manager_modal',
+      Date.now() - startTime,
+      true,
+      {
+        sessionId,
+        originalUserId: sessionData.userId,
+        originalChannelId: sessionData.originalChannelId,
+        originalThreadTs: sessionData.originalThreadTs,
+        extractedKnowledgeLength: sessionData.extractedKnowledge?.length || 0,
+        messagesAnalyzed: sessionData.messages?.length || 0
+      }
+    );
+
   } catch (error) {
     logger.error("Error opening manager knowledge edit modal:", error);
     await client.chat.postMessage({
       channel: body.user.id, // Send error to the manager who clicked
       text: `❌ Failed to open knowledge edit modal: ${error instanceof Error ? error.message : "Unknown error"}`,
     });
+
+    // 로그: 실패
+    logButtonClick(
+      body.user.id,
+      'unknown',
+      body.channel?.id || 'dm',
+      'dm',
+      'open_knowledge_edit_manager_modal',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined,
+        sessionId: body.actions[0].value
+      }
+    );
   }
 }; 

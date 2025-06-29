@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
+import { logButtonClick } from "../../../../services/common/user-interaction-logger";
 
 /**
  * 문서 업데이트 제안 편집 모달을 표시합니다.
@@ -8,6 +9,8 @@ export const showSuggestionEditorModal = async ({
   body,
   client,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
+  
   try {
     // 액션 확인
     await ack();
@@ -109,6 +112,28 @@ export const showSuggestionEditorModal = async ({
         },
       },
     });
+
+    // 로그: 성공
+    logButtonClick(
+      body.user.id,
+      'unknown',
+      body.channel?.id || 'dm',
+      'dm',
+      'edit_update',
+      Date.now() - startTime,
+      true,
+      {
+        suggestionType,
+        fileName: actionValue.fileName,
+        nodeId: actionValue.nodeId,
+        index: actionValue.index,
+        nodeContentLength: nodeContent.length,
+        editableContentLength: editableContent.length,
+        messageTs: body.message?.ts,
+        channelId: body.channel?.id
+      }
+    );
+
   } catch (error) {
     console.error("Error showing update editor modal:", error);
     
@@ -127,5 +152,21 @@ export const showSuggestionEditorModal = async ({
     } catch (dmError) {
       console.error("Error sending error message:", dmError);
     }
+
+    // 로그: 실패
+    logButtonClick(
+      body.user.id,
+      'unknown',
+      body.channel?.id || 'dm',
+      'dm',
+      'edit_update',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined,
+        buttonValue: body.actions?.[0]?.value
+      }
+    );
   }
 }; 

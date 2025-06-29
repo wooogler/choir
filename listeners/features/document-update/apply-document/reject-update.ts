@@ -11,6 +11,7 @@ import {
   deleteProgressMessageTimestamp
 } from "services/common";
 import suggestUpdatesCallback from "../suggestions/suggest-updates";
+import { logButtonClick } from "../../../../services/common/user-interaction-logger";
 
 /**
  * 문서 업데이트 제안을 거절하고 다음 제안을 보여주는 핸들러
@@ -20,6 +21,7 @@ export const rejectUpdateCallback = async ({
   body,
   client,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -95,6 +97,26 @@ export const rejectUpdateCallback = async ({
       client
     } as any);
 
+    // 로그: 성공
+    logButtonClick(
+      userId,
+      'unknown',
+      dmChannelId,
+      'dm',
+      'reject_update',
+      Date.now() - startTime,
+      true,
+      {
+        index,
+        rejectIndex,
+        originalChannelId,
+        originalThreadTs,
+        lastMessageDeleted: !!lastMessageTs,
+        progressMessageDeleted: !!progressTs,
+        messageKeysCount: messageKeys?.length || 0
+      }
+    );
+
   } catch (error) {
     console.error("업데이트 거절 처리 중 오류 발생:", error);
     
@@ -106,5 +128,21 @@ export const rejectUpdateCallback = async ({
         text: `업데이트 거절 처리 중 오류가 발생했습니다: ${errorMessage}`
       });
     }
+
+    // 로그: 실패
+    logButtonClick(
+      body.user.id,
+      'unknown',
+      body.channel?.id || 'dm',
+      'dm',
+      'reject_update',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined,
+        buttonValue: body.actions?.[0]?.value
+      }
+    );
   }
 }; 

@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
 import { handleQuestionMessage } from "../qa/question-handler";
+import { logButtonClick } from "../../../services/common/user-interaction-logger";
 
 /**
  * Handle "This was a question" button click
@@ -10,6 +11,7 @@ export const handleAsQuestionCallback = async ({
   client,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -54,6 +56,25 @@ export const handleAsQuestionCallback = async ({
 
     logger.info(`Message re-processed as question for user ${messageData.userId}`);
 
+    // 로그: 성공
+    logButtonClick(
+      body.user.id,
+      'unknown',
+      body.channel?.id || 'dm',
+      'dm',
+      'handle_as_question',
+      Date.now() - startTime,
+      true,
+      {
+        originalUserId: messageData.userId,
+        originalChannelId: messageData.channelId,
+        originalThreadTs: messageData.threadTs,
+        originalChannelType: messageData.channelType,
+        originalMessageLength: messageData.originalMessage?.length || 0,
+        messageUpdated: !!(channelId && messageTs)
+      }
+    );
+
   } catch (error) {
     logger.error("Error handling message as question:", error);
     
@@ -61,5 +82,21 @@ export const handleAsQuestionCallback = async ({
       channel: body.user.id,
       text: `❌ Failed to process your message as a question: ${error instanceof Error ? error.message : "Unknown error"}`,
     });
+
+    // 로그: 실패
+    logButtonClick(
+      body.user.id,
+      'unknown',
+      body.channel?.id || 'dm',
+      'dm',
+      'handle_as_question',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined,
+        actionValue: body.actions[0].value
+      }
+    );
   }
 }; 
