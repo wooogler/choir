@@ -22,7 +22,7 @@ export const rebuildVectorCacheAction = async ({
   try {
     const workspaceId = await getWorkspaceId(client);
     const isOwner = await isWorkspaceOwner(body.user.id, client);
-    const isUserManager = isManager(workspaceId, body.user.id);
+    const isUserManager = await isManager(workspaceId, body.user.id);
 
     if (!isUserManager && !isOwner) {
       await client.chat.postMessage({
@@ -74,7 +74,7 @@ export const resetVectorStoreAction = async ({
   try {
     const workspaceId = await getWorkspaceId(client);
     const isOwner = await isWorkspaceOwner(body.user.id, client);
-    const isUserManager = isManager(workspaceId, body.user.id);
+    const isUserManager = await isManager(workspaceId, body.user.id);
 
     if (!isUserManager && !isOwner) {
       await client.chat.postMessage({
@@ -125,7 +125,7 @@ export const normalizeMarkdownFilesAction = async ({
   try {
     const workspaceId = await getWorkspaceId(client);
     const isOwner = await isWorkspaceOwner(body.user.id, client);
-    const isUserManager = isManager(workspaceId, body.user.id);
+    const isUserManager = await isManager(workspaceId, body.user.id);
 
     logger.info(`Permission check - isOwner: ${isOwner}, isUserManager: ${isUserManager}`);
 
@@ -147,7 +147,7 @@ export const normalizeMarkdownFilesAction = async ({
     const vectorStore = VectorStoreService.getInstance();
 
     // GitHub 저장소 정보 가져오기
-    let repoInfo = getGithubRepo(workspaceId);
+    let repoInfo = await getGithubRepo(workspaceId);
     logger.info("Repository info:", repoInfo);
     
     // 저장소 정보가 없으면 VectorStoreService에서 현재 로드된 파일들로부터 추출

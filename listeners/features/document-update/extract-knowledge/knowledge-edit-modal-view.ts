@@ -58,7 +58,7 @@ export async function handleKnowledgeEditModal({
     try {
       // Get managers for the message
       const workspaceId = await getWorkspaceId(client);
-      const managers = getManagers(workspaceId);
+      const managers = await getManagers(workspaceId);
       let managerText = "managers";
       if (managers.length > 0) {
         // Get first manager's name as example

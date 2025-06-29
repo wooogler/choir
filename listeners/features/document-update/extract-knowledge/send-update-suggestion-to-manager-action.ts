@@ -37,7 +37,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
     }
 
     const workspaceId = await getWorkspaceId(client);
-    const managers = getManagers(workspaceId);
+    const managers = await getManagers(workspaceId);
 
     if (managers.length === 0) {
       await client.chat.postMessage({
@@ -204,8 +204,8 @@ export const sendUpdateSuggestionToManagerCallback = async ({
       const originalChannelName = await getChannelName(sessionData.originalChannelId, client);
       
       // 매니저 이름 목록을 볼드체로 변환
-      const managerNames = await Promise.all(managers.map(id => getUserName(id, client)));
-      const managerNamesBold = managerNames.map(name => `*${name}*`).join(", ");
+      const managerNames = await Promise.all(managers.map((id: string) => getUserName(id, client)));
+      const managerNamesBold = managerNames.map((name: string) => `*${name}*`).join(", ");
 
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,

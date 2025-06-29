@@ -136,10 +136,10 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
 
       // Check if user is a manager
       const workspaceId = await getWorkspaceId(client);
-      const isUserManager = isManager(workspaceId, userId);
+      const isUserManager = await isManager(workspaceId, userId);
 
       // Get managers for the message
-      const managers = getManagers(workspaceId);
+      const managers = await getManagers(workspaceId);
       let managerText = "managers";
       if (managers.length > 0) {
         // Get first manager's name as example

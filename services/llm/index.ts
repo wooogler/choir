@@ -15,7 +15,7 @@ export {
 } from "./document-editor";
 
 // Content generation functions
-export { createNewContentFromKnowledge } from "./content-generator";
+export { createNewContentFromKnowledge } from "./content-generator"; 
 
 // Azure OpenAI configuration
 export { validateAzureOpenAIConfig, getAzureOpenAIConfig, isAzureOpenAIEnabled } from "./azure-config"; 

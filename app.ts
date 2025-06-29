@@ -98,7 +98,7 @@ app.event('app_home_opened', async ({ event, client, logger }) => {
     // 개발자를 초기 관리자로 설정
     const developerUserId = process.env.DEVELOPER_USER_ID;
     if (developerUserId) {
-      setupInitialManager(workspaceId, developerUserId);
+      await setupInitialManager(workspaceId, developerUserId, app.client);
       app.logger.info(`Initialized developer (${developerUserId}) as a manager`);
     } else {
       app.logger.warn("DEVELOPER_USER_ID environment variable is not set");
@@ -111,7 +111,7 @@ app.event('app_home_opened', async ({ event, client, logger }) => {
       const owner = usersList.members?.find((user) => user.is_owner === true);
 
       if (owner?.id) {
-        setupInitialManager(workspaceId, owner.id);
+        await setupInitialManager(workspaceId, owner.id, app.client);
         app.logger.info(
           `Initialized workspace owner (${owner.id}) as a manager`
         );
@@ -123,7 +123,7 @@ app.event('app_home_opened', async ({ event, client, logger }) => {
     }
 
     // 저장된 GitHub 저장소 정보 가져오기
-    const repoInfo = getGithubRepo(workspaceId);
+    const repoInfo = await getGithubRepo(workspaceId);
 
     if (repoInfo) {
       app.logger.info(

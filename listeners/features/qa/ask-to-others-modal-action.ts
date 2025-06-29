@@ -25,7 +25,7 @@ export const askToOthersModalCallback = async ({
     }
 
     const workspaceId = await getWorkspaceId(client);
-    const managers = getManagers(workspaceId);
+    const managers = await getManagers(workspaceId);
 
     // 세션 데이터 가져오기 (preview용)
     const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;

@@ -62,7 +62,7 @@ const addManagerCallback = async ({
     // If user is workspace owner, set as initial manager
     const isOwner = await isWorkspaceOwner(userId, client);
     if (isOwner) {
-      setupInitialManager(workspaceId, userId);
+      setupInitialManager(workspaceId, userId, client);
     }
 
     // Confirm selected user
@@ -78,7 +78,7 @@ const addManagerCallback = async ({
     }
 
     // Try to grant permission
-    const success = addManager(workspaceId, selectedUser, userId);
+    const success = await addManager(workspaceId, selectedUser, userId);
 
     if (success) {
       // Send success message
@@ -148,7 +148,7 @@ const removeManagerCallback = async ({
     // If user is workspace owner, set as initial manager
     const isOwner = await isWorkspaceOwner(userId, client);
     if (isOwner) {
-      setupInitialManager(workspaceId, userId);
+      setupInitialManager(workspaceId, userId, client);
     }
 
     // Confirm selected user - Button action from value
@@ -176,7 +176,7 @@ const removeManagerCallback = async ({
     }
 
     // Try to remove permission
-    const success = removeManager(workspaceId, targetUserId, userId);
+    const success = await removeManager(workspaceId, targetUserId, userId);
 
     if (success) {
       // Send success message

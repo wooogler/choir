@@ -15,19 +15,19 @@ const appHomeOpenedCallback = async ({
     const workspaceId = await getWorkspaceId(client);
 
     // Check if current user is a manager
-    const isUserManager = isManager(workspaceId, event.user);
+    const isUserManager = await isManager(workspaceId, event.user);
 
     // Check if user is workspace owner (for initial setup)
     const isOwner = await isWorkspaceOwner(event.user, client);
 
     // Get current manager list
-    const managers = getManagers(workspaceId);
+    const managers = await getManagers(workspaceId);
 
     // Get organization description
-    const organizationDescription = getOrganizationDescription(workspaceId) || "No description set.";
+    const organizationDescription = await getOrganizationDescription(workspaceId) || "No description set.";
 
     // Get organization name (default to workspace name if not set)
-    let organizationName = getOrganizationName(workspaceId);
+    let organizationName = await getOrganizationName(workspaceId);
     if (!organizationName) {
       // Use workspace name as default
       const workspaceInfo = await client.auth.test();
@@ -285,7 +285,7 @@ const appHomeOpenedCallback = async ({
     // Show GitHub connection UI only for managers or workspace owners
     if (isUserManager || isOwner) {
       // Get current connected GitHub repository info
-      const repoInfo = getGithubRepo(workspaceId);
+      const repoInfo = await getGithubRepo(workspaceId);
 
       githubBlocks.push({
         type: "header",
@@ -589,7 +589,7 @@ const register = (app: App) => {
       // @ts-ignore
       const newName = body.view.state.values.organization_name_input_block.organization_name_input.value;
 
-      setOrganizationName(workspaceId, newName);
+      await setOrganizationName(workspaceId, newName);
 
       await client.chat.postEphemeral({
         user: body.user.id,
@@ -616,7 +616,7 @@ const register = (app: App) => {
       // @ts-ignore
       const newDescription = body.view.state.values.organization_description_input_block.organization_description_input.value;
 
-      setOrganizationDescription(workspaceId, newDescription);
+      await setOrganizationDescription(workspaceId, newDescription);
 
       // Optionally, refresh the App Home view to show the updated description
       // This requires triggering an app_home_opened event or directly calling client.views.publish

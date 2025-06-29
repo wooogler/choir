@@ -16,9 +16,7 @@ export class VectorCacheManager {
     // 캐시 디렉토리 설정
     this.cachePath = path.join(
       process.cwd(),
-      ".choir",
-      "cache",
-      "vector-store"
+      "data"
     );
     this.logger = logger;
 

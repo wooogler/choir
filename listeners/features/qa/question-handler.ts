@@ -66,8 +66,8 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
 
     // Organization 정보 가져오기 (workspaceId는 이미 아래에서 선언되어 있으므로 먼저 가져오기)
     const workspaceIdForOrg = await getWorkspaceId(client);
-    const organizationName = getOrganizationName(workspaceIdForOrg);
-    const organizationDescription = getOrganizationDescription(workspaceIdForOrg);
+    const organizationName = await getOrganizationName(workspaceIdForOrg);
+    const organizationDescription = await getOrganizationDescription(workspaceIdForOrg);
 
     // 응답 생성
     const answerResult = await answerQuestion(

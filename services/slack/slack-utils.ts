@@ -1,9 +1,12 @@
 import type { WebClient } from "@slack/web-api";
 import { SlackMessage } from "services/slack";
-
+import { WorkspaceStore } from "../workspace/workspace-store";
 
 // 메시지를 임시 저장할 Map
 const messageStore = new Map<string, SlackMessage>();
+
+// 워크스페이스 저장소 인스턴스
+const workspaceStore = new WorkspaceStore();
 
 // 관리자 권한 저장소
 // 워크스페이스 관리자(초기 설정자)는 항상 관리자 권한을 가짐
@@ -21,13 +24,17 @@ export function storeMessage(message: SlackMessage): string {
   return key;
 }
 
-export function getStoredMessage(key: string): SlackMessage | undefined {
+export function getMessage(key: string): SlackMessage | undefined {
   return messageStore.get(key);
+}
+
+export function removeMessage(key: string): boolean {
+  return messageStore.delete(key);
 }
 
 export function getStoredMessages(keys: string[]): SlackMessage[] {
   return keys
-    .map((key) => getStoredMessage(key))
+    .map((key) => getMessage(key))
     .filter((msg): msg is SlackMessage => msg !== undefined);
 }
 
@@ -41,9 +48,9 @@ export function extractKeysFromMessages(messages: SlackMessage[]): string[] {
  * @param userId 확인할 사용자 ID
  * @returns 관리자 여부
  */
-export function isManager(workspaceId: string, userId: string): boolean {
-  const managers = managerStore.get(workspaceId) || [];
-  return managers.includes(userId);
+export async function isManager(workspaceId: string, userId: string): Promise<boolean> {
+  const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+  return config?.managers.includes(userId) || false;
 }
 
 /**
@@ -51,8 +58,9 @@ export function isManager(workspaceId: string, userId: string): boolean {
  * @param workspaceId 워크스페이스 ID
  * @returns 관리자 ID 배열
  */
-export function getManagers(workspaceId: string): string[] {
-  return managerStore.get(workspaceId) || [];
+export async function getManagers(workspaceId: string): Promise<string[]> {
+  const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+  return config?.managers || [];
 }
 
 /**
@@ -62,23 +70,12 @@ export function getManagers(workspaceId: string): string[] {
  * @param grantedBy 권한을 부여한 사용자 ID
  * @returns 권한 부여 성공 여부
  */
-export function addManager(
+export async function addManager(
   workspaceId: string,
   userId: string,
   grantedBy: string
-): boolean {
-  if (!isManager(workspaceId, grantedBy)) {
-    return false; // 권한 부여자가 관리자가 아니면 실패
-  }
-
-  const managers = managerStore.get(workspaceId) || [];
-  if (managers.includes(userId)) {
-    return true; // 이미 관리자인 경우
-  }
-
-  const updatedManagers = [...managers, userId];
-  managerStore.set(workspaceId, updatedManagers);
-  return true;
+): Promise<boolean> {
+  return await workspaceStore.addManager(workspaceId, userId, grantedBy);
 }
 
 /**
@@ -88,38 +85,26 @@ export function addManager(
  * @param removedBy 권한을 제거한 사용자 ID
  * @returns 권한 제거 성공 여부
  */
-export function removeManager(
+export async function removeManager(
   workspaceId: string,
   userId: string,
   removedBy: string
-): boolean {
-  if (!isManager(workspaceId, removedBy)) {
-    return false; // 권한 제거자가 관리자가 아니면 실패
-  }
-
-  const managers = managerStore.get(workspaceId) || [];
-  if (!managers.includes(userId)) {
-    return true; // 이미 관리자가 아닌 경우
-  }
-
-  const updatedManagers = managers.filter((id) => id !== userId);
-  managerStore.set(workspaceId, updatedManagers);
-  return true;
+): Promise<boolean> {
+  return await workspaceStore.removeManager(workspaceId, userId, removedBy);
 }
 
 /**
  * 워크스페이스에 초기 관리자를 설정합니다.
  * @param workspaceId 워크스페이스 ID
  * @param initialManagerId 초기 관리자 ID
+ * @param client Slack WebClient
  */
-export function setupInitialManager(
+export async function setupInitialManager(
   workspaceId: string,
-  initialManagerId: string
-): void {
-  const managers = managerStore.get(workspaceId) || [];
-  if (managers.length === 0) {
-    managerStore.set(workspaceId, [initialManagerId]);
-  }
+  initialManagerId: string,
+  client: WebClient
+): Promise<void> {
+  await workspaceStore.initializeWorkspace(workspaceId, initialManagerId, client);
 }
 
 export async function createSlackMessageWithName(
@@ -241,21 +226,16 @@ interface GithubRepoInfo {
   branch?: string;
 }
 
-const githubRepoStore = new Map<string, GithubRepoInfo>();
-
-// Q&A 채널 저장소
-const qaChannelStore = new Map<string, string>();
-
 /**
  * GitHub 저장소 정보를 저장합니다.
  * @param workspaceId 워크스페이스 ID
  * @param repoInfo 저장소 정보
  */
-export function storeGithubRepo(
+export async function storeGithubRepo(
   workspaceId: string,
   repoInfo: GithubRepoInfo
-): void {
-  githubRepoStore.set(workspaceId, repoInfo);
+): Promise<void> {
+  await workspaceStore.setGithubRepo(workspaceId, repoInfo);
 }
 
 /**
@@ -263,8 +243,15 @@ export function storeGithubRepo(
  * @param workspaceId 워크스페이스 ID
  * @returns 저장소 정보 또는 undefined
  */
-export function getGithubRepo(workspaceId: string): GithubRepoInfo | undefined {
-  return githubRepoStore.get(workspaceId);
+export async function getGithubRepo(workspaceId: string): Promise<GithubRepoInfo | undefined> {
+  const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+  if (!config?.githubRepo) return undefined;
+  
+  // url 필드 추가
+  return {
+    ...config.githubRepo,
+    url: `https://github.com/${config.githubRepo.owner}/${config.githubRepo.repo}`
+  };
 }
 
 /**
@@ -272,8 +259,8 @@ export function getGithubRepo(workspaceId: string): GithubRepoInfo | undefined {
  * @param workspaceId 워크스페이스 ID
  * @param channelId 채널 ID
  */
-export function setQAChannel(workspaceId: string, channelId: string): void {
-  qaChannelStore.set(workspaceId, channelId);
+export async function setQAChannel(workspaceId: string, channelId: string): Promise<void> {
+  await workspaceStore.setQAChannel(workspaceId, channelId);
 }
 
 /**
@@ -283,7 +270,8 @@ export function setQAChannel(workspaceId: string, channelId: string): void {
  * @returns 채널 ID 또는 undefined
  */
 export async function getQAChannel(workspaceId: string, client?: WebClient): Promise<string | undefined> {
-  let qaChannelId = qaChannelStore.get(workspaceId);
+  const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+  let qaChannelId = config?.qaChannel;
   
   // Q&A 채널이 설정되지 않은 경우 기본값으로 #qna 채널 찾기
   if (!qaChannelId && client) {
@@ -300,7 +288,7 @@ export async function getQAChannel(workspaceId: string, client?: WebClient): Pro
       
       if (qnaChannel?.id) {
         // 찾은 #qna 채널을 기본 Q&A 채널로 설정
-        setQAChannel(workspaceId, qnaChannel.id);
+        await setQAChannel(workspaceId, qnaChannel.id);
         qaChannelId = qnaChannel.id;
       }
     } catch (error) {
@@ -316,8 +304,8 @@ export async function getQAChannel(workspaceId: string, client?: WebClient): Pro
  * @param workspaceId 워크스페이스 ID
  * @param name 조직 이름
  */
-export function setOrganizationName(workspaceId: string, name: string): void {
-  organizationNameStore.set(workspaceId, name);
+export async function setOrganizationName(workspaceId: string, name: string): Promise<void> {
+  await workspaceStore.setOrganizationName(workspaceId, name);
 }
 
 /**
@@ -325,8 +313,9 @@ export function setOrganizationName(workspaceId: string, name: string): void {
  * @param workspaceId 워크스페이스 ID
  * @returns 조직 이름 또는 null
  */
-export function getOrganizationName(workspaceId: string): string | null {
-  return organizationNameStore.get(workspaceId) || null;
+export async function getOrganizationName(workspaceId: string): Promise<string | null> {
+  const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+  return config?.organizationName || null;
 }
 
 /**
@@ -334,8 +323,8 @@ export function getOrganizationName(workspaceId: string): string | null {
  * @param workspaceId 워크스페이스 ID
  * @param description 조직 설명
  */
-export function setOrganizationDescription(workspaceId: string, description: string): void {
-  organizationDescriptionStore.set(workspaceId, description);
+export async function setOrganizationDescription(workspaceId: string, description: string): Promise<void> {
+  await workspaceStore.setOrganizationDescription(workspaceId, description);
 }
 
 /**
@@ -343,8 +332,9 @@ export function setOrganizationDescription(workspaceId: string, description: str
  * @param workspaceId 워크스페이스 ID
  * @returns 조직 설명 또는 null
  */
-export function getOrganizationDescription(workspaceId: string): string | null {
-  return organizationDescriptionStore.get(workspaceId) || null;
+export async function getOrganizationDescription(workspaceId: string): Promise<string | null> {
+  const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+  return config?.organizationDescription || null;
 }
 
 /**

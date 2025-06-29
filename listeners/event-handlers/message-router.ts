@@ -18,8 +18,8 @@ export async function handleIncomingMessage(client: any, event: any, message: st
 
     // Get organization information
     const workspaceId = await getWorkspaceId(client);
-    const orgName = getOrganizationName(workspaceId) || "";
-    const orgDescription = getOrganizationDescription(workspaceId) || "";
+    const orgName = await getOrganizationName(workspaceId) || "";
+    const orgDescription = await getOrganizationDescription(workspaceId) || "";
 
     // 메시지 의도 분류 (질문 또는 업데이트 요청 또는 일반 대화)
     const messageIntent = await classifyMessageIntent(message, orgName, orgDescription);

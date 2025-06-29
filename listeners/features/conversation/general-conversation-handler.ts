@@ -19,7 +19,7 @@ export async function handleGeneralConversationMessage(
     const workspaceId = await getWorkspaceId(client);
     
     // Get organization name (default to workspace name if not set)
-    let organizationName = getOrganizationName(workspaceId);
+    let organizationName = await getOrganizationName(workspaceId);
     if (!organizationName) {
       // Use workspace name as default
       const workspaceInfo = await client.auth.test();
@@ -28,10 +28,10 @@ export async function handleGeneralConversationMessage(
     }
     
     // Get organization description
-    const descOrg = getOrganizationDescription(workspaceId) || "";
+    const descOrg = await getOrganizationDescription(workspaceId) || "";
     
     // Get GitHub repository URL
-    const repoInfo = getGithubRepo(workspaceId);
+    const repoInfo = await getGithubRepo(workspaceId);
     const URLtoGithubORWebsite = repoInfo ? repoInfo.url : "";
 
     const replyText = await respondToGeneralConversation(message, userName || 'there', organizationName, descOrg, URLtoGithubORWebsite);
