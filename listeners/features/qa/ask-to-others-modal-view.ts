@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
 import { getSessionData, SessionType } from "services/common";
 import { getUserName, createPrivateMessage } from "services/slack";
+import { logModalSubmit } from "../../../services/common/user-interaction-logger";
 
 /**
  * 멤버 선택 모달 제출 처리
@@ -12,6 +13,7 @@ export const askToOthersSubmitCallback = async ({
   client,
   logger,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs) => {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -21,12 +23,37 @@ export const askToOthersSubmitCallback = async ({
     const userId = body.user.id;
 
     if (!sessionId || !selectedUsers || selectedUsers.length === 0) {
+      // 로그: 필수 데이터 없음
+      logModalSubmit(
+        userId,
+        'unknown',
+        'ask_to_others_submit',
+        Date.now() - startTime,
+        false,
+        {
+          error: "Missing sessionId or selectedUsers",
+          sessionId,
+          selectedUsersCount: selectedUsers?.length || 0
+        }
+      );
       return;
     }
 
     // 세션 데이터 가져오기
     const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
+      // 로그: 세션 데이터 없음
+      logModalSubmit(
+        userId,
+        'unknown',
+        'ask_to_others_submit',
+        Date.now() - startTime,
+        false,
+        {
+          error: "Session data not found",
+          sessionId
+        }
+      );
       return;
     }
 
@@ -34,6 +61,8 @@ export const askToOthersSubmitCallback = async ({
     const userName = await getUserName(userId, client);
 
     // 선택된 각 멤버에게 DM으로 질문과 답변 전달
+    let successCount = 0;
+    let failCount = 0;
     for (const targetUserId of selectedUsers) {
       try {
         // 공통 함수를 사용해 메시지 블록 생성 (anonymous 옵션 포함)
@@ -54,8 +83,10 @@ export const askToOthersSubmitCallback = async ({
           text: messageText,
           blocks: messageBlocks
         });
+        successCount++;
       } catch (error) {
         logger.error(`Failed to send private Q&A to user ${targetUserId}:`, error);
+        failCount++;
       }
     }
 
@@ -69,7 +100,42 @@ export const askToOthersSubmitCallback = async ({
     }
 
     logger.info(`Private Q&A sent to ${selectedUsers.length} users by user ${userId}`);
+
+    // 로그: 성공
+    logModalSubmit(
+      userId,
+      'unknown',
+      'ask_to_others_submit',
+      Date.now() - startTime,
+      true,
+      {
+        sessionId,
+        selectedUsersCount: selectedUsers.length,
+        successCount,
+        failCount,
+        isAnonymous,
+        originalChannelId: sessionData.originalChannelId,
+        originalThreadTs: sessionData.originalThreadTs,
+        questionLength: sessionData.originalQuestion?.length || 0,
+        responseLength: sessionData.botResponse?.length || 0
+      }
+    );
+
   } catch (error) {
     logger.error("Error submitting member selection:", error);
+
+    // 로그: 실패
+    logModalSubmit(
+      body.user.id,
+      'unknown',
+      'ask_to_others_submit',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined,
+        sessionId: view.private_metadata
+      }
+    );
   }
 };

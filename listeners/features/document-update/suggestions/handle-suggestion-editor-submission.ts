@@ -5,6 +5,7 @@ import {
 } from "../../../../services/document"; // 경로 수정
 import { createDiffBlock } from "../../../../services/slack"; // 경로 수정
 import { createAppendSuggestionBlock } from "../../../../services/document/update-processor";
+import { logModalSubmit } from "../../../../services/common/user-interaction-logger";
 
 /**
  * 모달에서 제출된 내용을 처리합니다.
@@ -15,6 +16,8 @@ export const handleSuggestionEditorSubmission = async ({
   view,
   client,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs) => {
+  const startTime = Date.now();
+  
   try {
     // 제출 확인
     await ack();
@@ -123,6 +126,28 @@ export const handleSuggestionEditorSubmission = async ({
       updateDocumentContent(userId, index, updatedContent);
 
       console.log(`Message updated for user ${userId}, index ${index}`);
+
+      // 로그: 성공
+      logModalSubmit(
+        userId,
+        'unknown',
+        'update_editor_submission',
+        Date.now() - startTime,
+        true,
+        {
+          messageTs,
+          channelId,
+          fileName,
+          nodeId,
+          suggestionType: suggestionType || "UPDATE",
+          index,
+          originalContentLength: nodeContent?.length || 0,
+          updatedContentLength: updatedContent?.length || 0,
+          diffBlockFound: diffBlockIndex !== -1,
+          actionsBlockFound: actionsBlockIndex !== -1
+        }
+      );
+
     } else {
       throw new Error("Diff 블록을 찾을 수 없습니다");
     }
@@ -145,5 +170,19 @@ export const handleSuggestionEditorSubmission = async ({
     } catch (dmError) {
       console.error("Error sending error message:", dmError);
     }
+
+    // 로그: 실패
+    logModalSubmit(
+      body.user.id,
+      'unknown',
+      'update_editor_submission',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined,
+        privateMetadata: view.private_metadata
+      }
+    );
   }
 }; 

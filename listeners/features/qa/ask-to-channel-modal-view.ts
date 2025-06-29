@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
 import { getSessionData, SessionType } from "services/common";
 import { getUserName, createQAChannelMessage } from "services/slack";
+import { logModalSubmit } from "../../../services/common/user-interaction-logger";
 
 /**
  * 채널 선택 모달 제출 처리
@@ -12,6 +13,7 @@ export const askToChannelSubmitCallback = async ({
   client,
   logger,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs) => {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -20,12 +22,37 @@ export const askToChannelSubmitCallback = async ({
     const userId = body.user.id;
 
     if (!sessionId || !qaChannelId) {
+      // 로그: 필수 데이터 없음
+      logModalSubmit(
+        userId,
+        'unknown',
+        'ask_to_channel_submit',
+        Date.now() - startTime,
+        false,
+        {
+          error: "Missing sessionId or qaChannelId",
+          sessionId,
+          qaChannelId
+        }
+      );
       return;
     }
 
     // 세션 데이터 가져오기
     const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
+      // 로그: 세션 데이터 없음
+      logModalSubmit(
+        userId,
+        'unknown',
+        'ask_to_channel_submit',
+        Date.now() - startTime,
+        false,
+        {
+          error: "Session data not found",
+          sessionId
+        }
+      );
       return;
     }
 
@@ -71,7 +98,41 @@ export const askToChannelSubmitCallback = async ({
     }
 
     logger.info(`Q&A posted to channel ${qaChannelId} by user ${userId}`);
+
+    // 로그: 성공
+    logModalSubmit(
+      userId,
+      'unknown',
+      'ask_to_channel_submit',
+      Date.now() - startTime,
+      true,
+      {
+        sessionId,
+        qaChannelId,
+        qaChannelName: channelName,
+        isAnonymous,
+        originalChannelId: sessionData.originalChannelId,
+        originalThreadTs: sessionData.originalThreadTs,
+        questionLength: sessionData.originalQuestion?.length || 0,
+        responseLength: sessionData.botResponse?.length || 0
+      }
+    );
+
   } catch (error) {
     logger.error("Error submitting channel selection:", error);
+
+    // 로그: 실패
+    logModalSubmit(
+      body.user.id,
+      'unknown',
+      'ask_to_channel_submit',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined,
+        privateMetadata: view.private_metadata
+      }
+    );
   }
 };

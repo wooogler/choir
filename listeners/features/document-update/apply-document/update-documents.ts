@@ -15,6 +15,7 @@ import { applyDocumentUpdatesToGithub } from "services/github";
 import { formatSectionPathWithLinks } from "services/document/section-utils";
 import { logButtonClick } from "../../../../services/common/user-interaction-logger";
 import { getWorkspaceId } from "../../../../services/slack";
+import { logModalSubmit } from "../../../../services/common/user-interaction-logger";
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();
@@ -253,6 +254,7 @@ export const handleNewSectionModalSubmission = async ({
   client,
   logger
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs<ViewSubmitAction>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -277,6 +279,21 @@ export const handleNewSectionModalSubmission = async ({
         channel: user.id,
         text: "❌ Section title and body are required."
       });
+      
+      // 로그: 필수 필드 누락
+      logModalSubmit(
+        user.id,
+        'unknown',
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: "Missing section title or body",
+          sectionTitle: !!sectionTitle,
+          sectionBody: !!sectionBody,
+          recommendedFile
+        }
+      );
       return;
     }
 
@@ -285,6 +302,20 @@ export const handleNewSectionModalSubmission = async ({
         channel: user.id,
         text: "❌ No recommended file found. Please try again."
       });
+      
+      // 로그: 추천 파일 없음
+      logModalSubmit(
+        user.id,
+        'unknown',
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: "No recommended file found",
+          sectionTitle,
+          sectionBodyLength: sectionBody.length
+        }
+      );
       return;
     }
 
@@ -303,6 +334,21 @@ export const handleNewSectionModalSubmission = async ({
         channel: user.id,
         text: `❌ Failed to add new section to vector store for file: ${recommendedFile}`
       });
+      
+      // 로그: 벡터 스토어 추가 실패
+      logModalSubmit(
+        user.id,
+        'unknown',
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: "Failed to add new section to vector store",
+          recommendedFile,
+          sectionTitle,
+          sectionBodyLength: sectionBody.length
+        }
+      );
       return;
     }
 
@@ -313,6 +359,21 @@ export const handleNewSectionModalSubmission = async ({
         channel: user.id,
         text: `❌ Updated markdown file not found: ${recommendedFile}`
       });
+      
+      // 로그: 마크다운 파일 없음
+      logModalSubmit(
+        user.id,
+        'unknown',
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: "Updated markdown file not found",
+          recommendedFile,
+          sectionTitle,
+          sectionBodyLength: sectionBody.length
+        }
+      );
       return;
     }
 
@@ -328,6 +389,22 @@ export const handleNewSectionModalSubmission = async ({
         channel: user.id,
         text: `❌ Invalid GitHub URL: ${githubUrl}`
       });
+      
+      // 로그: GitHub URL 파싱 실패
+      logModalSubmit(
+        user.id,
+        'unknown',
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: "Invalid GitHub URL",
+          githubUrl,
+          recommendedFile,
+          sectionTitle,
+          sectionBodyLength: sectionBody.length
+        }
+      );
       return;
     }
 
@@ -366,6 +443,25 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``
 
     logger.info(`Successfully created new section "${sectionTitle}" for ${recommendedFile} and pushed to GitHub`);
 
+    // 로그: 성공
+    logModalSubmit(
+      user.id,
+      'unknown',
+      'new_section_modal',
+      Date.now() - startTime,
+      true,
+      {
+        recommendedFile,
+        sectionTitle,
+        sectionBodyLength: sectionBody.length,
+        githubUrl,
+        owner,
+        repo,
+        commitMessageLength: commitMessage.length,
+        updatedMarkdownLength: updatedMarkdown.length
+      }
+    );
+
   } catch (error) {
     logger.error("Error handling new section modal submission:", error);
     
@@ -373,5 +469,19 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``
       channel: body.user.id,
       text: `❌ Failed to process new section submission: ${error instanceof Error ? error.message : "Unknown error"}`
     });
+
+    // 로그: 실패
+    logModalSubmit(
+      body.user.id,
+      'unknown',
+      'new_section_modal',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined,
+        privateMetadata: body.view.private_metadata
+      }
+    );
   }
 };

@@ -5,6 +5,7 @@ import type {
 } from "@slack/bolt";
 import { getSessionData, SessionType, storeSessionData } from "services/common";
 import { getChannelName, getManagers, getWorkspaceId, getUserName } from "services/slack";
+import { logModalSubmit } from "../../../../services/common/user-interaction-logger";
 
 /**
  * Handle knowledge edit modal submission
@@ -15,6 +16,7 @@ export async function handleKnowledgeEditModal({
   client,
   logger,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs<SlackViewAction>) {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -31,6 +33,19 @@ export async function handleKnowledgeEditModal({
         channel: body.user.id,
         text: "❌ Session data not found. Please try the knowledge extraction again.",
       });
+      
+      // 로그: 세션 데이터 없음
+      logModalSubmit(
+        body.user.id,
+        'unknown',
+        'knowledge_edit_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: "Session data not found",
+          sessionId
+        }
+      );
       return;
     }
 
@@ -43,6 +58,19 @@ export async function handleKnowledgeEditModal({
         channel: body.user.id,
         text: "❌ Please provide some knowledge content before proceeding.",
       });
+      
+      // 로그: 빈 지식 내용
+      logModalSubmit(
+        body.user.id,
+        'unknown',
+        'knowledge_edit_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: "Empty knowledge content",
+          sessionId
+        }
+      );
       return;
     }
 
@@ -97,6 +125,22 @@ export async function handleKnowledgeEditModal({
 
     logger.info(`Knowledge edited by user ${body.user.id} for session ${sessionId}`);
 
+    // 로그: 성공
+    logModalSubmit(
+      body.user.id,
+      'unknown',
+      'knowledge_edit_modal',
+      Date.now() - startTime,
+      true,
+      {
+        sessionId,
+        originalChannelId: sessionData.originalChannelId,
+        originalThreadTs: sessionData.originalThreadTs,
+        editedKnowledgeLength: editedKnowledge.trim().length,
+        publicMessageUpdated: !!sessionData.publicMessageTs
+      }
+    );
+
   } catch (error) {
     logger.error("Error processing knowledge edit modal:", error);
     
@@ -106,5 +150,19 @@ export async function handleKnowledgeEditModal({
         error instanceof Error ? error.message : "Unknown error"
       }`
     });
+
+    // 로그: 실패
+    logModalSubmit(
+      body.user.id,
+      'unknown',
+      'knowledge_edit_modal',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        errorStack: error instanceof Error ? error.stack : undefined,
+        sessionId: body.view.private_metadata
+      }
+    );
   }
 } 
