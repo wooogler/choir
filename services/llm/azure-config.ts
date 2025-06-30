@@ -7,7 +7,7 @@ export function validateAzureOpenAIConfig(): boolean {
     'AZURE_OPENAI_API_KEY',
     'AZURE_OPENAI_ENDPOINT',
     'AZURE_OPENAI_DEPLOYMENT_NAME',
-    'AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME'
+    'AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME',
   ];
 
   for (const varName of requiredVars) {
@@ -32,13 +32,14 @@ export function getAzureOpenAIConfig() {
   return {
     apiKey: process.env.AZURE_OPENAI_API_KEY,
     endpoint: process.env.AZURE_OPENAI_ENDPOINT,
-    apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-10-21",
+    apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-10-21',
     deploymentName: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
     embeddingsDeploymentName: process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME,
   };
 }
 
 export function isAzureOpenAIEnabled(): boolean {
-  return process.env.AI_PROVIDER === 'azure' || 
-         !!(process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT);
-} 
+  return (
+    process.env.AI_PROVIDER === 'azure' || !!(process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT)
+  );
+}

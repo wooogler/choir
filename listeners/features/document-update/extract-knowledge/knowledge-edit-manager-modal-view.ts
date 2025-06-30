@@ -1,10 +1,7 @@
-import type {
-  AllMiddlewareArgs,
-  SlackViewMiddlewareArgs,
-  SlackViewAction,
-} from "@slack/bolt";
-import { getSessionData, SessionType, storeSessionData } from "services/common";
-import { logModalSubmit } from "../../../../services/common/user-interaction-logger";
+import type { AllMiddlewareArgs, SlackViewAction, SlackViewMiddlewareArgs } from '@slack/bolt';
+import { SessionType, getSessionData, storeSessionData } from 'services/common';
+import { logModalSubmit } from 'services/common/user-interaction-logger';
+import { getWorkspaceId } from 'services/slack';
 // import suggestUpdatesCallback from "../document-handlers/suggest-updates"; // Not used here
 // import { SlackMessage } from "services/slack"; // Not used here
 
@@ -19,58 +16,46 @@ export async function handleKnowledgeEditManagerModal({
   logger,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs<SlackViewAction>) {
   const startTime = Date.now();
+  let workspaceId: string | undefined;
   await ack();
   const userId = body.user.id; // Manager's ID
 
   try {
+    workspaceId = await getWorkspaceId(client);
     const sessionId = view.private_metadata;
 
     if (!sessionId) {
-      throw new Error("No session ID found in modal metadata for manager edit");
+      throw new Error('No session ID found in modal metadata for manager edit');
     }
 
     const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       await client.chat.postMessage({
         channel: userId,
-        text: "❌ Session data not found. Please try again or ask the user to resubmit.",
+        text: '❌ Session data not found. Please try again or ask the user to resubmit.',
       });
-      
+
       // 로그: 세션 데이터 없음
-      logModalSubmit(
-        userId,
-        'unknown',
-        'knowledge_edit_manager_modal',
-        Date.now() - startTime,
-        false,
-        {
-          error: "Session data not found",
-          sessionId
-        }
-      );
+      logModalSubmit(userId, workspaceId || 'unknown', 'knowledge_edit_manager_modal', Date.now() - startTime, false, {
+        error: 'Session data not found',
+        sessionId,
+      });
       return;
     }
 
     const editedKnowledge = view.state.values.knowledge_input?.knowledge_text?.value;
 
-    if (!editedKnowledge || editedKnowledge.trim() === "") {
-      logger.warn("Manager tried to submit empty knowledge.");
-      // No need to post message here as modal will show an error, 
+    if (!editedKnowledge || editedKnowledge.trim() === '') {
+      logger.warn('Manager tried to submit empty knowledge.');
+      // No need to post message here as modal will show an error,
       // or we can choose to update the view with an error.
       // For now, just return, Slack might show a default error or nothing.
-      
+
       // 로그: 빈 지식 내용
-      logModalSubmit(
-        userId,
-        'unknown',
-        'knowledge_edit_manager_modal',
-        Date.now() - startTime,
-        false,
-        {
-          error: "Empty knowledge content",
-          sessionId
-        }
-      );
+      logModalSubmit(userId, workspaceId || 'unknown', 'knowledge_edit_manager_modal', Date.now() - startTime, false, {
+        error: 'Empty knowledge content',
+        sessionId,
+      });
       return;
     }
 
@@ -87,54 +72,54 @@ export async function handleKnowledgeEditManagerModal({
     if (managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel) {
       const blocks: any[] = [
         {
-          type: "header",
+          type: 'header',
           text: {
-            type: "plain_text",
-            text: "📝 Document Update Suggestion", // Title remains same or can indicate edit
-            emoji: true
-          }
+            type: 'plain_text',
+            text: '📝 Document Update Suggestion', // Title remains same or can indicate edit
+            emoji: true,
+          },
         },
         {
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
-            text: `*From:* <@${sessionData.userId}> (Original requester: ${sessionData.userName || 'Unknown User'})\n*Content:*\n\`\`\`${editedKnowledge.trim()}\`\`\``
-          }
-        }
+            type: 'mrkdwn',
+            text: `*From:* <@${sessionData.userId}> (Original requester: ${sessionData.userName || 'Unknown User'})\n*Content:*\n\`\`\`${editedKnowledge.trim()}\`\`\``,
+          },
+        },
       ];
 
       if (sessionData.originalMessageLink) {
-         blocks.push({
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`
-            }
-          });
+        blocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+          },
+        });
       }
 
       blocks.push({
-        type: "actions",
+        type: 'actions',
         elements: [
           {
-            type: "button",
+            type: 'button',
             text: {
-              type: "plain_text",
-              text: "Edit Knowledge",
-              emoji: true
-            },
-            action_id: "open_knowledge_edit_manager_modal",
-            value: sessionId 
-          },
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "Start Document Update",
+              type: 'plain_text',
+              text: 'Edit Knowledge',
               emoji: true,
             },
-            style: "primary",
-            action_id: "suggest_updates",
+            action_id: 'open_knowledge_edit_manager_modal',
+            value: sessionId,
+          },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: 'Start Document Update',
+              emoji: true,
+            },
+            style: 'primary',
+            action_id: 'suggest_updates',
             value: JSON.stringify({
               sessionId: sessionId,
               knowledgeContent: editedKnowledge.trim(),
@@ -143,14 +128,14 @@ export async function handleKnowledgeEditManagerModal({
             }),
           },
           {
-            type: "button",
+            type: 'button',
             text: {
-              type: "plain_text",
-              text: "Dismiss",
+              type: 'plain_text',
+              text: 'Dismiss',
               emoji: true,
             },
-            style: "danger",
-            action_id: "cancel_knowledge_extraction", 
+            style: 'danger',
+            action_id: 'cancel_knowledge_extraction',
             value: sessionId,
           },
         ],
@@ -162,90 +147,92 @@ export async function handleKnowledgeEditManagerModal({
         text: `Knowledge for session ${sessionId} was updated. Original requester: ${sessionData.userName || 'Unknown User'}`,
         blocks: blocks,
       });
-
     } else {
-      logger.warn(`Original message info not found for manager ${userId} in session ${sessionId}. Cannot update the message. Posting a new one as fallback.`);
+      logger.warn(
+        `Original message info not found for manager ${userId} in session ${sessionId}. Cannot update the message. Posting a new one as fallback.`,
+      );
       // Fallback: If somehow the original message info is lost, post a new message to the manager.
       // This new message will also have the "Edit Knowledge" button.
       const fallbackBlocks: any[] = [
         {
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
+            type: 'mrkdwn',
             text: `*Knowledge Updated (Original Message Not Found):*\n\`\`\`${editedKnowledge.trim()}\`\`\``,
           },
         },
         {
-          type: "actions",
+          type: 'actions',
           elements: [
             {
-              type: "button",
+              type: 'button',
               text: {
-                type: "plain_text",
-                text: "Edit Knowledge",
-                emoji: true
-              },
-              action_id: "open_knowledge_edit_manager_modal",
-              value: sessionId 
-            },
-            {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: "Start Document Update",
+                type: 'plain_text',
+                text: 'Edit Knowledge',
                 emoji: true,
               },
-              style: "primary",
-              action_id: "suggest_updates", 
+              action_id: 'open_knowledge_edit_manager_modal',
+              value: sessionId,
+            },
+            {
+              type: 'button',
+              text: {
+                type: 'plain_text',
+                text: 'Start Document Update',
+                emoji: true,
+              },
+              style: 'primary',
+              action_id: 'suggest_updates',
               value: JSON.stringify({
                 sessionId: sessionId,
-                knowledgeContent: editedKnowledge.trim(), 
+                knowledgeContent: editedKnowledge.trim(),
                 originalChannelId: sessionData.originalChannelId,
                 originalThreadTs: sessionData.originalThreadTs,
               }),
             },
-             {
-              type: "button",
+            {
+              type: 'button',
               text: {
-                type: "plain_text",
-                text: "Dismiss",
-                emoji: true
+                type: 'plain_text',
+                text: 'Dismiss',
+                emoji: true,
               },
-              style: "danger",
-              action_id: "cancel_knowledge_extraction", 
-              value: sessionId
-            }
+              style: 'danger',
+              action_id: 'cancel_knowledge_extraction',
+              value: sessionId,
+            },
           ],
         },
       ];
       if (sessionData.originalMessageLink) {
-        fallbackBlocks.unshift({ // Add link at the beginning if available
-          type: "section",
+        fallbackBlocks.unshift({
+          // Add link at the beginning if available
+          type: 'section',
           text: {
-            type: "mrkdwn",
-            text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`
-          }
+            type: 'mrkdwn',
+            text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+          },
         });
       }
       fallbackBlocks.unshift({
-          type: "header",
-          text: {
-            type: "plain_text",
-            text: "📝 Document Update Suggestion",
-            emoji: true
-          }
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: '📝 Document Update Suggestion',
+          emoji: true,
+        },
       });
       fallbackBlocks.splice(1, 0, {
-        type: "section",
+        type: 'section',
         text: {
-          type: "mrkdwn",
-          text: `*From:* <@${sessionData.userId}> (Original requester: ${sessionData.userName || 'Unknown User'})`
-        }
+          type: 'mrkdwn',
+          text: `*From:* <@${sessionData.userId}> (Original requester: ${sessionData.userName || 'Unknown User'})`,
+        },
       });
 
       await client.chat.postMessage({
-        channel: userId, 
-        text: "Knowledge updated. You can now start the document update process.",
+        channel: userId,
+        text: 'Knowledge updated. You can now start the document update process.',
         blocks: fallbackBlocks,
         unfurl_links: false,
         unfurl_media: false,
@@ -253,42 +240,35 @@ export async function handleKnowledgeEditManagerModal({
     }
 
     // 로그: 성공
-    logModalSubmit(
-      userId,
-      'unknown',
-      'knowledge_edit_manager_modal',
-      Date.now() - startTime,
-      true,
-      {
-        sessionId,
-        originalUserId: sessionData.userId,
-        originalChannelId: sessionData.originalChannelId,
-        originalThreadTs: sessionData.originalThreadTs,
-        editedKnowledgeLength: editedKnowledge.trim().length,
-        messageUpdated: !!(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),
-        fallbackMessageSent: !(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel)
-      }
-    );
-
+    logModalSubmit(userId, workspaceId || 'unknown', 'knowledge_edit_manager_modal', Date.now() - startTime, true, {
+      sessionId,
+      originalUserId: sessionData.userId,
+      originalChannelId: sessionData.originalChannelId,
+      originalThreadTs: sessionData.originalThreadTs,
+      editedKnowledgeLength: editedKnowledge.trim().length,
+      messageUpdated: !!(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),
+      fallbackMessageSent: !(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),
+    });
   } catch (error) {
-    logger.error("Error processing manager knowledge edit modal:", error);
+    logger.error('Error processing manager knowledge edit modal:', error);
     await client.chat.postMessage({
       channel: userId, // Use manager's ID for error message
-      text: `❌ Error processing knowledge edit: ${error instanceof Error ? error.message : "Unknown error"}`,
+      text: `❌ Error processing knowledge edit: ${error instanceof Error ? error.message : 'Unknown error'}`,
     });
 
     // 로그: 실패
-    logModalSubmit(
-      userId,
-      'unknown',
-      'knowledge_edit_manager_modal',
-      Date.now() - startTime,
-      false,
-      {
-        error: error instanceof Error ? error.message : "Unknown error",
-        errorStack: error instanceof Error ? error.stack : undefined,
-        sessionId: view.private_metadata
+    if (!workspaceId) {
+      try {
+        workspaceId = await getWorkspaceId(client);
+      } catch (workspaceError) {
+        logger.warn('Failed to get workspace ID for logging:', workspaceError);
       }
-    );
+    }
+
+    logModalSubmit(userId, workspaceId || 'unknown', 'knowledge_edit_manager_modal', Date.now() - startTime, false, {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      errorStack: error instanceof Error ? error.stack : undefined,
+      sessionId: view.private_metadata,
+    });
   }
 }

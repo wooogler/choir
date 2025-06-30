@@ -1,14 +1,26 @@
-import type { App, AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
-import { getManagers, isManager, getWorkspaceId, isWorkspaceOwner, getGithubRepo, getQAChannel, getChannelName, getOrganizationDescription, setOrganizationDescription, getOrganizationName, setOrganizationName } from "services/slack";
-import { VectorStoreService } from "services/vector/main-service";
+import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
+import {
+  getChannelName,
+  getGithubRepo,
+  getManagers,
+  getOrganizationDescription,
+  getOrganizationName,
+  getQAChannel,
+  getWorkspaceId,
+  isManager,
+  isWorkspaceOwner,
+  setOrganizationDescription,
+  setOrganizationName,
+} from 'services/slack';
+import { VectorStoreService } from 'services/vector/main-service';
 
 const appHomeOpenedCallback = async ({
   client,
   event,
   logger,
-}: AllMiddlewareArgs & SlackEventMiddlewareArgs<"app_home_opened">) => {
+}: AllMiddlewareArgs & SlackEventMiddlewareArgs<'app_home_opened'>) => {
   // Ignore the `app_home_opened` event for anything but the Home tab
-  if (event.tab !== "home") return;
+  if (event.tab !== 'home') return;
 
   try {
     // Get workspace information
@@ -24,7 +36,7 @@ const appHomeOpenedCallback = async ({
     const managers = await getManagers(workspaceId);
 
     // Get organization description
-    const organizationDescription = await getOrganizationDescription(workspaceId) || "No description set.";
+    const organizationDescription = (await getOrganizationDescription(workspaceId)) || 'No description set.';
 
     // Get organization name (default to workspace name if not set)
     let organizationName = await getOrganizationName(workspaceId);
@@ -32,7 +44,7 @@ const appHomeOpenedCallback = async ({
       // Use workspace name as default
       const workspaceInfo = await client.auth.test();
       const teamInfo = await client.team.info();
-      organizationName = teamInfo.team?.name || workspaceInfo.team || "Our Organization";
+      organizationName = teamInfo.team?.name || workspaceInfo.team || 'Our Organization';
     }
 
     // Get manager usernames
@@ -41,10 +53,10 @@ const appHomeOpenedCallback = async ({
     if (managers.length > 0) {
       // Manager list header
       managerBlocks.push({
-        type: "header",
+        type: 'header',
         text: {
-          type: "plain_text",
-          text: "✨ Current Managers",
+          type: 'plain_text',
+          text: '✨ Current Managers',
           emoji: true,
         },
       });
@@ -53,13 +65,12 @@ const appHomeOpenedCallback = async ({
       for (const managerId of managers) {
         try {
           const userInfo = await client.users.info({ user: managerId });
-          const name =
-            userInfo.user?.real_name || userInfo.user?.name || "Unknown User";
+          const name = userInfo.user?.real_name || userInfo.user?.name || 'Unknown User';
 
           const sectionBlock: any = {
-            type: "section",
+            type: 'section',
             text: {
-              type: "mrkdwn",
+              type: 'mrkdwn',
               text: `• <@${managerId}> (${name})`,
             },
           };
@@ -67,31 +78,31 @@ const appHomeOpenedCallback = async ({
           // Add accessory only if user is manager
           if (isUserManager) {
             sectionBlock.accessory = {
-              type: "button",
+              type: 'button',
               text: {
-                type: "plain_text",
-                text: "Remove Permission",
+                type: 'plain_text',
+                text: 'Remove Permission',
                 emoji: true,
               },
-              style: "danger",
+              style: 'danger',
               value: managerId,
-              action_id: "remove_manager_permission",
+              action_id: 'remove_manager_permission',
               confirm: {
                 title: {
-                  type: "plain_text",
-                  text: "Remove Manager Permission",
+                  type: 'plain_text',
+                  text: 'Remove Manager Permission',
                 },
                 text: {
-                  type: "mrkdwn",
+                  type: 'mrkdwn',
                   text: `Do you want to remove manager permission from *<@${managerId}>*?`,
                 },
                 confirm: {
-                  type: "plain_text",
-                  text: "Remove",
+                  type: 'plain_text',
+                  text: 'Remove',
                 },
                 deny: {
-                  type: "plain_text",
-                  text: "Cancel",
+                  type: 'plain_text',
+                  text: 'Cancel',
                 },
               },
             };
@@ -104,7 +115,7 @@ const appHomeOpenedCallback = async ({
       }
 
       managerBlocks.push({
-        type: "divider",
+        type: 'divider',
       });
     }
 
@@ -116,94 +127,94 @@ const appHomeOpenedCallback = async ({
 
       vectorStoreBlocks.push(
         {
-          type: "header",
+          type: 'header',
           text: {
-            type: "plain_text",
-            text: "🔄 Vector Store Management",
+            type: 'plain_text',
+            text: '🔄 Vector Store Management',
             emoji: true,
           },
         },
         {
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
-            text: `*Current Status:* ${diagnosis.status === "healthy" ? "✅ Healthy" : diagnosis.status === "degraded" ? "⚠️ Degraded" : "❌ Error"}\n*Documents:* ${diagnosis.details.documentCount}\n*Vectors:* ${diagnosis.details.vectorsCount}`,
+            type: 'mrkdwn',
+            text: `*Current Status:* ${diagnosis.status === 'healthy' ? '✅ Healthy' : diagnosis.status === 'degraded' ? '⚠️ Degraded' : '❌ Error'}\n*Documents:* ${diagnosis.details.documentCount}\n*Vectors:* ${diagnosis.details.vectorsCount}`,
           },
         },
         {
-          type: "actions",
+          type: 'actions',
           elements: [
             {
-              type: "button",
+              type: 'button',
               text: {
-                type: "plain_text",
-                text: "Rebuild Cache",
+                type: 'plain_text',
+                text: 'Rebuild Cache',
                 emoji: true,
               },
-              style: "primary",
-              action_id: "rebuild_vector_cache",
+              style: 'primary',
+              action_id: 'rebuild_vector_cache',
             },
             {
-              type: "button",
+              type: 'button',
               text: {
-                type: "plain_text",
-                text: "Normalize Markdown",
+                type: 'plain_text',
+                text: 'Normalize Markdown',
                 emoji: true,
               },
-              style: "primary",
-              action_id: "normalize_markdown_files",
+              style: 'primary',
+              action_id: 'normalize_markdown_files',
               confirm: {
                 title: {
-                  type: "plain_text",
-                  text: "Normalize Markdown Files",
+                  type: 'plain_text',
+                  text: 'Normalize Markdown Files',
                 },
                 text: {
-                  type: "plain_text",
-                  text: "This will convert all markdown files to tree format and back to markdown, standardizing the formatting. This may change newlines, list styles, etc.",
+                  type: 'plain_text',
+                  text: 'This will convert all markdown files to tree format and back to markdown, standardizing the formatting. This may change newlines, list styles, etc.',
                 },
                 confirm: {
-                  type: "plain_text",
-                  text: "Normalize",
+                  type: 'plain_text',
+                  text: 'Normalize',
                 },
                 deny: {
-                  type: "plain_text",
-                  text: "Cancel",
+                  type: 'plain_text',
+                  text: 'Cancel',
                 },
               },
             },
             {
-              type: "button",
+              type: 'button',
               text: {
-                type: "plain_text",
-                text: "Emergency Reset",
+                type: 'plain_text',
+                text: 'Emergency Reset',
                 emoji: true,
               },
-              style: "danger",
-              action_id: "reset_vector_store",
+              style: 'danger',
+              action_id: 'reset_vector_store',
               confirm: {
                 title: {
-                  type: "plain_text",
-                  text: "Are you sure?",
+                  type: 'plain_text',
+                  text: 'Are you sure?',
                 },
                 text: {
-                  type: "plain_text",
-                  text: "This will completely reset the vector store and rebuild it. This action cannot be undone.",
+                  type: 'plain_text',
+                  text: 'This will completely reset the vector store and rebuild it. This action cannot be undone.',
                 },
                 confirm: {
-                  type: "plain_text",
-                  text: "Execute Reset",
+                  type: 'plain_text',
+                  text: 'Execute Reset',
                 },
                 deny: {
-                  type: "plain_text",
-                  text: "Cancel",
+                  type: 'plain_text',
+                  text: 'Cancel',
                 },
               },
             },
           ],
         },
         {
-          type: "divider",
-        }
+          type: 'divider',
+        },
       );
     }
 
@@ -214,68 +225,68 @@ const appHomeOpenedCallback = async ({
     if (isUserManager || isOwner) {
       // Get current Q&A channel info
       const qaChannelId = await getQAChannel(workspaceId, client);
-      let qaChannelName = "No channel selected";
-      
+      let qaChannelName = 'No channel selected';
+
       if (qaChannelId) {
         try {
           const channelInfo = await client.conversations.info({ channel: qaChannelId });
-          qaChannelName = channelInfo.channel?.name || "Unknown channel";
+          qaChannelName = channelInfo.channel?.name || 'Unknown channel';
         } catch (error) {
           logger.warn(`Could not get Q&A channel name for ${qaChannelId}:`, error);
-          qaChannelName = "Unknown channel";
+          qaChannelName = 'Unknown channel';
         }
       }
 
       qaChannelBlocks.push(
         {
-          type: "header",
+          type: 'header',
           text: {
-            type: "plain_text",
-            text: "💬 Q&A Channel Configuration",
+            type: 'plain_text',
+            text: '💬 Q&A Channel Configuration',
             emoji: true,
           },
         },
         {
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
+            type: 'mrkdwn',
             text: `*Current Q&A Channel:* ${qaChannelId ? `#${qaChannelName}` : qaChannelName}`,
           },
         },
         {
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
+            type: 'mrkdwn',
             text: "Select a channel where CHOIR will forward questions when users click 'Ask to Channel'.",
           },
         },
         {
-          type: "actions",
+          type: 'actions',
           elements: [
             {
-              type: "channels_select",
+              type: 'channels_select',
               placeholder: {
-                type: "plain_text",
-                text: "Select Q&A Channel",
+                type: 'plain_text',
+                text: 'Select Q&A Channel',
                 emoji: true,
               },
-              action_id: "select_qa_channel",
+              action_id: 'select_qa_channel',
             },
             {
-              type: "button",
+              type: 'button',
               text: {
-                type: "plain_text",
-                text: "Set Q&A Channel",
+                type: 'plain_text',
+                text: 'Set Q&A Channel',
                 emoji: true,
               },
-              style: "primary",
-              action_id: "set_qa_channel",
+              style: 'primary',
+              action_id: 'set_qa_channel',
             },
           ],
         },
         {
-          type: "divider",
-        }
+          type: 'divider',
+        },
       );
     }
 
@@ -288,10 +299,10 @@ const appHomeOpenedCallback = async ({
       const repoInfo = await getGithubRepo(workspaceId);
 
       githubBlocks.push({
-        type: "header",
+        type: 'header',
         text: {
-          type: "plain_text",
-          text: "🔗 GitHub Repository Connection",
+          type: 'plain_text',
+          text: '🔗 GitHub Repository Connection',
           emoji: true,
         },
       });
@@ -299,22 +310,20 @@ const appHomeOpenedCallback = async ({
       // Show current connection status
       if (repoInfo) {
         githubBlocks.push({
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
-            text: `*Currently Connected Repository*\n<${repoInfo.url}|${
-              repoInfo.owner
-            }/${repoInfo.repo}${
-              repoInfo.path ? ` (Path: ${repoInfo.path})` : ""
+            type: 'mrkdwn',
+            text: `*Currently Connected Repository*\n<${repoInfo.url}|${repoInfo.owner}/${repoInfo.repo}${
+              repoInfo.path ? ` (Path: ${repoInfo.path})` : ''
             }>`,
           },
         });
       } else {
         githubBlocks.push({
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
-            text: "*No repository connected*\nEnter a GitHub repository URL below to connect.",
+            type: 'mrkdwn',
+            text: '*No repository connected*\nEnter a GitHub repository URL below to connect.',
           },
         });
       }
@@ -322,64 +331,64 @@ const appHomeOpenedCallback = async ({
       // GitHub repository input form
       githubBlocks.push(
         {
-          type: "input",
+          type: 'input',
           dispatch_action: true,
           element: {
-            type: "plain_text_input",
-            action_id: "github_repo_url_input",
+            type: 'plain_text_input',
+            action_id: 'github_repo_url_input',
             placeholder: {
-              type: "plain_text",
-              text: "https://github.com/username/repo",
+              type: 'plain_text',
+              text: 'https://github.com/username/repo',
             },
           },
           label: {
-            type: "plain_text",
-            text: "GitHub Repository URL",
+            type: 'plain_text',
+            text: 'GitHub Repository URL',
           },
           hint: {
-            type: "plain_text",
-            text: "Enter GitHub repository URL (e.g., https://github.com/username/repo)",
+            type: 'plain_text',
+            text: 'Enter GitHub repository URL (e.g., https://github.com/username/repo)',
           },
         },
         {
-          type: "actions",
+          type: 'actions',
           elements: [
             {
-              type: "button",
+              type: 'button',
               text: {
-                type: "plain_text",
-                text: "Test Repository Connection",
+                type: 'plain_text',
+                text: 'Test Repository Connection',
                 emoji: true,
               },
-              style: "primary",
-              action_id: "test_github_connection",
+              style: 'primary',
+              action_id: 'test_github_connection',
             },
           ],
         },
         {
-          type: "divider",
-        }
+          type: 'divider',
+        },
       );
     }
 
     // Default home view blocks
     const homeBlocks = [
       {
-        type: "section",
+        type: 'section',
         text: {
-          type: "mrkdwn",
+          type: 'mrkdwn',
           text: `*Welcome, <@${event.user}> :house:*`,
         },
       },
       {
-        type: "section",
+        type: 'section',
         text: {
-          type: "mrkdwn",
-          text: "CHOIR is a tool that automatically updates documents based on Slack conversations.",
+          type: 'mrkdwn',
+          text: 'CHOIR is a tool that automatically updates documents based on Slack conversations.',
         },
       },
       {
-        type: "divider",
+        type: 'divider',
       },
     ];
 
@@ -391,100 +400,100 @@ const appHomeOpenedCallback = async ({
     if (isUserManager || isOwner) {
       organizationDescriptionBlocks.push(
         {
-          type: "header",
+          type: 'header',
           text: {
-            type: "plain_text",
-            text: "🏢 Organization Settings",
+            type: 'plain_text',
+            text: '🏢 Organization Settings',
             emoji: true,
           },
         },
         {
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
+            type: 'mrkdwn',
             text: `*Current Organization Name:*
 ${organizationName}`,
           },
         },
         {
-          type: "input",
-          block_id: "organization_name_input_block",
+          type: 'input',
+          block_id: 'organization_name_input_block',
           element: {
-            type: "plain_text_input",
-            action_id: "organization_name_input",
+            type: 'plain_text_input',
+            action_id: 'organization_name_input',
             initial_value: organizationName,
             placeholder: {
-              type: "plain_text",
-              text: "Enter your organization name (e.g., Smith Research Lab, AI Team, etc.)",
+              type: 'plain_text',
+              text: 'Enter your organization name (e.g., Smith Research Lab, AI Team, etc.)',
             },
           },
           label: {
-            type: "plain_text",
-            text: "Set Organization Name",
+            type: 'plain_text',
+            text: 'Set Organization Name',
           },
         },
         {
-          type: "actions",
+          type: 'actions',
           elements: [
             {
-              type: "button",
+              type: 'button',
               text: {
-                type: "plain_text",
-                text: "Save Name",
+                type: 'plain_text',
+                text: 'Save Name',
                 emoji: true,
               },
-              style: "primary",
-              action_id: "set_organization_name",
+              style: 'primary',
+              action_id: 'set_organization_name',
             },
           ],
         },
         {
-          type: "divider",
+          type: 'divider',
         },
         {
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
+            type: 'mrkdwn',
             text: `*Current Description:*
 ${organizationDescription}`,
           },
         },
         {
-          type: "input",
-          block_id: "organization_description_input_block",
+          type: 'input',
+          block_id: 'organization_description_input_block',
           element: {
-            type: "plain_text_input",
-            action_id: "organization_description_input",
+            type: 'plain_text_input',
+            action_id: 'organization_description_input',
             multiline: true,
-            initial_value: organizationDescription === "No description set." ? "" : organizationDescription,
+            initial_value: organizationDescription === 'No description set.' ? '' : organizationDescription,
             placeholder: {
-              type: "plain_text",
-              text: "Enter a brief description of your organization, its goals, and common knowledge.",
+              type: 'plain_text',
+              text: 'Enter a brief description of your organization, its goals, and common knowledge.',
             },
           },
           label: {
-            type: "plain_text",
-            text: "Set Organization Description",
+            type: 'plain_text',
+            text: 'Set Organization Description',
           },
         },
         {
-          type: "actions",
+          type: 'actions',
           elements: [
             {
-              type: "button",
+              type: 'button',
               text: {
-                type: "plain_text",
-                text: "Save Description",
+                type: 'plain_text',
+                text: 'Save Description',
                 emoji: true,
               },
-              style: "primary",
-              action_id: "set_organization_description",
+              style: 'primary',
+              action_id: 'set_organization_description',
             },
           ],
         },
         {
-          type: "divider",
-        }
+          type: 'divider',
+        },
       );
     }
 
@@ -492,65 +501,65 @@ ${organizationDescription}`,
     if (isUserManager || isOwner) {
       managerManagementBlocks.push(
         {
-          type: "header",
+          type: 'header',
           text: {
-            type: "plain_text",
-            text: "👑 Manager Permission Management",
+            type: 'plain_text',
+            text: '👑 Manager Permission Management',
             emoji: true,
           },
         },
         {
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
-            text: "Managers can grant and revoke manager permissions for other users.",
+            type: 'mrkdwn',
+            text: 'Managers can grant and revoke manager permissions for other users.',
           },
         },
         {
-          type: "actions",
+          type: 'actions',
           elements: [
             {
-              type: "users_select",
+              type: 'users_select',
               placeholder: {
-                type: "plain_text",
-                text: "Select User",
+                type: 'plain_text',
+                text: 'Select User',
                 emoji: true,
               },
-              action_id: "select_user_for_permission",
+              action_id: 'select_user_for_permission',
             },
             {
-              type: "button",
+              type: 'button',
               text: {
-                type: "plain_text",
-                text: "Grant Manager Permission",
+                type: 'plain_text',
+                text: 'Grant Manager Permission',
                 emoji: true,
               },
-              style: "primary",
-              action_id: "add_manager_permission",
+              style: 'primary',
+              action_id: 'add_manager_permission',
               confirm: {
                 title: {
-                  type: "plain_text",
-                  text: "Grant Manager Permission",
+                  type: 'plain_text',
+                  text: 'Grant Manager Permission',
                 },
                 text: {
-                  type: "mrkdwn",
-                  text: "Are you sure you want to grant manager permission to the selected user?",
+                  type: 'mrkdwn',
+                  text: 'Are you sure you want to grant manager permission to the selected user?',
                 },
                 confirm: {
-                  type: "plain_text",
-                  text: "Grant",
+                  type: 'plain_text',
+                  text: 'Grant',
                 },
                 deny: {
-                  type: "plain_text",
-                  text: "Cancel",
+                  type: 'plain_text',
+                  text: 'Cancel',
                 },
               },
             },
           ],
         },
         {
-          type: "divider",
-        }
+          type: 'divider',
+        },
       );
     }
 
@@ -569,20 +578,20 @@ ${organizationDescription}`,
     await client.views.publish({
       user_id: event.user,
       view: {
-        type: "home",
+        type: 'home',
         blocks,
       },
     });
   } catch (error) {
-    logger.error("Error publishing home view:", error);
+    logger.error('Error publishing home view:', error);
   }
 };
 
 const register = (app: App) => {
-  app.event("app_home_opened", appHomeOpenedCallback);
+  app.event('app_home_opened', appHomeOpenedCallback);
 
   // Handler for setting organization name
-  app.action("set_organization_name", async ({ ack, body, client, logger }) => {
+  app.action('set_organization_name', async ({ ack, body, client, logger }) => {
     await ack();
     try {
       const workspaceId = await getWorkspaceId(client);
@@ -594,27 +603,27 @@ const register = (app: App) => {
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: "Organization name updated successfully!",
+        text: 'Organization name updated successfully!',
       });
-
     } catch (error) {
-      logger.error("Error setting organization name:", error);
+      logger.error('Error setting organization name:', error);
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: "Error updating organization name. Please try again.",
+        text: 'Error updating organization name. Please try again.',
       });
     }
   });
 
   // Handler for setting organization description
-  app.action("set_organization_description", async ({ ack, body, client, logger }) => {
+  app.action('set_organization_description', async ({ ack, body, client, logger }) => {
     await ack();
     try {
       const workspaceId = await getWorkspaceId(client);
       // Correctly access the submitted value from the view state
       // @ts-ignore
-      const newDescription = body.view.state.values.organization_description_input_block.organization_description_input.value;
+      const newDescription =
+        body.view.state.values.organization_description_input_block.organization_description_input.value;
 
       await setOrganizationDescription(workspaceId, newDescription);
 
@@ -625,18 +634,17 @@ const register = (app: App) => {
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id, // Post to App Home DM
-        text: "Organization description updated successfully!",
+        text: 'Organization description updated successfully!',
       });
-
     } catch (error) {
-      logger.error("Error setting organization description:", error);
+      logger.error('Error setting organization description:', error);
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: "Error updating organization description. Please try again.",
+        text: 'Error updating organization description. Please try again.',
       });
     }
   });
 };
 
-export default { register }; 
+export default { register };

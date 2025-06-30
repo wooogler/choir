@@ -1,5 +1,5 @@
+import { Document } from '@langchain/core/documents';
 import puppeteer from 'puppeteer';
-import { Document } from "@langchain/core/documents";
 
 /**
  * 웹 콘텐츠 로더 서비스
@@ -55,7 +55,7 @@ export class WebContentLoader {
       });
 
       const page = await browser.newPage();
-      
+
       try {
         // 페이지 로드
         await page.goto(url, {
@@ -67,9 +67,18 @@ export class WebContentLoader {
         const content = await page.evaluate(() => {
           // 불필요한 요소 제거
           const elementsToRemove = [
-            'script', 'style', 'nav', 'footer', 'header', 
-            '.advertisement', '.ads', '.cookie-banner',
-            '#comments', '.social-share', 'aside', '.sidebar'
+            'script',
+            'style',
+            'nav',
+            'footer',
+            'header',
+            '.advertisement',
+            '.ads',
+            '.cookie-banner',
+            '#comments',
+            '.social-share',
+            'aside',
+            '.sidebar',
           ];
 
           elementsToRemove.forEach((selector: string) => {
@@ -80,20 +89,20 @@ export class WebContentLoader {
               // 선택자 오류 무시
             }
           });
-          
+
           // 메인 콘텐츠 추출
           const contentSelectors = [
             'main',
-            'article', 
-            '.content', 
+            'article',
+            '.content',
             '.post-content',
-            '.entry-content', 
+            '.entry-content',
             '.article-content',
             '.main-content',
             '.page-content',
             '.blog-content',
             '#content',
-            '#main'
+            '#main',
           ];
 
           let mainContent = '';
@@ -140,7 +149,7 @@ export class WebContentLoader {
           return {
             content: mainContent,
             title: title,
-            url: window.location.href
+            url: window.location.href,
           };
         });
 
@@ -153,8 +162,8 @@ export class WebContentLoader {
             source: url,
             title: content.title,
             loadedAt: new Date().toISOString(),
-            type: 'web-content'
-          }
+            type: 'web-content',
+          },
         });
 
         console.info(`Raw document content length: ${content.content.length}`);
@@ -171,14 +180,12 @@ export class WebContentLoader {
 
         console.info(`Successfully loaded web content from ${url}, ${docs.length} documents`);
         return docs;
-
       } finally {
         // 브라우저가 열려있다면 닫기
         if (browser) {
           await browser.close();
         }
       }
-
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.warn(`Failed to load web content from ${url}:`, errorMessage);
@@ -193,12 +200,12 @@ export class WebContentLoader {
    */
   public async loadMultipleWebContent(urls: string[]): Promise<Document[]> {
     const results: Document[] = [];
-    
+
     for (const url of urls) {
       try {
         const docs = await this.loadWebContent(url);
         results.push(...docs);
-        
+
         // 각 요청 사이에 딜레이 추가 (rate limiting)
         await this.delay(1000);
       } catch (error) {
@@ -218,7 +225,7 @@ export class WebContentLoader {
     // 마크다운 링크 형식 매칭
     const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
     const markdownMatches = Array.from(text.matchAll(markdownLinkRegex));
-    const markdownUrls = markdownMatches.map(match => match[2]);
+    const markdownUrls = markdownMatches.map((match) => match[2]);
 
     // 일반 URL 매칭
     const plainUrlRegex = /https?:\/\/[^\s<>"']+/g;
@@ -226,11 +233,11 @@ export class WebContentLoader {
 
     // 모든 URL 합치기
     const allUrls = [...markdownUrls, ...plainUrls];
-    
+
     // 중복 제거 및 유효한 URL만 필터링
     const uniqueUrls = Array.from(new Set(allUrls))
-      .filter(url => this.isValidUrl(url))
-      .filter(url => !this.isExcludedUrl(url));
+      .filter((url) => this.isValidUrl(url))
+      .filter((url) => !this.isExcludedUrl(url));
 
     return uniqueUrls;
   }
@@ -241,7 +248,7 @@ export class WebContentLoader {
   private getCachedContent(url: string): Document[] | null {
     const cacheKey = this.generateCacheKey(url);
     const cached = this.cache.get(cacheKey);
-    
+
     if (cached) {
       // 캐시 만료 확인
       const loadedAt = cached[0]?.metadata?.loadedAt;
@@ -252,10 +259,10 @@ export class WebContentLoader {
           return null;
         }
       }
-      
+
       return cached;
     }
-    
+
     return null;
   }
 
@@ -299,27 +306,53 @@ export class WebContentLoader {
    */
   private isExcludedUrl(url: string): boolean {
     const excludedDomains = [
-      'twitter.com', 'x.com', 'facebook.com', 'instagram.com',
-      'linkedin.com', 'youtube.com', 'tiktok.com'
+      'twitter.com',
+      'x.com',
+      'facebook.com',
+      'instagram.com',
+      'linkedin.com',
+      'youtube.com',
+      'tiktok.com',
     ];
 
     const excludedExtensions = [
-      '.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx',
-      '.zip', '.rar', '.tar', '.gz', '.7z',
-      '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp',
-      '.mp4', '.avi', '.mov', '.wmv', '.flv', '.mp3', '.wav'
+      '.pdf',
+      '.doc',
+      '.docx',
+      '.ppt',
+      '.pptx',
+      '.xls',
+      '.xlsx',
+      '.zip',
+      '.rar',
+      '.tar',
+      '.gz',
+      '.7z',
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.gif',
+      '.svg',
+      '.webp',
+      '.mp4',
+      '.avi',
+      '.mov',
+      '.wmv',
+      '.flv',
+      '.mp3',
+      '.wav',
     ];
 
     try {
       const urlObj = new URL(url);
-      
+
       // 도메인 제외 확인
-      if (excludedDomains.some(domain => urlObj.hostname.includes(domain))) {
+      if (excludedDomains.some((domain) => urlObj.hostname.includes(domain))) {
         return true;
       }
 
       // 확장자 제외 확인
-      if (excludedExtensions.some(ext => urlObj.pathname.toLowerCase().endsWith(ext))) {
+      if (excludedExtensions.some((ext) => urlObj.pathname.toLowerCase().endsWith(ext))) {
         return true;
       }
 
@@ -333,7 +366,7 @@ export class WebContentLoader {
    * 딜레이 함수
    */
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -351,7 +384,7 @@ export class WebContentLoader {
     return {
       size: this.cache.size,
       maxSize: this.maxCacheSize,
-      urls: Array.from(this.cache.keys())
+      urls: Array.from(this.cache.keys()),
     };
   }
-} 
+}

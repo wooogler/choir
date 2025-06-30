@@ -1,8 +1,8 @@
-import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
-import { getSessionData, SessionType, storeSessionData } from "../../../../services/common";
-import suggestUpdatesCallback from "../suggestions/suggest-updates";
-import { WebClient } from "@slack/web-api";
-import { Logger } from "@slack/bolt";
+import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { Logger } from '@slack/bolt';
+import { WebClient } from '@slack/web-api';
+import { SessionType, getSessionData, storeSessionData } from 'services/common';
+import suggestUpdatesCallback from '../suggestions/suggest-updates';
 
 /**
  * Handle "Apply Updates" button click
@@ -19,11 +19,11 @@ export const applyExtractedKnowledgeCallback = async ({
 
   try {
     const sessionId = body.actions[0].value;
-    
+
     if (!sessionId) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ Invalid session. Please try the knowledge extraction again.",
+        text: '❌ Invalid session. Please try the knowledge extraction again.',
       });
       return;
     }
@@ -33,22 +33,22 @@ export const applyExtractedKnowledgeCallback = async ({
     if (!sessionData) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ Session data not found. Please try the knowledge extraction again.",
+        text: '❌ Session data not found. Please try the knowledge extraction again.',
       });
       return;
     }
 
     // Get team_id and bot_id for the slack:// URL
     const authInfo = await client.auth.test();
-    
+
     const teamId = authInfo.team_id;
     const botUserId = authInfo.user_id;
 
     if (!teamId || !botUserId) {
-      logger.error("Failed to get team_id or user_id for DM link");
+      logger.error('Failed to get team_id or user_id for DM link');
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ Could not create a link to DM. Please try again or contact support."
+        text: '❌ Could not create a link to DM. Please try again or contact support.',
       });
       return;
     }
@@ -57,55 +57,57 @@ export const applyExtractedKnowledgeCallback = async ({
     await client.chat.postMessage({
       channel: sessionData.originalChannelId,
       ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
-      text: "🔄 Processing knowledge and generating document updates...",
+      text: '🔄 Processing knowledge and generating document updates...',
       blocks: [
         {
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
-            text: "🔄 Manager is processing the knowledge and generating document updates..."
-          }
-        }
-      ]
+            type: 'mrkdwn',
+            text: '🔄 Manager is processing the knowledge and generating document updates...',
+          },
+        },
+      ],
     });
 
     // Show ephemeral processing message with DM button
     await client.chat.postEphemeral({
       channel: sessionData.originalChannelId,
       user: body.user.id,
-      text: "🔄 Processing knowledge and generating document updates...",
+      text: '🔄 Processing knowledge and generating document updates...',
       blocks: [
         {
-          type: "section",
+          type: 'section',
           text: {
-            type: "mrkdwn",
-            text: "🔄 Processing knowledge and generating document updates...\nDocument suggestions will be sent to your DM."
-          }
+            type: 'mrkdwn',
+            text: '🔄 Processing knowledge and generating document updates...\nDocument suggestions will be sent to your DM.',
+          },
         },
         {
-          type: "actions",
+          type: 'actions',
           elements: [
             {
-              type: "button" as "button",
+              type: 'button' as const,
               text: {
-                type: "plain_text" as "plain_text",
-                text: "Open DM",
-                emoji: true
+                type: 'plain_text' as const,
+                text: 'Open DM',
+                emoji: true,
               },
-              style: "primary" as "primary",
-              url: `slack://user?team=${teamId}&id=${botUserId}&tab=messages`
-            }
-          ]
-        }
-      ]
+              style: 'primary' as const,
+              url: `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
+            },
+          ],
+        },
+      ],
     });
 
     // Prepare source messages based on knowledgeItem.source indices
     let sourceMessages = [];
     if (sessionData.knowledgeItem?.source && sessionData.messages) {
-      sourceMessages = sessionData.knowledgeItem.source.map((messageIndex: number) => {
-        return sessionData.messages[messageIndex - 1]; // Convert to 0-based index
-      }).filter(Boolean); // Remove any undefined entries
+      sourceMessages = sessionData.knowledgeItem.source
+        .map((messageIndex: number) => {
+          return sessionData.messages[messageIndex - 1]; // Convert to 0-based index
+        })
+        .filter(Boolean); // Remove any undefined entries
     }
 
     // Update session data with source messages for easier access
@@ -117,39 +119,38 @@ export const applyExtractedKnowledgeCallback = async ({
     // 호출하는 곳에서 필요한 모든 속성을 제공해야 함.
     // 여기서는 body.actions[0].value 를 파싱하여 필요한 값을 직접 전달하는 형태로 변경.
     const suggestUpdatesValue = {
-        originalChannelId: sessionData.originalChannelId,
-        originalThreadTs: sessionData.originalThreadTs,
-        knowledgeContent: sessionData.extractedKnowledge,
-        sessionId: sessionId
+      originalChannelId: sessionData.originalChannelId,
+      originalThreadTs: sessionData.originalThreadTs,
+      knowledgeContent: sessionData.extractedKnowledge,
+      sessionId: sessionId,
     };
 
     await suggestUpdatesCallback({
-      ack: async () => {}, 
+      ack: async () => {},
       body: {
         ...body, // 원본 body의 다른 속성들 (trigger_id, container 등)을 유지
         actions: [
           {
             ...body.actions[0],
-            value: JSON.stringify(suggestUpdatesValue)
-          }
+            value: JSON.stringify(suggestUpdatesValue),
+          },
         ],
-        user: { id: sessionData.userId }, 
-        channel: { id: body.user.id } 
+        user: { id: sessionData.userId },
+        channel: { id: body.user.id },
       },
       client,
       logger,
       context, // context 전달
-      next,    // next 전달
+      next, // next 전달
     } as AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>); // 타입 캐스팅은 유지하되, 실제 필요한 모든 속성을 전달하도록 함
 
     logger.info(`Knowledge applied for session ${sessionId}`);
-
   } catch (error) {
-    logger.error("Error applying extracted knowledge:", error);
-    
+    logger.error('Error applying extracted knowledge:', error);
+
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ Failed to apply knowledge: ${error instanceof Error ? error.message : "Unknown error"}`,
+      text: `❌ Failed to apply knowledge: ${error instanceof Error ? error.message : 'Unknown error'}`,
     });
   }
-}; 
+};

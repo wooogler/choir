@@ -1,15 +1,15 @@
-import type { App } from "@slack/bolt";
+import type { App } from '@slack/bolt';
 // import actions from "./actions"; // 삭제 예정
-import appHomeHandler from "./event-handlers/app-home-handler";
+import appHomeHandler from './event-handlers/app-home-handler';
+import { clearChatCommand, handleClearChat } from './event-handlers/command-handler';
+import dmHandler from './event-handlers/dm-handler';
 // import views from "./views"; // 삭제 예정
-import mentionHandler from "./event-handlers/mention-handler";
-import dmHandler from "./event-handlers/dm-handler";
-import { clearChatCommand, handleClearChat } from "./event-handlers/command-handler";
+import mentionHandler from './event-handlers/mention-handler';
 
-import { registerQAFeature } from "./features/qa";
-import { registerDocumentUpdateFeature } from "./features/document-update";
-import { registerPreferencesFeature } from "./features/preferences";
-import { registerConversationFeature } from "./features/conversation";
+import { registerConversationFeature } from './features/conversation';
+import { registerDocumentUpdateFeature } from './features/document-update';
+import { registerPreferencesFeature } from './features/preferences';
+import { registerQAFeature } from './features/qa';
 // import { registerKnowledgeExtractionFeature } from "./features/knowledge-extraction"; // knowledge-extraction은 아직
 
 const registerListeners = (app: App) => {

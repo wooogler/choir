@@ -1,5 +1,5 @@
-import type { App, AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockAction } from "@slack/bolt";
-import { setQAChannel, getWorkspaceId, isManager, isWorkspaceOwner, getChannelName } from "services/slack";
+import type { AllMiddlewareArgs, App, BlockAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { getChannelName, getWorkspaceId, isManager, isWorkspaceOwner, setQAChannel } from 'services/slack';
 
 // 선택된 채널을 임시 저장할 Map
 const selectedChannelStore = new Map<string, string>();
@@ -37,7 +37,7 @@ const selectQAChannelCallback = async ({
       logger.info(`User ${userId} selected channel ${selectedChannel} for Q&A`);
     }
   } catch (error) {
-    logger.error("Error handling Q&A channel selection:", error);
+    logger.error('Error handling Q&A channel selection:', error);
   }
 };
 
@@ -62,7 +62,7 @@ const setQAChannelCallback = async ({
 
     if (!isUserManager && !isOwner) {
       await client.chat.postEphemeral({
-        channel: body.channel?.id || "",
+        channel: body.channel?.id || '',
         user: userId,
         text: "❌ You don't have permission to set Q&A channel.",
       });
@@ -74,9 +74,9 @@ const setQAChannelCallback = async ({
 
     if (!selectedChannelId) {
       await client.chat.postEphemeral({
-        channel: body.channel?.id || "",
+        channel: body.channel?.id || '',
         user: userId,
-        text: "❌ Please select a channel first.",
+        text: '❌ Please select a channel first.',
       });
       return;
     }
@@ -86,15 +86,14 @@ const setQAChannelCallback = async ({
     try {
       const channelInfo = await client.conversations.info({ channel: selectedChannelId });
       channelName = channelInfo.channel?.name || selectedChannelId;
-      
+
       // 봇이 채널에 접근할 수 있는지 확인
       if (!channelInfo.channel) {
-        throw new Error("Channel not found");
+        throw new Error('Channel not found');
       }
-      
     } catch (channelError: any) {
       logger.warn(`Could not access channel ${selectedChannelId}:`, channelError);
-      
+
       // 채널에 접근할 수 없는 경우 사용자에게 알림 (DM으로 변경)
       await client.chat.postMessage({
         channel: userId, // 사용자 ID를 채널로 지정하여 DM 발송
@@ -119,19 +118,19 @@ const setQAChannelCallback = async ({
 
     logger.info(`Q&A channel set to ${selectedChannelId} (${channelName}) by user ${userId}`);
   } catch (error) {
-    logger.error("Error setting Q&A channel:", error);
-    
+    logger.error('Error setting Q&A channel:', error);
+
     // 에러 메시지 (DM으로 변경)
     await client.chat.postMessage({
       channel: body.user.id, // body.user.id를 사용하여 사용자 ID 가져오기
-      text: "❌ Failed to set Q&A channel. Please try again.",
+      text: '❌ Failed to set Q&A channel. Please try again.',
     });
   }
 };
 
 const register = (app: App) => {
-  app.action("select_qa_channel", selectQAChannelCallback);
-  app.action("set_qa_channel", setQAChannelCallback);
+  app.action('select_qa_channel', selectQAChannelCallback);
+  app.action('set_qa_channel', setQAChannelCallback);
 };
 
-export default { register }; 
+export default { register };

@@ -1,6 +1,6 @@
-import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
-import { getSessionData, SessionType } from "services/common";
-import { getManagers, getWorkspaceId, getUserName, createPrivateMessagePreview } from "services/slack";
+import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { SessionType, getSessionData } from 'services/common';
+import { createPrivateMessagePreview, getManagers, getUserName, getWorkspaceId } from 'services/slack';
 
 /**
  * 멤버 선택 모달 열기
@@ -17,9 +17,9 @@ export const askToOthersModalCallback = async ({
     const sessionId = body.actions[0].value;
     if (!sessionId) {
       await client.chat.postEphemeral({
-        channel: body.channel?.id || "",
+        channel: body.channel?.id || '',
         user: body.user.id,
-        text: "😅 Oops! Something went wrong. Could you try asking your question again?",
+        text: '😅 Oops! Something went wrong. Could you try asking your question again?',
       });
       return;
     }
@@ -31,7 +31,7 @@ export const askToOthersModalCallback = async ({
     const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       await client.chat.postEphemeral({
-        channel: body.channel?.id || "",
+        channel: body.channel?.id || '',
         user: body.user.id,
         text: "😅 I can't find the conversation details. Mind asking your question again?",
       });
@@ -43,116 +43,115 @@ export const askToOthersModalCallback = async ({
 
     // Preview 생성 (static preview with both options shown)
     const previewText = createPrivateMessagePreview(
-      "Selected person(s)",
+      'Selected person(s)',
       `(*${questionerName}* OR *a team member*)`,
       sessionData.originalQuestion,
       sessionData.botResponse,
       true, // canAnswer - assume true for preview
-      false // not anonymous for preview
+      false, // not anonymous for preview
     );
 
     await client.views.open({
       trigger_id: body.trigger_id,
       view: {
-        type: "modal",
-        callback_id: "ask_to_others_submit",
+        type: 'modal',
+        callback_id: 'ask_to_others_submit',
         private_metadata: sessionId,
         title: {
-          type: "plain_text",
-          text: "🔒 Ask in Private",
-          emoji: true
+          type: 'plain_text',
+          text: '🔒 Ask in Private',
+          emoji: true,
         },
         submit: {
-          type: "plain_text",
-          text: "Send Privately",
-          emoji: true
+          type: 'plain_text',
+          text: 'Send Privately',
+          emoji: true,
         },
         close: {
-          type: "plain_text",
-          text: "Cancel",
-          emoji: true
+          type: 'plain_text',
+          text: 'Cancel',
+          emoji: true,
         },
         blocks: [
           {
-            type: "section",
+            type: 'section',
             text: {
-              type: "mrkdwn",
-              text: "🔒 *Who would you like to ask privately?*\n_They'll receive this Q&A as a direct message for private discussion._"
-            }
+              type: 'mrkdwn',
+              text: "🔒 *Who would you like to ask privately?*\n_They'll receive this Q&A as a direct message for private discussion._",
+            },
           },
           {
-            type: "input",
-            block_id: "users_select",
+            type: 'input',
+            block_id: 'users_select',
             element: {
-              type: "multi_users_select",
-              action_id: "users",
+              type: 'multi_users_select',
+              action_id: 'users',
               placeholder: {
-                type: "plain_text",
-                text: "Choose people to share with..."
+                type: 'plain_text',
+                text: 'Choose people to share with...',
               },
-              ...(managers.length > 0 && { initial_users: managers })
+              ...(managers.length > 0 && { initial_users: managers }),
             },
             label: {
-              type: "plain_text",
-              text: "👤 People",
-              emoji: true
-            }
+              type: 'plain_text',
+              text: '👤 People',
+              emoji: true,
+            },
           },
           {
-            type: "input",
-            block_id: "anonymous_select",
+            type: 'input',
+            block_id: 'anonymous_select',
             element: {
-              type: "checkboxes",
-              action_id: "anonymous_checkbox_private",
+              type: 'checkboxes',
+              action_id: 'anonymous_checkbox_private',
               options: [
                 {
                   text: {
-                    type: "plain_text",
-                    text: "Share anonymously (show as 'A team member' instead of your name)"
+                    type: 'plain_text',
+                    text: "Share anonymously (show as 'A team member' instead of your name)",
                   },
-                  value: "anonymous"
-                }
-              ]
+                  value: 'anonymous',
+                },
+              ],
             },
             label: {
-              type: "plain_text",
-              text: "🎭 Privacy Options",
-              emoji: true
+              type: 'plain_text',
+              text: '🎭 Privacy Options',
+              emoji: true,
             },
-            optional: true
+            optional: true,
           },
           {
-            type: "divider"
+            type: 'divider',
           },
           {
-            type: "section",
-            block_id: "preview_section",
+            type: 'section',
+            block_id: 'preview_section',
             text: {
-              type: "mrkdwn",
-              text: "👀 *Here's what will be shared:*"
-            }
+              type: 'mrkdwn',
+              text: "👀 *Here's what will be shared:*",
+            },
           },
           {
-            type: "section",
-            block_id: "preview_content",
+            type: 'section',
+            block_id: 'preview_content',
             text: {
-              type: "mrkdwn",
-              text: previewText
-            }
-          }
-        ]
-      }
+              type: 'mrkdwn',
+              text: previewText,
+            },
+          },
+        ],
+      },
     });
 
     logger.info(`Others selection modal opened for session ${sessionId}`);
   } catch (error) {
-    logger.error("Error opening others selection modal:", error);
-    
+    logger.error('Error opening others selection modal:', error);
+
     await client.chat.postEphemeral({
-      channel: body.channel?.id || "",
+      channel: body.channel?.id || '',
       user: body.user.id,
-      text: "😔 Something went wrong opening the sharing options. Could you try again?",
+      text: '😔 Something went wrong opening the sharing options. Could you try again?',
     });
   }
 };
-

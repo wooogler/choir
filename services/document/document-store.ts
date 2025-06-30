@@ -1,6 +1,6 @@
-import { SlackMessage } from "../slack";
-import { Document } from "@langchain/core/documents";
-import { DocumentMetadata } from "../vector/types";
+import type { Document } from '@langchain/core/documents';
+import type { SlackMessage } from '../slack';
+import type { DocumentMetadata } from '../vector/types';
 
 export interface DocumentUpdate {
   index: number;
@@ -19,10 +19,10 @@ export interface DocumentUpdate {
   timestamp: string;
   knowledgeContent?: string; // knowledge extraction에서 나온 내용
   originalChannelId?: string; // 지식 출처 채널 ID
-  originalThreadTs?: string;  // 지식 출처 스레드 TS
+  originalThreadTs?: string; // 지식 출처 스레드 TS
 
   // For APPEND suggestion type
-  suggestionType: "UPDATE" | "APPEND";
+  suggestionType: 'UPDATE' | 'APPEND';
   originalLastNodeContent?: string; // APPEND 시 원본 마지막 노드 내용 (마크다운)
   appendedNodeContent?: string; // APPEND 시 새로 생성된/추가될 노드 내용 (마크다운)
 }
@@ -62,68 +62,60 @@ export const storeDocumentUpdates = (
   userId: string,
   updates: DocumentUpdate[],
   thread_ts?: string,
-  channel_id?: string
+  channel_id?: string,
 ): void => {
   const existing = storedDocumentUpdates.get(userId) || { documentUpdates: [] };
-  
-  storedDocumentUpdates.set(userId, { 
-    documentUpdates: updates, 
+
+  storedDocumentUpdates.set(userId, {
+    documentUpdates: updates,
     thread_ts: thread_ts || existing.thread_ts,
-    channel_id: channel_id || existing.channel_id
+    channel_id: channel_id || existing.channel_id,
   });
 };
 
 // 사용자의 thread 정보 저장하기
-export const storeThreadInfo = (
-  userId: string,
-  thread_ts: string,
-  channel_id: string
-): void => {
+export const storeThreadInfo = (userId: string, thread_ts: string, channel_id: string): void => {
   const existing = storedDocumentUpdates.get(userId);
-  
+
   if (existing) {
-    storedDocumentUpdates.set(userId, { 
-      ...existing, 
-      thread_ts, 
-      channel_id 
+    storedDocumentUpdates.set(userId, {
+      ...existing,
+      thread_ts,
+      channel_id,
     });
   }
 };
 
 // 특정 문서 업데이트의 updatedNodeContent 수정하기
-export const updateDocumentContent = (
-  userId: string,
-  index: number,
-  newContent: string
-): boolean => {
+export const updateDocumentContent = (userId: string, index: number, newContent: string): boolean => {
   const userUpdates = storedDocumentUpdates.get(userId);
-  
+
   if (!userUpdates || !userUpdates.documentUpdates[index]) {
     console.log(`[Error] Failed to find document update for user ${userId}, index ${index}`);
     return false;
   }
-  
+
   // 기존 업데이트 가져오기
   const update = userUpdates.documentUpdates[index];
-  
+
   // suggestionType에 따라 다른 필드 업데이트
-  if (update.suggestionType === "APPEND") {
+  if (update.suggestionType === 'APPEND') {
     // APPEND의 경우 appendedNodeContent 업데이트
     update.appendedNodeContent = newContent;
     update.newContent = newContent; // newContent 필드도 함께 업데이트
   } else {
     // UPDATE의 경우 기존 방식 유지
-  update.updatedNodeContent = newContent;
-  update.newContent = newContent; // newContent 필드도 함께 업데이트
+    update.updatedNodeContent = newContent;
+    update.newContent = newContent; // newContent 필드도 함께 업데이트
   }
-  
-  console.log("=== Document Store Update ===");
+
+  console.log('=== Document Store Update ===');
   console.log(`File: ${update.fileName}`);
   console.log(`Section: ${update.markdownSection}`);
   console.log(`Suggestion Type: ${update.suggestionType}`);
-  console.log("Content updated successfully");
-  console.log("=== End Document Store Update ===");
-  
+  console.log('Content updated successfully');
+  console.log('=== End Document Store Update ===');
+
   return true;
 };
 
@@ -173,31 +165,26 @@ export function clearSearchResults(userId: string) {
 }
 
 // 특정 문서 업데이트 삭제하기
-export const removeDocumentUpdate = (
-  userId: string,
-  index: number
-): boolean => {
+export const removeDocumentUpdate = (userId: string, index: number): boolean => {
   const userUpdates = storedDocumentUpdates.get(userId);
-  
+
   if (!userUpdates || !userUpdates.documentUpdates[index]) {
     return false;
   }
-  
+
   // index 위치의 업데이트 제거
   userUpdates.documentUpdates.splice(index, 1);
-  
+
   // 업데이트된 배열 저장
   storedDocumentUpdates.set(userId, userUpdates);
-  
+
   return true;
 };
 
 export function updateSearchResultDocument(userId: string, updatedDocument: Document<DocumentMetadata>): void {
   const searchResults = getSearchResults(userId);
-  const docIndex = searchResults.findIndex(
-    doc => doc.metadata?.nodeId === updatedDocument.metadata?.nodeId
-  );
-  
+  const docIndex = searchResults.findIndex((doc) => doc.metadata?.nodeId === updatedDocument.metadata?.nodeId);
+
   if (docIndex !== -1) {
     searchResults[docIndex] = updatedDocument;
     storeSearchResults(userId, searchResults);

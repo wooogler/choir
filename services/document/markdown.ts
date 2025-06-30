@@ -1,15 +1,15 @@
-import { marked, Renderer } from "marked";
-import type { Tokens as MarkedTokens } from "marked";
-import { unified } from "unified";
-import remarkParse from "remark-parse";
-import remarkStringify from "remark-stringify";
-import { visit } from "unist-util-visit";
-import { is } from "unist-util-is";
-import { toString } from "mdast-util-to-string";
-import type { Root, Heading, ListItem, Paragraph, Text } from "mdast";
-import type { Node, Parent } from "unist";
-import * as crypto from "crypto";
-import * as fs from "fs";
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import { Renderer, marked } from 'marked';
+import type { Tokens as MarkedTokens } from 'marked';
+import type { Heading, ListItem, Paragraph, Root, Text } from 'mdast';
+import { toString } from 'mdast-util-to-string';
+import remarkParse from 'remark-parse';
+import remarkStringify from 'remark-stringify';
+import { unified } from 'unified';
+import type { Node, Parent } from 'unist';
+import { is } from 'unist-util-is';
+import { visit } from 'unist-util-visit';
 
 /**
  * 확장된 MDAST 노드 인터페이스 - 커스텀 속성 추가
@@ -38,14 +38,10 @@ export interface DocumentTree {
 /**
  * 노드에 고유 ID 부여하는 함수
  */
-function generateNodeId(node: Node, prefix = ""): string {
+function generateNodeId(node: Node, prefix = ''): string {
   const type = node.type;
   const content = toString(node as any).slice(0, 20);
-  const hash = crypto
-    .createHash("md5")
-    .update(`${type}-${content}-${Math.random()}`)
-    .digest("hex")
-    .slice(0, 8);
+  const hash = crypto.createHash('md5').update(`${type}-${content}-${Math.random()}`).digest('hex').slice(0, 8);
 
   return `${prefix}${type}-${hash}`;
 }
@@ -55,36 +51,36 @@ function generateNodeId(node: Node, prefix = ""): string {
  */
 function nodeToMarkdown(node: any): string {
   if (!node) return '';
-  
+
   if (node.type === 'text') {
     return node.value || '';
   }
-  
+
   if (node.type === 'link') {
     const text = node.children ? node.children.map((child: any) => nodeToMarkdown(child)).join('') : '';
     const url = node.url || '';
     return `[${text}](${url})`;
   }
-  
+
   if (node.type === 'strong') {
     const text = node.children ? node.children.map((child: any) => nodeToMarkdown(child)).join('') : '';
     return `**${text}**`;
   }
-  
+
   if (node.type === 'emphasis') {
     const text = node.children ? node.children.map((child: any) => nodeToMarkdown(child)).join('') : '';
     return `*${text}*`;
   }
-  
+
   if (node.type === 'inlineCode') {
     return `\`${node.value || ''}\``;
   }
-  
+
   // 기본적으로 자식 노드들을 재귀적으로 처리
   if (node.children && Array.isArray(node.children)) {
     return node.children.map((child: any) => nodeToMarkdown(child)).join('');
   }
-  
+
   return node.value || '';
 }
 
@@ -105,21 +101,25 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
             // paragraph의 전체 내용을 마크다운 형식으로 변환 (링크 유지)
             const fullText = nodeToMarkdown(paragraphNode);
             // paragraph의 자식을 단일 텍스트 노드로 교체
-            paragraphNode.children = [{
-              type: 'text',
-              value: fullText
-            }];
+            paragraphNode.children = [
+              {
+                type: 'text',
+                value: fullText,
+              },
+            ];
           }
         } else {
           // 일반 단락인 경우도 마크다운 형식으로 변환
           const fullText = nodeToMarkdown(node);
-          node.children = [{
-            type: 'text',
-            value: fullText
-          }];
+          node.children = [
+            {
+              type: 'text',
+              value: fullText,
+            },
+          ];
         }
       });
-      
+
       return tree;
     });
 
@@ -127,7 +127,7 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
 
   // 문서 트리 초기화
   const docTree: DocumentTree = {
-    title: "",
+    title: '',
     root: root as Root & ExtendedNode,
     nodeMap: new Map<string, ExtendedNode>(),
     sectionMap: new Map<string, ExtendedNode>(),
@@ -136,7 +136,7 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
   // 트리 순회하며 노드 ID 부여 및 관계 설정
   let sectionCount = 0;
   let currentSection: ExtendedNode | null = null;
-  let sectionStack: ExtendedNode[] = [];
+  const sectionStack: ExtendedNode[] = [];
 
   // 첫 번째 h1을 문서 제목으로 설정
   let titleFound = false;
@@ -159,7 +159,7 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
     }
 
     // 섹션 처리 (heading)
-    if (is(node, "heading")) {
+    if (is(node, 'heading')) {
       const heading = node as Heading & ExtendedNode;
 
       // 첫 번째 h1은 문서 제목으로
@@ -175,11 +175,7 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
       heading.sectionLevel = heading.depth;
 
       // 섹션 스택 관리
-      while (
-        sectionStack.length > 0 &&
-        (sectionStack[sectionStack.length - 1] as Heading).depth >=
-          heading.depth
-      ) {
+      while (sectionStack.length > 0 && (sectionStack[sectionStack.length - 1] as Heading).depth >= heading.depth) {
         sectionStack.pop();
       }
 
@@ -196,12 +192,12 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
     }
 
     // 리스트 아이템 처리
-    if (is(node, "listItem")) {
+    if (is(node, 'listItem')) {
       const listItem = node as ListItem & ExtendedNode;
       listItem.isListItem = true;
 
       // 부모 리스트의 자식 중 현재 아이템 인덱스 찾기
-      if (parent && is(parent, "list") && index !== null) {
+      if (parent && is(parent, 'list') && index !== null) {
         listItem.listItemIndex = index;
       }
 
@@ -212,7 +208,7 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
     }
 
     // 일반 콘텐츠 노드 (단락 등)
-    if (is(node, "paragraph") || is(node, "code") || is(node, "blockquote")) {
+    if (is(node, 'paragraph') || is(node, 'code') || is(node, 'blockquote')) {
       // 현재 노드가 속한 섹션 ID 설정
       if (currentSection) {
         extNode.sectionId = currentSection.sectionId;
@@ -231,48 +227,61 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
  */
 export function treeToMarkdown(docTree: DocumentTree): string {
   // 커스텀 AST to Markdown 변환
-  function astToMarkdown(node: any, depth: number = 0): string {
+  function astToMarkdown(node: any, depth = 0): string {
     if (!node) return '';
-    
+
     const indent = '  '.repeat(depth);
-    
+
     switch (node.type) {
       case 'root':
         return node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('\n') : '';
-        
+
       case 'heading':
         const headingLevel = '#'.repeat(node.depth || 1);
-        const headingText = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('') : '';
+        const headingText = node.children
+          ? node.children.map((child: any) => astToMarkdown(child, depth)).join('')
+          : '';
         return `${headingLevel} ${headingText}`;
-        
+
       case 'paragraph':
-        const paragraphText = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('') : '';
+        const paragraphText = node.children
+          ? node.children.map((child: any) => astToMarkdown(child, depth)).join('')
+          : '';
         return paragraphText;
-        
+
       case 'list':
-        const listItems = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('\n') : '';
+        const listItems = node.children
+          ? node.children.map((child: any) => astToMarkdown(child, depth)).join('\n')
+          : '';
         return listItems;
-        
+
       case 'listItem':
         const bullet = node.ordered ? '1.' : '-';
-        const itemContent = node.children ? node.children.map((child: any) => astToMarkdown(child, depth + 1)).join('\n') : '';
+        const itemContent = node.children
+          ? node.children.map((child: any) => astToMarkdown(child, depth + 1)).join('\n')
+          : '';
         return `${indent}${bullet} ${itemContent}`;
-        
+
       case 'blockquote':
-        const quoteContent = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('\n') : '';
-        return quoteContent.split('\n').map((line: string) => `> ${line}`).join('\n');
-        
+        const quoteContent = node.children
+          ? node.children.map((child: any) => astToMarkdown(child, depth)).join('\n')
+          : '';
+        return quoteContent
+          .split('\n')
+          .map((line: string) => `> ${line}`)
+          .join('\n');
+
       case 'code':
         const language = node.lang || '';
         const codeContent = node.value || '';
         return `\`\`\`${language}\n${codeContent}\n\`\`\``;
-        
+
       case 'text':
         return node.value || '';
-        
+
       case 'thematicBreak':
         return '---';
-        
+
       default:
         // 알 수 없는 노드 타입의 경우 자식을 처리
         if (node.children && Array.isArray(node.children)) {
@@ -283,40 +292,31 @@ export function treeToMarkdown(docTree: DocumentTree): string {
   }
 
   const markdown = astToMarkdown(docTree.root);
-  
+
   // 빈 줄 정리
   return markdown
-    .replace(/\n{3,}/g, '\n\n')  // 3개 이상의 연속 줄바꿈을 2개로
+    .replace(/\n{3,}/g, '\n\n') // 3개 이상의 연속 줄바꿈을 2개로
     .trim();
 }
 
 /**
  * 특정 노드 찾기
  */
-export function findNodeById(
-  docTree: DocumentTree,
-  id: string
-): ExtendedNode | undefined {
+export function findNodeById(docTree: DocumentTree, id: string): ExtendedNode | undefined {
   return docTree.nodeMap.get(id);
 }
 
 /**
  * 섹션 노드 찾기
  */
-export function findSectionById(
-  docTree: DocumentTree,
-  sectionId: string
-): ExtendedNode | undefined {
+export function findSectionById(docTree: DocumentTree, sectionId: string): ExtendedNode | undefined {
   return docTree.sectionMap.get(sectionId);
 }
 
 /**
  * 섹션 내 모든 콘텐츠 노드 찾기
  */
-export function findNodesInSection(
-  docTree: DocumentTree,
-  sectionId: string
-): ExtendedNode[] {
+export function findNodesInSection(docTree: DocumentTree, sectionId: string): ExtendedNode[] {
   const result: ExtendedNode[] = [];
 
   docTree.nodeMap.forEach((node) => {
@@ -331,11 +331,7 @@ export function findNodesInSection(
 /**
  * 노드 내용 업데이트 - 불변성 원칙을 준수하여 새로운 트리 반환
  */
-export function updateNodeContent(
-  docTree: DocumentTree,
-  nodeId: string,
-  newContent: string
-): DocumentTree {
+export function updateNodeContent(docTree: DocumentTree, nodeId: string, newContent: string): DocumentTree {
   // 원본 트리의 깊은 복사본 생성
   const newTree: DocumentTree = {
     title: docTree.title,
@@ -352,7 +348,7 @@ export function updateNodeContent(
 
   let updated = false;
 
-  if (is(nodeCopy, "paragraph")) {
+  if (is(nodeCopy, 'paragraph')) {
     // 단락 노드의 경우 텍스트 자식 업데이트
     const para = nodeCopy as Paragraph & ExtendedNode;
     const textNode = para.children[0] as Text;
@@ -360,7 +356,7 @@ export function updateNodeContent(
       textNode.value = newContent;
       updated = true;
     }
-  } else if (is(nodeCopy, "heading")) {
+  } else if (is(nodeCopy, 'heading')) {
     // 헤딩 노드의 경우 텍스트 자식 업데이트
     const heading = nodeCopy as Heading & ExtendedNode;
     const textNode = heading.children[0] as Text;
@@ -368,11 +364,11 @@ export function updateNodeContent(
       textNode.value = newContent;
       updated = true;
     }
-  } else if (is(nodeCopy, "listItem")) {
+  } else if (is(nodeCopy, 'listItem')) {
     // 리스트 아이템의 경우 첫 번째 단락 업데이트
     const listItem = nodeCopy as ListItem & ExtendedNode;
     const firstChild = listItem.children[0];
-    if (is(firstChild, "paragraph")) {
+    if (is(firstChild, 'paragraph')) {
       const para = firstChild as Paragraph;
       const textNode = para.children[0] as Text;
       if (textNode) {
@@ -399,18 +395,15 @@ export function updateNodeContent(
  * 노드를 root 트리 구조에서도 업데이트
  */
 function updateNodeInRootTree(tree: DocumentTree, node: ExtendedNode): void {
-  console.log(`[DEBUG] updateNodeInRootTree: 루트 트리 업데이트 시작`, {nodeId: node.id, nodeType: node.type});
-  
+  console.log(`[DEBUG] updateNodeInRootTree: 루트 트리 업데이트 시작`, { nodeId: node.id, nodeType: node.type });
+
   // 노드가 root 트리에 있는 실제 노드 찾기
-  function findAndUpdateNodeInRoot(
-    rootNode: Parent & ExtendedNode,
-    targetId: string
-  ): boolean {
+  function findAndUpdateNodeInRoot(rootNode: Parent & ExtendedNode, targetId: string): boolean {
     // 현재 노드가 대상 노드인지 확인
     if (rootNode.id === targetId) {
       // 현재 노드를 찾았으므로 업데이트 (이 경우는 루트 자체가 대상인 드문 경우)
       Object.assign(rootNode, node);
-      console.log(`[DEBUG] updateNodeInRootTree: 루트에서 직접 노드 업데이트`, {targetId});
+      console.log(`[DEBUG] updateNodeInRootTree: 루트에서 직접 노드 업데이트`, { targetId });
       return true;
     }
 
@@ -427,7 +420,7 @@ function updateNodeInRootTree(tree: DocumentTree, node: ExtendedNode): void {
       if (child.id === targetId) {
         // 자식 노드를 업데이트된 노드로 교체
         rootNode.children[i] = node;
-        console.log(`[DEBUG] updateNodeInRootTree: 자식 노드 교체 완료`, {targetId, position: i});
+        console.log(`[DEBUG] updateNodeInRootTree: 자식 노드 교체 완료`, { targetId, position: i });
         return true;
       }
 
@@ -446,7 +439,7 @@ function updateNodeInRootTree(tree: DocumentTree, node: ExtendedNode): void {
   if (node.id) {
     // id가 있는 경우만 업데이트 시도
     const found = findAndUpdateNodeInRoot(tree.root, node.id);
-    console.log(`[DEBUG] updateNodeInRootTree: 루트 트리 업데이트 결과`, {nodeId: node.id, found});
+    console.log(`[DEBUG] updateNodeInRootTree: 루트 트리 업데이트 결과`, { nodeId: node.id, found });
   }
 
   // 기존 부모 노드 업데이트 로직 유지 (nodeMap 업데이트)
@@ -491,7 +484,7 @@ export function updateSectionContent(
   docTree: DocumentTree,
   sectionId: string,
   contentId: string,
-  newContent: string
+  newContent: string,
 ): string | null {
   // 섹션 검증
   const section = docTree.sectionMap.get(sectionId);
@@ -513,9 +506,7 @@ export function updateSectionContent(
   return null;
 }
 
-export async function convertMarkdownToSlackText(
-  markdown: string
-): Promise<string> {
+export async function convertMarkdownToSlackText(markdown: string): Promise<string> {
   const renderer = new Renderer();
 
   // 첫 번째 헤딩 발견 여부를 추적하기 위한 플래그
@@ -523,7 +514,7 @@ export async function convertMarkdownToSlackText(
 
   // 수평선은 divider로 변환
   renderer.hr = () => {
-    return "---\n";
+    return '---\n';
   };
 
   // 헤딩은 Slack에서 굵은 텍스트 처리
@@ -531,7 +522,7 @@ export async function convertMarkdownToSlackText(
     // 첫 번째 헤딩은 완전히 제거 (이미 UI에 표시되므로 중복 방지)
     if (!firstHeadingFound) {
       firstHeadingFound = true;
-      return ""; // 첫 번째 헤딩 제거
+      return ''; // 첫 번째 헤딩 제거
     }
 
     // 나머지 헤딩은 기존대로 처리
@@ -549,17 +540,19 @@ export async function convertMarkdownToSlackText(
   // HTML을 제거 - HTML 태그를 완전히 제거하고 내용만 유지
   renderer.html = ({ text }: MarkedTokens.HTML) => {
     // HTML 태그를 제거하고 내부 텍스트만 유지
-    return text
-      .replace(/<[^>]*>([^<]*)<\/[^>]*>/g, "$1")
-      .replace(/<[^>]*>/g, "");
+    return text.replace(/<[^>]*>([^<]*)<\/[^>]*>/g, '$1').replace(/<[^>]*>/g, '');
   };
 
   // 목록
   renderer.list = ({ items, ordered }: MarkedTokens.List) => {
-    return items.map((item, index) => {
-      const bullet = ordered ? `${index + 1}.` : "•";
-      return `${bullet} ${item.text}`;
-    }).join("\n") + "\n\n";
+    return (
+      items
+        .map((item, index) => {
+          const bullet = ordered ? `${index + 1}.` : '•';
+          return `${bullet} ${item.text}`;
+        })
+        .join('\n') + '\n\n'
+    );
   };
 
   // 코드 블록
@@ -595,19 +588,17 @@ export async function convertMarkdownToSlackText(
   let slackText = await marked.parse(markdown, {
     renderer,
     gfm: true,
-    breaks: true
+    breaks: true,
   });
 
   // HTML 태그 제거 추가 처리
-  slackText = slackText
-    .replace(/<[^>]*>([^<]*)<\/[^>]*>/g, "$1")
-    .replace(/<[^>]*>/g, "");
+  slackText = slackText.replace(/<[^>]*>([^<]*)<\/[^>]*>/g, '$1').replace(/<[^>]*>/g, '');
 
   // 여러 개의 연속된 줄바꿈을 최대 2개로 정리
-  slackText = slackText.replace(/\n{3,}/g, "\n\n");
+  slackText = slackText.replace(/\n{3,}/g, '\n\n');
 
   // 마크다운 볼드(**) 를 Slack 볼드(*)로 변환
-  slackText = slackText.replace(/\*\*([^*]+)\*\*/g, "*$1*");
+  slackText = slackText.replace(/\*\*([^*]+)\*\*/g, '*$1*');
 
   return slackText.trim();
 }
@@ -615,20 +606,13 @@ export async function convertMarkdownToSlackText(
 /**
  * documentUpdates를 사용하여 docTree를 업데이트하고 마크다운으로 변환
  */
-export function updateDocTreeWithChanges(
-  docTree: DocumentTree,
-  documentUpdates: any[]
-): string {
+export function updateDocTreeWithChanges(docTree: DocumentTree, documentUpdates: any[]): string {
   let updatedTree = docTree;
 
   // 각 업데이트에 대해 docTree 업데이트
   for (const update of documentUpdates) {
     if (update.nodeId && update.updatedNodeContent) {
-      updatedTree = updateNodeContent(
-        updatedTree,
-        update.nodeId,
-        update.updatedNodeContent
-      );
+      updatedTree = updateNodeContent(updatedTree, update.nodeId, update.updatedNodeContent);
     }
   }
 
@@ -642,33 +626,29 @@ export function updateDocTreeWithChanges(
  */
 export function preprocessMarkdownForEmbedding(markdown: string): string {
   let processed = markdown;
-  
+
   // 마크다운 링크 [텍스트](URL)를 텍스트만 남기고 제거
   processed = processed.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-  
+
   // 일반 URL 제거 (http:// 또는 https://로 시작하는 URL)
   processed = processed.replace(/https?:\/\/[^\s<>"']+/g, '');
-  
+
   // 이메일 주소 제거 (선택적)
   // processed = processed.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '');
-  
+
   // 여러 공백을 하나로 정리
   processed = processed.replace(/\s+/g, ' ');
-  
+
   // 앞뒤 공백 제거
   processed = processed.trim();
-  
+
   return processed;
 }
 
 /**
  * 지정된 노드 바로 뒤에 새로운 sibling 노드를 추가 - APPEND 기능용
  */
-export function appendNodeContent(
-  docTree: DocumentTree,
-  referenceNodeId: string,
-  newContent: string
-): DocumentTree {
+export function appendNodeContent(docTree: DocumentTree, referenceNodeId: string, newContent: string): DocumentTree {
   // 원본 트리의 깊은 복사본 생성
   const newTree: DocumentTree = {
     title: docTree.title,
@@ -684,43 +664,43 @@ export function appendNodeContent(
   let newNode: ExtendedNode;
   const newNodeId = `${referenceNodeId}_append_${Date.now()}`;
 
-  if (is(referenceNode, "paragraph")) {
+  if (is(referenceNode, 'paragraph')) {
     // 단락 노드 생성
     newNode = {
-      type: "paragraph",
+      type: 'paragraph',
       children: [
         {
-          type: "text",
-          value: newContent
-        }
+          type: 'text',
+          value: newContent,
+        },
       ],
       id: newNodeId,
       fileName: (referenceNode as ExtendedNode).fileName,
       parentId: (referenceNode as ExtendedNode).parentId,
-      sectionId: (referenceNode as ExtendedNode).sectionId
+      sectionId: (referenceNode as ExtendedNode).sectionId,
     } as Paragraph & ExtendedNode;
-  } else if (is(referenceNode, "listItem")) {
+  } else if (is(referenceNode, 'listItem')) {
     // 리스트 아이템 노드 생성
     const refExtNode = referenceNode as ListItem & ExtendedNode;
     newNode = {
-      type: "listItem",
+      type: 'listItem',
       children: [
         {
-          type: "paragraph",
+          type: 'paragraph',
           children: [
             {
-              type: "text",
-              value: newContent
-            }
-          ]
-        }
+              type: 'text',
+              value: newContent,
+            },
+          ],
+        },
       ],
       id: newNodeId,
       fileName: refExtNode.fileName,
       parentId: refExtNode.parentId,
       sectionId: refExtNode.sectionId,
       isListItem: true,
-      listItemIndex: (refExtNode.listItemIndex || 0) + 1 // 다음 인덱스
+      listItemIndex: (refExtNode.listItemIndex || 0) + 1, // 다음 인덱스
     } as ListItem & ExtendedNode;
   } else {
     // 지원하지 않는 노드 타입
@@ -742,29 +722,34 @@ export function appendNodeContent(
 /**
  * 부모 노드에서 참조 노드 바로 뒤에 새 노드를 삽입
  */
-function insertNodeAfterReference(
-  tree: DocumentTree,
-  referenceNodeId: string,
-  newNode: ExtendedNode
-): void {
+function insertNodeAfterReference(tree: DocumentTree, referenceNodeId: string, newNode: ExtendedNode): void {
   const referenceNode = tree.nodeMap.get(referenceNodeId);
   if (!referenceNode || !referenceNode.parentId) {
-    console.log(`[DEBUG] insertNodeAfterReference: 참조 노드 또는 부모 ID 없음`, {referenceNodeId, hasParentId: !!referenceNode?.parentId});
+    console.log(`[DEBUG] insertNodeAfterReference: 참조 노드 또는 부모 ID 없음`, {
+      referenceNodeId,
+      hasParentId: !!referenceNode?.parentId,
+    });
     return;
   }
 
   const parentNode = tree.nodeMap.get(referenceNode.parentId);
   if (!parentNode || !Array.isArray((parentNode as any).children)) {
-    console.log(`[DEBUG] insertNodeAfterReference: 부모 노드 또는 children 배열 없음`, {parentId: referenceNode.parentId, hasChildren: !!((parentNode as any)?.children)});
+    console.log(`[DEBUG] insertNodeAfterReference: 부모 노드 또는 children 배열 없음`, {
+      parentId: referenceNode.parentId,
+      hasChildren: !!(parentNode as any)?.children,
+    });
     return;
   }
 
   // 부모 노드의 자식 배열에서 참조 노드의 인덱스 찾기
   const parentChildren = (parentNode as any).children;
   const referenceIndex = parentChildren.findIndex((child: any) => child.id === referenceNodeId);
-  
+
   if (referenceIndex === -1) {
-    console.log(`[DEBUG] insertNodeAfterReference: 참조 노드를 부모의 children에서 찾을 수 없음`, {referenceNodeId, parentChildrenIds: parentChildren.map((c: any) => c.id || 'no-id')});
+    console.log(`[DEBUG] insertNodeAfterReference: 참조 노드를 부모의 children에서 찾을 수 없음`, {
+      referenceNodeId,
+      parentChildrenIds: parentChildren.map((c: any) => c.id || 'no-id'),
+    });
     return;
   }
 
@@ -772,7 +757,7 @@ function insertNodeAfterReference(
     referenceNodeId,
     newNodeId: newNode.id,
     referenceIndex,
-    parentChildrenCountBefore: parentChildren.length
+    parentChildrenCountBefore: parentChildren.length,
   });
 
   // 참조 노드 바로 뒤에 새 노드 삽입
@@ -780,13 +765,13 @@ function insertNodeAfterReference(
 
   console.log(`[DEBUG] insertNodeAfterReference: 삽입 완료`, {
     parentChildrenCountAfter: parentChildren.length,
-    newNodePosition: referenceIndex + 1
+    newNodePosition: referenceIndex + 1,
   });
 
   // 리스트 아이템의 경우 인덱스 재조정
-  if (is(parentNode, "list")) {
+  if (is(parentNode, 'list')) {
     parentChildren.forEach((child: any, index: number) => {
-      if (is(child, "listItem")) {
+      if (is(child, 'listItem')) {
         (child as ListItem & ExtendedNode).listItemIndex = index;
       }
     });
@@ -807,7 +792,7 @@ export function createNewSectionNode(
   docTree: DocumentTree,
   sectionTitle: string,
   sectionBody: string,
-  insertAfterNodeId?: string // 특정 노드 뒤에 삽입 (선택사항)
+  insertAfterNodeId?: string, // 특정 노드 뒤에 삽입 (선택사항)
 ): DocumentTree {
   // 원본 트리의 깊은 복사본 생성
   const newTree: DocumentTree = {
@@ -819,28 +804,28 @@ export function createNewSectionNode(
 
   // 새 섹션 ID 생성
   const newSectionId = `section_${Date.now()}`;
-  
+
   // 헤딩 노드 생성 (섹션 제목)
   const headingNodeId = `${newSectionId}_heading`;
   const headingNode: Heading & ExtendedNode = {
-    type: "heading",
+    type: 'heading',
     depth: 1, // h2 레벨
-    children: [{ type: "text", value: sectionTitle }],
+    children: [{ type: 'text', value: sectionTitle }],
     id: headingNodeId,
-    fileName: docTree.title || "unknown",
+    fileName: docTree.title || 'unknown',
     parentId: undefined, // 루트 레벨
-    sectionId: newSectionId
+    sectionId: newSectionId,
   };
 
   // 본문 노드 생성 (섹션 내용)
   const bodyNodeId = `${newSectionId}_body`;
   const bodyNode: Paragraph & ExtendedNode = {
-    type: "paragraph",
-    children: [{ type: "text", value: sectionBody }],
+    type: 'paragraph',
+    children: [{ type: 'text', value: sectionBody }],
     id: bodyNodeId,
-    fileName: docTree.title || "unknown",
+    fileName: docTree.title || 'unknown',
     parentId: undefined, // 루트 레벨 (헤딩과 동일한 레벨)
-    sectionId: newSectionId
+    sectionId: newSectionId,
   };
 
   // 노드맵에 추가
@@ -871,7 +856,7 @@ function insertSectionAfterNode(
   tree: DocumentTree,
   referenceNodeId: string,
   headingNode: ExtendedNode,
-  bodyNode: ExtendedNode
+  bodyNode: ExtendedNode,
 ): void {
   const referenceNode = tree.nodeMap.get(referenceNodeId);
   if (!referenceNode) {
@@ -881,8 +866,7 @@ function insertSectionAfterNode(
   }
 
   // 참조 노드의 부모 찾기 (없으면 루트)
-  const parentNode = referenceNode.parentId ? 
-    tree.nodeMap.get(referenceNode.parentId) : tree.root;
+  const parentNode = referenceNode.parentId ? tree.nodeMap.get(referenceNode.parentId) : tree.root;
 
   if (!parentNode || !Array.isArray((parentNode as any).children)) {
     console.warn(`부모 노드가 유효하지 않음, 문서 끝에 추가합니다.`);
@@ -892,7 +876,7 @@ function insertSectionAfterNode(
 
   const parentChildren = (parentNode as any).children;
   const referenceIndex = parentChildren.findIndex((child: any) => child.id === referenceNodeId);
-  
+
   if (referenceIndex === -1) {
     console.warn(`참조 노드를 부모의 children에서 찾을 수 없음, 문서 끝에 추가합니다.`);
     appendSectionToEnd(tree, headingNode, bodyNode);
@@ -913,16 +897,12 @@ function insertSectionAfterNode(
 /**
  * 문서 끝에 섹션 추가
  */
-function appendSectionToEnd(
-  tree: DocumentTree,
-  headingNode: ExtendedNode,
-  bodyNode: ExtendedNode
-): void {
+function appendSectionToEnd(tree: DocumentTree, headingNode: ExtendedNode, bodyNode: ExtendedNode): void {
   // 루트 레벨에 섹션 추가
   if (Array.isArray(tree.root.children)) {
     tree.root.children.push(headingNode as any, bodyNode as any);
     console.log(`섹션이 문서 끝에 추가되었습니다.`);
   } else {
-    console.error("루트 노드의 children이 배열이 아닙니다.");
+    console.error('루트 노드의 children이 배열이 아닙니다.');
   }
 }

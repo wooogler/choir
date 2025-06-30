@@ -1,5 +1,5 @@
-import { SlackMessage } from "services/slack";
-import { createChatCompletion, ChatCompletionOptions } from "./completions";
+import type { SlackMessage } from 'services/slack';
+import { type ChatCompletionOptions, createChatCompletion } from './completions';
 
 interface ExtractedKnowledge {
   content: string;
@@ -15,17 +15,15 @@ interface KnowledgeExtractionResult {
 /**
  * Extract knowledge from a collection of Slack messages
  */
-export async function extractKnowledgeFromMessages(
-  messages: SlackMessage[]
-): Promise<KnowledgeExtractionResult> {
+export async function extractKnowledgeFromMessages(messages: SlackMessage[]): Promise<KnowledgeExtractionResult> {
   try {
     // Format messages for the prompt with numbered references
     const formattedMessages = messages
       .map((msg, index) => {
         const timestamp = new Date(Number(msg.ts) * 1000).toLocaleString();
-        return `[${index + 1}] ${msg.username || "User"} (${timestamp}): ${msg.text}`;
+        return `[${index + 1}] ${msg.username || 'User'} (${timestamp}): ${msg.text}`;
       })
-      .join("\n");
+      .join('\n');
 
     const prompt = `Analyze the following numbered Slack conversation and extract the single most important piece of knowledge that should be documented for organizational purposes.
 
@@ -65,78 +63,82 @@ ${formattedMessages}
 
 Extract the most important organizational knowledge as JSON:`;
 
-    const extractedKnowledge = await createChatCompletion([
+    const extractedKnowledge = await createChatCompletion(
+      [
+        {
+          role: 'system',
+          content:
+            'You are a helpful knowledge curator who extracts organizational knowledge from team conversations for documentation purposes. Focus on decisions, processes, and standards that represent what the organization or team does, rather than individual actions. Always write from an organizational perspective and provide source message numbers.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
       {
-        role: "system",
-        content: "You are a helpful knowledge curator who extracts organizational knowledge from team conversations for documentation purposes. Focus on decisions, processes, and standards that represent what the organization or team does, rather than individual actions. Always write from an organizational perspective and provide source message numbers."
-      },
-      {
-        role: "user",
-        content: prompt
-      }
-    ], {
-      model: "gpt-4o",
-      temperature: 0.3,
-      max_tokens: 1000,
-      function_name: "extractKnowledgeFromMessages",
-      debug: true,
-      response_format: { type: "json_object" }
-    } as ChatCompletionOptions);
-    
-    if (!extractedKnowledge || extractedKnowledge.trim() === "") {
-      throw new Error("No knowledge could be extracted from the messages");
+        model: 'gpt-4o',
+        temperature: 0.3,
+        max_tokens: 1000,
+        function_name: 'extractKnowledgeFromMessages',
+        debug: true,
+        response_format: { type: 'json_object' },
+      } as ChatCompletionOptions,
+    );
+
+    if (!extractedKnowledge || extractedKnowledge.trim() === '') {
+      throw new Error('No knowledge could be extracted from the messages');
     }
 
     // Parse the JSON response and format it as a single string
     try {
       let jsonString = extractedKnowledge.trim();
-      
+
       // Remove markdown code block markers if present
       if (jsonString.startsWith('```json')) {
         jsonString = jsonString.replace(/^```json\s*/, '').replace(/\s*```$/, '');
       } else if (jsonString.startsWith('```')) {
         jsonString = jsonString.replace(/^```\s*/, '').replace(/\s*```$/, '');
       }
-      
+
       const knowledgeItem: ExtractedKnowledge = JSON.parse(jsonString.trim());
-      
+
       // Validate the structure
-      if (!knowledgeItem || 
-          typeof knowledgeItem.content !== 'string' || 
-          knowledgeItem.content.trim() === '' ||
-          !Array.isArray(knowledgeItem.source) || 
-          knowledgeItem.source.length === 0) {
-        throw new Error("Invalid knowledge structure");
+      if (
+        !knowledgeItem ||
+        typeof knowledgeItem.content !== 'string' ||
+        knowledgeItem.content.trim() === '' ||
+        !Array.isArray(knowledgeItem.source) ||
+        knowledgeItem.source.length === 0
+      ) {
+        throw new Error('Invalid knowledge structure');
       }
 
       // Create clean content (just the knowledge without source references)
       const cleanContent = knowledgeItem.content;
 
       // Create detailed content (with source references)
-      const sourceRefs = knowledgeItem.source.map(num => `[${num}]`).join(', ');
+      const sourceRefs = knowledgeItem.source.map((num) => `[${num}]`).join(', ');
       const detailedContent = `${knowledgeItem.content}\n📍 Sources: ${sourceRefs}`;
 
       return {
         cleanContent,
         detailedContent,
-        knowledgeItem
+        knowledgeItem,
       };
-
     } catch (parseError) {
-      console.warn("Failed to parse JSON response, returning raw text:", parseError);
-      console.warn("Raw response:", extractedKnowledge);
-      
+      console.warn('Failed to parse JSON response, returning raw text:', parseError);
+      console.warn('Raw response:', extractedKnowledge);
+
       // Fallback to raw response if JSON parsing fails
       const fallbackContent = extractedKnowledge.trim();
       return {
         cleanContent: fallbackContent,
         detailedContent: fallbackContent,
-        knowledgeItem: null
+        knowledgeItem: null,
       };
     }
-
   } catch (error) {
-    console.error("Error extracting knowledge from messages:", error);
-    throw new Error(`Failed to extract knowledge: ${error instanceof Error ? error.message : "Unknown error"}`);
+    console.error('Error extracting knowledge from messages:', error);
+    throw new Error(`Failed to extract knowledge: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
-} 
+}

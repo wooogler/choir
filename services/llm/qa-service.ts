@@ -1,14 +1,12 @@
-import { SlackMessage } from "services/slack";
-import { WebClient } from "@slack/web-api";
-import { getUserName, isBotUser } from "services/slack";
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { createChatCompletion } from "./completions";
+import type { WebClient } from '@slack/web-api';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import { SlackMessage } from 'services/slack';
+import { getUserName, isBotUser } from 'services/slack';
+import { createChatCompletion } from './completions';
 
 // Format context from documents
 const formatContext = (docs: any[]) => {
-  return docs
-    .map((doc) => `File: ${doc.metadata.fileName}\nContent: ${doc.pageContent}`)
-    .join("\n\n");
+  return docs.map((doc) => `File: ${doc.metadata.fileName}\nContent: ${doc.pageContent}`).join('\n\n');
 };
 
 // Process message history with filtering and mention processing
@@ -16,42 +14,38 @@ const processMessageHistory = async (messages: any[], client?: WebClient) => {
   const filteredMessages = messages.filter((msg) => {
     // Basic filters
     if (!msg.text || msg.subtype) return false;
-    
+
     // Filter out loading and temporary messages
     const loadingPatterns = [
-      "Searching relevant documents",
-      "Preparing document update suggestions",
-      "Processing knowledge and generating",
-      ":mag:",
-      ":brain:",
-      "Extracting knowledge from",
-      "Analyzing conversation"
+      'Searching relevant documents',
+      'Preparing document update suggestions',
+      'Processing knowledge and generating',
+      ':mag:',
+      ':brain:',
+      'Extracting knowledge from',
+      'Analyzing conversation',
     ];
-    
+
     // Check if message contains any loading patterns
-    const isLoadingMessage = loadingPatterns.some(pattern => 
-      msg.text.includes(pattern)
-    );
-    
+    const isLoadingMessage = loadingPatterns.some((pattern) => msg.text.includes(pattern));
+
     return !isLoadingMessage;
   });
 
   // Process mentions if client is provided
-  const processedMessages = client 
+  const processedMessages = client
     ? await Promise.all(
         filteredMessages.map(async (msg) => ({
           ...msg,
-          text: await processMessageText(msg.text, client)
-        }))
+          text: await processMessageText(msg.text, client),
+        })),
       )
     : filteredMessages;
 
-  return processedMessages
-    .reverse()
-    .map((msg) => ({
-      role: msg.bot_id ? "assistant" : "user",
-      content: msg.text,
-    }));
+  return processedMessages.reverse().map((msg) => ({
+    role: msg.bot_id ? 'assistant' : 'user',
+    content: msg.text,
+  }));
 };
 
 // Process message text to handle user and bot mentions
@@ -60,21 +54,21 @@ export async function processMessageText(text: string, client: WebClient): Promi
   const mentionRegex = /<@([A-Z0-9]+)>/g;
   let matches;
   let processedText = text;
-  
+
   // Get current bot user ID
   const authResult = await client.auth.test();
   const currentBotId = authResult.user_id;
-  
+
   // Collect all unique user IDs mentioned in the text
   const mentionedIds = new Set<string>();
   while ((matches = mentionRegex.exec(text)) !== null) {
     mentionedIds.add(matches[1]);
   }
-  
+
   // Process each unique user ID
   for (const userId of mentionedIds) {
     const isBot = await isBotUser(userId, client);
-    
+
     if (isBot) {
       if (userId === currentBotId) {
         // Replace current chatbot mention with @CHOIR
@@ -89,7 +83,7 @@ export async function processMessageText(text: string, client: WebClient): Promi
       processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), userName);
     }
   }
-  
+
   return processedText.trim();
 }
 
@@ -107,17 +101,17 @@ export const answerQuestion = async (
   client?: WebClient,
   workspaceName?: string,
   organizationName?: string,
-  organizationDescription?: string
+  organizationDescription?: string,
 ): Promise<AnswerResult> => {
   const context = formatContext(relevantDocs);
   const messages = await processMessageHistory(messageHistory, client);
-  
+
   // Get today's date
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
-    day: 'numeric'
+    day: 'numeric',
   });
 
   const prompt = `You are CHOIR, a helpful AI assistant for ${organizationName || 'the organization'}. Think of yourself as a knowledgeable senior student or friendly professor who's always ready to help with questions.
@@ -162,53 +156,58 @@ Here's the relevant documentation I can reference:
 ${context}
 
 User's conversation history:
-${messages.map(m => `${m.role}: ${m.content}`).join('\n')}
+${messages.map((m) => `${m.role}: ${m.content}`).join('\n')}
 
 Current question: ${userMessage}
 
 Analyze whether you can answer based on the documentation and provide your response as JSON:`;
 
-  const result = await createChatCompletion([
+  const result = await createChatCompletion(
+    [
+      {
+        role: 'system',
+        content:
+          "You are a helpful documentation assistant that answers questions based only on provided documents. Always respond with a JSON object containing 'canAnswer' (boolean) and 'response' (string).",
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
     {
-      role: "system",
-      content: "You are a helpful documentation assistant that answers questions based only on provided documents. Always respond with a JSON object containing 'canAnswer' (boolean) and 'response' (string)."
+      model: 'gpt-4o',
+      temperature: 0.2,
+      max_tokens: 1000,
+      function_name: 'answerQuestion',
+      debug: true,
+      response_format: { type: 'json_object' },
     },
-    {
-      role: "user",
-      content: prompt
-    }
-  ], {
-    model: "gpt-4o",
-    temperature: 0.2,
-    max_tokens: 1000,
-    function_name: "answerQuestion",
-    debug: true,
-    response_format: { type: "json_object" }
-  });
+  );
 
   try {
     let jsonString = result?.trim() || '{}';
-    
+
     // Remove markdown code block markers if present
     if (jsonString.startsWith('```json')) {
       jsonString = jsonString.replace(/^```json\s*/, '').replace(/\s*```$/, '');
     } else if (jsonString.startsWith('```')) {
       jsonString = jsonString.replace(/^```\s*/, '').replace(/\s*```$/, '');
     }
-    
+
     const parsed = JSON.parse(jsonString);
-    
+
     return {
       canAnswer: parsed.canAnswer || false,
-      response: parsed.response || "I encountered an error processing your question."
+      response: parsed.response || 'I encountered an error processing your question.',
     };
   } catch (parseError) {
-    console.warn("Failed to parse JSON response from answerQuestion:", parseError);
-    console.warn("Raw response:", result);
-    
+    console.warn('Failed to parse JSON response from answerQuestion:', parseError);
+    console.warn('Raw response:', result);
+
     return {
       canAnswer: false,
-      response: "I couldn't find this information in our current documentation. Could you help by asking others or starting a discussion about this topic?"
+      response:
+        "I couldn't find this information in our current documentation. Could you help by asking others or starting a discussion about this topic?",
     };
   }
-}; 
+};

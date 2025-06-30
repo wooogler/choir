@@ -1,6 +1,6 @@
-import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
-import { getSessionData, SessionType } from "services/common";
-import { getQAChannel, getWorkspaceId, createQAChannelPreview, getUserName } from "services/slack";
+import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { SessionType, getSessionData } from 'services/common';
+import { createQAChannelPreview, getQAChannel, getUserName, getWorkspaceId } from 'services/slack';
 
 /**
  * 채널 선택 모달 열기
@@ -17,9 +17,9 @@ export const askToChannelModalCallback = async ({
     const sessionId = body.actions[0].value;
     if (!sessionId) {
       await client.chat.postEphemeral({
-        channel: body.channel?.id || "",
+        channel: body.channel?.id || '',
         user: body.user.id,
-        text: "😅 Oops! Something went wrong. Could you try asking your question again?",
+        text: '😅 Oops! Something went wrong. Could you try asking your question again?',
       });
       return;
     }
@@ -30,9 +30,9 @@ export const askToChannelModalCallback = async ({
     // Q&A 채널이 설정되지 않은 경우 에러 처리
     if (!qaChannelId) {
       await client.chat.postEphemeral({
-        channel: body.channel?.id || "",
+        channel: body.channel?.id || '',
         user: body.user.id,
-        text: "❌ No Q&A channel is configured. Please ask an admin to set up a Q&A channel.",
+        text: '❌ No Q&A channel is configured. Please ask an admin to set up a Q&A channel.',
       });
       return;
     }
@@ -41,7 +41,7 @@ export const askToChannelModalCallback = async ({
     const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       await client.chat.postEphemeral({
-        channel: body.channel?.id || "",
+        channel: body.channel?.id || '',
         user: body.user.id,
         text: "😅 I can't find the conversation details. Mind asking your question again?",
       });
@@ -49,10 +49,10 @@ export const askToChannelModalCallback = async ({
     }
 
     // Q&A 채널 이름 가져오기
-    let channelName = "qna";
+    let channelName = 'qna';
     try {
       const channelInfo = await client.conversations.info({ channel: qaChannelId });
-      channelName = channelInfo.channel?.name || "qna";
+      channelName = channelInfo.channel?.name || 'qna';
     } catch (error) {
       logger.warn(`Could not get Q&A channel name for ${qaChannelId}:`, error);
     }
@@ -68,93 +68,92 @@ export const askToChannelModalCallback = async ({
       sessionData.botResponse,
       true, // canAnswer - assume true for preview
       false, // not anonymous for preview
-      `(*${questionerName}* OR *a team member*)`
+      `(*${questionerName}* OR *a team member*)`,
     );
 
     await client.views.open({
       trigger_id: body.trigger_id,
       view: {
-        type: "modal",
-        callback_id: "ask_to_channel_submit",
+        type: 'modal',
+        callback_id: 'ask_to_channel_submit',
         private_metadata: JSON.stringify({ sessionId, qaChannelId }), // Q&A 채널 ID 포함
         title: {
-          type: "plain_text",
-          text: "📢 Share with Q&A",
-          emoji: true
+          type: 'plain_text',
+          text: '📢 Share with Q&A',
+          emoji: true,
         },
         submit: {
-          type: "plain_text",
-          text: "Post to Channel",
-          emoji: true
+          type: 'plain_text',
+          text: 'Post to Channel',
+          emoji: true,
         },
         close: {
-          type: "plain_text",
-          text: "Cancel",
-          emoji: true
+          type: 'plain_text',
+          text: 'Cancel',
+          emoji: true,
         },
         blocks: [
           {
-            type: "section",
+            type: 'section',
             text: {
-              type: "mrkdwn",
-              text: `📢 *Ready to share this Q&A with #${channelName}?*\n_This will post the question and my response to help others in the channel._`
-            }
+              type: 'mrkdwn',
+              text: `📢 *Ready to share this Q&A with #${channelName}?*\n_This will post the question and my response to help others in the channel._`,
+            },
           },
           {
-            type: "input",
-            block_id: "anonymous_select",
+            type: 'input',
+            block_id: 'anonymous_select',
             element: {
-              type: "checkboxes",
-              action_id: "anonymous_checkbox_channel",
+              type: 'checkboxes',
+              action_id: 'anonymous_checkbox_channel',
               options: [
                 {
                   text: {
-                    type: "plain_text",
-                    text: "Share anonymously (show as 'A team member' instead of your name)"
+                    type: 'plain_text',
+                    text: "Share anonymously (show as 'A team member' instead of your name)",
                   },
-                  value: "anonymous"
-                }
-              ]
+                  value: 'anonymous',
+                },
+              ],
             },
             label: {
-              type: "plain_text",
-              text: "🎭 Privacy Options",
-              emoji: true
+              type: 'plain_text',
+              text: '🎭 Privacy Options',
+              emoji: true,
             },
-            optional: true
+            optional: true,
           },
           {
-            type: "divider"
+            type: 'divider',
           },
           {
-            type: "section",
-            block_id: "preview_section",
+            type: 'section',
+            block_id: 'preview_section',
             text: {
-              type: "mrkdwn",
-              text: "👀 *Here's what will be shared:*"
-            }
+              type: 'mrkdwn',
+              text: "👀 *Here's what will be shared:*",
+            },
           },
           {
-            type: "section",
-            block_id: "preview_content",
+            type: 'section',
+            block_id: 'preview_content',
             text: {
-              type: "mrkdwn",
-              text: previewText
-            }
-          }
-        ]
-      }
+              type: 'mrkdwn',
+              text: previewText,
+            },
+          },
+        ],
+      },
     });
 
     logger.info(`Channel selection modal opened for session ${sessionId}`);
   } catch (error) {
-    logger.error("Error opening channel selection modal:", error);
-    
+    logger.error('Error opening channel selection modal:', error);
+
     await client.chat.postEphemeral({
-      channel: body.channel?.id || "",
+      channel: body.channel?.id || '',
       user: body.user.id,
-      text: "😔 Something went wrong opening the sharing options. Could you try again?",
+      text: '😔 Something went wrong opening the sharing options. Could you try again?',
     });
   }
 };
-

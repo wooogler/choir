@@ -1,7 +1,7 @@
-import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
-import { getSessionData, SessionType } from "services/common";
-import { getUserName, createPrivateMessage } from "services/slack";
-import { logModalSubmit } from "../../../services/common/user-interaction-logger";
+import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
+import { SessionType, getSessionData } from 'services/common';
+import { createPrivateMessage, getUserName } from 'services/slack';
+import { logModalSubmit } from '../../../services/common/user-interaction-logger';
 
 /**
  * 멤버 선택 모달 제출 처리
@@ -19,23 +19,17 @@ export const askToOthersSubmitCallback = async ({
   try {
     const sessionId = view.private_metadata;
     const selectedUsers = view.state.values.users_select.users.selected_users;
-    const isAnonymous = (view.state.values.anonymous_select?.anonymous_checkbox_private?.selected_options?.length || 0) > 0;
+    const isAnonymous =
+      (view.state.values.anonymous_select?.anonymous_checkbox_private?.selected_options?.length || 0) > 0;
     const userId = body.user.id;
 
     if (!sessionId || !selectedUsers || selectedUsers.length === 0) {
       // 로그: 필수 데이터 없음
-      logModalSubmit(
-        userId,
-        'unknown',
-        'ask_to_others_submit',
-        Date.now() - startTime,
-        false,
-        {
-          error: "Missing sessionId or selectedUsers",
-          sessionId,
-          selectedUsersCount: selectedUsers?.length || 0
-        }
-      );
+      logModalSubmit(userId, 'unknown', 'ask_to_others_submit', Date.now() - startTime, false, {
+        error: 'Missing sessionId or selectedUsers',
+        sessionId,
+        selectedUsersCount: selectedUsers?.length || 0,
+      });
       return;
     }
 
@@ -43,17 +37,10 @@ export const askToOthersSubmitCallback = async ({
     const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       // 로그: 세션 데이터 없음
-      logModalSubmit(
-        userId,
-        'unknown',
-        'ask_to_others_submit',
-        Date.now() - startTime,
-        false,
-        {
-          error: "Session data not found",
-          sessionId
-        }
-      );
+      logModalSubmit(userId, 'unknown', 'ask_to_others_submit', Date.now() - startTime, false, {
+        error: 'Session data not found',
+        sessionId,
+      });
       return;
     }
 
@@ -73,15 +60,15 @@ export const askToOthersSubmitCallback = async ({
           sessionData.botResponse,
           true, // canAnswer - assume true for private sharing
           isAnonymous,
-          userName
+          userName,
         );
 
-        const messageText = isAnonymous ? "Private Q&A from a team member" : `Private Q&A from ${userName}`;
-        
+        const messageText = isAnonymous ? 'Private Q&A from a team member' : `Private Q&A from ${userName}`;
+
         await client.chat.postMessage({
           channel: targetUserId,
           text: messageText,
-          blocks: messageBlocks
+          blocks: messageBlocks,
         });
         successCount++;
       } catch (error) {
@@ -102,40 +89,25 @@ export const askToOthersSubmitCallback = async ({
     logger.info(`Private Q&A sent to ${selectedUsers.length} users by user ${userId}`);
 
     // 로그: 성공
-    logModalSubmit(
-      userId,
-      'unknown',
-      'ask_to_others_submit',
-      Date.now() - startTime,
-      true,
-      {
-        sessionId,
-        selectedUsersCount: selectedUsers.length,
-        successCount,
-        failCount,
-        isAnonymous,
-        originalChannelId: sessionData.originalChannelId,
-        originalThreadTs: sessionData.originalThreadTs,
-        questionLength: sessionData.originalQuestion?.length || 0,
-        responseLength: sessionData.botResponse?.length || 0
-      }
-    );
-
+    logModalSubmit(userId, 'unknown', 'ask_to_others_submit', Date.now() - startTime, true, {
+      sessionId,
+      selectedUsersCount: selectedUsers.length,
+      successCount,
+      failCount,
+      isAnonymous,
+      originalChannelId: sessionData.originalChannelId,
+      originalThreadTs: sessionData.originalThreadTs,
+      questionLength: sessionData.originalQuestion?.length || 0,
+      responseLength: sessionData.botResponse?.length || 0,
+    });
   } catch (error) {
-    logger.error("Error submitting member selection:", error);
+    logger.error('Error submitting member selection:', error);
 
     // 로그: 실패
-    logModalSubmit(
-      body.user.id,
-      'unknown',
-      'ask_to_others_submit',
-      Date.now() - startTime,
-      false,
-      {
-        error: error instanceof Error ? error.message : "Unknown error",
-        errorStack: error instanceof Error ? error.stack : undefined,
-        sessionId: view.private_metadata
-      }
-    );
+    logModalSubmit(body.user.id, 'unknown', 'ask_to_others_submit', Date.now() - startTime, false, {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      errorStack: error instanceof Error ? error.stack : undefined,
+      sessionId: view.private_metadata,
+    });
   }
 };

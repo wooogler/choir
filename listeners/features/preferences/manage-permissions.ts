@@ -1,11 +1,11 @@
 import type {
   AllMiddlewareArgs,
-  SlackActionMiddlewareArgs,
   BlockAction,
-  UsersSelectAction,
   ButtonAction,
-} from "@slack/bolt";
-import { addManager, isWorkspaceOwner, removeManager, setupInitialManager, getWorkspaceId } from "services/slack";
+  SlackActionMiddlewareArgs,
+  UsersSelectAction,
+} from '@slack/bolt';
+import { addManager, getWorkspaceId, isWorkspaceOwner, removeManager, setupInitialManager } from 'services/slack';
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();
@@ -29,18 +29,16 @@ const selectUserCallback = async ({
 
     // No user selected
     if (!selectedUser) {
-      logger.error("No user selected in user select action");
+      logger.error('No user selected in user select action');
       return;
     }
 
     // Store selected user
     selectedUsers.set(userId, selectedUser);
 
-    logger.info(
-      `User ${userId} selected ${selectedUser} for permission management`
-    );
+    logger.info(`User ${userId} selected ${selectedUser} for permission management`);
   } catch (error) {
-    logger.error("Error handling user selection:", error);
+    logger.error('Error handling user selection:', error);
   }
 };
 
@@ -72,7 +70,7 @@ const addManagerCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: "Please select a user to grant permission first.",
+        text: 'Please select a user to grant permission first.',
       });
       return;
     }
@@ -92,13 +90,13 @@ const addManagerCallback = async ({
       await client.views.publish({
         user_id: userId,
         view: {
-          type: "home",
+          type: 'home',
           blocks: [
             {
-              type: "section",
+              type: 'section',
               text: {
-                type: "mrkdwn",
-                text: "Refreshing home view...",
+                type: 'mrkdwn',
+                text: 'Refreshing home view...',
               },
             },
           ],
@@ -112,21 +110,18 @@ const addManagerCallback = async ({
           text: `<@${userId}> has granted you CHOIR manager permission.`,
         });
       } catch (error) {
-        logger.error(
-          `Failed to send notification to user ${selectedUser}:`,
-          error
-        );
+        logger.error(`Failed to send notification to user ${selectedUser}:`, error);
       }
     } else {
       // Send failure message
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: "Failed to grant permission. Please check if you have manager permission.",
+        text: 'Failed to grant permission. Please check if you have manager permission.',
       });
     }
   } catch (error) {
-    logger.error("Error adding manager permission:", error);
+    logger.error('Error adding manager permission:', error);
   }
 };
 
@@ -160,7 +155,7 @@ const removeManagerCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: "Unable to identify target user. Please try again.",
+        text: 'Unable to identify target user. Please try again.',
       });
       return;
     }
@@ -170,7 +165,7 @@ const removeManagerCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: "You cannot remove your own manager permission.",
+        text: 'You cannot remove your own manager permission.',
       });
       return;
     }
@@ -190,13 +185,13 @@ const removeManagerCallback = async ({
       await client.views.publish({
         user_id: userId,
         view: {
-          type: "home",
+          type: 'home',
           blocks: [
             {
-              type: "section",
+              type: 'section',
               text: {
-                type: "mrkdwn",
-                text: "Refreshing home view...",
+                type: 'mrkdwn',
+                text: 'Refreshing home view...',
               },
             },
           ],
@@ -210,21 +205,18 @@ const removeManagerCallback = async ({
           text: `<@${userId}> has removed your CHOIR manager permission.`,
         });
       } catch (error) {
-        logger.error(
-          `Failed to send notification to user ${targetUserId}:`,
-          error
-        );
+        logger.error(`Failed to send notification to user ${targetUserId}:`, error);
       }
     } else {
       // Send failure message
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: "Failed to remove permission. Please check if you have manager permission.",
+        text: 'Failed to remove permission. Please check if you have manager permission.',
       });
     }
   } catch (error) {
-    logger.error("Error removing manager permission:", error);
+    logger.error('Error removing manager permission:', error);
   }
 };
 

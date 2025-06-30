@@ -1,10 +1,6 @@
-import type {
-  AllMiddlewareArgs,
-  SlackActionMiddlewareArgs,
-  BlockAction,
-} from "@slack/bolt";
-import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from "services/slack";
-import GithubService from "services/github";
+import type { AllMiddlewareArgs, BlockAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { GithubService } from 'services/github';
+import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from 'services/slack';
 
 // 타입 정의
 interface ActionWithValue {
@@ -39,13 +35,11 @@ export const githubRepoUrlInputCallback = async ({
     const isOwner = await isWorkspaceOwner(userId, client);
 
     if (!isUserManager && !isOwner) {
-      logger.warn(
-        `User ${userId} attempted to input GitHub URL without permission`
-      );
+      logger.warn(`User ${userId} attempted to input GitHub URL without permission`);
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: "관리자만 GitHub 저장소 연동이 가능합니다.",
+        text: '관리자만 GitHub 저장소 연동이 가능합니다.',
       });
       return;
     }
@@ -55,7 +49,7 @@ export const githubRepoUrlInputCallback = async ({
     const url = action.value;
 
     if (!url) {
-      logger.warn("Empty GitHub URL input");
+      logger.warn('Empty GitHub URL input');
       return;
     }
 
@@ -67,7 +61,7 @@ export const githubRepoUrlInputCallback = async ({
 
     logger.info(`User ${userId} input GitHub URL: ${url}`);
   } catch (error) {
-    logger.error("Error handling GitHub URL input:", error);
+    logger.error('Error handling GitHub URL input:', error);
   }
 };
 
@@ -91,13 +85,11 @@ export const testGithubConnectionCallback = async ({
     const isOwner = await isWorkspaceOwner(userId, client);
 
     if (!isUserManager && !isOwner) {
-      logger.warn(
-        `User ${userId} attempted to test GitHub connection without permission`
-      );
+      logger.warn(`User ${userId} attempted to test GitHub connection without permission`);
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: "관리자만 GitHub 저장소 연동이 가능합니다.",
+        text: '관리자만 GitHub 저장소 연동이 가능합니다.',
       });
       return;
     }
@@ -109,7 +101,7 @@ export const testGithubConnectionCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: "먼저 GitHub 저장소 URL을 입력해주세요.",
+        text: '먼저 GitHub 저장소 URL을 입력해주세요.',
       });
       return;
     }
@@ -123,7 +115,7 @@ export const testGithubConnectionCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: "유효하지 않은 GitHub URL입니다. https://github.com/owner/repo 형식의 URL을 입력해주세요.",
+        text: '유효하지 않은 GitHub URL입니다. https://github.com/owner/repo 형식의 URL을 입력해주세요.',
       });
       return;
     }
@@ -150,13 +142,13 @@ export const testGithubConnectionCallback = async ({
       await client.views.publish({
         user_id: userId,
         view: {
-          type: "home",
+          type: 'home',
           blocks: [
             {
-              type: "section",
+              type: 'section',
               text: {
-                type: "mrkdwn",
-                text: "홈 화면을 새로고침 중입니다...",
+                type: 'mrkdwn',
+                text: '홈 화면을 새로고침 중입니다...',
               },
             },
           ],
@@ -171,13 +163,13 @@ export const testGithubConnectionCallback = async ({
       });
     }
   } catch (error) {
-    logger.error("Error testing GitHub connection:", error);
+    logger.error('Error testing GitHub connection:', error);
 
     // 오류 메시지 전송
     await client.chat.postEphemeral({
       channel: body.channel?.id || body.user.id,
       user: body.user.id,
-      text: "GitHub 연결 테스트 중 오류가 발생했습니다. 다시 시도해주세요.",
+      text: 'GitHub 연결 테스트 중 오류가 발생했습니다. 다시 시도해주세요.',
     });
   }
 };

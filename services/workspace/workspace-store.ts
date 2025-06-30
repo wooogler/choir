@@ -1,6 +1,6 @@
-import fs from "fs";
-import path from "path";
-import { WebClient } from "@slack/web-api";
+import fs from 'fs';
+import path from 'path';
+import type { WebClient } from '@slack/web-api';
 
 export interface WorkspaceConfig {
   workspaceId: string;
@@ -23,7 +23,7 @@ export class WorkspaceStore {
   private logger: Console;
 
   constructor(logger: Console = console) {
-    this.dataPath = path.join(process.cwd(), "data");
+    this.dataPath = path.join(process.cwd(), 'data');
     this.logger = logger;
     this.ensureDataDirectory();
   }
@@ -55,10 +55,10 @@ export class WorkspaceStore {
   public async saveWorkspaceConfig(config: WorkspaceConfig): Promise<void> {
     try {
       this.ensureDataDirectory();
-      
+
       config.updatedAt = new Date();
       const configPath = this.getWorkspaceConfigPath(config.workspaceId);
-      
+
       await fs.promises.writeFile(configPath, JSON.stringify(config, null, 2));
       this.logger.info(`Saved workspace config for: ${config.workspaceId}`);
     } catch (error) {
@@ -73,18 +73,18 @@ export class WorkspaceStore {
   public async getWorkspaceConfig(workspaceId: string): Promise<WorkspaceConfig | null> {
     try {
       const configPath = this.getWorkspaceConfigPath(workspaceId);
-      
+
       if (!fs.existsSync(configPath)) {
         return null;
       }
 
-      const configData = await fs.promises.readFile(configPath, "utf-8");
+      const configData = await fs.promises.readFile(configPath, 'utf-8');
       const config = JSON.parse(configData) as WorkspaceConfig;
-      
+
       // Date 객체 복원
       config.createdAt = new Date(config.createdAt);
       config.updatedAt = new Date(config.updatedAt);
-      
+
       return config;
     } catch (error) {
       this.logger.error(`Failed to load workspace config: ${error}`);
@@ -98,7 +98,7 @@ export class WorkspaceStore {
   public async initializeWorkspace(
     workspaceId: string,
     initialManagerId: string,
-    client: WebClient
+    client: WebClient,
   ): Promise<WorkspaceConfig> {
     const existingConfig = await this.getWorkspaceConfig(workspaceId);
     if (existingConfig) {
@@ -112,14 +112,14 @@ export class WorkspaceStore {
     const config: WorkspaceConfig = {
       workspaceId,
       managers: [initialManagerId],
-      organizationName: teamInfo.team?.name || workspaceInfo.team || "Our Organization",
+      organizationName: teamInfo.team?.name || workspaceInfo.team || 'Our Organization',
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     await this.saveWorkspaceConfig(config);
     this.logger.info(`Initialized workspace: ${workspaceId}`);
-    
+
     return config;
   }
 
@@ -154,7 +154,7 @@ export class WorkspaceStore {
     }
 
     if (config.managers.includes(userId)) {
-      config.managers = config.managers.filter(id => id !== userId);
+      config.managers = config.managers.filter((id) => id !== userId);
       await this.saveWorkspaceConfig(config);
     }
 
@@ -166,7 +166,7 @@ export class WorkspaceStore {
    */
   public async setGithubRepo(
     workspaceId: string,
-    repoInfo: { owner: string; repo: string; path: string; branch?: string }
+    repoInfo: { owner: string; repo: string; path: string; branch?: string },
   ): Promise<void> {
     const config = await this.getWorkspaceConfig(workspaceId);
     if (!config) {
@@ -237,10 +237,10 @@ export class WorkspaceStore {
   public async getAllWorkspaceConfigs(): Promise<WorkspaceConfig[]> {
     try {
       const files = await fs.promises.readdir(this.dataPath);
-      const configFiles = files.filter(file => file.endsWith('-config.json'));
-      
+      const configFiles = files.filter((file) => file.endsWith('-config.json'));
+
       const configs: WorkspaceConfig[] = [];
-      
+
       for (const file of configFiles) {
         const workspaceId = file.replace('-config.json', '');
         const config = await this.getWorkspaceConfig(workspaceId);
@@ -248,11 +248,11 @@ export class WorkspaceStore {
           configs.push(config);
         }
       }
-      
+
       return configs;
     } catch (error) {
       this.logger.error(`Failed to get all workspace configs: ${error}`);
       return [];
     }
   }
-} 
+}

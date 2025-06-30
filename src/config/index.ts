@@ -1,22 +1,36 @@
 import { DEFAULT_REPOS, NODE_ENV } from '@/constants';
 import type { GitHubRepo } from '@/types';
+import { Logger } from 'services/common/logger';
+import { CHOIRError, ErrorCodes } from 'services/common/error-handler';
 
 export class AppConfig {
   static getDefaultRepo(): GitHubRepo {
     const isDevelopment = process.env.NODE_ENV === NODE_ENV.DEVELOPMENT;
-    return isDevelopment ? DEFAULT_REPOS.DEVELOPMENT : DEFAULT_REPOS.PRODUCTION;
+    const repo = isDevelopment ? DEFAULT_REPOS.DEVELOPMENT : DEFAULT_REPOS.PRODUCTION;
+    Logger.debug('Using default repository', { repo, isDevelopment });
+    return repo;
   }
 
   static getRequiredEnvVar(name: string): string {
     const value = process.env[name];
     if (!value) {
-      throw new Error(`Required environment variable ${name} is not set`);
+      const error = new CHOIRError(
+        `Required environment variable ${name} is not set`,
+        ErrorCodes.CONFIGURATION_ERROR,
+        { envVar: name }
+      );
+      Logger.error(`Configuration error: Missing required environment variable`, error);
+      throw error;
     }
     return value;
   }
 
   static getOptionalEnvVar(name: string, defaultValue?: string): string | undefined {
-    return process.env[name] || defaultValue;
+    const value = process.env[name] || defaultValue;
+    if (!value && defaultValue) {
+      Logger.debug(`Using default value for environment variable ${name}`, { defaultValue });
+    }
+    return value;
   }
 
   static getSlackConfig() {

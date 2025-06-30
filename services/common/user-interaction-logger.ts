@@ -71,11 +71,11 @@ class UserInteractionLogger {
     processingTime: number,
     success: boolean,
     messageContent?: string,
-    metadata: LogMetadata = {}
+    metadata: LogMetadata = {},
   ): void {
     try {
       this.updateCurrentDate();
-      
+
       const logEntry: UserInteractionLog = {
         timestamp: new Date().toISOString(),
         userId,
@@ -88,7 +88,7 @@ class UserInteractionLogger {
         processingTime,
         success,
         messageContent,
-        metadata
+        metadata,
       };
 
       const logLine = JSON.stringify(logEntry) + '\n';
@@ -111,7 +111,7 @@ class UserInteractionLogger {
     success: boolean,
     messageContent: string,
     messageIntent?: string,
-    additionalMetadata: LogMetadata = {}
+    additionalMetadata: LogMetadata = {},
   ): void {
     this.logInteraction(
       userId,
@@ -126,8 +126,8 @@ class UserInteractionLogger {
       messageContent,
       {
         messageIntent,
-        ...additionalMetadata
-      }
+        ...additionalMetadata,
+      },
     );
   }
 
@@ -145,7 +145,7 @@ class UserInteractionLogger {
     messageContent: string,
     searchResults: number,
     canAnswer: boolean,
-    additionalMetadata: LogMetadata = {}
+    additionalMetadata: LogMetadata = {},
   ): void {
     this.logInteraction(
       userId,
@@ -162,8 +162,8 @@ class UserInteractionLogger {
         messageIntent: 'question',
         searchResults,
         canAnswer,
-        ...additionalMetadata
-      }
+        ...additionalMetadata,
+      },
     );
   }
 
@@ -180,7 +180,7 @@ class UserInteractionLogger {
     success: boolean,
     messageContent: string,
     extractedKnowledge: string,
-    additionalMetadata: LogMetadata = {}
+    additionalMetadata: LogMetadata = {},
   ): void {
     this.logInteraction(
       userId,
@@ -196,8 +196,8 @@ class UserInteractionLogger {
       {
         messageIntent: 'update_request',
         extractedKnowledge,
-        ...additionalMetadata
-      }
+        ...additionalMetadata,
+      },
     );
   }
 
@@ -212,7 +212,7 @@ class UserInteractionLogger {
     buttonAction: string,
     processingTime: number,
     success: boolean,
-    additionalMetadata: LogMetadata = {}
+    additionalMetadata: LogMetadata = {},
   ): void {
     this.logInteraction(
       userId,
@@ -227,8 +227,8 @@ class UserInteractionLogger {
       undefined,
       {
         buttonClicked: buttonAction,
-        ...additionalMetadata
-      }
+        ...additionalMetadata,
+      },
     );
   }
 
@@ -241,7 +241,7 @@ class UserInteractionLogger {
     modalAction: string,
     processingTime: number,
     success: boolean,
-    additionalMetadata: LogMetadata = {}
+    additionalMetadata: LogMetadata = {},
   ): void {
     this.logInteraction(
       userId,
@@ -256,8 +256,8 @@ class UserInteractionLogger {
       undefined,
       {
         modalAction,
-        ...additionalMetadata
-      }
+        ...additionalMetadata,
+      },
     );
   }
 
@@ -271,7 +271,7 @@ class UserInteractionLogger {
     channelType: UserInteractionLog['channelType'],
     errorMessage: string,
     processingTime: number,
-    additionalMetadata: LogMetadata = {}
+    additionalMetadata: LogMetadata = {},
   ): void {
     this.logInteraction(
       userId,
@@ -286,8 +286,8 @@ class UserInteractionLogger {
       undefined,
       {
         errorMessage,
-        ...additionalMetadata
-      }
+        ...additionalMetadata,
+      },
     );
   }
 
@@ -304,7 +304,7 @@ class UserInteractionLogger {
     success: boolean,
     extractedKnowledge: string,
     sourceMessageCount: number,
-    additionalMetadata: LogMetadata = {}
+    additionalMetadata: LogMetadata = {},
   ): void {
     this.logInteraction(
       userId,
@@ -320,8 +320,8 @@ class UserInteractionLogger {
       {
         extractedKnowledge,
         sourceMessageCount,
-        ...additionalMetadata
-      }
+        ...additionalMetadata,
+      },
     );
   }
 
@@ -338,7 +338,7 @@ class UserInteractionLogger {
     success: boolean,
     managersNotified: number,
     sessionId: string,
-    additionalMetadata: LogMetadata = {}
+    additionalMetadata: LogMetadata = {},
   ): void {
     this.logInteraction(
       userId,
@@ -354,8 +354,8 @@ class UserInteractionLogger {
       {
         managersNotified,
         sessionId,
-        ...additionalMetadata
-      }
+        ...additionalMetadata,
+      },
     );
   }
 
@@ -373,7 +373,7 @@ class UserInteractionLogger {
     updateApplied: boolean,
     filesUpdated: string[],
     sessionId: string,
-    additionalMetadata: LogMetadata = {}
+    additionalMetadata: LogMetadata = {},
   ): void {
     this.logInteraction(
       userId,
@@ -390,8 +390,8 @@ class UserInteractionLogger {
         updateApplied,
         filesUpdated,
         sessionId,
-        ...additionalMetadata
-      }
+        ...additionalMetadata,
+      },
     );
   }
 
@@ -402,7 +402,7 @@ class UserInteractionLogger {
     try {
       const targetDate = date || this.currentDate;
       const logFilePath = path.join(this.logDir, `user-interactions-${targetDate}.jsonl`);
-      
+
       if (!fs.existsSync(logFilePath)) {
         return [];
       }
@@ -411,8 +411,8 @@ class UserInteractionLogger {
       return logContent
         .trim()
         .split('\n')
-        .filter(line => line.trim())
-        .map(line => JSON.parse(line));
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line));
     } catch (error) {
       console.error('Failed to read logs:', error);
       return [];
@@ -424,7 +424,7 @@ class UserInteractionLogger {
    */
   public getUserLogs(userId: string, date?: string): UserInteractionLog[] {
     const allLogs = this.readLogs(date);
-    return allLogs.filter(log => log.userId === userId);
+    return allLogs.filter((log) => log.userId === userId);
   }
 
   /**
@@ -432,7 +432,7 @@ class UserInteractionLogger {
    */
   public getActionLogs(action: string, date?: string): UserInteractionLog[] {
     const allLogs = this.readLogs(date);
-    return allLogs.filter(log => log.action === action);
+    return allLogs.filter((log) => log.action === action);
   }
 
   /**
@@ -440,13 +440,13 @@ class UserInteractionLogger {
    */
   public getSuccessStats(date?: string): { success: number; failure: number; total: number } {
     const allLogs = this.readLogs(date);
-    const success = allLogs.filter(log => log.success).length;
-    const failure = allLogs.filter(log => !log.success).length;
-    
+    const success = allLogs.filter((log) => log.success).length;
+    const failure = allLogs.filter((log) => !log.success).length;
+
     return {
       success,
       failure,
-      total: allLogs.length
+      total: allLogs.length,
     };
   }
 
@@ -456,7 +456,7 @@ class UserInteractionLogger {
   public getAverageProcessingTime(date?: string): number {
     const allLogs = this.readLogs(date);
     if (allLogs.length === 0) return 0;
-    
+
     const totalTime = allLogs.reduce((sum, log) => sum + log.processingTime, 0);
     return totalTime / allLogs.length;
   }
@@ -474,4 +474,4 @@ export const logModalSubmit = userInteractionLogger.logModalSubmit.bind(userInte
 export const logError = userInteractionLogger.logError.bind(userInteractionLogger);
 export const logKnowledgeExtraction = userInteractionLogger.logKnowledgeExtraction.bind(userInteractionLogger);
 export const logManagerNotification = userInteractionLogger.logManagerNotification.bind(userInteractionLogger);
-export const logDocumentUpdate = userInteractionLogger.logDocumentUpdate.bind(userInteractionLogger); 
+export const logDocumentUpdate = userInteractionLogger.logDocumentUpdate.bind(userInteractionLogger);
