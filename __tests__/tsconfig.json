@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["jest", "node"],
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": [
+    "./**/*",
+    "../src/**/*",
+    "../services/**/*",
+    "../listeners/**/*"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../dist"
+  ]
+}

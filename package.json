@@ -4,13 +4,16 @@
   "description": "A scaffold template for Slack apps",
   "main": "dist/app.js",
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc && tsc-alias",
     "dev": "NODE_ENV=development ts-node -r tsconfig-paths/register app.ts",
     "dev:watch": "nodemon --watch '**/*.ts' --exec 'ts-node -r tsconfig-paths/register' app.ts",
     "dev:prod": "NODE_ENV=production ts-node -r tsconfig-paths/register app.ts",
-    "lint": "npx @biomejs/biome check *.ts listeners",
-    "lint:fix": "npx @biomejs/biome check --write *.ts listeners",
-    "test": "npm run build && npm run lint"
+    "lint": "npx @biomejs/biome check *.ts listeners services",
+    "lint:fix": "npx @biomejs/biome check --write *.ts listeners services",
+    "test:unit": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test": "npm run build && npm run lint && npm run test:unit"
   },
   "author": "Slack Technologies, LLC",
   "license": "MIT",
@@ -64,7 +67,11 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@types/jest": "^30.0.0",
+    "jest": "^30.0.3",
     "nodemon": "^3.1.9",
+    "ts-jest": "^29.4.0",
+    "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.2"
   }

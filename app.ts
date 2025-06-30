@@ -7,16 +7,18 @@ import GithubService from "./services/github";
 import { VectorStoreService } from "services/vector/main-service";
 import { getGithubRepo, getWorkspaceId, setupInitialManager } from "services/slack";
 import { validateAzureOpenAIConfig, isAzureOpenAIEnabled } from "services/llm";
+import { AppConfig } from "@/config";
 
 dotenv.config();
 
 /** Initialization */
+const slackConfig = AppConfig.getSlackConfig();
 const app = new App({
-  token: process.env.SLACK_BOT_TOKEN,
-  socketMode: process.env.NODE_ENV !== "production",
-  signingSecret: process.env.SLACK_SIGNING_SECRET,
+  token: slackConfig.botToken,
+  socketMode: slackConfig.socketMode,
+  signingSecret: slackConfig.signingSecret,
   logLevel: LogLevel.INFO,
-  appToken: process.env.SLACK_APP_TOKEN,
+  appToken: slackConfig.appToken,
 });
 
 const githubService = GithubService.getInstance();
@@ -96,10 +98,10 @@ app.event('app_home_opened', async ({ event, client, logger }) => {
     const workspaceId = await getWorkspaceId(app.client);
 
     // 개발자를 초기 관리자로 설정
-    const developerUserId = process.env.DEVELOPER_USER_ID;
-    if (developerUserId) {
-      await setupInitialManager(workspaceId, developerUserId, app.client);
-      app.logger.info(`Initialized developer (${developerUserId}) as a manager`);
+    const developerConfig = AppConfig.getDeveloperConfig();
+    if (developerConfig.userId) {
+      await setupInitialManager(workspaceId, developerConfig.userId, app.client);
+      app.logger.info(`Initialized developer (${developerConfig.userId}) as a manager`);
     } else {
       app.logger.warn("DEVELOPER_USER_ID environment variable is not set");
     }
@@ -147,9 +149,7 @@ app.event('app_home_opened', async ({ event, client, logger }) => {
       );
 
       // 기본 저장소 설정 (환경에 따라 다르게 설정)
-      const defaultRepo = process.env.NODE_ENV === 'development' 
-        ? { owner: 'wooogler', repo: 'assets', branch: 'master' }
-        : { owner: 'wooogler', repo: 'choirlab', branch: 'main' };
+      const defaultRepo = AppConfig.getDefaultRepo();
 
       const markdownFiles = await githubService.getAllMarkdownFiles({
         owner: defaultRepo.owner,
