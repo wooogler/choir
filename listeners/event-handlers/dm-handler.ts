@@ -23,7 +23,7 @@ const dmMessageCallback = async ({
     logger.error('Error processing DM message:', error);
     await client.chat.postMessage({
       channel: event.channel,
-      text: '죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.',
+      text: 'Sorry, an error occurred. Please try again.',
     });
   }
 };

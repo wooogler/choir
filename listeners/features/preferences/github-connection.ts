@@ -40,7 +40,7 @@ export const githubRepoUrlInputCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: '관리자만 GitHub 저장소 연동이 가능합니다.',
+        text: 'Only administrators can connect GitHub repositories.'
       });
       return;
     }
@@ -90,7 +90,7 @@ export const testGithubConnectionCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: '관리자만 GitHub 저장소 연동이 가능합니다.',
+        text: 'Only administrators can connect GitHub repositories.'
       });
       return;
     }
@@ -103,7 +103,7 @@ export const testGithubConnectionCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: '먼저 GitHub 저장소 URL을 입력해주세요.',
+        text: 'Please enter the GitHub repository URL first.'
       });
       return;
     }
@@ -115,7 +115,7 @@ export const testGithubConnectionCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: '유효하지 않은 GitHub URL입니다. https://github.com/owner/repo 형식의 URL을 입력해주세요.',
+        text: 'Invalid GitHub URL. Please enter a URL in the format https://github.com/owner/repo.'
       });
       return;
     }
@@ -235,7 +235,7 @@ export const testGithubConnectionCallback = async ({
     await client.chat.postEphemeral({
       channel: body.channel?.id || body.user.id,
       user: body.user.id,
-      text: 'GitHub 연결 테스트 중 오류가 발생했습니다. 다시 시도해주세요.',
+      text: 'An error occurred while testing the GitHub connection. Please try again.'
     });
   }
 };

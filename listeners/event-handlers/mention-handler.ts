@@ -26,7 +26,7 @@ const appMentionCallback = async ({
     await client.chat.postMessage({
       channel: event.channel,
       thread_ts: event.ts,
-      text: '죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.',
+      text: 'Sorry, an error occurred. Please try again.',
     });
   }
 };

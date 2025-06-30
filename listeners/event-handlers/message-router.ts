@@ -102,7 +102,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     await client.chat.postMessage({
       channel: event.channel,
       ...(event.channel_type !== 'im' ? { thread_ts: event.ts } : {}), // DM이 아닌 경우에만 스레드로 응답
-      text: '죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.',
+      text: 'Sorry, an error occurred. Please try again.',
     });
     return false;
   }
