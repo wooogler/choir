@@ -29,19 +29,7 @@ const vectorStore = VectorStoreService.getInstance();
 /** Register Listeners */
 registerListeners(app);
 
-// Register app home event
-app.event('app_home_opened', async ({ event, client, logger }) => {
-  try {
-    await client.views.publish({
-      user_id: event.user,
-      view: HomeScreenService.getHomeView(),
-    });
-    Logger.info('Home screen published successfully', { userId: event.user });
-  } catch (error) {
-    Logger.error('Error publishing home tab', error as Error, { userId: event.user });
-    logger.error('Error publishing home tab:', error);
-  }
-});
+// Note: app_home_opened event is registered in registerListeners()
 
 /** Start Bolt App */
 (async () => {

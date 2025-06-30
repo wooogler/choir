@@ -13,12 +13,15 @@ import {
   setOrganizationName,
 } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
+import { AppConfig } from '@/config';
 
 const appHomeOpenedCallback = async ({
   client,
   event,
   logger,
 }: AllMiddlewareArgs & SlackEventMiddlewareArgs<'app_home_opened'>) => {
+  logger.info(`App home opened for user ${event.user}, tab: ${event.tab}`);
+  
   // Ignore the `app_home_opened` event for anything but the Home tab
   if (event.tab !== 'home') return;
 
@@ -296,7 +299,20 @@ const appHomeOpenedCallback = async ({
     // Show GitHub connection UI only for managers or workspace owners
     if (isUserManager || isOwner) {
       // Get current connected GitHub repository info
-      const repoInfo = await getGithubRepo(workspaceId);
+      let repoInfo = await getGithubRepo(workspaceId);
+      
+      // If no repository is configured, show default repository info
+      if (!repoInfo) {
+        const defaultRepo = AppConfig.getDefaultRepo();
+        repoInfo = {
+          owner: defaultRepo.owner,
+          repo: defaultRepo.repo,
+          path: '',
+          url: `https://github.com/${defaultRepo.owner}/${defaultRepo.repo}`,
+        };
+      }
+      
+      logger.info(`GitHub repo info for workspace ${workspaceId}:`, repoInfo);
 
       githubBlocks.push({
         type: 'header',
@@ -308,22 +324,24 @@ const appHomeOpenedCallback = async ({
       });
 
       // Show current connection status
-      if (repoInfo) {
+      const savedRepoInfo = await getGithubRepo(workspaceId);
+      if (savedRepoInfo) {
         githubBlocks.push({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `*Currently Connected Repository*\n<${repoInfo.url}|${repoInfo.owner}/${repoInfo.repo}${
-              repoInfo.path ? ` (Path: ${repoInfo.path})` : ''
+            text: `*Currently Connected Repository*\n<${savedRepoInfo.url}|${savedRepoInfo.owner}/${savedRepoInfo.repo}${
+              savedRepoInfo.path ? ` (Path: ${savedRepoInfo.path})` : ''
             }>`,
           },
         });
       } else {
+        const defaultRepo = AppConfig.getDefaultRepo();
         githubBlocks.push({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '*No repository connected*\nEnter a GitHub repository URL below to connect.',
+            text: `*Currently Using Default Repository*\n<https://github.com/${defaultRepo.owner}/${defaultRepo.repo}|${defaultRepo.owner}/${defaultRepo.repo}> (${process.env.NODE_ENV} mode)\n\nConnect a custom repository below to override this default.`,
           },
         });
       }
@@ -332,6 +350,7 @@ const appHomeOpenedCallback = async ({
       githubBlocks.push(
         {
           type: 'input',
+          block_id: 'github_repo_url_input_block',
           dispatch_action: true,
           element: {
             type: 'plain_text_input',
@@ -347,7 +366,7 @@ const appHomeOpenedCallback = async ({
           },
           hint: {
             type: 'plain_text',
-            text: 'Enter GitHub repository URL (e.g., https://github.com/username/repo)',
+            text: 'Enter GitHub repository URL, then click Connect Repository',
           },
         },
         {
@@ -357,11 +376,11 @@ const appHomeOpenedCallback = async ({
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: 'Test Repository Connection',
+                text: 'Connect Repository',
                 emoji: true,
               },
               style: 'primary',
-              action_id: 'test_github_connection',
+              action_id: 'connect_github_repository',
             },
           ],
         },
@@ -595,16 +614,43 @@ const register = (app: App) => {
     await ack();
     try {
       const workspaceId = await getWorkspaceId(client);
-      // @ts-ignore
-      const newName = body.view.state.values.organization_name_input_block.organization_name_input.value;
+      const viewBody = body as any;
+      const newName = viewBody.view.state.values.organization_name_input_block.organization_name_input.value;
 
       await setOrganizationName(workspaceId, newName);
 
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: 'Organization name updated successfully!',
+        text: `✅ Organization name updated to "${newName}"!`,
       });
+
+      // Auto-refresh home screen
+      setTimeout(async () => {
+        try {
+          const mockEvent = {
+            type: 'app_home_opened' as const,
+            user: body.user.id,
+            tab: 'home' as const,
+            event_ts: Date.now().toString(),
+          };
+          
+          const handlerArgs = {
+            client,
+            event: mockEvent,
+            logger,
+            context: {},
+            payload: mockEvent,
+          };
+          
+          await appHomeOpenedCallback(handlerArgs as any);
+          logger.info(`Home screen refreshed for user ${body.user.id} after organization name update`);
+          
+        } catch (error) {
+          logger.error('Error refreshing home view after organization name update:', error);
+        }
+      }, 1000);
+
     } catch (error) {
       logger.error('Error setting organization name:', error);
       await client.chat.postEphemeral({
@@ -620,22 +666,44 @@ const register = (app: App) => {
     await ack();
     try {
       const workspaceId = await getWorkspaceId(client);
-      // Correctly access the submitted value from the view state
-      // @ts-ignore
+      const viewBody = body as any;
       const newDescription =
-        body.view.state.values.organization_description_input_block.organization_description_input.value;
+        viewBody.view.state.values.organization_description_input_block.organization_description_input.value;
 
       await setOrganizationDescription(workspaceId, newDescription);
 
-      // Optionally, refresh the App Home view to show the updated description
-      // This requires triggering an app_home_opened event or directly calling client.views.publish
-      // For simplicity, we'll let the user refresh or wait for the next app_home_opened event.
-      // Or, send a confirmation message
       await client.chat.postEphemeral({
         user: body.user.id,
-        channel: body.user.id, // Post to App Home DM
-        text: 'Organization description updated successfully!',
+        channel: body.user.id,
+        text: '✅ Organization description updated successfully!',
       });
+
+      // Auto-refresh home screen
+      setTimeout(async () => {
+        try {
+          const mockEvent = {
+            type: 'app_home_opened' as const,
+            user: body.user.id,
+            tab: 'home' as const,
+            event_ts: Date.now().toString(),
+          };
+          
+          const handlerArgs = {
+            client,
+            event: mockEvent,
+            logger,
+            context: {},
+            payload: mockEvent,
+          };
+          
+          await appHomeOpenedCallback(handlerArgs as any);
+          logger.info(`Home screen refreshed for user ${body.user.id} after organization description update`);
+          
+        } catch (error) {
+          logger.error('Error refreshing home view after organization description update:', error);
+        }
+      }, 1000);
+
     } catch (error) {
       logger.error('Error setting organization description:', error);
       await client.chat.postEphemeral({
@@ -648,3 +716,4 @@ const register = (app: App) => {
 };
 
 export default { register };
+export { appHomeOpenedCallback };

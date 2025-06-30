@@ -83,25 +83,36 @@ const addManagerCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: `Manager permission has been granted to <@${selectedUser}>.`,
+        text: `✅ Manager permission has been granted to <@${selectedUser}>.`,
       });
 
-      // Refresh home view
-      await client.views.publish({
-        user_id: userId,
-        view: {
-          type: 'home',
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: 'Refreshing home view...',
-              },
-            },
-          ],
-        },
-      });
+      // Auto-refresh home screen
+      setTimeout(async () => {
+        try {
+          const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
+          
+          const mockEvent = {
+            type: 'app_home_opened' as const,
+            user: userId,
+            tab: 'home' as const,
+            event_ts: Date.now().toString(),
+          };
+          
+          const handlerArgs = {
+            client,
+            event: mockEvent,
+            logger,
+            context: {},
+            payload: mockEvent,
+          };
+          
+          await appHomeOpenedCallback(handlerArgs as any);
+          logger.info(`Home screen refreshed for user ${userId} after adding manager permission`);
+          
+        } catch (error) {
+          logger.error('Error refreshing home view after adding manager:', error);
+        }
+      }, 1000);
 
       // Send notification message
       try {
@@ -178,25 +189,36 @@ const removeManagerCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: `Manager permission has been removed from <@${targetUserId}>.`,
+        text: `✅ Manager permission has been removed from <@${targetUserId}>.`,
       });
 
-      // Refresh home view
-      await client.views.publish({
-        user_id: userId,
-        view: {
-          type: 'home',
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: 'Refreshing home view...',
-              },
-            },
-          ],
-        },
-      });
+      // Auto-refresh home screen
+      setTimeout(async () => {
+        try {
+          const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
+          
+          const mockEvent = {
+            type: 'app_home_opened' as const,
+            user: userId,
+            tab: 'home' as const,
+            event_ts: Date.now().toString(),
+          };
+          
+          const handlerArgs = {
+            client,
+            event: mockEvent,
+            logger,
+            context: {},
+            payload: mockEvent,
+          };
+          
+          await appHomeOpenedCallback(handlerArgs as any);
+          logger.info(`Home screen refreshed for user ${userId} after removing manager permission`);
+          
+        } catch (error) {
+          logger.error('Error refreshing home view after removing manager:', error);
+        }
+      }, 1000);
 
       // Send notification message
       try {

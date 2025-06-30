@@ -111,10 +111,36 @@ const setQAChannelCallback = async ({
     // 성공 메시지 (DM으로 변경)
     await client.chat.postMessage({
       channel: userId, // 사용자 ID를 채널로 지정하여 DM 발송
-      text: `✅ Q&A channel has been set to #${channelName}. Please refresh the App Home to see the changes.`,
+      text: `✅ Q&A channel has been set to #${channelName}.`,
     });
 
-    // App Home 새로고침은 제거 (사용자가 수동으로 새로고침하도록 안내)
+    // Auto-refresh home screen
+    setTimeout(async () => {
+      try {
+        const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
+        
+        const mockEvent = {
+          type: 'app_home_opened' as const,
+          user: userId,
+          tab: 'home' as const,
+          event_ts: Date.now().toString(),
+        };
+        
+        const handlerArgs = {
+          client,
+          event: mockEvent,
+          logger,
+          context: {},
+          payload: mockEvent,
+        };
+        
+        await appHomeOpenedCallback(handlerArgs as any);
+        logger.info(`Home screen refreshed for user ${userId} after Q&A channel update`);
+        
+      } catch (error) {
+        logger.error('Error refreshing home view after Q&A channel update:', error);
+      }
+    }, 1000);
 
     logger.info(`Q&A channel set to ${selectedChannelId} (${channelName}) by user ${userId}`);
   } catch (error) {

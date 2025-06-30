@@ -17,7 +17,7 @@ export const registerPreferencesFeature = (app: App) => {
 
   // GitHub Connection
   app.action('github_repo_url_input', githubRepoUrlInputCallback);
-  app.action('test_github_connection', testGithubConnectionCallback);
+  app.action('connect_github_repository', testGithubConnectionCallback);
 
   // QA Channel Actions
   qaChannelActions.register(app); // qa-channel-actions.ts가 { register }를 default export 한다고 가정

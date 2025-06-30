@@ -1,8 +1,10 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { parseMarkdownToTree } from 'services/document';
+import { treeToMarkdown } from 'services/document/markdown';
 import { GithubService } from 'services/github';
 import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
+import { appHomeOpenedCallback } from '../../../event-handlers/app-home-handler';
 
 /**
  * Vector store cache rebuild action handler
@@ -41,6 +43,33 @@ export const rebuildVectorCacheAction = async ({
         channel: body.user.id,
         text: '✅ Vector cache successfully rebuilt!',
       });
+
+      // Auto-refresh home screen
+      setTimeout(async () => {
+        try {
+          const mockEvent = {
+            type: 'app_home_opened' as const,
+            user: body.user.id,
+            tab: 'home' as const,
+            event_ts: Date.now().toString(),
+          };
+          
+          const handlerArgs = {
+            client,
+            event: mockEvent,
+            logger,
+            context: {},
+            payload: mockEvent,
+          };
+          
+          await appHomeOpenedCallback(handlerArgs as any);
+          logger.info(`Home screen refreshed for user ${body.user.id} after vector cache rebuild`);
+          
+        } catch (error) {
+          logger.error('Error refreshing home view after vector cache rebuild:', error);
+        }
+      }, 1000);
+
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
@@ -93,6 +122,33 @@ export const resetVectorStoreAction = async ({
         channel: body.user.id,
         text: '✅ Vector store successfully reset and rebuilt!',
       });
+
+      // Auto-refresh home screen
+      setTimeout(async () => {
+        try {
+          const mockEvent = {
+            type: 'app_home_opened' as const,
+            user: body.user.id,
+            tab: 'home' as const,
+            event_ts: Date.now().toString(),
+          };
+          
+          const handlerArgs = {
+            client,
+            event: mockEvent,
+            logger,
+            context: {},
+            payload: mockEvent,
+          };
+          
+          await appHomeOpenedCallback(handlerArgs as any);
+          logger.info(`Home screen refreshed for user ${body.user.id} after vector store reset`);
+          
+        } catch (error) {
+          logger.error('Error refreshing home view after vector store reset:', error);
+        }
+      }, 1000);
+
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
@@ -199,7 +255,6 @@ export const normalizeMarkdownFilesAction = async ({
         const tree = parseMarkdownToTree(file.content, file.name);
 
         // 트리를 다시 마크다운으로 변환
-        const { treeToMarkdown } = await import('services/document/markdown');
         const normalizedMarkdown = treeToMarkdown(tree);
 
         // 원본과 다른 경우에만 업데이트
@@ -239,6 +294,33 @@ export const normalizeMarkdownFilesAction = async ({
             channel: body.user.id,
             text: '✅ Vector store successfully rebuilt with normalized files!',
           });
+
+          // Auto-refresh home screen
+          setTimeout(async () => {
+            try {
+              const mockEvent = {
+                type: 'app_home_opened' as const,
+                user: body.user.id,
+                tab: 'home' as const,
+                event_ts: Date.now().toString(),
+              };
+              
+              const handlerArgs = {
+                client,
+                event: mockEvent,
+                logger,
+                context: {},
+                payload: mockEvent,
+              };
+              
+              await appHomeOpenedCallback(handlerArgs as any);
+              logger.info(`Home screen refreshed for user ${body.user.id} after markdown normalization`);
+              
+            } catch (error) {
+              logger.error('Error refreshing home view after markdown normalization:', error);
+            }
+          }, 1000);
+
         } else {
           await client.chat.postMessage({
             channel: body.user.id,
