@@ -1,13 +1,9 @@
-import { SlackMessage } from "services/slack";
-import { WebClient } from "@slack/web-api";
-import { createChatCompletion } from "./completions";
-import { processMessageText } from "./qa-service";
+import type { WebClient } from '@slack/web-api';
+import type { SlackMessage } from 'services/slack';
+import { createChatCompletion } from './completions';
+import { processMessageText } from './qa-service';
 
-export async function editMarkdownWithUserMessages(
-  markdown: string,
-  userMessages: SlackMessage[],
-  client: WebClient
-) {
+export async function editMarkdownWithUserMessages(markdown: string, userMessages: SlackMessage[], client: WebClient) {
   // Anonymize users by replacing usernames with generic identifiers
   const userMap = new Map<string, string>();
   let userCounter = 1;
@@ -16,22 +12,23 @@ export async function editMarkdownWithUserMessages(
   const processedMessages = await Promise.all(
     userMessages.map(async (message) => {
       const processedText = await processMessageText(message.text, client);
-      
+
       if (!userMap.has(message.username)) {
         userMap.set(message.username, `User${userCounter++}`);
       }
-      
+
       return {
-        anonUser: userMap.get(message.username) || "Unknown",
-        text: processedText
+        anonUser: userMap.get(message.username) || 'Unknown',
+        text: processedText,
       };
-    })
+    }),
   );
 
-  const responseContent = await createChatCompletion([
+  const responseContent = await createChatCompletion(
+    [
       {
-        role: "system",
-      content: `As a document editor, modify this markdown document with information from the conversation.
+        role: 'system',
+        content: `As a document editor, modify this markdown document with information from the conversation.
 
 Key rules:
 1. Update information: Directly modify existing content when needed and only add important new information
@@ -41,36 +38,31 @@ Key rules:
 5. Return only the edited markdown without explanations or tags`,
       },
       {
-        role: "user",
+        role: 'user',
         content: `<markdown>${markdown}</markdown>
 <conversation>
-${processedMessages
-          .map(
-            (message) =>
-            `${message.anonUser}: ${message.text}`
-          )
-        .join("\n")}
+${processedMessages.map((message) => `${message.anonUser}: ${message.text}`).join('\n')}
 </conversation>`,
       },
-  ], {
-    model: "gpt-4o-mini",
-    temperature: 0,
-    function_name: "editMarkdownWithUserMessages",
-    debug: true,
-  });
-  
+    ],
+    {
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      function_name: 'editMarkdownWithUserMessages',
+      debug: true,
+    },
+  );
+
   // Remove any markdown tags from the response
   return responseContent?.replace(/<\/?markdown>/g, '') ?? markdown;
 }
 
-export async function editMarkdownWithKnowledge(
-  markdown: string,
-  knowledgeContent: string
-) {
-  const responseContent = await createChatCompletion([
+export async function editMarkdownWithKnowledge(markdown: string, knowledgeContent: string) {
+  const responseContent = await createChatCompletion(
+    [
       {
-        role: "system",
-      content: `As a document editor, modify this markdown document with the provided knowledge.
+        role: 'system',
+        content: `As a document editor, modify this markdown document with the provided knowledge.
 
 Key rules:
 1. Update information: Directly modify existing content when needed and only add important new information
@@ -82,24 +74,30 @@ Key rules:
 7. Focus on incorporating the knowledge into the most relevant section of the document`,
       },
       {
-        role: "user",
+        role: 'user',
         content: `<markdown>${markdown}</markdown>
 <knowledge>
 ${knowledgeContent}
 </knowledge>`,
       },
-  ], {
-    model: "gpt-4o-mini",
-    temperature: 0,
-    function_name: "editMarkdownWithKnowledge",
-    debug: true,
-  });
-  
+    ],
+    {
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      function_name: 'editMarkdownWithKnowledge',
+      debug: true,
+    },
+  );
+
   // Remove any markdown tags from the response
   return responseContent?.replace(/<\/?markdown>/g, '') ?? markdown;
 }
 
-export async function classifyMessageIntent(message: string, organizationName: string, descOrg: string): Promise<"question" | "update_request" | "general_conversation"> {
+export async function classifyMessageIntent(
+  message: string,
+  organizationName: string,
+  descOrg: string,
+): Promise<'question' | 'update_request' | 'general_conversation'> {
   const systemPrompt = `You are an intelligent agent that answers questions or helps update documents that manages the institutional knowledge or polices of an organization, such as a university research lab.
 Your task is to classify the user message as 'question' (asking for information about the organization), 'update_request' (containing new knowledge, information, or facts that could be documented, or explicitly asking to save/store information about the organization), or 'general_conversation' (a general statement, greeting, or chit-chat without substantial new information, questions that are not necessarily about the organization or the members).
 
@@ -120,27 +118,43 @@ Organization Context:
 ${organizationName ? `- Organization: ${organizationName}` : ''}
 ${descOrg ? `- About: ${descOrg}` : ''}`;
 
-  const result = await createChatCompletion([
+  const result = await createChatCompletion(
+    [
       {
-        role: "system",
-        content: systemPrompt
+        role: 'system',
+        content: systemPrompt,
       },
       {
-        role: "user",
-        content: message
-      }
-  ], {
-    temperature: 0.1,
-    max_tokens: 15,
-    function_name: "classifyMessageIntent",
-  });
+        role: 'user',
+        content: message,
+      },
+    ],
+    {
+      temperature: 0.1,
+      max_tokens: 15,
+      function_name: 'classifyMessageIntent',
+    },
+  );
 
   const classification = result?.trim().toLowerCase();
-  if (classification === "update_request") {
-    return "update_request";
-  } else if (classification === "question") {
-    return "question";
+  let finalIntent: 'question' | 'update_request' | 'general_conversation';
+
+  if (classification === 'update_request') {
+    finalIntent = 'update_request';
+  } else if (classification === 'question') {
+    finalIntent = 'question';
   } else {
-    return "general_conversation";
+    finalIntent = 'general_conversation';
   }
-} 
+
+  // Log the classification result
+  console.log(`[MESSAGE INTENT CLASSIFICATION]`, {
+    originalMessage: message.substring(0, 100) + (message.length > 100 ? '...' : ''),
+    rawLLMResponse: result,
+    classifiedAs: finalIntent,
+    organizationName,
+    descOrg,
+  });
+
+  return finalIntent;
+}

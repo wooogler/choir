@@ -1,9 +1,10 @@
-import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from "@slack/bolt";
-import { getSessionData, SessionType, storeSessionData } from "../../../../services/common";
-import { getManagers, getWorkspaceId, getChannelName, getUserName } from "../../../../services/slack";
-import { createMessageLink } from "../suggestions/suggest-updates";
-import { WebClient } from "@slack/web-api";
-import { Logger } from "@slack/bolt";
+import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { Logger } from '@slack/bolt';
+import { WebClient } from '@slack/web-api';
+import { SessionType, getSessionData, storeSessionData } from 'services/common';
+import { logButtonClick } from 'services/common/user-interaction-logger';
+import { getChannelName, getManagers, getUserName, getWorkspaceId } from 'services/slack';
+import { createMessageLink } from '../suggestions/suggest-updates';
 
 /**
  * Handle "Pass Suggestion to Manager" button click
@@ -14,15 +15,17 @@ export const sendUpdateSuggestionToManagerCallback = async ({
   client,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
+  let workspaceId: string;
   await ack();
 
   try {
     const sessionId = body.actions[0].value;
-    
+
     if (!sessionId) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ Invalid session. Please try submitting your suggestion again.",
+        text: '❌ Invalid session. Please try submitting your suggestion again.',
       });
       return;
     }
@@ -31,25 +34,26 @@ export const sendUpdateSuggestionToManagerCallback = async ({
     if (!sessionData) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ Session data not found. Please try submitting your suggestion again.",
+        text: '❌ Session data not found. Please try submitting your suggestion again.',
       });
       return;
     }
 
-    const workspaceId = await getWorkspaceId(client);
-    const managers = getManagers(workspaceId);
+    workspaceId = await getWorkspaceId(client);
+    const managers = await getManagers(workspaceId);
 
     if (managers.length === 0) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ No managers found in this workspace. Please contact an administrator.",
+        text: '❌ No managers found in this workspace. Please contact an administrator.',
       });
       return;
     }
 
     const userInfo = await client.users.info({ user: body.user.id });
     // Ensure userName is fetched correctly, fallback to a generic term if needed.
-    const userName = userInfo.user?.profile?.display_name || userInfo.user?.real_name || userInfo.user?.name || "A team member";
+    const userName =
+      userInfo.user?.profile?.display_name || userInfo.user?.real_name || userInfo.user?.name || 'A team member';
 
     sessionData.userId = body.user.id;
     sessionData.userName = userName; // 세션 데이터에도 사용자 이름 저장 (취소 등 다른 액션에서 사용 가능)
@@ -65,26 +69,36 @@ export const sendUpdateSuggestionToManagerCallback = async ({
     for (const managerId of managers) {
       try {
         let originalMessageLinkBlock = null;
-        let messageLink = "";
+        let messageLink = '';
         try {
           const conversationInfo = await client.conversations.info({ channel: sessionData.originalChannelId });
-          if (conversationInfo.ok && conversationInfo.channel && 
-              (!conversationInfo.channel.is_private || conversationInfo.channel.is_member)) {
+          if (
+            conversationInfo.ok &&
+            conversationInfo.channel &&
+            (!conversationInfo.channel.is_private || conversationInfo.channel.is_member)
+          ) {
             const authInfo = await client.auth.test();
             const workspaceUrl = authInfo.url;
             if (workspaceUrl) {
-              messageLink = createMessageLink(workspaceUrl, sessionData.originalChannelId, sessionData.originalThreadTs);
+              messageLink = createMessageLink(
+                workspaceUrl,
+                sessionData.originalChannelId,
+                sessionData.originalThreadTs,
+              );
               originalMessageLinkBlock = {
-                type: "section",
+                type: 'section',
                 text: {
-                  type: "mrkdwn",
-                  text: `📍 <${messageLink}|View original discussion> for context`
-                }
+                  type: 'mrkdwn',
+                  text: `📍 <${messageLink}|View original discussion> for context`,
+                },
               };
             }
           }
         } catch (linkError) {
-          logger.warn(`Could not create original message link for channel ${sessionData.originalChannelId}:`, linkError);
+          logger.warn(
+            `Could not create original message link for channel ${sessionData.originalChannelId}:`,
+            linkError,
+          );
         }
 
         if (messageLink) {
@@ -93,90 +107,92 @@ export const sendUpdateSuggestionToManagerCallback = async ({
 
         const blocks: any[] = [
           {
-            type: "section",
+            type: 'section',
             text: {
-              type: "mrkdwn",
-              text: choirGreeting
-            }
+              type: 'mrkdwn',
+              text: choirGreeting,
+            },
           },
           {
-            type: "header",
+            type: 'header',
             text: {
-              type: "plain_text",
-              text: "📝 Document Update Suggestion",
-              emoji: true
-            }
+              type: 'plain_text',
+              text: '📝 Document Update Suggestion',
+              emoji: true,
+            },
           },
           {
-            type: "section",
+            type: 'section',
             text: {
-              type: "mrkdwn",
-              text: `*From:* *${userName}*`
-            }
+              type: 'mrkdwn',
+              text: `*From:* *${userName}*`,
+            },
           },
           {
-            type: "section",
+            type: 'section',
             text: {
-              type: "mrkdwn",
-              text: `*Suggestion:*\n\`\`\`${sessionData.extractedKnowledge}\`\`\``
-            }
-          }
+              type: 'mrkdwn',
+              text: `*Suggestion:*\n\`\`\`${sessionData.extractedKnowledge}\`\`\``,
+            },
+          },
         ];
 
         if (originalMessageLinkBlock) {
           blocks.push(originalMessageLinkBlock);
         }
-        
+
         blocks.push(
           {
-            type: "section",
+            type: 'section',
             text: {
-              type: "mrkdwn",
-              text: choirCallToAction
-            }
+              type: 'mrkdwn',
+              text: choirCallToAction,
+            },
           },
           {
-          type: "actions",
-          elements: [
-            {
-              type: "button" as "button",
-              text: {
-                type: "plain_text" as "plain_text",
-                text: "✏️ Edit Suggestion",
-                emoji: true
+            type: 'actions',
+            elements: [
+              {
+                type: 'button' as const,
+                text: {
+                  type: 'plain_text' as const,
+                  text: '✏️ Edit Suggestion',
+                  emoji: true,
+                },
+                action_id: 'open_knowledge_edit_manager_modal',
+                value: sessionId,
               },
-              action_id: "open_knowledge_edit_manager_modal",
-              value: sessionId 
-            },
-            {
-              type: "button" as "button",
-              text: {
-                type: "plain_text" as "plain_text",
-                text: "🚀 Start Update Process",
-                emoji: true
+              {
+                type: 'button' as const,
+                text: {
+                  type: 'plain_text' as const,
+                  text: '🚀 Start Update Process',
+                  emoji: true,
+                },
+                style: 'primary' as const,
+                action_id: 'suggest_updates',
+                value: JSON.stringify({
+                  sessionId: sessionId,
+                  knowledgeContent: sessionData.extractedKnowledge,
+                  originalChannelId: sessionData.originalChannelId,
+                  originalThreadTs: sessionData.originalThreadTs,
+                }),
               },
-              style: "primary" as "primary",
-              action_id: "suggest_updates", 
-              value: JSON.stringify({
-                sessionId: sessionId,
-                knowledgeContent: sessionData.extractedKnowledge,
-                originalChannelId: sessionData.originalChannelId, 
-                originalThreadTs: sessionData.originalThreadTs,
-              })
-            },
-            {
-              type: "button" as "button",
-              text: {
-                type: "plain_text" as "plain_text",
-                text: "Dismiss", 
-                emoji: false
+              {
+                type: 'button' as const,
+                text: {
+                  type: 'plain_text' as const,
+                  text: 'Dismiss',
+                  emoji: false,
+                },
+                style: 'danger' as const,
+                action_id: 'cancel_knowledge_extraction',
+                value: sessionId,
               },
-              style: "danger" as "danger",
-              action_id: "cancel_knowledge_extraction",
-              value: sessionId
-            }
-          ]
-        });
+            ],
+          },
+          client,
+        );
 
         const postedMessage = await client.chat.postMessage({
           channel: managerId,
@@ -186,26 +202,47 @@ export const sendUpdateSuggestionToManagerCallback = async ({
           unfurl_media: false,
         });
 
-        if (postedMessage.ok && postedMessage.ts && postedMessage.channel) {
-          sessionData.managerMessageInfo[managerId] = {
-            ts: postedMessage.ts,
-            channel: postedMessage.channel,
-          };
-        }
+        // Store manager message info for later updates
+        sessionData.managerMessageInfo = {
+          channel: managerId,
+          ts: postedMessage.ts,
+        };
+        storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+
+        // 로그: 매니저 알림 성공
+        await logButtonClick(
+          body.user.id,
+          workspaceId,
+          body.channel?.id || 'dm',
+          'dm',
+          'send_update_suggestion_to_manager',
+          Date.now() - startTime,
+          true,
+          {
+            sessionId,
+            managersNotified: managers.length,
+            managerIds: managers,
+            extractedKnowledgeLength: sessionData.extractedKnowledge?.length || 0,
+            originalChannelId: sessionData.originalChannelId,
+            originalThreadTs: sessionData.originalThreadTs,
+            userName,
+          },
+          client,
+        );
+
+        logger.info(`Update suggestion sent to ${managers.length} managers for session ${sessionId}`);
       } catch (error) {
         logger.error(`Failed to send suggestion to manager ${managerId}:`, error);
       }
     }
 
-    storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
-
     // 원래 채널에 알림 메시지 전송
     if (sessionData.originalChannelId) {
       const originalChannelName = await getChannelName(sessionData.originalChannelId, client);
-      
+
       // 매니저 이름 목록을 볼드체로 변환
-      const managerNames = await Promise.all(managers.map(id => getUserName(id, client)));
-      const managerNamesBold = managerNames.map(name => `*${name}*`).join(", ");
+      const managerNames = await Promise.all(managers.map((id: string) => getUserName(id, client)));
+      const managerNamesBold = managerNames.map((name: string) => `*${name}*`).join(', ');
 
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,
@@ -213,14 +250,14 @@ export const sendUpdateSuggestionToManagerCallback = async ({
         thread_ts: sessionData.originalThreadTs,
         blocks: [
           {
-            type: "section",
+            type: 'section',
             text: {
-              type: "mrkdwn",
+              type: 'mrkdwn',
               text: `✅ Great news, *${userName}*! Your document update suggestion has been successfully sent to our manager(s): ${managerNamesBold}. They'll review it soon!
 
-I'll let you know if they have any questions or when the document is updated. Thanks for helping keep our docs accurate! 👍`
-            }
-          }
+I'll let you know if they have any questions or when the document is updated. Thanks for helping keep our docs accurate! 👍`,
+            },
+          },
         ],
         unfurl_links: false,
         unfurl_media: false,
@@ -228,18 +265,39 @@ I'll let you know if they have any questions or when the document is updated. Th
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: `✅ Your update suggestion has been passed to ${managers.length} manager(s) for review. They will be able to apply the suggestion to update documents or provide feedback.`
+        text: `✅ Your update suggestion has been passed to ${managers.length} manager(s) for review. They will be able to apply the suggestion to update documents or provide feedback.`,
       });
     }
 
     logger.info(`Update suggestion passed to managers by *${userName}* (ID: ${body.user.id}) for session ${sessionId}`);
-
   } catch (error) {
-    logger.error("Error passing update suggestion to managers:", error);
-    
+    logger.error('Error sending update suggestion to managers:', error);
+
+    // 로그: 매니저 알림 실패
+    try {
+      const workspaceIdForLog = await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        workspaceIdForLog,
+        body.channel?.id || 'dm',
+        'dm',
+        'send_update_suggestion_to_manager',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          sessionId: body.actions[0].value,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Failed to log button click error:', logError);
+    }
+
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ Failed to pass your update suggestion to managers: ${error instanceof Error ? error.message : "Unknown error"}`,
+      text: '❌ Failed to send your suggestion to managers. Please try again later.',
     });
   }
-}; 
+};

@@ -7,14 +7,14 @@
 
 // 세션 타입 열거형
 export enum SessionType {
-  DOCUMENT_UPDATE = "document_update",     // 문서 업데이트/지식 추출 세션
-  NEW_SECTION = "new_section"              // 새 섹션 생성 세션
+  DOCUMENT_UPDATE = 'document_update', // 문서 업데이트/지식 추출 세션
+  NEW_SECTION = 'new_section', // 새 섹션 생성 세션
 }
 
 // 세션 타입별 데이터를 저장할 Map (메모리 기반 저장소)
 const sessionStores = {
   [SessionType.DOCUMENT_UPDATE]: new Map<string, any>(),
-  [SessionType.NEW_SECTION]: new Map<string, any>()
+  [SessionType.NEW_SECTION]: new Map<string, any>(),
 };
 
 /**
@@ -28,7 +28,7 @@ export function storeSessionData(
   sessionId: string,
   data: any,
   sessionType: SessionType = SessionType.DOCUMENT_UPDATE,
-  expirationMs: number = 30 * 60 * 1000
+  expirationMs: number = 30 * 60 * 1000,
 ): void {
   const sessionStore = sessionStores[sessionType];
 
@@ -51,9 +51,7 @@ export function storeSessionData(
     _createdAt: Date.now(),
   });
 
-  console.log(
-    `세션 저장: ${sessionId} (${sessionType}), 만료 시간: ${expirationMs}ms`
-  );
+  console.log(`세션 저장: ${sessionId} (${sessionType}), 만료 시간: ${expirationMs}ms`);
 }
 
 /**
@@ -62,10 +60,7 @@ export function storeSessionData(
  * @param sessionType 세션 타입 (DISCUSSION 또는 CONSULTATION)
  * @returns 저장된 데이터 객체, 없으면 null
  */
-export function getSessionData(
-  sessionId: string,
-  sessionType: SessionType = SessionType.DOCUMENT_UPDATE
-): any {
+export function getSessionData(sessionId: string, sessionType: SessionType = SessionType.DOCUMENT_UPDATE): any {
   const sessionStore = sessionStores[sessionType];
   const session = sessionStore.get(sessionId);
 
@@ -85,10 +80,7 @@ export function getSessionData(
  * @param sessionType 세션 타입 (DISCUSSION 또는 CONSULTATION)
  * @returns 삭제 성공 여부
  */
-export function removeSessionData(
-  sessionId: string,
-  sessionType: SessionType = SessionType.DOCUMENT_UPDATE
-): boolean {
+export function removeSessionData(sessionId: string, sessionType: SessionType = SessionType.DOCUMENT_UPDATE): boolean {
   const sessionStore = sessionStores[sessionType];
   const session = sessionStore.get(sessionId);
 
@@ -104,7 +96,7 @@ export function removeSessionData(
  * @param prefix 세션 ID 접두사 (기본값: 'session')
  * @returns 생성된 세션 ID
  */
-export function generateSessionId(prefix: string = "session"): string {
+export function generateSessionId(prefix = 'session'): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 10);
   return `${prefix}_${timestamp}_${random}`;

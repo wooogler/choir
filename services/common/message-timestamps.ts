@@ -57,4 +57,4 @@ export function deleteProgressMessageTimestamp(userId: string): void {
 export function clearUserTimestamps(userId: string): void {
   lastMessageTimestamps.delete(userId);
   progressMessageTimestamps.delete(userId);
-} 
+}

@@ -1,16 +1,9 @@
-import { is } from "unist-util-is";
-import { toString } from "mdast-util-to-string";
-import { visit } from "unist-util-visit";
-import type {
-  Heading,
-  ListItem,
-  Paragraph,
-  Code,
-  BlockContent,
-} from "mdast";
-import { DocumentTree, ExtendedNode } from "services/document";
-import { Document } from "langchain/document";
-
+import { Document } from 'langchain/document';
+import type { BlockContent, Code, Heading, ListItem, Paragraph } from 'mdast';
+import { toString } from 'mdast-util-to-string';
+import type { DocumentTree, ExtendedNode } from 'services/document';
+import { is } from 'unist-util-is';
+import { visit } from 'unist-util-visit';
 
 // 청크 크기 설정
 const OPTIMAL_CHUNK_SIZE = 1000;
@@ -41,7 +34,7 @@ export interface DocumentMetadata {
 export function createDocumentsFromTree(
   docTree: DocumentTree,
   fileName: string,
-  githubUrl: string
+  githubUrl: string,
 ): Document<DocumentMetadata>[] {
   const documents: Document<DocumentMetadata>[] = [];
 
@@ -55,7 +48,7 @@ export function createDocumentsFromTree(
   const sectionToHeadings = new Map<string, ExtendedNode[]>();
 
   // 헤딩 정보 수집
-  visit(docTree.root, "heading", (node) => {
+  visit(docTree.root, 'heading', (node) => {
     const headingNode = node as Heading & ExtendedNode;
     if (headingNode.sectionId && headingNode.id) {
       const headingText = toString(headingNode);
@@ -80,31 +73,26 @@ export function createDocumentsFromTree(
     const ancestors = getAncestorNodes(node, nodeParentMap);
 
     // 헤딩 경로 구성
-    const headingPath = getHeadingPathForNode(
-      node,
-      ancestors,
-      headingMap,
-      sectionToHeadings
-    );
+    const headingPath = getHeadingPathForNode(node, ancestors, headingMap, sectionToHeadings);
 
     // 중요도 점수 계산
     const importance = calculateImportance(node, ancestors, headingPath);
 
     // 중복 임베딩 방지: 직접적인 부모가 listItem인 paragraph는 건너뜀
-    if (is(node, "paragraph") && ancestors.length > 0) {
+    if (is(node, 'paragraph') && ancestors.length > 0) {
       const immediateParent = ancestors[ancestors.length - 1];
-      if (is(immediateParent, "listItem")) {
+      if (is(immediateParent, 'listItem')) {
         return; // listItem 내부의 paragraph는 건너뜀
       }
     }
 
     // 섹션 헤딩인 경우 - Document로 생성하지 않음 (헤딩 자체는 업데이트 대상이 아니므로)
-    if (is(node, "heading")) {
+    if (is(node, 'heading')) {
       return;
     }
 
     // 단락 노드 처리
-    if (is(node, "paragraph")) {
+    if (is(node, 'paragraph')) {
       const paraNode = node as Paragraph & ExtendedNode;
       const text = toString(paraNode);
       if (!text.trim()) return; // 빈 단락은 건너뜀
@@ -116,20 +104,13 @@ export function createDocumentsFromTree(
       const entities = extractEntities(text);
 
       // 섹션 이름과 GitBook 링크 가져오기
-      const { sectionName } = getSectionName(
-        paraNode,
-        headingMap
-      );
+      const { sectionName } = getSectionName(paraNode, headingMap);
 
       // 콘텐츠 구성
       const fullContent = `${contextPrefix}${text}`;
 
       // 적응형 청킹 적용
-      const chunks = adaptiveChunking(
-        fullContent,
-        node.type,
-        OPTIMAL_CHUNK_SIZE
-      );
+      const chunks = adaptiveChunking(fullContent, node.type, OPTIMAL_CHUNK_SIZE);
 
       // 각 청크마다 Document 생성
       chunks.forEach((chunk, index) => {
@@ -141,7 +122,7 @@ export function createDocumentsFromTree(
               nodeId,
               sectionId: paraNode.sectionId,
               sectionName,
-              nodeType: "paragraph",
+              nodeType: 'paragraph',
               githubUrl,
               headingPath,
               ancestors: ancestors.map((a) => a.id as string),
@@ -152,14 +133,14 @@ export function createDocumentsFromTree(
               entityMentions: entities,
               originalContent: text, // 컨텍스트 제외한 원본 내용 저장
             },
-          })
+          }),
         );
       });
       return;
     }
 
     // 리스트 아이템 처리
-    if (is(node, "listItem")) {
+    if (is(node, 'listItem')) {
       const listItemNode = node as ListItem & ExtendedNode;
       const text = toString(listItemNode);
       if (!text.trim()) return; // 빈 리스트 아이템은 건너뜀
@@ -171,10 +152,7 @@ export function createDocumentsFromTree(
       const entities = extractEntities(text);
 
       // 섹션 이름과 GitBook 링크 가져오기
-      const { sectionName } = getSectionName(
-        listItemNode,
-        headingMap
-      );
+      const { sectionName } = getSectionName(listItemNode, headingMap);
 
       // 콘텐츠 구성 (리스트 아이템은 일반적으로 짧아서 청킹하지 않음)
       const fullContent = `${contextPrefix}${text}`;
@@ -187,7 +165,7 @@ export function createDocumentsFromTree(
             nodeId,
             sectionId: listItemNode.sectionId,
             sectionName,
-            nodeType: "listItem",
+            nodeType: 'listItem',
             listItemIndex: listItemNode.listItemIndex,
             githubUrl,
             headingPath,
@@ -197,40 +175,33 @@ export function createDocumentsFromTree(
             entityMentions: entities,
             originalContent: text, // 컨텍스트 제외한 원본 내용 저장
           },
-        })
+        }),
       );
       return;
     }
 
     // 코드 블록 처리
-    if (is(node, "code")) {
+    if (is(node, 'code')) {
       const codeNode = node as Code & ExtendedNode;
       const text = codeNode.value;
       if (!text.trim()) return; // 빈 코드 블록은 건너뜀
 
       // 계층적 문맥 구성
       const contextPrefix = formatHeadingContext(headingPath, fileName);
-      const lang = codeNode.lang ? `Language: ${codeNode.lang}\n` : "";
+      const lang = codeNode.lang ? `Language: ${codeNode.lang}\n` : '';
 
       // 엔티티 추출 (코드에서는 함수명, 변수명 등)
-      const entities = extractCodeEntities(text, codeNode.lang || "");
+      const entities = extractCodeEntities(text, codeNode.lang || '');
 
       // 섹션 이름과 GitBook 링크 가져오기
-      const { sectionName } = getSectionName(
-        codeNode,
-        headingMap
-      );
+      const { sectionName } = getSectionName(codeNode, headingMap);
 
       // 콘텐츠 구성
       const fullContent = `${contextPrefix}${lang}${text}`;
 
       // 코드 블록 청킹 (함수 단위로 분리하는 것이 이상적이지만, 단순화)
       const chunks = codeNode.lang
-        ? splitCodeByLogicalBlocks(
-            fullContent,
-            codeNode.lang,
-            OPTIMAL_CHUNK_SIZE
-          )
+        ? splitCodeByLogicalBlocks(fullContent, codeNode.lang, OPTIMAL_CHUNK_SIZE)
         : [fullContent];
 
       chunks.forEach((chunk, index) => {
@@ -242,7 +213,7 @@ export function createDocumentsFromTree(
               nodeId,
               sectionId: codeNode.sectionId,
               sectionName,
-              nodeType: "code",
+              nodeType: 'code',
               githubUrl,
               headingPath,
               ancestors: ancestors.map((a) => a.id as string),
@@ -254,14 +225,14 @@ export function createDocumentsFromTree(
               codeLanguage: codeNode.lang || undefined,
               originalContent: text, // 컨텍스트 제외한 원본 내용 저장
             },
-          })
+          }),
         );
       });
       return;
     }
 
     // 블록쿼트 처리
-    if (is(node, "blockquote")) {
+    if (is(node, 'blockquote')) {
       const blockNode = node as BlockContent & ExtendedNode;
       const text = toString(blockNode);
       if (!text.trim()) return; // 빈 블록쿼트는 건너뜀
@@ -276,11 +247,7 @@ export function createDocumentsFromTree(
       const fullContent = `${contextPrefix}${text}`;
 
       // 블록쿼트도 적응형 청킹 적용
-      const chunks = adaptiveChunking(
-        fullContent,
-        node.type,
-        OPTIMAL_CHUNK_SIZE
-      );
+      const chunks = adaptiveChunking(fullContent, node.type, OPTIMAL_CHUNK_SIZE);
 
       chunks.forEach((chunk, index) => {
         documents.push(
@@ -290,7 +257,7 @@ export function createDocumentsFromTree(
               fileName,
               nodeId,
               sectionId: blockNode.sectionId,
-              nodeType: "blockquote",
+              nodeType: 'blockquote',
               githubUrl,
               headingPath,
               ancestors: ancestors.map((a) => a.id as string),
@@ -301,7 +268,7 @@ export function createDocumentsFromTree(
               entityMentions: entities,
               originalContent: text, // 컨텍스트 제외한 원본 내용 저장
             },
-          })
+          }),
         );
       });
       return;
@@ -332,10 +299,7 @@ function buildParentChildMap(docTree: DocumentTree): Map<string, ExtendedNode> {
 /**
  * 노드의 조상 노드들을 찾는 함수
  */
-function getAncestorNodes(
-  node: ExtendedNode,
-  parentMap: Map<string, ExtendedNode>
-): ExtendedNode[] {
+function getAncestorNodes(node: ExtendedNode, parentMap: Map<string, ExtendedNode>): ExtendedNode[] {
   const ancestors: ExtendedNode[] = [];
   let current: ExtendedNode | undefined = node;
 
@@ -359,12 +323,12 @@ function getHeadingPathForNode(
   node: ExtendedNode,
   ancestors: ExtendedNode[],
   headingMap: Map<string, string>,
-  sectionToHeadings: Map<string, ExtendedNode[]>
+  sectionToHeadings: Map<string, ExtendedNode[]>,
 ): string[] {
   // 현재 노드가 속한 섹션 ID 찾기
   let targetSectionId: string | undefined;
-  
-  if (is(node, "heading")) {
+
+  if (is(node, 'heading')) {
     targetSectionId = (node as Heading & ExtendedNode).sectionId;
   } else if (node.sectionId) {
     targetSectionId = node.sectionId;
@@ -384,18 +348,18 @@ function getHeadingPathForNode(
 function buildSectionHierarchy(
   sectionId: string,
   sectionToHeadings: Map<string, ExtendedNode[]>,
-  headingMap: Map<string, string>
+  headingMap: Map<string, string>,
 ): string[] {
   const path: string[] = [];
   const currentHeadings = sectionToHeadings.get(sectionId);
-  
+
   if (!currentHeadings || currentHeadings.length === 0) {
     return [];
   }
 
   const currentHeading = currentHeadings[0] as Heading & ExtendedNode;
   const currentHeadingText = toString(currentHeading);
-  
+
   // 부모 섹션들을 재귀적으로 찾아서 경로 구성
   if (currentHeading.parentId) {
     // 부모 헤딩 찾기
@@ -408,10 +372,10 @@ function buildSectionHierarchy(
       }
     }
   }
-  
+
   // 현재 헤딩 추가
   path.push(currentHeadingText);
-  
+
   return path;
 }
 
@@ -422,13 +386,9 @@ function buildSectionHierarchy(
 export function formatHeadingContext(headingPath: string[], fileName: string): string {
   // 파일 정보와 헤딩 경로를 포함한 컨텍스트 생성
   const fileContext = `File: ${fileName}`;
-  const pathContext = headingPath && headingPath.length > 0 
-    ? `Path: ${headingPath.join(" > ")}` 
-    : "";
-  
-  return [fileContext, pathContext]
-    .filter(Boolean)
-    .join("\n") + (fileContext || pathContext ? "\n\n" : "");
+  const pathContext = headingPath && headingPath.length > 0 ? `Path: ${headingPath.join(' > ')}` : '';
+
+  return [fileContext, pathContext].filter(Boolean).join('\n') + (fileContext || pathContext ? '\n\n' : '');
 }
 
 /**
@@ -440,30 +400,28 @@ function extractEntities(text: string): string[] {
 
   // 불용어 제거
   const stopwords = new Set([
-    "a",
-    "an",
-    "the",
-    "and",
-    "or",
-    "but",
-    "is",
-    "are",
-    "in",
-    "to",
-    "for",
-    "of",
-    "with",
-    "on",
-    "at",
+    'a',
+    'an',
+    'the',
+    'and',
+    'or',
+    'but',
+    'is',
+    'are',
+    'in',
+    'to',
+    'for',
+    'of',
+    'with',
+    'on',
+    'at',
   ]);
 
   // 정규식으로 단어 추출 (알파벳, 숫자, 언더스코어로 구성된 단어)
   const words = text.match(/\b[A-Za-z0-9_]{3,}\b/g) || [];
 
   // 중복 제거 및 불용어 필터링
-  const filteredWords = [...new Set(words)]
-    .filter((word) => !stopwords.has(word.toLowerCase()))
-    .slice(0, 10); // 최대 10개만 사용
+  const filteredWords = [...new Set(words)].filter((word) => !stopwords.has(word.toLowerCase())).slice(0, 10); // 최대 10개만 사용
 
   return filteredWords;
 }
@@ -526,15 +484,11 @@ function extractCodeEntities(code: string, language: string): string[] {
 /**
  * 적응형 청킹 - 텍스트를 의미 단위로 나누는 함수
  */
-function adaptiveChunking(
-  content: string,
-  nodeType: string,
-  targetSize: number
-): string[] {
+function adaptiveChunking(content: string, nodeType: string, targetSize: number): string[] {
   if (content.length <= targetSize) return [content];
 
   // 노드 타입에 따라 청킹 전략 변경
-  if (nodeType === "paragraph" || nodeType === "blockquote") {
+  if (nodeType === 'paragraph' || nodeType === 'blockquote') {
     return splitTextByParagraphsAndSentences(content, targetSize);
   }
 
@@ -545,26 +499,23 @@ function adaptiveChunking(
 /**
  * 텍스트를 문단과 문장 경계로 분할하는 함수
  */
-function splitTextByParagraphsAndSentences(
-  text: string,
-  targetSize: number
-): string[] {
+function splitTextByParagraphsAndSentences(text: string, targetSize: number): string[] {
   // 우선 문단으로 분할
   const paragraphs = text.split(/\n\s*\n/);
   const chunks: string[] = [];
-  let currentChunk = "";
+  let currentChunk = '';
 
   for (const para of paragraphs) {
     // 문단이 너무 큰 경우 문장 단위로 추가 분할
     if (para.length > targetSize) {
       if (currentChunk) {
         chunks.push(currentChunk);
-        currentChunk = "";
+        currentChunk = '';
       }
 
       // 문장 단위로 분할
       const sentences = para.match(/[^.!?]+[.!?]+/g) || [para];
-      let sentenceChunk = "";
+      let sentenceChunk = '';
 
       for (const sentence of sentences) {
         if ((sentenceChunk + sentence).length <= targetSize) {
@@ -578,8 +529,8 @@ function splitTextByParagraphsAndSentences(
       if (sentenceChunk) chunks.push(sentenceChunk);
     }
     // 적당한 크기의 문단은 청크에 추가
-    else if ((currentChunk + "\n\n" + para).length <= targetSize) {
-      currentChunk += (currentChunk ? "\n\n" : "") + para;
+    else if ((currentChunk + '\n\n' + para).length <= targetSize) {
+      currentChunk += (currentChunk ? '\n\n' : '') + para;
     } else {
       if (currentChunk) chunks.push(currentChunk);
       currentChunk = para;
@@ -594,11 +545,7 @@ function splitTextByParagraphsAndSentences(
 /**
  * 코드를 논리적 블록 단위로 분할하는 함수 (언어별 최적화)
  */
-function splitCodeByLogicalBlocks(
-  code: string,
-  language: string,
-  targetSize: number
-): string[] {
+function splitCodeByLogicalBlocks(code: string, language: string, targetSize: number): string[] {
   if (code.length <= targetSize) return [code];
 
   // 언어별 분할 패턴 정의
@@ -606,8 +553,7 @@ function splitCodeByLogicalBlocks(
     javascript: /function\s+\w+\s*\([\s\S]*?\)\s*\{[\s\S]*?\}\n?/g,
     typescript:
       /function\s+\w+\s*\([\s\S]*?\)\s*\{[\s\S]*?\}\n?|interface\s+\w+\s*\{[\s\S]*?\}\n?|class\s+\w+\s*\{[\s\S]*?\}\n?/g,
-    python:
-      /def\s+\w+\s*\([\s\S]*?\)[\s\S]*?(?:return|pass|raise).*?(?=\n\s*\n|\n\s*def|\n\s*class|$)/g,
+    python: /def\s+\w+\s*\([\s\S]*?\)[\s\S]*?(?:return|pass|raise).*?(?=\n\s*\n|\n\s*def|\n\s*class|$)/g,
     java: /(?:public|private|protected|static)?\s*\w+\s+\w+\s*\([\s\S]*?\)\s*\{[\s\S]*?\}\n?/g,
   };
 
@@ -658,29 +604,24 @@ function splitCodeByLogicalBlocks(
 /**
  * 텍스트 블록들을 대상 크기에 맞게 병합하는 함수
  */
-function mergeBlocksToTargetSize(
-  blocks: string[],
-  targetSize: number
-): string[] {
+function mergeBlocksToTargetSize(blocks: string[], targetSize: number): string[] {
   const chunks: string[] = [];
-  let currentChunk = "";
+  let currentChunk = '';
 
   for (const block of blocks) {
     // 블록이 이미 대상 크기보다 크면 그대로 사용
     if (block.length >= targetSize) {
       if (currentChunk) {
         chunks.push(currentChunk);
-        currentChunk = "";
+        currentChunk = '';
       }
       chunks.push(block);
       continue;
     }
 
     // 블록을 현재 청크에 추가할 수 있는지 확인
-    if (
-      (currentChunk + (currentChunk ? "\n" : "") + block).length <= targetSize
-    ) {
-      currentChunk += (currentChunk ? "\n" : "") + block;
+    if ((currentChunk + (currentChunk ? '\n' : '') + block).length <= targetSize) {
+      currentChunk += (currentChunk ? '\n' : '') + block;
     } else {
       if (currentChunk) chunks.push(currentChunk);
       currentChunk = block;
@@ -698,11 +639,11 @@ function mergeBlocksToTargetSize(
 function splitByParagraphs(text: string, targetSize: number): string[] {
   const paragraphs = text.split(/\n\s*\n/);
   const chunks: string[] = [];
-  let currentChunk = "";
+  let currentChunk = '';
 
   for (const para of paragraphs) {
-    if ((currentChunk + "\n\n" + para).length <= targetSize) {
-      currentChunk += (currentChunk ? "\n\n" : "") + para;
+    if ((currentChunk + '\n\n' + para).length <= targetSize) {
+      currentChunk += (currentChunk ? '\n\n' : '') + para;
     } else {
       if (currentChunk) chunks.push(currentChunk);
       currentChunk = para;
@@ -718,13 +659,13 @@ function splitByParagraphs(text: string, targetSize: number): string[] {
  * 텍스트를 라인 단위로 분할하는 함수
  */
 function splitByLines(text: string, targetSize: number): string[] {
-  const lines = text.split("\n");
+  const lines = text.split('\n');
   const chunks: string[] = [];
-  let currentChunk = "";
+  let currentChunk = '';
 
   for (const line of lines) {
-    if ((currentChunk + "\n" + line).length <= targetSize) {
-      currentChunk += (currentChunk ? "\n" : "") + line;
+    if ((currentChunk + '\n' + line).length <= targetSize) {
+      currentChunk += (currentChunk ? '\n' : '') + line;
     } else {
       if (currentChunk) chunks.push(currentChunk);
       currentChunk = line;
@@ -739,11 +680,7 @@ function splitByLines(text: string, targetSize: number): string[] {
 /**
  * 노드의 중요도 점수 계산 함수
  */
-function calculateImportance(
-  node: ExtendedNode,
-  ancestors: ExtendedNode[],
-  headingPath: string[]
-): number {
+function calculateImportance(node: ExtendedNode, ancestors: ExtendedNode[], headingPath: string[]): number {
   let score = 0.5; // 기본 점수
 
   // 깊이가 얕을수록 중요도 증가
@@ -756,21 +693,16 @@ function calculateImportance(
   score += Math.max(0, 0.2 - headingPath.length * 0.05);
 
   // 노드 타입별 가중치
-  if (is(node, "heading")) score += 0.1;
-  if (is(node, "code")) score += 0.15;
-  if (is(node, "listItem")) score += 0.05;
+  if (is(node, 'heading')) score += 0.1;
+  if (is(node, 'code')) score += 0.15;
+  if (is(node, 'listItem')) score += 0.05;
 
   // 최댓값 제한
   return Math.min(1, Math.max(0, score));
 }
 
-
-
 // 섹션 이름 가져오기 함수 수정
-function getSectionName(
-  node: ExtendedNode,
-  headingMap: Map<string, string>
-): { sectionName: string | undefined } {
+function getSectionName(node: ExtendedNode, headingMap: Map<string, string>): { sectionName: string | undefined } {
   let sectionName: string | undefined;
 
   if (node.sectionId && headingMap.has(node.sectionId)) {

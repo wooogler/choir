@@ -1,5 +1,5 @@
-import { Document } from "@langchain/core/documents";
-import { DocumentTree } from "services/document";
+import type { Document } from '@langchain/core/documents';
+import type { DocumentTree } from 'services/document';
 
 /**
  * 검색 파라미터 타입
@@ -89,10 +89,8 @@ export class VectorStoreError extends Error {
 
   constructor(message: string, options?: { cause?: Error; code?: string }) {
     super(message);
-    this.name = "VectorStoreError";
+    this.name = 'VectorStoreError';
     this.cause = options?.cause;
-    this.code = options?.code || "UNKNOWN_ERROR";
+    this.code = options?.code || 'UNKNOWN_ERROR';
   }
 }
-
-

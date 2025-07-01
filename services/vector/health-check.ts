@@ -1,5 +1,5 @@
-import { WebClient } from "@slack/web-api";
-import { VectorStoreService } from "./main-service";
+import type { WebClient } from '@slack/web-api';
+import { VectorStoreService } from './main-service';
 
 interface HealthCheckResult {
   isHealthy: boolean;
@@ -7,19 +7,14 @@ interface HealthCheckResult {
   blocks?: any[];
 }
 
-export async function checkVectorStoreHealth(
-  client: WebClient,
-  dmChannelId: string
-): Promise<HealthCheckResult> {
-  console.log("벡터 스토어 상태 진단 중...");
+export async function checkVectorStoreHealth(client: WebClient, dmChannelId: string): Promise<HealthCheckResult> {
+  console.log('벡터 스토어 상태 진단 중...');
   const vectorStore = VectorStoreService.getInstance();
   const diagnosis = vectorStore.diagnoseVectorStore();
 
   // 벡터 스토어에 문제가 있는 경우
-  if (diagnosis.status !== "healthy" || diagnosis.details.vectorsCount === 0) {
-    console.log(
-      `벡터 스토어 문제 발견: ${diagnosis.status}, 벡터 수: ${diagnosis.details.vectorsCount}`
-    );
+  if (diagnosis.status !== 'healthy' || diagnosis.details.vectorsCount === 0) {
+    console.log(`벡터 스토어 문제 발견: ${diagnosis.status}, 벡터 수: ${diagnosis.details.vectorsCount}`);
 
     // 벡터가 완전히 없는 경우, 사용자에게 자동 초기화 옵션 제공
     if (diagnosis.details.vectorsCount === 0) {
@@ -27,33 +22,33 @@ export async function checkVectorStoreHealth(
         isHealthy: false,
         blocks: [
           {
-            type: "section",
+            type: 'section',
             text: {
-              type: "mrkdwn",
+              type: 'mrkdwn',
               text: `⚠️ *벡터 스토어에 문제가 발견되었습니다*: ${diagnosis.status}\n\n벡터 스토어 진단을 실행하거나 자동 복구를 시도할 수 있습니다.`,
             },
           },
           {
-            type: "actions",
+            type: 'actions',
             elements: [
               {
-                type: "button",
+                type: 'button',
                 text: {
-                  type: "plain_text",
-                  text: "진단 실행",
+                  type: 'plain_text',
+                  text: '진단 실행',
                   emoji: true,
                 },
-                action_id: "diagnose_vector_store",
+                action_id: 'diagnose_vector_store',
               },
               {
-                type: "button",
+                type: 'button',
                 text: {
-                  type: "plain_text",
-                  text: "자동 복구 시도",
+                  type: 'plain_text',
+                  text: '자동 복구 시도',
                   emoji: true,
                 },
-                style: "primary",
-                action_id: "rebuild_vector_cache",
+                style: 'primary',
+                action_id: 'rebuild_vector_cache',
               },
             ],
           },
@@ -69,4 +64,4 @@ export async function checkVectorStoreHealth(
   }
 
   return { isHealthy: true };
-} 
+}

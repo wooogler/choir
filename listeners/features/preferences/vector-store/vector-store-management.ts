@@ -1,12 +1,10 @@
-import type {
-  AllMiddlewareArgs,
-  SlackActionMiddlewareArgs,
-  BlockButtonAction,
-} from "@slack/bolt";
-import { isManager, isWorkspaceOwner, getWorkspaceId, getGithubRepo } from "services/slack";
-import { VectorStoreService } from "services/vector/main-service";
-import GithubService from "services/github";
-import { parseMarkdownToTree } from "services/document";
+import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { parseMarkdownToTree } from 'services/document';
+import { treeToMarkdown } from 'services/document/markdown';
+import { GithubService } from 'services/github';
+import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
+import { VectorStoreService } from 'services/vector/main-service';
+import { appHomeOpenedCallback } from '../../../event-handlers/app-home-handler';
 
 /**
  * Vector store cache rebuild action handler
@@ -22,7 +20,7 @@ export const rebuildVectorCacheAction = async ({
   try {
     const workspaceId = await getWorkspaceId(client);
     const isOwner = await isWorkspaceOwner(body.user.id, client);
-    const isUserManager = isManager(workspaceId, body.user.id);
+    const isUserManager = await isManager(workspaceId, body.user.id);
 
     if (!isUserManager && !isOwner) {
       await client.chat.postMessage({
@@ -34,7 +32,7 @@ export const rebuildVectorCacheAction = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: "🔄 Starting vector cache rebuild...",
+      text: '🔄 Starting vector cache rebuild...',
     });
 
     const vectorStore = VectorStoreService.getInstance();
@@ -43,19 +41,44 @@ export const rebuildVectorCacheAction = async ({
     if (success) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "✅ Vector cache successfully rebuilt!",
+        text: '✅ Vector cache successfully rebuilt!',
       });
+
+      // Auto-refresh home screen
+      setTimeout(async () => {
+        try {
+          const mockEvent = {
+            type: 'app_home_opened' as const,
+            user: body.user.id,
+            tab: 'home' as const,
+            event_ts: Date.now().toString(),
+          };
+
+          const handlerArgs = {
+            client,
+            event: mockEvent,
+            logger,
+            context: {},
+            payload: mockEvent,
+          };
+
+          await appHomeOpenedCallback(handlerArgs as any);
+          logger.info(`Home screen refreshed for user ${body.user.id} after vector cache rebuild`);
+        } catch (error) {
+          logger.error('Error refreshing home view after vector cache rebuild:', error);
+        }
+      }, 1000);
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ Failed to rebuild vector cache. Please check the logs.",
+        text: '❌ Failed to rebuild vector cache. Please check the logs.',
       });
     }
   } catch (error) {
-    logger.error("Error rebuilding vector cache:", error);
+    logger.error('Error rebuilding vector cache:', error);
     await client.chat.postMessage({
       channel: body.user.id,
-      text: "❌ Error occurred while rebuilding vector cache.",
+      text: '❌ Error occurred while rebuilding vector cache.',
     });
   }
 };
@@ -74,7 +97,7 @@ export const resetVectorStoreAction = async ({
   try {
     const workspaceId = await getWorkspaceId(client);
     const isOwner = await isWorkspaceOwner(body.user.id, client);
-    const isUserManager = isManager(workspaceId, body.user.id);
+    const isUserManager = await isManager(workspaceId, body.user.id);
 
     if (!isUserManager && !isOwner) {
       await client.chat.postMessage({
@@ -86,7 +109,7 @@ export const resetVectorStoreAction = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: "🔄 Starting vector store reset...",
+      text: '🔄 Starting vector store reset...',
     });
 
     const vectorStore = VectorStoreService.getInstance();
@@ -95,19 +118,44 @@ export const resetVectorStoreAction = async ({
     if (success) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "✅ Vector store successfully reset and rebuilt!",
+        text: '✅ Vector store successfully reset and rebuilt!',
       });
+
+      // Auto-refresh home screen
+      setTimeout(async () => {
+        try {
+          const mockEvent = {
+            type: 'app_home_opened' as const,
+            user: body.user.id,
+            tab: 'home' as const,
+            event_ts: Date.now().toString(),
+          };
+
+          const handlerArgs = {
+            client,
+            event: mockEvent,
+            logger,
+            context: {},
+            payload: mockEvent,
+          };
+
+          await appHomeOpenedCallback(handlerArgs as any);
+          logger.info(`Home screen refreshed for user ${body.user.id} after vector store reset`);
+        } catch (error) {
+          logger.error('Error refreshing home view after vector store reset:', error);
+        }
+      }, 1000);
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ Failed to reset vector store. Please check the logs.",
+        text: '❌ Failed to reset vector store. Please check the logs.',
       });
     }
   } catch (error) {
-    logger.error("Error resetting vector store:", error);
+    logger.error('Error resetting vector store:', error);
     await client.chat.postMessage({
       channel: body.user.id,
-      text: "❌ Error occurred while resetting vector store.",
+      text: '❌ Error occurred while resetting vector store.',
     });
   }
 };
@@ -120,17 +168,17 @@ export const normalizeMarkdownFilesAction = async ({
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<any>) => {
   await ack();
 
-  logger.info("Normalize markdown files action triggered by user:", body.user.id);
+  logger.info('Normalize markdown files action triggered by user:', body.user.id);
 
   try {
     const workspaceId = await getWorkspaceId(client);
     const isOwner = await isWorkspaceOwner(body.user.id, client);
-    const isUserManager = isManager(workspaceId, body.user.id);
+    const isUserManager = await isManager(workspaceId, body.user.id);
 
     logger.info(`Permission check - isOwner: ${isOwner}, isUserManager: ${isUserManager}`);
 
     if (!isUserManager && !isOwner) {
-      logger.warn("User does not have permission to normalize markdown files");
+      logger.warn('User does not have permission to normalize markdown files');
       await client.chat.postMessage({
         channel: body.user.id,
         text: "❌ You don't have permission to normalize markdown files.",
@@ -140,33 +188,33 @@ export const normalizeMarkdownFilesAction = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: "🔄 Starting markdown files normalization...\nThis may take a while depending on the number of files.",
+      text: '🔄 Starting markdown files normalization...\nThis may take a while depending on the number of files.',
     });
 
     const githubService = GithubService.getInstance();
     const vectorStore = VectorStoreService.getInstance();
 
     // GitHub 저장소 정보 가져오기
-    let repoInfo = getGithubRepo(workspaceId);
-    logger.info("Repository info:", repoInfo);
-    
+    let repoInfo = await getGithubRepo(workspaceId);
+    logger.info('Repository info:', repoInfo);
+
     // 저장소 정보가 없으면 VectorStoreService에서 현재 로드된 파일들로부터 추출
     if (!repoInfo) {
-      logger.info("No repository info found, trying to extract from vector store...");
-      
+      logger.info('No repository info found, trying to extract from vector store...');
+
       const extractedRepoInfo = vectorStore.extractRepoInfoFromFiles();
-      
+
       if (extractedRepoInfo) {
         repoInfo = extractedRepoInfo;
-        logger.info("Extracted repository info from vector store:", repoInfo);
+        logger.info('Extracted repository info from vector store:', repoInfo);
       }
     }
-    
+
     if (!repoInfo) {
-      logger.warn("No GitHub repository connected and cannot extract from vector store");
+      logger.warn('No GitHub repository connected and cannot extract from vector store');
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ No GitHub repository connected. Please connect a repository first or ensure vector store has loaded files.",
+        text: '❌ No GitHub repository connected. Please connect a repository first or ensure vector store has loaded files.',
       });
       return;
     }
@@ -175,13 +223,13 @@ export const normalizeMarkdownFilesAction = async ({
     const markdownFiles = await githubService.getAllMarkdownFiles({
       owner: repoInfo.owner,
       repo: repoInfo.repo,
-      path: repoInfo.path || "",
+      path: repoInfo.path || '',
     });
 
     if (markdownFiles.length === 0) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ No markdown files found in the repository.",
+        text: '❌ No markdown files found in the repository.',
       });
       return;
     }
@@ -203,7 +251,6 @@ export const normalizeMarkdownFilesAction = async ({
         const tree = parseMarkdownToTree(file.content, file.name);
 
         // 트리를 다시 마크다운으로 변환
-        const { treeToMarkdown } = await import("services/document/markdown");
         const normalizedMarkdown = treeToMarkdown(tree);
 
         // 원본과 다른 경우에만 업데이트
@@ -241,19 +288,44 @@ export const normalizeMarkdownFilesAction = async ({
         if (rebuildSuccess) {
           await client.chat.postMessage({
             channel: body.user.id,
-            text: "✅ Vector store successfully rebuilt with normalized files!",
+            text: '✅ Vector store successfully rebuilt with normalized files!',
           });
+
+          // Auto-refresh home screen
+          setTimeout(async () => {
+            try {
+              const mockEvent = {
+                type: 'app_home_opened' as const,
+                user: body.user.id,
+                tab: 'home' as const,
+                event_ts: Date.now().toString(),
+              };
+
+              const handlerArgs = {
+                client,
+                event: mockEvent,
+                logger,
+                context: {},
+                payload: mockEvent,
+              };
+
+              await appHomeOpenedCallback(handlerArgs as any);
+              logger.info(`Home screen refreshed for user ${body.user.id} after markdown normalization`);
+            } catch (error) {
+              logger.error('Error refreshing home view after markdown normalization:', error);
+            }
+          }, 1000);
         } else {
           await client.chat.postMessage({
             channel: body.user.id,
-            text: "⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.",
+            text: '⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.',
           });
         }
       } catch (vectorError) {
-        logger.error("Error rebuilding vector store after normalization:", vectorError);
+        logger.error('Error rebuilding vector store after normalization:', vectorError);
         await client.chat.postMessage({
           channel: body.user.id,
-          text: "⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.",
+          text: '⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.',
         });
       }
     } else {
@@ -263,13 +335,13 @@ export const normalizeMarkdownFilesAction = async ({
       });
     }
   } catch (error) {
-    logger.error("Error normalizing markdown files:", error);
-    logger.error("Error stack:", error instanceof Error ? error.stack : 'No stack trace');
+    logger.error('Error normalizing markdown files:', error);
+    logger.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     await client.chat.postMessage({
       channel: body.user.id,
-      text: "❌ Error occurred while normalizing markdown files. Please check the logs.",
+      text: '❌ Error occurred while normalizing markdown files. Please check the logs.',
     });
   }
 
-  logger.info("Normalize markdown files action completed");
+  logger.info('Normalize markdown files action completed');
 };

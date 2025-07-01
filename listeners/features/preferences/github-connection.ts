@@ -1,10 +1,7 @@
-import type {
-  AllMiddlewareArgs,
-  SlackActionMiddlewareArgs,
-  BlockAction,
-} from "@slack/bolt";
-import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from "services/slack";
-import GithubService from "services/github";
+import type { AllMiddlewareArgs, BlockAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { GithubService } from 'services/github';
+import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from 'services/slack';
+import { VectorStoreService } from 'services/vector/main-service';
 
 // 타입 정의
 interface ActionWithValue {
@@ -39,13 +36,11 @@ export const githubRepoUrlInputCallback = async ({
     const isOwner = await isWorkspaceOwner(userId, client);
 
     if (!isUserManager && !isOwner) {
-      logger.warn(
-        `User ${userId} attempted to input GitHub URL without permission`
-      );
+      logger.warn(`User ${userId} attempted to input GitHub URL without permission`);
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: "관리자만 GitHub 저장소 연동이 가능합니다.",
+        text: 'Only administrators can connect GitHub repositories.',
       });
       return;
     }
@@ -55,7 +50,7 @@ export const githubRepoUrlInputCallback = async ({
     const url = action.value;
 
     if (!url) {
-      logger.warn("Empty GitHub URL input");
+      logger.warn('Empty GitHub URL input');
       return;
     }
 
@@ -67,7 +62,7 @@ export const githubRepoUrlInputCallback = async ({
 
     logger.info(`User ${userId} input GitHub URL: ${url}`);
   } catch (error) {
-    logger.error("Error handling GitHub URL input:", error);
+    logger.error('Error handling GitHub URL input:', error);
   }
 };
 
@@ -91,30 +86,27 @@ export const testGithubConnectionCallback = async ({
     const isOwner = await isWorkspaceOwner(userId, client);
 
     if (!isUserManager && !isOwner) {
-      logger.warn(
-        `User ${userId} attempted to test GitHub connection without permission`
-      );
+      logger.warn(`User ${userId} attempted to test GitHub connection without permission`);
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: "관리자만 GitHub 저장소 연동이 가능합니다.",
+        text: 'Only administrators can connect GitHub repositories.',
       });
       return;
     }
 
-    // 저장된 URL 가져오기
-    const urlState = urlInputStore.get(userId);
+    // 현재 view의 state에서 URL 가져오기
+    const viewBody = body as any;
+    const url = viewBody.view?.state?.values?.github_repo_url_input_block?.github_repo_url_input?.value;
 
-    if (!urlState) {
+    if (!url) {
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: "먼저 GitHub 저장소 URL을 입력해주세요.",
+        text: 'Please enter the GitHub repository URL first.',
       });
       return;
     }
-
-    const url = urlState.url;
 
     // URL 파싱
     const repoInfo = parseGithubUrl(url);
@@ -123,7 +115,7 @@ export const testGithubConnectionCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: "유효하지 않은 GitHub URL입니다. https://github.com/owner/repo 형식의 URL을 입력해주세요.",
+        text: 'Invalid GitHub URL. Please enter a URL in the format https://github.com/owner/repo.',
       });
       return;
     }
@@ -135,49 +127,116 @@ export const testGithubConnectionCallback = async ({
       repo: repoInfo.repo,
     });
 
-    if (testResult) {
-      // 연결 성공 시 저장소 정보 저장
-      storeGithubRepo(workspaceId, repoInfo);
+    logger.info(`GitHub connection test result:`, { testResult, repoInfo });
 
-      // 성공 메시지 전송
+    if (testResult.success) {
+      // 연결 성공 시 저장소 정보 저장
+      await storeGithubRepo(workspaceId, repoInfo);
+
+      // 새로운 GitHub 리포지토리에서 파일들을 가져오고 벡터 스토어 업데이트
+      let markdownFiles = [];
+      try {
+        const githubService = GithubService.getInstance();
+        // Load markdown files without specifying branch (let GitHub service handle default branch)
+        logger.info(`Loading markdown files from ${repoInfo.owner}/${repoInfo.repo}`);
+        markdownFiles = await githubService.getAllMarkdownFiles({
+          owner: repoInfo.owner,
+          repo: repoInfo.repo,
+          path: repoInfo.path || '',
+        });
+        logger.info(`Successfully loaded ${markdownFiles.length} files from repository`);
+
+        const vectorStore = VectorStoreService.getInstance();
+        // 새로운 파일들로 벡터스토어 설정 (기존 캐시 교체)
+        await vectorStore.setMarkdownFiles(markdownFiles, {
+          owner: repoInfo.owner,
+          repo: repoInfo.repo,
+        });
+        logger.info(
+          `Vector store rebuilt with ${markdownFiles.length} files from new GitHub repository for workspace ${workspaceId}`,
+        );
+      } catch (error) {
+        logger.error('Error rebuilding vector store after GitHub connection:', error);
+      }
+
+      // 1단계: 연결 성공 알림
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: `🎉 저장소가 성공적으로 연결되었습니다.`,
+        text: `✅ Repository connected successfully!\n📁 Loading ${markdownFiles.length} markdown files...`,
       });
 
-      // 홈 화면 새로고침
-      await client.views.publish({
-        user_id: userId,
-        view: {
-          type: "home",
-          blocks: [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: "홈 화면을 새로고침 중입니다...",
-              },
-            },
-          ],
-        },
-      });
+      // 2단계: 벡터스토어 업데이트 완료 후 알림
+      setTimeout(async () => {
+        try {
+          await client.chat.postEphemeral({
+            channel: body.channel?.id || userId,
+            user: userId,
+            text: `🔄 Vector store updated with ${markdownFiles.length} files.\n🏠 Refreshing home screen...`,
+          });
+        } catch (error) {
+          logger.error('Error sending update message:', error);
+        }
+      }, 500);
+
+      // 3단계: 홈 화면 자동 새로고침
+      setTimeout(async () => {
+        try {
+          // Import the home handler callback
+          const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
+
+          // Create mock event and args for the callback
+          const mockEvent = {
+            type: 'app_home_opened' as const,
+            user: userId,
+            tab: 'home' as const,
+            event_ts: Date.now().toString(),
+          };
+
+          const handlerArgs = {
+            client,
+            event: mockEvent,
+            logger,
+            context: {},
+            payload: mockEvent,
+          };
+
+          // Call the home handler callback directly to refresh the view
+          await appHomeOpenedCallback(handlerArgs as any);
+
+          logger.info(`Home screen refreshed for user ${userId} after GitHub connection`);
+
+          // 4단계: 최종 완료 알림
+          await client.chat.postEphemeral({
+            channel: body.channel?.id || userId,
+            user: userId,
+            text: `🎉 All done! Repository "${repoInfo.owner}/${repoInfo.repo}" is now connected and ready to use.`,
+          });
+        } catch (error) {
+          logger.error('Error refreshing home view:', error);
+          await client.chat.postEphemeral({
+            channel: body.channel?.id || userId,
+            user: userId,
+            text: '🎉 Repository connected successfully! Please refresh the Home tab to see the updated connection.',
+          });
+        }
+      }, 1500);
     } else {
       // 실패 메시지 전송
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: `❌ ${testResult}`,
+        text: `❌ ${testResult.message}`,
       });
     }
   } catch (error) {
-    logger.error("Error testing GitHub connection:", error);
+    logger.error('Error testing GitHub connection:', error);
 
     // 오류 메시지 전송
     await client.chat.postEphemeral({
       channel: body.channel?.id || body.user.id,
       user: body.user.id,
-      text: "GitHub 연결 테스트 중 오류가 발생했습니다. 다시 시도해주세요.",
+      text: 'An error occurred while testing the GitHub connection. Please try again.',
     });
   }
 };

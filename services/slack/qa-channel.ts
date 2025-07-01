@@ -1,0 +1,250 @@
+import type { WebClient } from '@slack/web-api';
+import { Logger } from 'services/common/logger';
+import { WorkspaceStore } from '../workspace/workspace-store';
+
+const workspaceStore = new WorkspaceStore();
+
+/**
+ * Q&A 채널을 설정합니다.
+ */
+export async function setQAChannel(workspaceId: string, channelId: string): Promise<void> {
+  try {
+    await workspaceStore.setQAChannel(workspaceId, channelId);
+    Logger.info('Q&A channel set successfully', { workspaceId, channelId });
+  } catch (error) {
+    Logger.error('Error setting Q&A channel', error as Error, { workspaceId, channelId });
+    throw error;
+  }
+}
+
+/**
+ * Q&A 채널 정보를 가져옵니다.
+ */
+export async function getQAChannel(workspaceId: string, client?: WebClient): Promise<string | undefined> {
+  try {
+    const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+    let qaChannelId = config?.qaChannel;
+
+    if (!qaChannelId && client) {
+      try {
+        const channelsList = await client.conversations.list({
+          types: 'public_channel',
+          exclude_archived: true,
+        });
+
+        const qnaChannel = channelsList.channels?.find((channel) => channel.name === 'qna' && !channel.is_archived);
+
+        if (qnaChannel?.id) {
+          await setQAChannel(workspaceId, qnaChannel.id);
+          qaChannelId = qnaChannel.id;
+          Logger.info('Default Q&A channel found and set', { workspaceId, channelId: qnaChannel.id });
+        }
+      } catch (error) {
+        Logger.error('Error finding default qna channel', error as Error, { workspaceId });
+      }
+    }
+
+    return qaChannelId;
+  } catch (error) {
+    Logger.error('Error getting Q&A channel', error as Error, { workspaceId });
+    return undefined;
+  }
+}
+
+/**
+ * 채널 ID로부터 클릭 가능한 채널 멘션을 생성합니다.
+ */
+export async function getChannelName(channelId: string, client: WebClient): Promise<string> {
+  try {
+    const channelInfo = await client.conversations.info({ channel: channelId });
+    return channelInfo.channel?.name ? `<#${channelId}|${channelInfo.channel.name}>` : 'this channel';
+  } catch (error) {
+    Logger.error('Error getting channel name', error as Error, { channelId });
+    return 'this channel';
+  }
+}
+
+/**
+ * Q&A 채널용 메시지를 생성합니다
+ */
+export function createQAChannelMessage(
+  channelName: string,
+  questionerId: string,
+  question: string,
+  response: string,
+  canAnswer: boolean,
+  isAnonymous?: boolean,
+  questionerName?: string,
+) {
+  const senderIdentity = isAnonymous ? 'A team member' : questionerName || 'A team member';
+
+  if (!canAnswer) {
+    return [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.`,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Question:*\n\`\`\`${question}\`\`\``,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `However, I was not able to answer the question. Could anyone help?`,
+        },
+      },
+    ];
+  } else {
+    return [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.`,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Question:*\n\`\`\`${question}\`\`\``,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*My response:*\n\`\`\`${response}\`\`\``,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `${senderIdentity} would like to discuss this response with others. Could anyone help?`,
+        },
+      },
+    ];
+  }
+}
+
+/**
+ * Q&A 채널용 미리보기 텍스트를 생성합니다
+ */
+export function createQAChannelPreview(
+  channelName: string,
+  questionerId: string,
+  question: string,
+  response: string,
+  canAnswer: boolean,
+  isAnonymous?: boolean,
+  questionerName?: string,
+): string {
+  const senderIdentity = isAnonymous ? 'A team member' : questionerName || 'A team member';
+
+  if (!canAnswer) {
+    return `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. Could anyone help?`;
+  } else {
+    return `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nHowever, ${senderIdentity} wants to discuss this with others. Could anyone help?`;
+  }
+}
+
+/**
+ * 개인 메시지용 블록을 생성합니다
+ */
+export function createPrivateMessage(
+  recipientId: string,
+  questionerId: string,
+  question: string,
+  response: string,
+  canAnswer: boolean,
+  isAnonymous?: boolean,
+  questionerName?: string,
+) {
+  const senderIdentity = isAnonymous ? 'A team member' : questionerName || 'A team member';
+
+  if (!canAnswer) {
+    return [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.`,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Question:*\n\`\`\`${question}\`\`\``,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `However, I was not able to answer the question. The team member would like your help with this question.`,
+        },
+      },
+    ];
+  } else {
+    return [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.`,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Question:*\n\`\`\`${question}\`\`\``,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*My response:*\n\`\`\`${response}\`\`\``,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `The team member would like to discuss this with you. Could you help them?`,
+        },
+      },
+    ];
+  }
+}
+
+/**
+ * 개인 메시지용 미리보기 텍스트를 생성합니다
+ */
+export function createPrivateMessagePreview(
+  recipientName: string,
+  questionerName: string,
+  question: string,
+  response: string,
+  canAnswer: boolean,
+  isAnonymous?: boolean,
+): string {
+  const senderIdentity = isAnonymous ? 'A team member' : questionerName;
+
+  if (!canAnswer) {
+    return `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. The team member would like your help with this question.`;
+  } else {
+    return `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nThe team member would like to discuss this with you. Could you help them?`;
+  }
+}

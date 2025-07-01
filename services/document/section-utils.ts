@@ -1,4 +1,4 @@
-import { DocumentMetadata } from "services/vector/types";
+import type { DocumentMetadata } from 'services/vector/types';
 
 /**
  * 헤딩 텍스트를 GitHub 앵커 링크로 변환하는 함수
@@ -18,9 +18,9 @@ function createGitHubAnchor(headingText: string): string {
  */
 export function formatSectionPath(metadata: DocumentMetadata): string {
   if (metadata.headingPath && metadata.headingPath.length > 0) {
-    return metadata.headingPath.join(" > ");
+    return metadata.headingPath.join(' > ');
   }
-  return metadata.sectionName || "문서 본문";
+  return metadata.sectionName || '문서 본문';
 }
 
 /**
@@ -28,29 +28,29 @@ export function formatSectionPath(metadata: DocumentMetadata): string {
  */
 export function formatSectionPathWithLinks(metadata: DocumentMetadata): string {
   if (!metadata.headingPath || metadata.headingPath.length === 0) {
-    return metadata.sectionName || "문서 본문";
+    return metadata.sectionName || '문서 본문';
   }
 
   const githubUrl = metadata.githubUrl;
   if (!githubUrl) {
     // GitHub URL이 없으면 일반 텍스트로 반환
-    return metadata.headingPath.join(" > ");
+    return metadata.headingPath.join(' > ');
   }
 
   // 각 헤딩을 GitHub 링크로 변환
-  const linkedHeadings = metadata.headingPath.map(heading => {
+  const linkedHeadings = metadata.headingPath.map((heading) => {
     const anchor = createGitHubAnchor(heading);
     return `<${githubUrl}#${anchor}|${heading}>`;
   });
 
-  return linkedHeadings.join(" > ");
+  return linkedHeadings.join(' > ');
 }
 
 /**
  * DocumentMetadata에서 전체 경로 정보를 포맷팅하는 함수
  */
 export function formatFullPath(metadata: DocumentMetadata): string {
-  const fileName = metadata.fileName || "Unknown File";
+  const fileName = metadata.fileName || 'Unknown File';
   const sectionPath = formatSectionPath(metadata);
   return `${fileName} > ${sectionPath}`;
 }
@@ -59,9 +59,9 @@ export function formatFullPath(metadata: DocumentMetadata): string {
  * DocumentMetadata에서 전체 경로 정보를 GitHub 링크가 포함된 마크다운으로 포맷팅하는 함수
  */
 export function formatFullPathWithLinks(metadata: DocumentMetadata): string {
-  const fileName = metadata.fileName || "Unknown File";
+  const fileName = metadata.fileName || 'Unknown File';
   const githubUrl = metadata.githubUrl;
-  
+
   if (githubUrl) {
     const fileLink = `<${githubUrl}|${fileName}>`;
     const sectionPath = formatSectionPathWithLinks(metadata);
@@ -70,4 +70,4 @@ export function formatFullPathWithLinks(metadata: DocumentMetadata): string {
     const sectionPath = formatSectionPath(metadata);
     return `${fileName} > ${sectionPath}`;
   }
-} 
+}

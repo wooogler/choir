@@ -1,18 +1,19 @@
 import type {
   AllMiddlewareArgs,
-  SlackActionMiddlewareArgs,
-  BlockButtonAction,
   BlockAction,
-  UsersSelectAction,
+  BlockButtonAction,
+  SlackActionMiddlewareArgs,
   SlackViewMiddlewareArgs,
+  UsersSelectAction,
   ViewSubmitAction,
-} from "@slack/bolt";
-import { DocumentUpdate, getStoredDocumentUpdates, getSelectedNodeIds } from "services/document";
-import { VectorStoreService } from "services/vector/main-service";
-import GithubService from "services/github";
-import { parseGithubUrl, getUserName } from "services/slack";
-import { applyDocumentUpdatesToGithub } from "services/github";
-import { formatSectionPathWithLinks } from "services/document/section-utils";
+} from '@slack/bolt';
+import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
+import { DocumentUpdate, getStoredDocumentUpdates } from 'services/document';
+import { formatSectionPathWithLinks } from 'services/document/section-utils';
+import { GithubService, applyDocumentUpdatesToGithub } from 'services/github';
+import { getUserName, parseGithubUrl } from 'services/slack';
+import { getWorkspaceId } from 'services/slack';
+import { VectorStoreService } from 'services/vector/main-service';
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();
@@ -36,7 +37,7 @@ const selectUserCallback = async ({
 
     // No user selected
     if (!selectedUser) {
-      logger.error("No user selected in user select action");
+      logger.error('No user selected in user select action');
       return;
     }
 
@@ -45,13 +46,11 @@ const selectUserCallback = async ({
 
     logger.info(`User ${userId} selected ${selectedUser} for document update`);
   } catch (error) {
-    logger.error("Error handling user selection:", error);
+    logger.error('Error handling user selection:', error);
   }
 };
 
 export { selectUserCallback };
-
-
 
 // Apply changes to GitHub
 const applySelectedToGithubAction = async ({
@@ -59,12 +58,13 @@ const applySelectedToGithubAction = async ({
   body,
   client,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
     const rawValue = body.actions[0].value;
     if (!rawValue) {
-      throw new Error("No value provided");
+      throw new Error('No value provided');
     }
 
     const value = JSON.parse(rawValue);
@@ -73,7 +73,7 @@ const applySelectedToGithubAction = async ({
     const { originalChannelId, originalThreadTs, fileName, githubUrl, sectionName, headingPath, diffBlock } = value;
 
     if (!channelId) {
-      throw new Error("채널 ID를 찾을 수 없습니다");
+      throw new Error('채널 ID를 찾을 수 없습니다');
     }
 
     // 저장된 모든 document updates 가져오기 (더 이상 selectedNodeIds 필요 없음)
@@ -83,7 +83,7 @@ const applySelectedToGithubAction = async ({
       await client.chat.postEphemeral({
         channel: channelId,
         user: userId,
-        text: "No document updates found. Please try suggesting updates first.",
+        text: 'No document updates found. Please try suggesting updates first.',
       });
       return;
     }
@@ -101,12 +101,12 @@ const applySelectedToGithubAction = async ({
     });
 
     // 결과 분석
-    const successfulUpdates = results.filter(r => r.success).map(r => r.fileName);
-    const failedUpdates = results.filter(r => !r.success).map(r => r.fileName);
+    const successfulUpdates = results.filter((r) => r.success).map((r) => r.fileName);
+    const failedUpdates = results.filter((r) => !r.success).map((r) => r.fileName);
 
     // DM 채널 열기
     const dmResult = await client.conversations.open({
-      users: userId
+      users: userId,
     });
 
     if (dmResult.ok && dmResult.channel?.id) {
@@ -139,20 +139,20 @@ const applySelectedToGithubAction = async ({
           const sectionInfo = formatSectionPathWithLinks({
             headingPath,
             sectionName,
-            githubUrl
+            githubUrl,
           } as any);
 
           const channelUpdateText = `🎉 Good news, everyone! *${userName}* just helped me update a document!\\n\\n*File:* <${githubUrl}|${updatedFileName}>\\n*Section:* ${sectionInfo}\\n\\nI've incorporated the latest insights. Teamwork makes the dream work! ✨`;
 
           const updateBlocks = [
             {
-              type: "section",
+              type: 'section',
               text: {
-                type: "mrkdwn",
-                text: channelUpdateText
-              }
+                type: 'mrkdwn',
+                text: channelUpdateText,
+              },
             },
-            diffBlock // 기존 diffBlock 사용
+            diffBlock, // 기존 diffBlock 사용
           ];
 
           await client.chat.postMessage({
@@ -161,31 +161,83 @@ const applySelectedToGithubAction = async ({
             text: `✅ Document Updated: ${updatedFileName} by *${userName}* (with CHOIR)`, // 볼드체 적용
             blocks: updateBlocks,
             unfurl_links: false,
-            unfurl_media: false
+            unfurl_media: false,
           });
         } catch (channelError) {
-          console.error("Failed to post update to original channel:", channelError);
+          console.error('Failed to post update to original channel:', channelError);
           // 실패해도 DM은 전송되었으므로 계속 진행
         }
       }
     }
+
+    // 로그: GitHub 업데이트 성공
+    const workspaceId = await getWorkspaceId(client);
+    await logButtonClick(
+      userId,
+      workspaceId,
+      channelId,
+      'dm',
+      'apply_to_document',
+      Date.now() - startTime,
+      true,
+      {
+        successfulUpdates,
+        failedUpdates,
+        totalUpdates: selectedUpdates.length,
+        originalChannelId,
+        originalThreadTs,
+        fileName: successfulUpdates[0] || failedUpdates[0],
+      },
+      client,
+    );
+
+    console.log(
+      `Document updates applied to GitHub for user ${userId}: ${successfulUpdates.length} successful, ${failedUpdates.length} failed`,
+    );
   } catch (error) {
-    console.error("Error applying updates to GitHub:", error);
+    console.error('Error applying updates to GitHub:', error);
+
+    // 로그: GitHub 업데이트 실패
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      const value = body.actions?.[0]?.value;
+      const parsedValue = value ? JSON.parse(value) : {};
+
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        body.channel?.id || 'dm',
+        'dm',
+        'apply_to_document',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          userId: parsedValue?.userId || body.user.id,
+          originalChannelId: parsedValue?.originalChannelId,
+          originalThreadTs: parsedValue?.originalThreadTs,
+        },
+        client,
+      );
+    } catch (logError) {
+      console.error('Failed to log button click error:', logError);
+    }
 
     // DM 채널 열기 - CHOIR 페르소나 적용
     try {
       const dmResult = await client.conversations.open({
-        users: body.user.id
+        users: body.user.id,
       });
-      
+
       if (dmResult.ok && dmResult.channel?.id) {
         await client.chat.postMessage({
           channel: dmResult.channel.id,
-          text: `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : "Unknown error"}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`,
+          text: `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : 'Unknown error'}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`,
         });
       }
     } catch (dmError) {
-      console.error("Failed to send error message to DM:", dmError);
+      console.error('Failed to send error message to DM:', dmError);
     }
   }
 };
@@ -199,18 +251,19 @@ export const handleNewSectionModalSubmission = async ({
   ack,
   body,
   client,
-  logger
+  logger,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs<ViewSubmitAction>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
     const { user } = body;
     const { values } = body.view.state;
-    
+
     // Extract form values
     const sectionTitle = values.section_title_input?.section_title?.value || '';
     const sectionBody = values.section_body_input?.section_body?.value || '';
-    
+
     // Extract metadata
     const metadata = JSON.parse(body.view.private_metadata || '{}');
     const { recommendedFile, userId, editUrl } = metadata;
@@ -223,16 +276,53 @@ export const handleNewSectionModalSubmission = async ({
     if (!sectionTitle || !sectionBody) {
       await client.chat.postMessage({
         channel: user.id,
-        text: "❌ Section title and body are required."
+        text: '❌ Section title and body are required.',
       });
+
+      // 로그: 필수 필드 누락
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Missing section title or body',
+          sectionTitle: !!sectionTitle,
+          sectionBody: !!sectionBody,
+          recommendedFile,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
     if (!recommendedFile) {
       await client.chat.postMessage({
         channel: user.id,
-        text: "❌ No recommended file found. Please try again."
+        text: '❌ No recommended file found. Please try again.',
       });
+
+      // 로그: 추천 파일 없음
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'No recommended file found',
+          sectionTitle,
+          sectionBodyLength: sectionBody.length,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -240,17 +330,32 @@ export const handleNewSectionModalSubmission = async ({
     const vectorStore = VectorStoreService.getInstance();
 
     // 1. 벡터 스토어에 새 섹션 추가
-    const success = await vectorStore.addNewSection(
-      recommendedFile,
-      sectionTitle,
-      sectionBody
-    );
+    const success = await vectorStore.addNewSection(recommendedFile, sectionTitle, sectionBody);
 
     if (!success) {
       await client.chat.postMessage({
         channel: user.id,
-        text: `❌ Failed to add new section to vector store for file: ${recommendedFile}`
+        text: `❌ Failed to add new section to vector store for file: ${recommendedFile}`,
       });
+
+      // 로그: 벡터 스토어 추가 실패
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Failed to add new section to vector store',
+          recommendedFile,
+          sectionTitle,
+          sectionBodyLength: sectionBody.length,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -259,13 +364,32 @@ export const handleNewSectionModalSubmission = async ({
     if (!markdownFile) {
       await client.chat.postMessage({
         channel: user.id,
-        text: `❌ Updated markdown file not found: ${recommendedFile}`
+        text: `❌ Updated markdown file not found: ${recommendedFile}`,
       });
+
+      // 로그: 마크다운 파일 없음
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Updated markdown file not found',
+          recommendedFile,
+          sectionTitle,
+          sectionBodyLength: sectionBody.length,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
     // 3. 트리를 마크다운으로 변환
-    const { treeToMarkdown } = await import("services/document/markdown");
+    const { treeToMarkdown } = await import('services/document/markdown');
     const updatedMarkdown = treeToMarkdown(markdownFile.tree);
 
     // 4. GitHub URL 파싱
@@ -274,12 +398,32 @@ export const handleNewSectionModalSubmission = async ({
     if (!parsedUrl) {
       await client.chat.postMessage({
         channel: user.id,
-        text: `❌ Invalid GitHub URL: ${githubUrl}`
+        text: `❌ Invalid GitHub URL: ${githubUrl}`,
       });
+
+      // 로그: GitHub URL 파싱 실패
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Invalid GitHub URL',
+          githubUrl,
+          recommendedFile,
+          sectionTitle,
+          sectionBodyLength: sectionBody.length,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
-    const { owner, repo, path: repoPath } = parsedUrl;
+    const { owner, repo } = parsedUrl;
 
     // 5. 커밋 메시지 생성
     const userName = await getUserName(userId, client);
@@ -309,17 +453,61 @@ Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''
 
 🔍 *Preview:*
 \`\`\`# ${sectionTitle}
-${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``
+${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``,
     });
 
     logger.info(`Successfully created new section "${sectionTitle}" for ${recommendedFile} and pushed to GitHub`);
 
+    // 로그: 성공
+    const workspaceId = await getWorkspaceId(client);
+    logModalSubmit(
+      user.id,
+      workspaceId,
+      'new_section_modal',
+      Date.now() - startTime,
+      true,
+      {
+        recommendedFile,
+        sectionTitle,
+        sectionBodyLength: sectionBody.length,
+        githubUrl,
+        owner,
+        repo,
+        commitMessageLength: commitMessage.length,
+        updatedMarkdownLength: updatedMarkdown.length,
+      },
+      client,
+      'modal',
+      'dm',
+    );
   } catch (error) {
-    logger.error("Error handling new section modal submission:", error);
-    
+    logger.error('Error handling new section modal submission:', error);
+
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ Failed to process new section submission: ${error instanceof Error ? error.message : "Unknown error"}`
+      text: `❌ Failed to process new section submission: ${error instanceof Error ? error.message : 'Unknown error'}`,
     });
+
+    // 로그: 실패
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        body.user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          privateMetadata: body.view.private_metadata,
+        },
+        client,
+        'modal',
+        'dm',
+      );
+    } catch (logError) {
+      logger.error('Failed to log error:', logError);
+    }
   }
 };

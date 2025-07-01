@@ -1,7 +1,7 @@
-import { diffArrays } from "diff";
+import { diffArrays } from 'diff';
 
 export interface RichTextElement {
-  type: "text" | "rich_text_section" | "rich_text_quote" | "divider";
+  type: 'text' | 'rich_text_section' | 'rich_text_quote' | 'divider';
   text?: string;
   style?: Record<string, boolean>;
   elements?: RichTextElement[];
@@ -19,10 +19,7 @@ function tokenize(str: string): string[] {
 }
 
 // (2) 한 줄 인라인 볼드 파서
-function parseInlineBold(
-  line: string,
-  baseStyle: Record<string, boolean>
-): RichTextElement[] {
+function parseInlineBold(line: string, baseStyle: Record<string, boolean>): RichTextElement[] {
   // `*...*` 구간을 찾아내어 그 부분만 bold를 적용
   const regex = /\*(.+?)\*/g;
   const elements: RichTextElement[] = [];
@@ -40,7 +37,7 @@ function parseInlineBold(
     if (matchIndex > lastIndex) {
       const segment = line.slice(lastIndex, matchIndex);
       elements.push({
-        type: "text",
+        type: 'text',
         text: segment,
         style: { ...baseStyle },
       });
@@ -49,7 +46,7 @@ function parseInlineBold(
     // `*...*` 부분 (볼드)
     const boldText = match[1];
     elements.push({
-      type: "text",
+      type: 'text',
       text: boldText,
       style: { ...baseStyle, bold: true },
     });
@@ -61,7 +58,7 @@ function parseInlineBold(
   if (lastIndex < line.length) {
     const segment = line.slice(lastIndex);
     elements.push({
-      type: "text",
+      type: 'text',
       text: segment,
       style: { ...baseStyle },
     });
@@ -89,11 +86,11 @@ export function createDiffBlock(oldText: string, newText: string) {
   const elements: RichTextElement[] = [];
 
   for (const diff of diffs) {
-    const textValue = diff.value.join("");
+    const textValue = diff.value.join('');
 
     // "---" 또는 "___DIVIDER___"를 divider 블록으로 변환
-    if (textValue.trim() === "---") {
-      elements.push({ type: "divider" });
+    if (textValue.trim() === '---') {
+      elements.push({ type: 'divider' });
       continue;
     }
 
@@ -111,10 +108,10 @@ export function createDiffBlock(oldText: string, newText: string) {
   }
 
   return {
-    type: "rich_text",
+    type: 'rich_text',
     elements: [
       {
-        type: "rich_text_quote",
+        type: 'rich_text_quote',
         elements,
       },
     ],
