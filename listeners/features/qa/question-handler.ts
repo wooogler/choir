@@ -43,11 +43,43 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     });
     loadingMessageTs = loadingMessage.ts;
 
-    // 컨텍스트를 위한 메시지 히스토리 가져오기 (최대 5개 이전 메시지)
-    const historyResult = await client.conversations.history({
-      channel: event.channel,
-      limit: 5,
-    });
+    // 컨텍스트를 위한 메시지 히스토리 가져오기 (최근 5분 이내, 최대 10개 가져와서 5개로 제한)
+    const fiveMinutesAgo = Math.floor((Date.now() - 5 * 60 * 1000) / 1000);
+    
+    const historyResult = event.thread_ts
+      ? await client.conversations.replies({
+          channel: event.channel,
+          ts: event.thread_ts,
+          limit: 10,
+          inclusive: true,
+          oldest: fiveMinutesAgo.toString(),
+        })
+      : await client.conversations.history({
+          channel: event.channel,
+          limit: 10,
+          oldest: fiveMinutesAgo.toString(),
+        });
+
+    // 메시지를 5분 이내로 필터링하고 타임스탬프순으로 정렬 후 최대 5개로 제한
+    let messages = historyResult.messages || [];
+    if (messages.length > 0) {
+      // 5분 이내 메시지만 필터링
+      messages = messages.filter((msg: any) => {
+        if (!msg.ts) return false;
+        const messageTime = Number.parseFloat(msg.ts);
+        return messageTime >= fiveMinutesAgo;
+      });
+      
+      // 타임스탬프순으로 정렬하고 최신 5개만 유지
+      messages = [...messages].sort((a, b) => {
+        const tsA = Number.parseFloat(a.ts || '0');
+        const tsB = Number.parseFloat(b.ts || '0');
+        return tsA - tsB;
+      }).slice(-5);
+    }
+
+    // historyResult.messages를 필터링된 메시지로 업데이트
+    historyResult.messages = messages;
 
     // 벡터 스토어에서 관련 문서 가져오기
     const vectorStore = VectorStoreService.getInstance();

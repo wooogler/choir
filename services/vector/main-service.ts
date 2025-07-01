@@ -319,9 +319,26 @@ export class VectorStoreService {
     Logger.info('Resetting and rebuilding vector store');
 
     this.storeManager.reset();
-    await this.cacheManager.invalidateCache();
-
+    
+    // 현재 작업 중인 repository의 캐시만 무효화
     if (this.markdownFiles.length > 0) {
+      const firstFile = this.markdownFiles[0];
+      if (firstFile && firstFile.githubUrl) {
+        const match = firstFile.githubUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+        if (match && match.length >= 3) {
+          const owner = match[1];
+          const repo = match[2];
+          Logger.info(`Invalidating cache only for repository: ${owner}/${repo}`);
+          await this.cacheManager.invalidateCacheForRepository(owner, repo);
+        } else {
+          Logger.warn('Could not extract repository info, invalidating all cache');
+          await this.cacheManager.invalidateCache();
+        }
+      } else {
+        Logger.warn('No GitHub URL found, invalidating all cache');
+        await this.cacheManager.invalidateCache();
+      }
+      
       return await this.initialize(this.markdownFiles, true, true);
     }
 

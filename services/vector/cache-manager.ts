@@ -267,15 +267,22 @@ export class VectorCacheManager {
   }
 
   /**
-   * 모든 캐시 파일 찾기
+   * 벡터 캐시 파일만 찾기 (workspace 설정 파일 제외)
    */
   public async findCacheFiles(): Promise<string[]> {
     try {
       const files = await fs.promises.readdir(this.cachePath);
 
-      // JSON 캐시 파일만 필터링
-      const cacheFiles = files.filter((file) => file.endsWith('.json')).map((file) => path.join(this.cachePath, file));
+      // 벡터 캐시 파일만 필터링 (embeddings가 포함된 파일만)
+      // workspace 설정 파일(workspace-*.json) 등은 제외
+      const cacheFiles = files
+        .filter((file) => 
+          file.endsWith('.json') && 
+          file.includes('embeddings') // embeddings가 포함된 파일만
+        )
+        .map((file) => path.join(this.cachePath, file));
 
+      this.logger.info(`Found ${cacheFiles.length} vector cache files (excluding workspace settings)`);
       return cacheFiles;
     } catch (error) {
       this.logger.error(`Error finding cache files: ${error}`);
@@ -302,6 +309,24 @@ export class VectorCacheManager {
       this.logger.info(`Invalidated ${cacheFiles.length} cache files`);
     } catch (error) {
       this.logger.error(`Error invalidating cache: ${error}`);
+    }
+  }
+
+  /**
+   * 특정 repository의 캐시만 무효화
+   */
+  public async invalidateCacheForRepository(owner: string, repo: string): Promise<void> {
+    try {
+      const cacheFilePath = this.getCacheFilePath(owner, repo);
+      
+      if (fs.existsSync(cacheFilePath)) {
+        await this.backupInvalidCache(cacheFilePath);
+        this.logger.info(`Invalidated cache for repository: ${owner}/${repo}`);
+      } else {
+        this.logger.info(`No cache found for repository: ${owner}/${repo}`);
+      }
+    } catch (error) {
+      this.logger.error(`Error invalidating cache for repository ${owner}/${repo}:`, error);
     }
   }
 
