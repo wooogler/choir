@@ -1,4 +1,4 @@
-import type { Document } from '@langchain/core/documents';
+import { Document } from '@langchain/core/documents';
 import { ErrorCodes } from 'services/common/error-handler';
 import { Logger } from 'services/common/logger';
 import { DocumentTree } from 'services/document';
@@ -547,11 +547,17 @@ export class VectorStoreService {
     try {
       const existingDocuments = this.nodeDocumentMap.get(nodeId);
       if (existingDocuments && existingDocuments.length > 0) {
-        // TODO: 실제 Document 제거 구현 필요
-        // 현재는 맵에서만 제거
+        // 실제 벡터 스토어에서 Document 제거
+        const success = await this.storeManager.removeDocuments(existingDocuments);
+        if (!success) {
+          Logger.error(`Failed to remove documents for node ${nodeId} from vector store`);
+          throw new Error(`Failed to remove documents for node ${nodeId}`);
+        }
+        
+        // 맵에서도 제거
         this.nodeDocumentMap.delete(nodeId);
         
-        Logger.info(`Removed ${existingDocuments.length} documents for node ${nodeId} from tracking map`);
+        Logger.info(`Successfully removed ${existingDocuments.length} documents for node ${nodeId} from vector store`);
       }
     } catch (error) {
       Logger.error(`Error removing node ${nodeId} from vector store`, error as Error);
@@ -569,14 +575,48 @@ export class VectorStoreService {
     nodeType: string
   ): Promise<Document<DocumentMetadata>[]> {
     try {
-      // TODO: 실제 단일 노드 Document 생성 구현 필요
-      // 현재는 전체 파일 재처리 사용
-      Logger.info(`Creating documents for single node ${nodeId} (using full file processing)`);
+      Logger.info(`Creating documents for single node ${nodeId} (type: ${nodeType})`);
       
-      // 간단하게 빈 배열 반환하여 전체 재빌드가 트리거되도록 함
-      return [];
+      // 단일 Document 생성
+      const document = new Document({
+        pageContent: nodeContent,
+        metadata: {
+          fileName: file.name,
+          nodeId: nodeId,
+          sectionId: `section_${nodeId}`,
+          sectionName: undefined, // 실제 섹션 이름은 트리에서 가져와야 함
+          nodeType: nodeType,
+          githubUrl: file.githubUrl,
+          headingPath: [], // 실제 경로는 트리에서 계산해야 함
+          ancestors: [],
+          depth: 0,
+          importance: 0.5, // 기본 중요도
+          entityMentions: this.extractSimpleEntities(nodeContent),
+        },
+      });
+      
+      Logger.info(`Successfully created document for node ${nodeId}`);
+      return [document];
     } catch (error) {
       Logger.error(`Error creating documents from single node ${nodeId}`, error as Error);
+      return [];
+    }
+  }
+
+  /**
+   * 간단한 엔티티 추출 (키워드 기반)
+   */
+  private extractSimpleEntities(text: string): string[] {
+    try {
+      // 간단한 키워드 추출
+      const words = text.match(/\b[A-Za-z0-9_]{3,}\b/g) || [];
+      const stopwords = new Set(['the', 'and', 'or', 'but', 'is', 'are', 'in', 'to', 'for', 'of', 'with', 'on', 'at']);
+      
+      return [...new Set(words)]
+        .filter(word => !stopwords.has(word.toLowerCase()))
+        .slice(0, 10); // 최대 10개
+    } catch (error) {
+      Logger.error('Error extracting entities', error as Error);
       return [];
     }
   }
@@ -622,9 +662,16 @@ export class VectorStoreService {
         return false;
       }
 
-      // 임시로 전체 재빌드 사용 (향후 개선 필요)
-      Logger.info('Adding documents using full rebuild (temporary implementation)');
-      return await this.resetAndRebuildVectorStore();
+      // 실제 증분 추가
+      Logger.info('Adding documents using incremental update');
+      const success = await this.storeManager.addDocuments(documents, embeddings);
+      if (!success) {
+        Logger.error('Failed to add documents to vector store incrementally');
+        return false;
+      }
+      
+      Logger.info(`Successfully added ${documents.length} documents to vector store incrementally`);
+      return true;
     } catch (error) {
       Logger.error('Error adding documents to vector store', error as Error);
       return false;
