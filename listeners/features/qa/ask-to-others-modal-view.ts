@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
-import { createPrivateMessage, getUserName } from 'services/slack';
+import { createPrivateMessage, getUserName, getWorkspaceId } from 'services/slack';
 import { logModalSubmit } from '../../../services/common/user-interaction-logger';
 
 /**
@@ -25,11 +25,22 @@ export const askToOthersSubmitCallback = async ({
 
     if (!sessionId || !selectedUsers || selectedUsers.length === 0) {
       // 로그: 필수 데이터 없음
-      logModalSubmit(userId, 'unknown', 'ask_to_others_submit', Date.now() - startTime, false, {
-        error: 'Missing sessionId or selectedUsers',
-        sessionId,
-        selectedUsersCount: selectedUsers?.length || 0,
-      });
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        userId,
+        workspaceId,
+        'ask_to_others_submit',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Missing sessionId or selectedUsers',
+          sessionId,
+          selectedUsersCount: selectedUsers?.length || 0,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -37,10 +48,21 @@ export const askToOthersSubmitCallback = async ({
     const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       // 로그: 세션 데이터 없음
-      logModalSubmit(userId, 'unknown', 'ask_to_others_submit', Date.now() - startTime, false, {
-        error: 'Session data not found',
-        sessionId,
-      });
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        userId,
+        workspaceId,
+        'ask_to_others_submit',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Session data not found',
+          sessionId,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -89,25 +111,68 @@ export const askToOthersSubmitCallback = async ({
     logger.info(`Private Q&A sent to ${selectedUsers.length} users by user ${userId}`);
 
     // 로그: 성공
-    logModalSubmit(userId, 'unknown', 'ask_to_others_submit', Date.now() - startTime, true, {
-      sessionId,
-      selectedUsersCount: selectedUsers.length,
-      successCount,
-      failCount,
-      isAnonymous,
-      originalChannelId: sessionData.originalChannelId,
-      originalThreadTs: sessionData.originalThreadTs,
-      questionLength: sessionData.originalQuestion?.length || 0,
-      responseLength: sessionData.botResponse?.length || 0,
-    });
+    const workspaceId = await getWorkspaceId(client);
+    // originalChannelId에서 채널 정보 추출
+    const actualChannelId = sessionData.originalChannelId || 'modal';
+    let actualChannelType: 'public' | 'private' | 'dm' = 'dm';
+    try {
+      if (sessionData.originalChannelId) {
+        const channelInfo = await client.conversations.info({ channel: sessionData.originalChannelId });
+        if (channelInfo.channel?.is_private) {
+          actualChannelType = 'private';
+        } else if (channelInfo.channel?.is_im) {
+          actualChannelType = 'dm';
+        } else {
+          actualChannelType = 'public';
+        }
+      }
+    } catch (channelInfoError) {
+      logger.warn('Could not get channel info for logging:', channelInfoError);
+    }
+    logModalSubmit(
+      userId,
+      workspaceId,
+      'ask_to_others_submit',
+      Date.now() - startTime,
+      true,
+      {
+        sessionId,
+        selectedUsersCount: selectedUsers.length,
+        successCount,
+        failCount,
+        isAnonymous,
+        originalChannelId: sessionData.originalChannelId,
+        originalThreadTs: sessionData.originalThreadTs,
+        questionLength: sessionData.originalQuestion?.length || 0,
+        responseLength: sessionData.botResponse?.length || 0,
+      },
+      client,
+      actualChannelId,
+      actualChannelType,
+    );
   } catch (error) {
     logger.error('Error submitting member selection:', error);
 
     // 로그: 실패
-    logModalSubmit(body.user.id, 'unknown', 'ask_to_others_submit', Date.now() - startTime, false, {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      errorStack: error instanceof Error ? error.stack : undefined,
-      sessionId: view.private_metadata,
-    });
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        body.user.id,
+        workspaceId,
+        'ask_to_others_submit',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          sessionId: view.private_metadata,
+        },
+        client,
+        'modal',
+        'dm',
+      );
+    } catch (logError) {
+      logger.warn('Failed to log error:', logError);
+    }
   }
 };

@@ -1,13 +1,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import type { WebClient } from '@slack/web-api';
+import { getAllCachedNames } from './name-cache';
 
 export interface UserInteractionLog {
   timestamp: string;
   userId: string;
+  userName?: string;
   workspaceId: string;
+  workspaceName?: string;
   interactionType: 'message' | 'button_click' | 'modal_submit' | 'command' | 'error';
   action: string;
   channelId: string;
+  channelName?: string;
   channelType: 'public' | 'private' | 'dm';
   isThread: boolean;
   processingTime: number;
@@ -72,6 +77,11 @@ class UserInteractionLogger {
     success: boolean,
     messageContent?: string,
     metadata: LogMetadata = {},
+    names?: {
+      userName?: string;
+      workspaceName?: string;
+      channelName?: string;
+    },
   ): void {
     try {
       this.updateCurrentDate();
@@ -79,10 +89,13 @@ class UserInteractionLogger {
       const logEntry: UserInteractionLog = {
         timestamp: new Date().toISOString(),
         userId,
+        userName: names?.userName,
         workspaceId,
+        workspaceName: names?.workspaceName,
         interactionType,
         action,
         channelId,
+        channelName: names?.channelName,
         channelType,
         isThread,
         processingTime,
@@ -101,7 +114,7 @@ class UserInteractionLogger {
   /**
    * 메시지 처리 로그
    */
-  public logMessageProcessing(
+  public async logMessageProcessing(
     userId: string,
     workspaceId: string,
     channelId: string,
@@ -110,31 +123,64 @@ class UserInteractionLogger {
     processingTime: number,
     success: boolean,
     messageContent: string,
-    messageIntent?: string,
+    action: string,
     additionalMetadata: LogMetadata = {},
-  ): void {
-    this.logInteraction(
-      userId,
-      workspaceId,
-      'message',
-      'process_message',
-      channelId,
-      channelType,
-      isThread,
-      processingTime,
-      success,
-      messageContent,
-      {
-        messageIntent,
-        ...additionalMetadata,
-      },
-    );
+    client?: WebClient,
+  ): Promise<void> {
+    try {
+      if (client) {
+        const names = await getAllCachedNames(userId, workspaceId, channelId, client);
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'message',
+          action,
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          messageContent,
+          additionalMetadata,
+          names,
+        );
+      } else {
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'message',
+          action,
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          messageContent,
+          additionalMetadata,
+        );
+      }
+    } catch (error) {
+      console.warn('Error getting names for message processing logging, falling back to basic logging:', error);
+      this.logInteraction(
+        userId,
+        workspaceId,
+        'message',
+        action,
+        channelId,
+        channelType,
+        isThread,
+        processingTime,
+        success,
+        messageContent,
+        additionalMetadata,
+      );
+    }
   }
 
   /**
    * 질문 처리 로그
    */
-  public logQuestionProcessing(
+  public async logQuestionProcessing(
     userId: string,
     workspaceId: string,
     channelId: string,
@@ -146,31 +192,77 @@ class UserInteractionLogger {
     searchResults: number,
     canAnswer: boolean,
     additionalMetadata: LogMetadata = {},
-  ): void {
-    this.logInteraction(
-      userId,
-      workspaceId,
-      'message',
-      'process_question',
-      channelId,
-      channelType,
-      isThread,
-      processingTime,
-      success,
-      messageContent,
-      {
-        messageIntent: 'question',
-        searchResults,
-        canAnswer,
-        ...additionalMetadata,
-      },
-    );
+    client?: WebClient,
+  ): Promise<void> {
+    try {
+      if (client) {
+        const names = await getAllCachedNames(userId, workspaceId, channelId, client);
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'message',
+          'process_question',
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          messageContent,
+          {
+            messageIntent: 'question',
+            searchResults,
+            canAnswer,
+            ...additionalMetadata,
+          },
+          names,
+        );
+      } else {
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'message',
+          'process_question',
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          messageContent,
+          {
+            messageIntent: 'question',
+            searchResults,
+            canAnswer,
+            ...additionalMetadata,
+          },
+        );
+      }
+    } catch (error) {
+      console.warn('Error getting names for question processing logging, falling back to basic logging:', error);
+      this.logInteraction(
+        userId,
+        workspaceId,
+        'message',
+        'process_question',
+        channelId,
+        channelType,
+        isThread,
+        processingTime,
+        success,
+        messageContent,
+        {
+          messageIntent: 'question',
+          searchResults,
+          canAnswer,
+          ...additionalMetadata,
+        },
+      );
+    }
   }
 
   /**
    * 업데이트 요청 처리 로그
    */
-  public logUpdateRequestProcessing(
+  public async logUpdateRequestProcessing(
     userId: string,
     workspaceId: string,
     channelId: string,
@@ -181,30 +273,74 @@ class UserInteractionLogger {
     messageContent: string,
     extractedKnowledge: string,
     additionalMetadata: LogMetadata = {},
-  ): void {
-    this.logInteraction(
-      userId,
-      workspaceId,
-      'message',
-      'process_update_request',
-      channelId,
-      channelType,
-      isThread,
-      processingTime,
-      success,
-      messageContent,
-      {
-        messageIntent: 'update_request',
-        extractedKnowledge,
-        ...additionalMetadata,
-      },
-    );
+    client?: WebClient,
+  ): Promise<void> {
+    try {
+      if (client) {
+        const names = await getAllCachedNames(userId, workspaceId, channelId, client);
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'message',
+          'process_update_request',
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          messageContent,
+          {
+            messageIntent: 'update_request',
+            extractedKnowledge,
+            ...additionalMetadata,
+          },
+          names,
+        );
+      } else {
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'message',
+          'process_update_request',
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          messageContent,
+          {
+            messageIntent: 'update_request',
+            extractedKnowledge,
+            ...additionalMetadata,
+          },
+        );
+      }
+    } catch (error) {
+      console.warn('Error getting names for update request processing logging, falling back to basic logging:', error);
+      this.logInteraction(
+        userId,
+        workspaceId,
+        'message',
+        'process_update_request',
+        channelId,
+        channelType,
+        isThread,
+        processingTime,
+        success,
+        messageContent,
+        {
+          messageIntent: 'update_request',
+          extractedKnowledge,
+          ...additionalMetadata,
+        },
+      );
+    }
   }
 
   /**
    * 버튼 클릭 로그
    */
-  public logButtonClick(
+  public async logButtonClick(
     userId: string,
     workspaceId: string,
     channelId: string,
@@ -213,58 +349,149 @@ class UserInteractionLogger {
     processingTime: number,
     success: boolean,
     additionalMetadata: LogMetadata = {},
-  ): void {
-    this.logInteraction(
-      userId,
-      workspaceId,
-      'button_click',
-      buttonAction,
-      channelId,
-      channelType,
-      false, // 버튼 클릭은 스레드가 아님
-      processingTime,
-      success,
-      undefined,
-      {
-        buttonClicked: buttonAction,
-        ...additionalMetadata,
-      },
-    );
+    client?: WebClient,
+  ): Promise<void> {
+    try {
+      if (client) {
+        const names = await getAllCachedNames(userId, workspaceId, channelId, client);
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'button_click',
+          buttonAction,
+          channelId,
+          channelType,
+          false, // 버튼 클릭은 스레드가 아님
+          processingTime,
+          success,
+          undefined,
+          {
+            buttonClicked: buttonAction,
+            ...additionalMetadata,
+          },
+          names,
+        );
+      } else {
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'button_click',
+          buttonAction,
+          channelId,
+          channelType,
+          false,
+          processingTime,
+          success,
+          undefined,
+          {
+            buttonClicked: buttonAction,
+            ...additionalMetadata,
+          },
+        );
+      }
+    } catch (error) {
+      console.warn('Error getting names for button click logging, falling back to basic logging:', error);
+      this.logInteraction(
+        userId,
+        workspaceId,
+        'button_click',
+        buttonAction,
+        channelId,
+        channelType,
+        false,
+        processingTime,
+        success,
+        undefined,
+        {
+          buttonClicked: buttonAction,
+          ...additionalMetadata,
+        },
+      );
+    }
   }
 
   /**
    * 모달 제출 로그
    */
-  public logModalSubmit(
+  public async logModalSubmit(
     userId: string,
     workspaceId: string,
     modalAction: string,
     processingTime: number,
     success: boolean,
     additionalMetadata: LogMetadata = {},
-  ): void {
-    this.logInteraction(
-      userId,
-      workspaceId,
-      'modal_submit',
-      modalAction,
-      'modal', // 채널 ID 대신 'modal' 사용
-      'dm', // 모달은 DM과 유사
-      false,
-      processingTime,
-      success,
-      undefined,
-      {
+    client?: WebClient,
+    channelId?: string,
+    channelType?: UserInteractionLog['channelType'],
+  ): Promise<void> {
+    try {
+      const actualChannelId = channelId || 'modal';
+      const actualChannelType = channelType || 'dm';
+
+      if (client) {
+        const names = await getAllCachedNames(userId, workspaceId, actualChannelId, client);
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'modal_submit',
+          modalAction,
+          actualChannelId,
+          actualChannelType,
+          false,
+          processingTime,
+          success,
+          undefined,
+          {
+            modalAction,
+            ...additionalMetadata,
+          },
+          names,
+        );
+      } else {
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'modal_submit',
+          modalAction,
+          actualChannelId,
+          actualChannelType,
+          false,
+          processingTime,
+          success,
+          undefined,
+          {
+            modalAction,
+            ...additionalMetadata,
+          },
+        );
+      }
+    } catch (error) {
+      console.warn('Error getting names for modal submit logging, falling back to basic logging:', error);
+      const actualChannelId = channelId || 'modal';
+      const actualChannelType = channelType || 'dm';
+      this.logInteraction(
+        userId,
+        workspaceId,
+        'modal_submit',
         modalAction,
-        ...additionalMetadata,
-      },
-    );
+        actualChannelId,
+        actualChannelType,
+        false,
+        processingTime,
+        success,
+        undefined,
+        {
+          modalAction,
+          ...additionalMetadata,
+        },
+      );
+    }
   }
 
   /**
    * 에러 로그
    */
-  public logError(
+  public async logError(
     userId: string,
     workspaceId: string,
     channelId: string,
@@ -272,29 +499,71 @@ class UserInteractionLogger {
     errorMessage: string,
     processingTime: number,
     additionalMetadata: LogMetadata = {},
-  ): void {
-    this.logInteraction(
-      userId,
-      workspaceId,
-      'error',
-      'error_occurred',
-      channelId,
-      channelType,
-      false,
-      processingTime,
-      false,
-      undefined,
-      {
-        errorMessage,
-        ...additionalMetadata,
-      },
-    );
+    client?: WebClient,
+  ): Promise<void> {
+    try {
+      if (client) {
+        const names = await getAllCachedNames(userId, workspaceId, channelId, client);
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'error',
+          'error_occurred',
+          channelId,
+          channelType,
+          false,
+          processingTime,
+          false,
+          undefined,
+          {
+            errorMessage,
+            ...additionalMetadata,
+          },
+          names,
+        );
+      } else {
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'error',
+          'error_occurred',
+          channelId,
+          channelType,
+          false,
+          processingTime,
+          false,
+          undefined,
+          {
+            errorMessage,
+            ...additionalMetadata,
+          },
+        );
+      }
+    } catch (error) {
+      console.warn('Error getting names for error logging, falling back to basic logging:', error);
+      this.logInteraction(
+        userId,
+        workspaceId,
+        'error',
+        'error_occurred',
+        channelId,
+        channelType,
+        false,
+        processingTime,
+        false,
+        undefined,
+        {
+          errorMessage,
+          ...additionalMetadata,
+        },
+      );
+    }
   }
 
   /**
    * 지식 추출 로그
    */
-  public logKnowledgeExtraction(
+  public async logKnowledgeExtraction(
     userId: string,
     workspaceId: string,
     channelId: string,
@@ -305,30 +574,74 @@ class UserInteractionLogger {
     extractedKnowledge: string,
     sourceMessageCount: number,
     additionalMetadata: LogMetadata = {},
-  ): void {
-    this.logInteraction(
-      userId,
-      workspaceId,
-      'message',
-      'extract_knowledge',
-      channelId,
-      channelType,
-      isThread,
-      processingTime,
-      success,
-      undefined,
-      {
-        extractedKnowledge,
-        sourceMessageCount,
-        ...additionalMetadata,
-      },
-    );
+    client?: WebClient,
+  ): Promise<void> {
+    try {
+      if (client) {
+        const names = await getAllCachedNames(userId, workspaceId, channelId, client);
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'message',
+          'extract_knowledge',
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          undefined,
+          {
+            extractedKnowledge,
+            sourceMessageCount,
+            ...additionalMetadata,
+          },
+          names,
+        );
+      } else {
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'message',
+          'extract_knowledge',
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          undefined,
+          {
+            extractedKnowledge,
+            sourceMessageCount,
+            ...additionalMetadata,
+          },
+        );
+      }
+    } catch (error) {
+      console.warn('Error getting names for knowledge extraction logging, falling back to basic logging:', error);
+      this.logInteraction(
+        userId,
+        workspaceId,
+        'message',
+        'extract_knowledge',
+        channelId,
+        channelType,
+        isThread,
+        processingTime,
+        success,
+        undefined,
+        {
+          extractedKnowledge,
+          sourceMessageCount,
+          ...additionalMetadata,
+        },
+      );
+    }
   }
 
   /**
    * 매니저 알림 로그
    */
-  public logManagerNotification(
+  public async logManagerNotification(
     userId: string,
     workspaceId: string,
     channelId: string,
@@ -339,30 +652,74 @@ class UserInteractionLogger {
     managersNotified: number,
     sessionId: string,
     additionalMetadata: LogMetadata = {},
-  ): void {
-    this.logInteraction(
-      userId,
-      workspaceId,
-      'button_click',
-      'notify_managers',
-      channelId,
-      channelType,
-      isThread,
-      processingTime,
-      success,
-      undefined,
-      {
-        managersNotified,
-        sessionId,
-        ...additionalMetadata,
-      },
-    );
+    client?: WebClient,
+  ): Promise<void> {
+    try {
+      if (client) {
+        const names = await getAllCachedNames(userId, workspaceId, channelId, client);
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'button_click',
+          'notify_managers',
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          undefined,
+          {
+            managersNotified,
+            sessionId,
+            ...additionalMetadata,
+          },
+          names,
+        );
+      } else {
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'button_click',
+          'notify_managers',
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          undefined,
+          {
+            managersNotified,
+            sessionId,
+            ...additionalMetadata,
+          },
+        );
+      }
+    } catch (error) {
+      console.warn('Error getting names for manager notification logging, falling back to basic logging:', error);
+      this.logInteraction(
+        userId,
+        workspaceId,
+        'button_click',
+        'notify_managers',
+        channelId,
+        channelType,
+        isThread,
+        processingTime,
+        success,
+        undefined,
+        {
+          managersNotified,
+          sessionId,
+          ...additionalMetadata,
+        },
+      );
+    }
   }
 
   /**
    * 문서 업데이트 로그
    */
-  public logDocumentUpdate(
+  public async logDocumentUpdate(
     userId: string,
     workspaceId: string,
     channelId: string,
@@ -374,25 +731,71 @@ class UserInteractionLogger {
     filesUpdated: string[],
     sessionId: string,
     additionalMetadata: LogMetadata = {},
-  ): void {
-    this.logInteraction(
-      userId,
-      workspaceId,
-      'button_click',
-      'apply_document_update',
-      channelId,
-      channelType,
-      isThread,
-      processingTime,
-      success,
-      undefined,
-      {
-        updateApplied,
-        filesUpdated,
-        sessionId,
-        ...additionalMetadata,
-      },
-    );
+    client?: WebClient,
+  ): Promise<void> {
+    try {
+      if (client) {
+        const names = await getAllCachedNames(userId, workspaceId, channelId, client);
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'button_click',
+          'apply_document_update',
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          undefined,
+          {
+            updateApplied,
+            filesUpdated,
+            sessionId,
+            ...additionalMetadata,
+          },
+          names,
+        );
+      } else {
+        this.logInteraction(
+          userId,
+          workspaceId,
+          'button_click',
+          'apply_document_update',
+          channelId,
+          channelType,
+          isThread,
+          processingTime,
+          success,
+          undefined,
+          {
+            updateApplied,
+            filesUpdated,
+            sessionId,
+            ...additionalMetadata,
+          },
+        );
+      }
+    } catch (error) {
+      console.warn('Error getting names for document update logging, falling back to basic logging:', error);
+      this.logInteraction(
+        userId,
+        workspaceId,
+        'button_click',
+        'apply_document_update',
+        channelId,
+        channelType,
+        isThread,
+        processingTime,
+        success,
+        undefined,
+        {
+          updateApplied,
+          filesUpdated,
+          sessionId,
+          ...additionalMetadata,
+        },
+      );
+    }
   }
 
   /**
@@ -465,7 +868,7 @@ class UserInteractionLogger {
 // 싱글톤 인스턴스 생성
 export const userInteractionLogger = new UserInteractionLogger();
 
-// 편의 함수들
+// 편의 함수들 (기존 호환성)
 export const logMessageProcessing = userInteractionLogger.logMessageProcessing.bind(userInteractionLogger);
 export const logQuestionProcessing = userInteractionLogger.logQuestionProcessing.bind(userInteractionLogger);
 export const logUpdateRequestProcessing = userInteractionLogger.logUpdateRequestProcessing.bind(userInteractionLogger);
@@ -475,3 +878,6 @@ export const logError = userInteractionLogger.logError.bind(userInteractionLogge
 export const logKnowledgeExtraction = userInteractionLogger.logKnowledgeExtraction.bind(userInteractionLogger);
 export const logManagerNotification = userInteractionLogger.logManagerNotification.bind(userInteractionLogger);
 export const logDocumentUpdate = userInteractionLogger.logDocumentUpdate.bind(userInteractionLogger);
+
+// 새로운 캐시된 이름 포함 로깅 함수들
+export const logInteractionWithNames = userInteractionLogger.logInteraction.bind(userInteractionLogger);

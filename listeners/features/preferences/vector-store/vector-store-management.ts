@@ -53,7 +53,7 @@ export const rebuildVectorCacheAction = async ({
             tab: 'home' as const,
             event_ts: Date.now().toString(),
           };
-          
+
           const handlerArgs = {
             client,
             event: mockEvent,
@@ -61,15 +61,13 @@ export const rebuildVectorCacheAction = async ({
             context: {},
             payload: mockEvent,
           };
-          
+
           await appHomeOpenedCallback(handlerArgs as any);
           logger.info(`Home screen refreshed for user ${body.user.id} after vector cache rebuild`);
-          
         } catch (error) {
           logger.error('Error refreshing home view after vector cache rebuild:', error);
         }
       }, 1000);
-
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
@@ -132,7 +130,7 @@ export const resetVectorStoreAction = async ({
             tab: 'home' as const,
             event_ts: Date.now().toString(),
           };
-          
+
           const handlerArgs = {
             client,
             event: mockEvent,
@@ -140,15 +138,13 @@ export const resetVectorStoreAction = async ({
             context: {},
             payload: mockEvent,
           };
-          
+
           await appHomeOpenedCallback(handlerArgs as any);
           logger.info(`Home screen refreshed for user ${body.user.id} after vector store reset`);
-          
         } catch (error) {
           logger.error('Error refreshing home view after vector store reset:', error);
         }
       }, 1000);
-
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
@@ -304,7 +300,7 @@ export const normalizeMarkdownFilesAction = async ({
                 tab: 'home' as const,
                 event_ts: Date.now().toString(),
               };
-              
+
               const handlerArgs = {
                 client,
                 event: mockEvent,
@@ -312,15 +308,13 @@ export const normalizeMarkdownFilesAction = async ({
                 context: {},
                 payload: mockEvent,
               };
-              
+
               await appHomeOpenedCallback(handlerArgs as any);
               logger.info(`Home screen refreshed for user ${body.user.id} after markdown normalization`);
-              
             } catch (error) {
               logger.error('Error refreshing home view after markdown normalization:', error);
             }
           }, 1000);
-
         } else {
           await client.chat.postMessage({
             channel: body.user.id,

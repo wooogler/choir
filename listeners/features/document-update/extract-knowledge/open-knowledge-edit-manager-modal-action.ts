@@ -32,6 +32,7 @@ export const openKnowledgeEditManagerModalCallback = async ({
       view: {
         type: 'modal',
         callback_id: 'knowledge_edit_manager_modal', // This ID is handled by handleKnowledgeEditManagerModal
+        notify_on_close: true,
         private_metadata: sessionId,
         title: {
           type: 'plain_text',
@@ -77,7 +78,7 @@ export const openKnowledgeEditManagerModalCallback = async ({
     logger.info(`Manager knowledge edit modal opened for session ${sessionId} by manager ${body.user.id}`);
 
     // 로그: 성공
-    logButtonClick(
+    await logButtonClick(
       body.user.id,
       workspaceId || 'unknown',
       body.channel?.id || 'dm',
@@ -93,6 +94,7 @@ export const openKnowledgeEditManagerModalCallback = async ({
         extractedKnowledgeLength: sessionData.extractedKnowledge?.length || 0,
         messagesAnalyzed: sessionData.messages?.length || 0,
       },
+      client,
     );
   } catch (error) {
     logger.error('Error opening manager knowledge edit modal:', error);
@@ -110,7 +112,7 @@ export const openKnowledgeEditManagerModalCallback = async ({
       }
     }
 
-    logButtonClick(
+    await logButtonClick(
       body.user.id,
       workspaceId || 'unknown',
       body.channel?.id || 'dm',
@@ -123,6 +125,7 @@ export const openKnowledgeEditManagerModalCallback = async ({
         errorStack: error instanceof Error ? error.stack : undefined,
         sessionId: body.actions[0].value,
       },
+      client,
     );
   }
 };

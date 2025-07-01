@@ -30,6 +30,30 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     messageIntent = await classifyMessageIntent(message, orgName, orgDescription);
     logger.info(`Message intent classified as: ${messageIntent}`);
 
+    // Log the intent classification result to interaction logs
+    try {
+      await logMessageProcessing(
+        event.user,
+        workspaceId,
+        event.channel,
+        event.channel_type || 'public',
+        !!event.thread_ts,
+        Date.now() - startTime,
+        true,
+        message,
+        'classify_intent',
+        {
+          messageIntent,
+          orgName,
+          orgDescription,
+          messageLength: message.length,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Error logging intent classification:', logError);
+    }
+
     // 로딩 메시지 삭제
     if (loadingMessage.ts) {
       try {
@@ -53,25 +77,6 @@ export async function handleIncomingMessage(client: any, event: any, message: st
       routingResult = await handleGeneralConversationMessage(client, event, message, logger);
     }
 
-    // 성공 로깅
-    logMessageProcessing(
-      event.user,
-      workspaceId,
-      event.channel,
-      event.channel_type || 'public',
-      !!event.thread_ts,
-      Date.now() - startTime,
-      routingResult,
-      message,
-      'message_routing',
-      {
-        messageIntent,
-        orgName,
-        orgDescription,
-        routingSuccess: routingResult,
-      },
-    );
-
     return routingResult;
   } catch (error) {
     logger.error('Error processing message:', error);
@@ -79,7 +84,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     // 실패 로깅
     try {
       const workspaceId = await getWorkspaceId(client);
-      logMessageProcessing(
+      await logMessageProcessing(
         event.user,
         workspaceId,
         event.channel,
@@ -94,6 +99,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
           errorStack: error instanceof Error ? error.stack : undefined,
           messageIntent: messageIntent || 'unknown',
         },
+        client,
       );
     } catch (logError) {
       logger.error('Error logging message routing failure:', logError);

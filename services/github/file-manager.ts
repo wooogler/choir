@@ -20,11 +20,24 @@ export class GitHubFileManager {
     });
   }
 
+  private async getDefaultBranch(owner: string, repo: string): Promise<string> {
+    try {
+      const { data } = await this.octokit.rest.repos.get({
+        owner,
+        repo,
+      });
+      return data.default_branch;
+    } catch (error) {
+      Logger.warn(`Failed to get default branch for ${owner}/${repo}, using 'main'`, error as Error);
+      return 'main';
+    }
+  }
+
   async getAllMarkdownFiles({
     owner,
     repo,
     path,
-    ref = 'master',
+    ref,
   }: {
     owner: string;
     repo: string;
@@ -32,6 +45,7 @@ export class GitHubFileManager {
     ref?: string;
   }): Promise<MarkdownFile[]> {
     try {
+      const actualRef = ref || await this.getDefaultBranch(owner, repo);
       const allMarkdownFiles: MarkdownFile[] = [];
 
       const exploreDirectory = async (dirPath: string): Promise<void> => {
@@ -40,7 +54,7 @@ export class GitHubFileManager {
             owner,
             repo,
             path: dirPath,
-            ref,
+            ref: actualRef,
           });
 
           if (!Array.isArray(contents)) {
@@ -57,7 +71,7 @@ export class GitHubFileManager {
                   owner,
                   repo,
                   path: item.path,
-                  ref,
+                  ref: actualRef,
                 });
 
                 if (Array.isArray(fileData) || !('content' in fileData)) {
@@ -103,7 +117,7 @@ export class GitHubFileManager {
     owner,
     repo,
     path,
-    ref = 'master',
+    ref,
   }: {
     owner: string;
     repo: string;
@@ -111,13 +125,14 @@ export class GitHubFileManager {
     ref?: string;
   }): Promise<MarkdownFile | null> {
     try {
+      const actualRef = ref || await this.getDefaultBranch(owner, repo);
       Logger.info(`Loading markdown file: ${path} (${owner}/${repo})`);
 
       const { data: fileData } = await this.octokit.rest.repos.getContent({
         owner,
         repo,
         path,
-        ref,
+        ref: actualRef,
       });
 
       if (Array.isArray(fileData) || !('content' in fileData)) {

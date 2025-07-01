@@ -137,11 +137,24 @@ ${descOrg ? `- About: ${descOrg}` : ''}`;
   );
 
   const classification = result?.trim().toLowerCase();
+  let finalIntent: 'question' | 'update_request' | 'general_conversation';
+
   if (classification === 'update_request') {
-    return 'update_request';
+    finalIntent = 'update_request';
   } else if (classification === 'question') {
-    return 'question';
+    finalIntent = 'question';
   } else {
-    return 'general_conversation';
+    finalIntent = 'general_conversation';
   }
+
+  // Log the classification result
+  console.log(`[MESSAGE INTENT CLASSIFICATION]`, {
+    originalMessage: message.substring(0, 100) + (message.length > 100 ? '...' : ''),
+    rawLLMResponse: result,
+    classifiedAs: finalIntent,
+    organizationName,
+    descOrg,
+  });
+
+  return finalIntent;
 }

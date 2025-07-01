@@ -36,10 +36,20 @@ export async function handleKnowledgeEditManagerModal({
       });
 
       // 로그: 세션 데이터 없음
-      logModalSubmit(userId, workspaceId || 'unknown', 'knowledge_edit_manager_modal', Date.now() - startTime, false, {
-        error: 'Session data not found',
-        sessionId,
-      });
+      logModalSubmit(
+        userId,
+        workspaceId || 'unknown',
+        'knowledge_edit_manager_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Session data not found',
+          sessionId,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -52,10 +62,20 @@ export async function handleKnowledgeEditManagerModal({
       // For now, just return, Slack might show a default error or nothing.
 
       // 로그: 빈 지식 내용
-      logModalSubmit(userId, workspaceId || 'unknown', 'knowledge_edit_manager_modal', Date.now() - startTime, false, {
-        error: 'Empty knowledge content',
-        sessionId,
-      });
+      logModalSubmit(
+        userId,
+        workspaceId || 'unknown',
+        'knowledge_edit_manager_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Empty knowledge content',
+          sessionId,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -240,15 +260,42 @@ export async function handleKnowledgeEditManagerModal({
     }
 
     // 로그: 성공
-    logModalSubmit(userId, workspaceId || 'unknown', 'knowledge_edit_manager_modal', Date.now() - startTime, true, {
-      sessionId,
-      originalUserId: sessionData.userId,
-      originalChannelId: sessionData.originalChannelId,
-      originalThreadTs: sessionData.originalThreadTs,
-      editedKnowledgeLength: editedKnowledge.trim().length,
-      messageUpdated: !!(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),
-      fallbackMessageSent: !(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),
-    });
+    // originalChannelId에서 채널 정보 추출
+    const actualChannelId = sessionData.originalChannelId || 'modal';
+    let actualChannelType: 'public' | 'private' | 'dm' = 'dm';
+    try {
+      if (sessionData.originalChannelId) {
+        const channelInfo = await client.conversations.info({ channel: sessionData.originalChannelId });
+        if (channelInfo.channel?.is_private) {
+          actualChannelType = 'private';
+        } else if (channelInfo.channel?.is_im) {
+          actualChannelType = 'dm';
+        } else {
+          actualChannelType = 'public';
+        }
+      }
+    } catch (channelInfoError) {
+      logger.warn('Could not get channel info for logging:', channelInfoError);
+    }
+    logModalSubmit(
+      userId,
+      workspaceId || 'unknown',
+      'knowledge_edit_manager_modal',
+      Date.now() - startTime,
+      true,
+      {
+        sessionId,
+        originalUserId: sessionData.userId,
+        originalChannelId: sessionData.originalChannelId,
+        originalThreadTs: sessionData.originalThreadTs,
+        editedKnowledgeLength: editedKnowledge.trim().length,
+        messageUpdated: !!(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),
+        fallbackMessageSent: !(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),
+      },
+      client,
+      actualChannelId,
+      actualChannelType,
+    );
   } catch (error) {
     logger.error('Error processing manager knowledge edit modal:', error);
     await client.chat.postMessage({
@@ -265,10 +312,20 @@ export async function handleKnowledgeEditManagerModal({
       }
     }
 
-    logModalSubmit(userId, workspaceId || 'unknown', 'knowledge_edit_manager_modal', Date.now() - startTime, false, {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      errorStack: error instanceof Error ? error.stack : undefined,
-      sessionId: view.private_metadata,
-    });
+    logModalSubmit(
+      userId,
+      workspaceId || 'unknown',
+      'knowledge_edit_manager_modal',
+      Date.now() - startTime,
+      false,
+      {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        errorStack: error instanceof Error ? error.stack : undefined,
+        sessionId: view.private_metadata,
+      },
+      client,
+      'modal',
+      'dm',
+    );
   }
 }

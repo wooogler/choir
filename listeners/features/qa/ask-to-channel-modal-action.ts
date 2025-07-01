@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
+import { logButtonClick } from 'services/common/user-interaction-logger';
 import { createQAChannelPreview, getQAChannel, getUserName, getWorkspaceId } from 'services/slack';
 
 /**
@@ -11,6 +12,7 @@ export const askToChannelModalCallback = async ({
   client,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -76,6 +78,7 @@ export const askToChannelModalCallback = async ({
       view: {
         type: 'modal',
         callback_id: 'ask_to_channel_submit',
+        notify_on_close: true,
         private_metadata: JSON.stringify({ sessionId, qaChannelId }), // Q&A 채널 ID 포함
         title: {
           type: 'plain_text',
@@ -147,6 +150,27 @@ export const askToChannelModalCallback = async ({
     });
 
     logger.info(`Channel selection modal opened for session ${sessionId}`);
+
+    // 로그: 성공
+    try {
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        body.channel?.id || '',
+        'public',
+        'ask_to_channel_modal',
+        Date.now() - startTime,
+        true,
+        {
+          sessionId,
+          qaChannelId,
+          qaChannelName: channelName,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Error logging button click:', logError);
+    }
   } catch (error) {
     logger.error('Error opening channel selection modal:', error);
 
@@ -155,5 +179,26 @@ export const askToChannelModalCallback = async ({
       user: body.user.id,
       text: '😔 Something went wrong opening the sharing options. Could you try again?',
     });
+
+    // 로그: 실패
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        body.channel?.id || '',
+        'public',
+        'ask_to_channel_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          sessionId: body.actions[0].value,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.warn('Failed to log error:', logError);
+    }
   }
 };

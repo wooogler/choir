@@ -76,11 +76,21 @@ export const cancelDocumentUpdatesCallback = async ({
     // 로그: 문서 업데이트 취소
     try {
       const workspaceId = await getWorkspaceId(client);
-      logButtonClick(userId, workspaceId, dmChannelId, 'dm', 'cancel_document_updates', Date.now() - startTime, true, {
-        isFirstCancel,
-        originalChannelId,
-        originalThreadTs,
-      });
+      await logButtonClick(
+        userId,
+        workspaceId,
+        dmChannelId,
+        'dm',
+        'cancel_document_updates',
+        Date.now() - startTime,
+        true,
+        {
+          isFirstCancel,
+          originalChannelId,
+          originalThreadTs,
+        },
+        client,
+      );
     } catch (logError) {
       logger.error('Failed to log button click error:', logError);
     }

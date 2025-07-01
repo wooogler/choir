@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/user-interaction-logger';
+import { getWorkspaceId } from 'services/slack';
 import { handleQuestionMessage } from '../qa/question-handler';
 
 /**
@@ -57,9 +58,10 @@ export const handleAsQuestionCallback = async ({
     logger.info(`Message re-processed as question for user ${messageData.userId}`);
 
     // 로그: 성공
-    logButtonClick(
+    const workspaceId = await getWorkspaceId(client);
+    await logButtonClick(
       body.user.id,
-      'unknown',
+      workspaceId,
       body.channel?.id || 'dm',
       'dm',
       'handle_as_question',
@@ -70,9 +72,11 @@ export const handleAsQuestionCallback = async ({
         originalChannelId: messageData.channelId,
         originalThreadTs: messageData.threadTs,
         originalChannelType: messageData.channelType,
+        originalMessage: messageData.originalMessage,
         originalMessageLength: messageData.originalMessage?.length || 0,
         messageUpdated: !!(channelId && messageTs),
       },
+      client,
     );
   } catch (error) {
     logger.error('Error handling message as question:', error);
@@ -83,19 +87,25 @@ export const handleAsQuestionCallback = async ({
     });
 
     // 로그: 실패
-    logButtonClick(
-      body.user.id,
-      'unknown',
-      body.channel?.id || 'dm',
-      'dm',
-      'handle_as_question',
-      Date.now() - startTime,
-      false,
-      {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        errorStack: error instanceof Error ? error.stack : undefined,
-        actionValue: body.actions[0].value,
-      },
-    );
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        body.channel?.id || 'dm',
+        'dm',
+        'handle_as_question',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          actionValue: body.actions[0].value,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Error logging handle_as_question failure:', logError);
+    }
   }
 };

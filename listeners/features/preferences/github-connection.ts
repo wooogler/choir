@@ -40,7 +40,7 @@ export const githubRepoUrlInputCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: 'Only administrators can connect GitHub repositories.'
+        text: 'Only administrators can connect GitHub repositories.',
       });
       return;
     }
@@ -90,7 +90,7 @@ export const testGithubConnectionCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: 'Only administrators can connect GitHub repositories.'
+        text: 'Only administrators can connect GitHub repositories.',
       });
       return;
     }
@@ -103,7 +103,7 @@ export const testGithubConnectionCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: 'Please enter the GitHub repository URL first.'
+        text: 'Please enter the GitHub repository URL first.',
       });
       return;
     }
@@ -115,7 +115,7 @@ export const testGithubConnectionCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || userId,
         user: userId,
-        text: 'Invalid GitHub URL. Please enter a URL in the format https://github.com/owner/repo.'
+        text: 'Invalid GitHub URL. Please enter a URL in the format https://github.com/owner/repo.',
       });
       return;
     }
@@ -148,11 +148,13 @@ export const testGithubConnectionCallback = async ({
 
         const vectorStore = VectorStoreService.getInstance();
         // 새로운 파일들로 벡터스토어 설정 (기존 캐시 교체)
-        await vectorStore.setMarkdownFiles(markdownFiles, { 
-          owner: repoInfo.owner, 
-          repo: repoInfo.repo 
+        await vectorStore.setMarkdownFiles(markdownFiles, {
+          owner: repoInfo.owner,
+          repo: repoInfo.repo,
         });
-        logger.info(`Vector store rebuilt with ${markdownFiles.length} files from new GitHub repository for workspace ${workspaceId}`);
+        logger.info(
+          `Vector store rebuilt with ${markdownFiles.length} files from new GitHub repository for workspace ${workspaceId}`,
+        );
       } catch (error) {
         logger.error('Error rebuilding vector store after GitHub connection:', error);
       }
@@ -182,7 +184,7 @@ export const testGithubConnectionCallback = async ({
         try {
           // Import the home handler callback
           const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
-          
+
           // Create mock event and args for the callback
           const mockEvent = {
             type: 'app_home_opened' as const,
@@ -190,7 +192,7 @@ export const testGithubConnectionCallback = async ({
             tab: 'home' as const,
             event_ts: Date.now().toString(),
           };
-          
+
           const handlerArgs = {
             client,
             event: mockEvent,
@@ -198,19 +200,18 @@ export const testGithubConnectionCallback = async ({
             context: {},
             payload: mockEvent,
           };
-          
+
           // Call the home handler callback directly to refresh the view
           await appHomeOpenedCallback(handlerArgs as any);
-          
+
           logger.info(`Home screen refreshed for user ${userId} after GitHub connection`);
-          
+
           // 4단계: 최종 완료 알림
           await client.chat.postEphemeral({
             channel: body.channel?.id || userId,
             user: userId,
             text: `🎉 All done! Repository "${repoInfo.owner}/${repoInfo.repo}" is now connected and ready to use.`,
           });
-          
         } catch (error) {
           logger.error('Error refreshing home view:', error);
           await client.chat.postEphemeral({
@@ -235,7 +236,7 @@ export const testGithubConnectionCallback = async ({
     await client.chat.postEphemeral({
       channel: body.channel?.id || body.user.id,
       user: body.user.id,
-      text: 'An error occurred while testing the GitHub connection. Please try again.'
+      text: 'An error occurred while testing the GitHub connection. Please try again.',
     });
   }
 };

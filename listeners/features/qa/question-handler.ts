@@ -360,7 +360,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     const totalProcessingTime = Date.now() - startTime;
 
     // 질문 처리 로그
-    logQuestionProcessing(
+    await logQuestionProcessing(
       event.user,
       workspaceId,
       event.channel,
@@ -378,6 +378,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         qaChannelId,
         qaChannelName,
         responseLength: response.length,
+        botResponse: cleanResponseForSharing,
         historyMessageCount: historyResult.messages?.length || 0,
         historyUsers: Array.from(historyUsers),
         hasWebContent: relevantDocs.some((doc) => doc.metadata.webContent && doc.metadata.webContent.length > 0),
@@ -402,6 +403,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           },
         })),
       },
+      client,
     );
 
     logger.info(`Question answered successfully for user ${event.user} in channel ${event.channel}`);
@@ -412,7 +414,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     // 로그: 질문 처리 실패
     const workspaceId = await getWorkspaceId(client);
 
-    logQuestionProcessing(
+    await logQuestionProcessing(
       event.user,
       workspaceId,
       event.channel,
@@ -450,6 +452,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           })),
         }),
       },
+      client,
     );
 
     // 로딩 메시지가 있으면 삭제

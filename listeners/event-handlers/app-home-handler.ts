@@ -1,3 +1,4 @@
+import { AppConfig } from '@/config';
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
 import {
   getChannelName,
@@ -13,7 +14,6 @@ import {
   setOrganizationName,
 } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
-import { AppConfig } from '@/config';
 
 const appHomeOpenedCallback = async ({
   client,
@@ -21,7 +21,7 @@ const appHomeOpenedCallback = async ({
   logger,
 }: AllMiddlewareArgs & SlackEventMiddlewareArgs<'app_home_opened'>) => {
   logger.info(`App home opened for user ${event.user}, tab: ${event.tab}`);
-  
+
   // Ignore the `app_home_opened` event for anything but the Home tab
   if (event.tab !== 'home') return;
 
@@ -300,7 +300,7 @@ const appHomeOpenedCallback = async ({
     if (isUserManager || isOwner) {
       // Get current connected GitHub repository info
       let repoInfo = await getGithubRepo(workspaceId);
-      
+
       // If no repository is configured, show default repository info
       if (!repoInfo) {
         const defaultRepo = AppConfig.getDefaultRepo();
@@ -311,7 +311,7 @@ const appHomeOpenedCallback = async ({
           url: `https://github.com/${defaultRepo.owner}/${defaultRepo.repo}`,
         };
       }
-      
+
       logger.info(`GitHub repo info for workspace ${workspaceId}:`, repoInfo);
 
       githubBlocks.push({
@@ -634,7 +634,7 @@ const register = (app: App) => {
             tab: 'home' as const,
             event_ts: Date.now().toString(),
           };
-          
+
           const handlerArgs = {
             client,
             event: mockEvent,
@@ -642,15 +642,13 @@ const register = (app: App) => {
             context: {},
             payload: mockEvent,
           };
-          
+
           await appHomeOpenedCallback(handlerArgs as any);
           logger.info(`Home screen refreshed for user ${body.user.id} after organization name update`);
-          
         } catch (error) {
           logger.error('Error refreshing home view after organization name update:', error);
         }
       }, 1000);
-
     } catch (error) {
       logger.error('Error setting organization name:', error);
       await client.chat.postEphemeral({
@@ -687,7 +685,7 @@ const register = (app: App) => {
             tab: 'home' as const,
             event_ts: Date.now().toString(),
           };
-          
+
           const handlerArgs = {
             client,
             event: mockEvent,
@@ -695,15 +693,13 @@ const register = (app: App) => {
             context: {},
             payload: mockEvent,
           };
-          
+
           await appHomeOpenedCallback(handlerArgs as any);
           logger.info(`Home screen refreshed for user ${body.user.id} after organization description update`);
-          
         } catch (error) {
           logger.error('Error refreshing home view after organization description update:', error);
         }
       }, 1000);
-
     } catch (error) {
       logger.error('Error setting organization description:', error);
       await client.chat.postEphemeral({

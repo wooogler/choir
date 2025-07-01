@@ -61,6 +61,7 @@ export const createNewSectionAction = async ({
     const modal: ModalView = {
       type: 'modal' as const,
       callback_id: 'new_section_modal',
+      notify_on_close: true,
       title: {
         type: 'plain_text' as const,
         text: '💡 New Section Idea',
@@ -177,7 +178,7 @@ export const createNewSectionAction = async ({
     });
 
     // 로그: 성공
-    logButtonClick(
+    await logButtonClick(
       body.user.id,
       'unknown',
       body.channel?.id || 'dm',
@@ -197,6 +198,7 @@ export const createNewSectionAction = async ({
         originalThreadTs,
         editUrl,
       },
+      client,
     );
   } catch (error) {
     logger.error('Error creating new section modal:', error);
@@ -207,7 +209,7 @@ export const createNewSectionAction = async ({
     });
 
     // 로그: 실패
-    logButtonClick(
+    await logButtonClick(
       body.user.id,
       'unknown',
       body.channel?.id || 'dm',
@@ -220,6 +222,7 @@ export const createNewSectionAction = async ({
         errorStack: error instanceof Error ? error.stack : undefined,
         buttonValue: body.actions?.[0]?.value,
       },
+      client,
     );
   }
 };

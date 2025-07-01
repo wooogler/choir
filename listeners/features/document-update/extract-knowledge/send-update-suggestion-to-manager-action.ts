@@ -191,6 +191,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
               },
             ],
           },
+          client,
         );
 
         const postedMessage = await client.chat.postMessage({
@@ -209,7 +210,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
         storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
 
         // 로그: 매니저 알림 성공
-        logButtonClick(
+        await logButtonClick(
           body.user.id,
           workspaceId,
           body.channel?.id || 'dm',
@@ -226,6 +227,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
             originalThreadTs: sessionData.originalThreadTs,
             userName,
           },
+          client,
         );
 
         logger.info(`Update suggestion sent to ${managers.length} managers for session ${sessionId}`);
@@ -274,7 +276,7 @@ I'll let you know if they have any questions or when the document is updated. Th
     // 로그: 매니저 알림 실패
     try {
       const workspaceIdForLog = await getWorkspaceId(client);
-      logButtonClick(
+      await logButtonClick(
         body.user.id,
         workspaceIdForLog,
         body.channel?.id || 'dm',
@@ -287,6 +289,7 @@ I'll let you know if they have any questions or when the document is updated. Th
           errorStack: error instanceof Error ? error.stack : undefined,
           sessionId: body.actions[0].value,
         },
+        client,
       );
     } catch (logError) {
       logger.error('Failed to log button click error:', logError);

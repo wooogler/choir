@@ -120,24 +120,29 @@ export async function handleGeneralConversationMessage(
     });
 
     // 성공 로깅
-    logMessageProcessing(
-      event.user,
-      workspaceId,
-      event.channel,
-      event.channel_type || 'public',
-      !!event.thread_ts,
-      Date.now() - startTime,
-      true,
-      message,
-      'general_conversation',
-      {
-        userName,
-        organizationName,
-        descOrg,
-        githubUrl: URLtoGithubORWebsite,
-        replyTextLength: replyText.length,
-      },
-    );
+    try {
+      await logMessageProcessing(
+        event.user,
+        workspaceId,
+        event.channel,
+        event.channel_type || 'public',
+        !!event.thread_ts,
+        Date.now() - startTime,
+        true,
+        message,
+        'process_general_conversation',
+        {
+          organizationName,
+          descOrg,
+          githubUrl: URLtoGithubORWebsite,
+          replyTextLength: replyText.length,
+          botResponse: replyText,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Error logging general conversation:', logError);
+    }
 
     logger.info(`General conversation reply sent to user ${event.user} in channel ${event.channel}`);
     return true;
@@ -146,7 +151,7 @@ export async function handleGeneralConversationMessage(
     // 실패 로깅
     try {
       const workspaceId = await getWorkspaceId(client);
-      logMessageProcessing(
+      await logMessageProcessing(
         event.user,
         workspaceId,
         event.channel,
@@ -155,10 +160,11 @@ export async function handleGeneralConversationMessage(
         Date.now() - startTime,
         false,
         message,
-        'general_conversation',
+        'process_general_conversation',
         {
           error: error instanceof Error ? error.message : 'Unknown error',
         },
+        client,
       );
     } catch (logError) {
       logger.error('Error logging general conversation failure:', logError);

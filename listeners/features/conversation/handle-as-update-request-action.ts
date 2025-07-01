@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/user-interaction-logger';
+import { getWorkspaceId } from 'services/slack';
 import { handleUpdateRequestMessage } from '../document-update/extract-knowledge/update-request-handler';
 
 /**
@@ -57,9 +58,10 @@ export const handleAsUpdateRequestCallback = async ({
     logger.info(`Message re-processed as update request for user ${messageData.userId}`);
 
     // 로그: 성공
-    logButtonClick(
+    const workspaceId = await getWorkspaceId(client);
+    await logButtonClick(
       body.user.id,
-      'unknown',
+      workspaceId,
       body.channel?.id || 'dm',
       'dm',
       'handle_as_update_request',
@@ -73,6 +75,7 @@ export const handleAsUpdateRequestCallback = async ({
         originalMessageLength: messageData.originalMessage?.length || 0,
         messageUpdated: !!(channelId && messageTs),
       },
+      client,
     );
   } catch (error) {
     logger.error('Error handling message as update request:', error);
@@ -83,19 +86,25 @@ export const handleAsUpdateRequestCallback = async ({
     });
 
     // 로그: 실패
-    logButtonClick(
-      body.user.id,
-      'unknown',
-      body.channel?.id || 'dm',
-      'dm',
-      'handle_as_update_request',
-      Date.now() - startTime,
-      false,
-      {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        errorStack: error instanceof Error ? error.stack : undefined,
-        actionValue: body.actions[0].value,
-      },
-    );
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        body.channel?.id || 'dm',
+        'dm',
+        'handle_as_update_request',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          actionValue: body.actions[0].value,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Error logging handle_as_update_request failure:', logError);
+    }
   }
 };

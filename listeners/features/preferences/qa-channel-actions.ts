@@ -118,14 +118,14 @@ const setQAChannelCallback = async ({
     setTimeout(async () => {
       try {
         const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
-        
+
         const mockEvent = {
           type: 'app_home_opened' as const,
           user: userId,
           tab: 'home' as const,
           event_ts: Date.now().toString(),
         };
-        
+
         const handlerArgs = {
           client,
           event: mockEvent,
@@ -133,10 +133,9 @@ const setQAChannelCallback = async ({
           context: {},
           payload: mockEvent,
         };
-        
+
         await appHomeOpenedCallback(handlerArgs as any);
         logger.info(`Home screen refreshed for user ${userId} after Q&A channel update`);
-        
       } catch (error) {
         logger.error('Error refreshing home view after Q&A channel update:', error);
       }

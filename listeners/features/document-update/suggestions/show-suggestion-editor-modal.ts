@@ -58,6 +58,7 @@ export const showSuggestionEditorModal = async ({
       view: {
         type: 'modal',
         callback_id: 'update_editor_submission',
+        notify_on_close: true,
         private_metadata: JSON.stringify({
           messageTs: body.message?.ts,
           channelId: body.channel?.id,
@@ -114,7 +115,7 @@ export const showSuggestionEditorModal = async ({
     });
 
     // 로그: 성공
-    logButtonClick(
+    await logButtonClick(
       body.user.id,
       'unknown',
       body.channel?.id || 'dm',
@@ -132,6 +133,7 @@ export const showSuggestionEditorModal = async ({
         messageTs: body.message?.ts,
         channelId: body.channel?.id,
       },
+      client,
     );
   } catch (error) {
     console.error('Error showing update editor modal:', error);
@@ -153,7 +155,7 @@ export const showSuggestionEditorModal = async ({
     }
 
     // 로그: 실패
-    logButtonClick(
+    await logButtonClick(
       body.user.id,
       'unknown',
       body.channel?.id || 'dm',
@@ -166,6 +168,7 @@ export const showSuggestionEditorModal = async ({
         errorStack: error instanceof Error ? error.stack : undefined,
         buttonValue: body.actions?.[0]?.value,
       },
+      client,
     );
   }
 };

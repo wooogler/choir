@@ -33,7 +33,7 @@ export const editExtractedKnowledgeCallback = async ({
       });
 
       // 로그: 세션 ID 없음
-      logButtonClick(
+      await logButtonClick(
         body.user.id,
         workspaceId || 'unknown',
         body.channel?.id || 'dm',
@@ -44,6 +44,7 @@ export const editExtractedKnowledgeCallback = async ({
         {
           error: 'No session ID provided',
         },
+        client,
       );
       return;
     }
@@ -58,7 +59,7 @@ export const editExtractedKnowledgeCallback = async ({
       });
 
       // 로그: 세션 데이터 없음
-      logButtonClick(
+      await logButtonClick(
         body.user.id,
         workspaceId || 'unknown',
         body.channel?.id || 'dm',
@@ -70,6 +71,7 @@ export const editExtractedKnowledgeCallback = async ({
           error: 'Session data not found',
           sessionId,
         },
+        client,
       );
       return;
     }
@@ -79,6 +81,7 @@ export const editExtractedKnowledgeCallback = async ({
       view: {
         type: 'modal',
         callback_id: 'knowledge_edit_modal', // This ID is handled by handleKnowledgeEditModal
+        notify_on_close: true,
         private_metadata: sessionId,
         title: {
           type: 'plain_text',
@@ -138,9 +141,9 @@ export const editExtractedKnowledgeCallback = async ({
     logger.info(`Knowledge edit modal opened for session ${sessionId}`);
 
     // 로그: 성공
-    logButtonClick(
+    await logButtonClick(
       body.user.id,
-      workspaceId || 'unknown',
+      workspaceId,
       body.channel?.id || 'dm',
       'dm',
       'edit_extracted_knowledge',
@@ -153,6 +156,7 @@ export const editExtractedKnowledgeCallback = async ({
         extractedKnowledgeLength: sessionData.extractedKnowledge?.length || 0,
         messagesAnalyzed: sessionData.messages?.length || 0,
       },
+      client,
     );
   } catch (error) {
     logger.error('Error opening knowledge edit modal:', error);
@@ -171,19 +175,25 @@ export const editExtractedKnowledgeCallback = async ({
       }
     }
 
-    logButtonClick(
-      body.user.id,
-      workspaceId || 'unknown',
-      body.channel?.id || 'dm',
-      'dm',
-      'edit_extracted_knowledge',
-      Date.now() - startTime,
-      false,
-      {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        errorStack: error instanceof Error ? error.stack : undefined,
-        sessionId: body.actions[0].value,
-      },
-    );
+    try {
+      const logWorkspaceId = workspaceId || (await getWorkspaceId(client));
+      await logButtonClick(
+        body.user.id,
+        logWorkspaceId,
+        body.channel?.id || 'dm',
+        'dm',
+        'edit_extracted_knowledge',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          sessionId: body.actions[0].value,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.warn('Failed to log error:', logError);
+    }
   }
 };

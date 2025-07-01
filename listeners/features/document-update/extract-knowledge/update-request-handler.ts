@@ -84,7 +84,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
 
       // 로그: 메시지가 없어서 실패한 경우
       const workspaceId = await getWorkspaceId(client);
-      logUpdateRequestProcessing(
+      await logUpdateRequestProcessing(
         userId,
         workspaceId,
         originalChannelId,
@@ -95,6 +95,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         'No messages found to analyze',
         '',
         { error: 'No messages found' },
+        client,
       );
 
       return false;
@@ -178,7 +179,6 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         extractorInfo.user?.real_name ||
         extractorInfo.user?.name ||
         'Unknown User';
-      const extractTime = new Date().toLocaleString();
 
       // Check if user is a manager
       const workspaceId = await getWorkspaceId(client);
@@ -226,7 +226,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Second: Send ephemeral message with buttons for the requester only
-      const ephemeralMessage = await client.chat.postEphemeral({
+      await client.chat.postEphemeral({
         channel: originalChannelId,
         user: userId,
         text: 'You can edit the suggested update if needed.',
@@ -312,7 +312,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       const totalProcessingTime = Date.now() - startTime;
 
       // 업데이트 요청 처리 로그
-      logUpdateRequestProcessing(
+      await logUpdateRequestProcessing(
         userId,
         workspaceId,
         originalChannelId,
@@ -336,10 +336,11 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
             ts: msg.ts,
           })),
         },
+        client,
       );
 
       // 지식 추출 로그
-      logKnowledgeExtraction(
+      await logKnowledgeExtraction(
         userId,
         workspaceId,
         originalChannelId,
@@ -364,6 +365,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
             ts: msg.ts,
           })),
         },
+        client,
       );
 
       return true;

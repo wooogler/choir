@@ -358,6 +358,90 @@ export const suggestUpdatesCallback = async ({
 
     const healthCheckResult = await checkVectorStoreHealth(client, currentDmChannelId);
     if (!healthCheckResult.isHealthy) {
+      // If vector store is empty (0 vectors), skip to new section creation instead of showing error
+      const diagnosis = vectorStore.diagnoseVectorStore();
+      if (diagnosis.details.vectorsCount === 0) {
+        console.log('Vector store is empty, skipping to new section creation');
+        
+        // Create new section directly since there are no existing documents to update
+        const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
+        if (allMarkdownFiles.length === 0) {
+          await client.chat.postMessage({
+            channel: currentDmChannelId,
+            text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.',
+          });
+          return;
+        }
+
+        const availableFiles = allMarkdownFiles.map((file) => ({
+          fileName: file.name,
+          githubUrl: file.githubUrl,
+          description: `${file.name} - Documentation file`,
+        }));
+
+        try {
+          const { createNewSectionFromKnowledge } = await import('services/llm/content-generator');
+          const newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
+          
+          if (newSectionSuggestion) {
+            // Find the GitHub URL for the recommended file
+            const recommendedFileInfo = availableFiles.find(file => file.fileName === newSectionSuggestion.recommendedFile);
+            const githubUrl = recommendedFileInfo?.githubUrl || availableFiles[0]?.githubUrl || '';
+            
+            // Store the new section data in session
+            const newSectionSessionId = `new_section_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+            storeSessionData(newSectionSessionId, {
+              sectionTitle: newSectionSuggestion.sectionTitle,
+              sectionContent: newSectionSuggestion.sectionContent,
+              recommendedFile: newSectionSuggestion.recommendedFile,
+              reasoning: newSectionSuggestion.reasoning,
+              githubUrl: githubUrl,
+              originalChannelId: knowledgeSourceChannelId,
+              originalThreadTs: knowledgeSourceThreadTs,
+              sessionId: sessionId,
+            }, SessionType.NEW_SECTION);
+
+            // Show new section creation modal directly
+            await client.chat.postMessage({
+              channel: currentDmChannelId,
+              text: `💡 Since you don't have any existing content in your vector store, I'll help you create a new section for this knowledge!`,
+              blocks: [
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `💡 *No existing content found - Let's create something new!*\n\nI've prepared a new section for your knowledge. Click below to review and add it to your documentation.`,
+                  },
+                },
+                {
+                  type: 'actions',
+                  elements: [
+                    {
+                      type: 'button',
+                      text: {
+                        type: 'plain_text',
+                        text: '📝 Create New Section',
+                        emoji: true,
+                      },
+                      style: 'primary',
+                      action_id: 'create_new_section',
+                      value: JSON.stringify({
+                        newSectionSessionId,
+                        userId,
+                      }),
+                    },
+                  ],
+                },
+              ],
+            });
+            return;
+          }
+        } catch (error) {
+          console.error('Error creating new section from empty vector store:', error);
+        }
+      }
+      
+      // For other health check failures, show the original error
       if (healthCheckResult.blocks) {
         await client.chat.postMessage({
           channel: currentDmChannelId,
@@ -687,7 +771,7 @@ export const suggestUpdatesCallback = async ({
 
     // 로그: 문서 업데이트 제안 성공
     const workspaceId = await getWorkspaceId(client);
-    logButtonClick(
+    await logButtonClick(
       userId,
       workspaceId,
       currentDmChannelId || 'dm',
@@ -703,10 +787,12 @@ export const suggestUpdatesCallback = async ({
         fileName: processedDoc.fileName,
         hasChanges: processedDoc.hasChanges,
         searchResultsCount: searchResults.length,
+        knowledgeContent: knowledgeContent || '',
         knowledgeContentLength: knowledgeContent?.length || 0,
         originalChannelId: knowledgeSourceChannelId,
         originalThreadTs: knowledgeSourceThreadTs,
       },
+      client,
     );
 
     logger.info(`Document update suggestion ${currentIndex + 1} sent to user ${userId} for session ${sessionId}`);
@@ -719,7 +805,7 @@ export const suggestUpdatesCallback = async ({
       const value = body.actions?.[0]?.value;
       const parsedValue = value ? JSON.parse(value) : {};
 
-      logButtonClick(
+      await logButtonClick(
         userId,
         workspaceId,
         currentDmChannelId || 'dm',
@@ -734,6 +820,7 @@ export const suggestUpdatesCallback = async ({
           currentIndex: parsedValue?.index || 0,
           isFirstSuggestion: parsedValue?.isFirstSuggestion || false,
         },
+        client,
       );
     } catch (logError) {
       logger.error('Failed to log button click error:', logError);

@@ -172,14 +172,24 @@ const applySelectedToGithubAction = async ({
 
     // 로그: GitHub 업데이트 성공
     const workspaceId = await getWorkspaceId(client);
-    logButtonClick(userId, workspaceId, channelId, 'dm', 'apply_to_document', Date.now() - startTime, true, {
-      successfulUpdates,
-      failedUpdates,
-      totalUpdates: selectedUpdates.length,
-      originalChannelId,
-      originalThreadTs,
-      fileName: successfulUpdates[0] || failedUpdates[0],
-    });
+    await logButtonClick(
+      userId,
+      workspaceId,
+      channelId,
+      'dm',
+      'apply_to_document',
+      Date.now() - startTime,
+      true,
+      {
+        successfulUpdates,
+        failedUpdates,
+        totalUpdates: selectedUpdates.length,
+        originalChannelId,
+        originalThreadTs,
+        fileName: successfulUpdates[0] || failedUpdates[0],
+      },
+      client,
+    );
 
     console.log(
       `Document updates applied to GitHub for user ${userId}: ${successfulUpdates.length} successful, ${failedUpdates.length} failed`,
@@ -193,7 +203,7 @@ const applySelectedToGithubAction = async ({
       const value = body.actions?.[0]?.value;
       const parsedValue = value ? JSON.parse(value) : {};
 
-      logButtonClick(
+      await logButtonClick(
         body.user.id,
         workspaceId,
         body.channel?.id || 'dm',
@@ -208,6 +218,7 @@ const applySelectedToGithubAction = async ({
           originalChannelId: parsedValue?.originalChannelId,
           originalThreadTs: parsedValue?.originalThreadTs,
         },
+        client,
       );
     } catch (logError) {
       console.error('Failed to log button click error:', logError);
@@ -269,12 +280,23 @@ export const handleNewSectionModalSubmission = async ({
       });
 
       // 로그: 필수 필드 누락
-      logModalSubmit(user.id, 'unknown', 'new_section_modal', Date.now() - startTime, false, {
-        error: 'Missing section title or body',
-        sectionTitle: !!sectionTitle,
-        sectionBody: !!sectionBody,
-        recommendedFile,
-      });
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Missing section title or body',
+          sectionTitle: !!sectionTitle,
+          sectionBody: !!sectionBody,
+          recommendedFile,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -285,11 +307,22 @@ export const handleNewSectionModalSubmission = async ({
       });
 
       // 로그: 추천 파일 없음
-      logModalSubmit(user.id, 'unknown', 'new_section_modal', Date.now() - startTime, false, {
-        error: 'No recommended file found',
-        sectionTitle,
-        sectionBodyLength: sectionBody.length,
-      });
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'No recommended file found',
+          sectionTitle,
+          sectionBodyLength: sectionBody.length,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -306,12 +339,23 @@ export const handleNewSectionModalSubmission = async ({
       });
 
       // 로그: 벡터 스토어 추가 실패
-      logModalSubmit(user.id, 'unknown', 'new_section_modal', Date.now() - startTime, false, {
-        error: 'Failed to add new section to vector store',
-        recommendedFile,
-        sectionTitle,
-        sectionBodyLength: sectionBody.length,
-      });
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Failed to add new section to vector store',
+          recommendedFile,
+          sectionTitle,
+          sectionBodyLength: sectionBody.length,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -324,12 +368,23 @@ export const handleNewSectionModalSubmission = async ({
       });
 
       // 로그: 마크다운 파일 없음
-      logModalSubmit(user.id, 'unknown', 'new_section_modal', Date.now() - startTime, false, {
-        error: 'Updated markdown file not found',
-        recommendedFile,
-        sectionTitle,
-        sectionBodyLength: sectionBody.length,
-      });
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Updated markdown file not found',
+          recommendedFile,
+          sectionTitle,
+          sectionBodyLength: sectionBody.length,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -347,17 +402,28 @@ export const handleNewSectionModalSubmission = async ({
       });
 
       // 로그: GitHub URL 파싱 실패
-      logModalSubmit(user.id, 'unknown', 'new_section_modal', Date.now() - startTime, false, {
-        error: 'Invalid GitHub URL',
-        githubUrl,
-        recommendedFile,
-        sectionTitle,
-        sectionBodyLength: sectionBody.length,
-      });
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Invalid GitHub URL',
+          githubUrl,
+          recommendedFile,
+          sectionTitle,
+          sectionBodyLength: sectionBody.length,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
-    const { owner, repo, path: repoPath } = parsedUrl;
+    const { owner, repo } = parsedUrl;
 
     // 5. 커밋 메시지 생성
     const userName = await getUserName(userId, client);
@@ -393,16 +459,27 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``,
     logger.info(`Successfully created new section "${sectionTitle}" for ${recommendedFile} and pushed to GitHub`);
 
     // 로그: 성공
-    logModalSubmit(user.id, 'unknown', 'new_section_modal', Date.now() - startTime, true, {
-      recommendedFile,
-      sectionTitle,
-      sectionBodyLength: sectionBody.length,
-      githubUrl,
-      owner,
-      repo,
-      commitMessageLength: commitMessage.length,
-      updatedMarkdownLength: updatedMarkdown.length,
-    });
+    const workspaceId = await getWorkspaceId(client);
+    logModalSubmit(
+      user.id,
+      workspaceId,
+      'new_section_modal',
+      Date.now() - startTime,
+      true,
+      {
+        recommendedFile,
+        sectionTitle,
+        sectionBodyLength: sectionBody.length,
+        githubUrl,
+        owner,
+        repo,
+        commitMessageLength: commitMessage.length,
+        updatedMarkdownLength: updatedMarkdown.length,
+      },
+      client,
+      'modal',
+      'dm',
+    );
   } catch (error) {
     logger.error('Error handling new section modal submission:', error);
 
@@ -412,10 +489,25 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``,
     });
 
     // 로그: 실패
-    logModalSubmit(body.user.id, 'unknown', 'new_section_modal', Date.now() - startTime, false, {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      errorStack: error instanceof Error ? error.stack : undefined,
-      privateMetadata: body.view.private_metadata,
-    });
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      logModalSubmit(
+        body.user.id,
+        workspaceId,
+        'new_section_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          privateMetadata: body.view.private_metadata,
+        },
+        client,
+        'modal',
+        'dm',
+      );
+    } catch (logError) {
+      logger.error('Failed to log error:', logError);
+    }
   }
 };

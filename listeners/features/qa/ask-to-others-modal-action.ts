@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
+import { logButtonClick } from 'services/common/user-interaction-logger';
 import { createPrivateMessagePreview, getManagers, getUserName, getWorkspaceId } from 'services/slack';
 
 /**
@@ -11,6 +12,7 @@ export const askToOthersModalCallback = async ({
   client,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -56,6 +58,7 @@ export const askToOthersModalCallback = async ({
       view: {
         type: 'modal',
         callback_id: 'ask_to_others_submit',
+        notify_on_close: true,
         private_metadata: sessionId,
         title: {
           type: 'plain_text',
@@ -145,6 +148,37 @@ export const askToOthersModalCallback = async ({
     });
 
     logger.info(`Others selection modal opened for session ${sessionId}`);
+
+    // 로그: 성공
+    // 채널 타입 결정
+    let channelType: 'public' | 'private' | 'dm' = 'public';
+    try {
+      if (body.channel?.id) {
+        const channelInfo = await client.conversations.info({ channel: body.channel.id });
+        if (channelInfo.channel?.is_private) {
+          channelType = 'private';
+        } else if (channelInfo.channel?.is_im) {
+          channelType = 'dm';
+        }
+      }
+    } catch (channelInfoError) {
+      logger.warn('Could not get channel info for logging:', channelInfoError);
+    }
+
+    await logButtonClick(
+      body.user.id,
+      workspaceId,
+      body.channel?.id || '',
+      channelType,
+      'ask_to_others_modal',
+      Date.now() - startTime,
+      true,
+      {
+        sessionId,
+        managersCount: managers.length,
+      },
+      client,
+    );
   } catch (error) {
     logger.error('Error opening others selection modal:', error);
 
@@ -153,5 +187,41 @@ export const askToOthersModalCallback = async ({
       user: body.user.id,
       text: '😔 Something went wrong opening the sharing options. Could you try again?',
     });
+
+    // 로그: 실패
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      // 채널 타입 결정
+      let channelType: 'public' | 'private' | 'dm' = 'public';
+      try {
+        if (body.channel?.id) {
+          const channelInfo = await client.conversations.info({ channel: body.channel.id });
+          if (channelInfo.channel?.is_private) {
+            channelType = 'private';
+          } else if (channelInfo.channel?.is_im) {
+            channelType = 'dm';
+          }
+        }
+      } catch (channelInfoError) {
+        logger.warn('Could not get channel info for error logging:', channelInfoError);
+      }
+
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        body.channel?.id || '',
+        channelType,
+        'ask_to_others_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          sessionId: body.actions[0].value,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.warn('Failed to log error:', logError);
+    }
   }
 };

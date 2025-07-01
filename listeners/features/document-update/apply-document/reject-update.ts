@@ -7,6 +7,7 @@ import {
 } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { removeDocumentUpdate } from 'services/document/document-store';
+import { getWorkspaceId } from 'services/slack';
 import suggestUpdatesCallback from '../suggestions/suggest-updates';
 
 /**
@@ -94,15 +95,26 @@ export const rejectUpdateCallback = async ({
     } as any);
 
     // 로그: 성공
-    logButtonClick(userId, 'unknown', dmChannelId, 'dm', 'reject_update', Date.now() - startTime, true, {
-      index,
-      rejectIndex,
-      originalChannelId,
-      originalThreadTs,
-      lastMessageDeleted: !!lastMessageTs,
-      progressMessageDeleted: !!progressTs,
-      messageKeysCount: messageKeys?.length || 0,
-    });
+    const workspaceId = await getWorkspaceId(client);
+    await logButtonClick(
+      userId,
+      workspaceId,
+      dmChannelId,
+      'dm',
+      'reject_update',
+      Date.now() - startTime,
+      true,
+      {
+        index,
+        rejectIndex,
+        originalChannelId,
+        originalThreadTs,
+        lastMessageDeleted: !!lastMessageTs,
+        progressMessageDeleted: !!progressTs,
+        messageKeysCount: messageKeys?.length || 0,
+      },
+      client,
+    );
   } catch (error) {
     console.error('업데이트 거절 처리 중 오류 발생:', error);
 
@@ -116,19 +128,25 @@ export const rejectUpdateCallback = async ({
     }
 
     // 로그: 실패
-    logButtonClick(
-      body.user.id,
-      'unknown',
-      body.channel?.id || 'dm',
-      'dm',
-      'reject_update',
-      Date.now() - startTime,
-      false,
-      {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        errorStack: error instanceof Error ? error.stack : undefined,
-        buttonValue: body.actions?.[0]?.value,
-      },
-    );
+    try {
+      const workspaceIdForError = await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        workspaceIdForError,
+        body.channel?.id || 'dm',
+        'dm',
+        'reject_update',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          buttonValue: body.actions?.[0]?.value,
+        },
+        client,
+      );
+    } catch (logError) {
+      console.error('Failed to log reject_update error:', logError);
+    }
   }
 };

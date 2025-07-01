@@ -129,9 +129,13 @@ export async function isBotUser(userId: string, client: WebClient): Promise<bool
 export async function getWorkspaceId(client: WebClient): Promise<string> {
   try {
     const authInfo = await client.auth.test();
-    return authInfo.team_id || 'unknown';
+    if (!authInfo.team_id) {
+      Logger.warn('No team_id in auth.test response', { authInfo });
+      throw new Error('No team_id in auth response');
+    }
+    return authInfo.team_id;
   } catch (error) {
     Logger.error('Error getting workspace info', error as Error);
-    return 'unknown';
+    throw new Error(`Failed to get workspace ID: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }

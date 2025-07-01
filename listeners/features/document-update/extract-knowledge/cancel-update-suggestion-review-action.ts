@@ -39,7 +39,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
       }
 
       // 로그: 세션 ID 없음
-      logButtonClick(
+      await logButtonClick(
         userId,
         workspaceId || 'unknown',
         body.channel?.id || 'dm',
@@ -50,6 +50,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
         {
           error: 'No session ID provided',
         },
+        client,
       );
       return;
     }
@@ -161,7 +162,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
     logger.info(`Update suggestion review cancelled by user ${userId} (${userName}) for session ${sessionId}`);
 
     // 로그: 성공
-    logButtonClick(
+    await logButtonClick(
       userId,
       workspaceId || 'unknown',
       body.channel?.id || 'dm',
@@ -179,6 +180,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
         managersNotified: sessionData?.managerMessageInfo ? Object.keys(sessionData.managerMessageInfo).length : 0,
         originalMessageUpdated: !!(body.container?.message_ts && body.channel?.id),
       },
+      client,
     );
   } catch (error) {
     logger.error('Error cancelling suggestion review:', error);
@@ -200,7 +202,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
       }
     }
 
-    logButtonClick(
+    await logButtonClick(
       body.user.id,
       workspaceId || 'unknown',
       body.channel?.id || 'dm',
@@ -213,6 +215,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
         errorStack: error instanceof Error ? error.stack : undefined,
         sessionId: body.actions[0].value,
       },
+      client,
     );
   }
 };

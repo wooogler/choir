@@ -90,14 +90,14 @@ const addManagerCallback = async ({
       setTimeout(async () => {
         try {
           const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
-          
+
           const mockEvent = {
             type: 'app_home_opened' as const,
             user: userId,
             tab: 'home' as const,
             event_ts: Date.now().toString(),
           };
-          
+
           const handlerArgs = {
             client,
             event: mockEvent,
@@ -105,10 +105,9 @@ const addManagerCallback = async ({
             context: {},
             payload: mockEvent,
           };
-          
+
           await appHomeOpenedCallback(handlerArgs as any);
           logger.info(`Home screen refreshed for user ${userId} after adding manager permission`);
-          
         } catch (error) {
           logger.error('Error refreshing home view after adding manager:', error);
         }
@@ -196,14 +195,14 @@ const removeManagerCallback = async ({
       setTimeout(async () => {
         try {
           const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
-          
+
           const mockEvent = {
             type: 'app_home_opened' as const,
             user: userId,
             tab: 'home' as const,
             event_ts: Date.now().toString(),
           };
-          
+
           const handlerArgs = {
             client,
             event: mockEvent,
@@ -211,10 +210,9 @@ const removeManagerCallback = async ({
             context: {},
             payload: mockEvent,
           };
-          
+
           await appHomeOpenedCallback(handlerArgs as any);
           logger.info(`Home screen refreshed for user ${userId} after removing manager permission`);
-          
         } catch (error) {
           logger.error('Error refreshing home view after removing manager:', error);
         }

@@ -3,8 +3,8 @@ import type { App } from '@slack/bolt';
 import appHomeHandler from './event-handlers/app-home-handler';
 import { clearChatCommand, handleClearChat } from './event-handlers/command-handler';
 import dmHandler from './event-handlers/dm-handler';
-// import views from "./views"; // 삭제 예정
 import mentionHandler from './event-handlers/mention-handler';
+import modalCloseHandler from './event-handlers/modal-close-handler';
 
 import { registerConversationFeature } from './features/conversation';
 import { registerDocumentUpdateFeature } from './features/document-update';
@@ -17,6 +17,7 @@ const registerListeners = (app: App) => {
   appHomeHandler.register(app);
   mentionHandler.register(app); // mention-handler 내부에서 일부 document-update 액션을 직접 등록하고 있음. 이를 document-update feature로 옮길지 검토 필요.
   dmHandler.register(app);
+  modalCloseHandler.register(app);
   app.command(clearChatCommand.command, handleClearChat);
 
   // Feature-based Actions/Views

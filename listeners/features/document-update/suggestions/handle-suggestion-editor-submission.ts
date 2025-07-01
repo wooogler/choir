@@ -2,7 +2,7 @@ import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { logModalSubmit } from 'services/common/user-interaction-logger';
 import { convertMarkdownToSlackText, updateDocumentContent } from 'services/document';
 import { createAppendSuggestionBlock } from 'services/document/update-processor';
-import { createDiffBlock } from 'services/slack';
+import { createDiffBlock, getWorkspaceId } from 'services/slack';
 
 /**
  * 모달에서 제출된 내용을 처리합니다.
@@ -128,18 +128,43 @@ export const handleSuggestionEditorSubmission = async ({
       console.log(`Message updated for user ${userId}, index ${index}`);
 
       // 로그: 성공
-      logModalSubmit(userId, 'unknown', 'update_editor_submission', Date.now() - startTime, true, {
-        messageTs,
+      const workspaceId = await getWorkspaceId(client);
+      // 채널 타입 결정
+      let channelType: 'public' | 'private' | 'dm' = 'public';
+      try {
+        const channelInfo = await client.conversations.info({ channel: channelId });
+        if (channelInfo.channel?.is_private) {
+          channelType = 'private';
+        } else if (channelInfo.channel?.is_im) {
+          channelType = 'dm';
+        }
+      } catch (channelInfoError) {
+        console.warn('Could not get channel info for logging:', channelInfoError);
+      }
+      logModalSubmit(
+        userId,
+        workspaceId,
+        'update_editor_submission',
+        Date.now() - startTime,
+        true,
+        {
+          messageTs,
+          channelId,
+          fileName,
+          nodeId,
+          suggestionType: suggestionType || 'UPDATE',
+          index,
+          originalContent: nodeContent || '',
+          updatedContent: updatedContent || '',
+          originalContentLength: nodeContent?.length || 0,
+          updatedContentLength: updatedContent?.length || 0,
+          diffBlockFound: diffBlockIndex !== -1,
+          actionsBlockFound: actionsBlockIndex !== -1,
+        },
+        client,
         channelId,
-        fileName,
-        nodeId,
-        suggestionType: suggestionType || 'UPDATE',
-        index,
-        originalContentLength: nodeContent?.length || 0,
-        updatedContentLength: updatedContent?.length || 0,
-        diffBlockFound: diffBlockIndex !== -1,
-        actionsBlockFound: actionsBlockIndex !== -1,
-      });
+        channelType,
+      );
     } else {
       throw new Error('Diff 블록을 찾을 수 없습니다');
     }
@@ -163,10 +188,44 @@ export const handleSuggestionEditorSubmission = async ({
     }
 
     // 로그: 실패
-    logModalSubmit(body.user.id, 'unknown', 'update_editor_submission', Date.now() - startTime, false, {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      errorStack: error instanceof Error ? error.stack : undefined,
-      privateMetadata: view.private_metadata,
-    });
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      // private_metadata에서 channelId 추출 시도
+      let fallbackChannelId = 'modal';
+      let fallbackChannelType: 'public' | 'private' | 'dm' = 'dm';
+      try {
+        const metadata = JSON.parse(view.private_metadata);
+        if (metadata.channelId) {
+          fallbackChannelId = metadata.channelId;
+          const channelInfo = await client.conversations.info({ channel: metadata.channelId });
+          if (channelInfo.channel?.is_private) {
+            fallbackChannelType = 'private';
+          } else if (channelInfo.channel?.is_im) {
+            fallbackChannelType = 'dm';
+          } else {
+            fallbackChannelType = 'public';
+          }
+        }
+      } catch (metaError) {
+        console.warn('Could not extract channel info from metadata for error logging:', metaError);
+      }
+      logModalSubmit(
+        body.user.id,
+        workspaceId,
+        'update_editor_submission',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          privateMetadata: view.private_metadata,
+        },
+        client,
+        fallbackChannelId,
+        fallbackChannelType,
+      );
+    } catch (logError) {
+      console.error('Error logging update_editor_submission failure:', logError);
+    }
   }
 };

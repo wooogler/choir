@@ -33,10 +33,20 @@ export async function handleKnowledgeEditModal({
       });
 
       // 로그: 세션 데이터 없음
-      logModalSubmit(body.user.id, workspaceId || 'unknown', 'knowledge_edit_modal', Date.now() - startTime, false, {
-        error: 'Session data not found',
-        sessionId,
-      });
+      logModalSubmit(
+        body.user.id,
+        workspaceId || 'unknown',
+        'knowledge_edit_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Session data not found',
+          sessionId,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -51,10 +61,20 @@ export async function handleKnowledgeEditModal({
       });
 
       // 로그: 빈 지식 내용
-      logModalSubmit(body.user.id, workspaceId || 'unknown', 'knowledge_edit_modal', Date.now() - startTime, false, {
-        error: 'Empty knowledge content',
-        sessionId,
-      });
+      logModalSubmit(
+        body.user.id,
+        workspaceId || 'unknown',
+        'knowledge_edit_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Empty knowledge content',
+          sessionId,
+        },
+        client,
+        'modal',
+        'dm',
+      );
       return;
     }
 
@@ -110,13 +130,42 @@ export async function handleKnowledgeEditModal({
     logger.info(`Knowledge edited by user ${body.user.id} for session ${sessionId}`);
 
     // 로그: 성공
-    logModalSubmit(body.user.id, workspaceId || 'unknown', 'knowledge_edit_modal', Date.now() - startTime, true, {
-      sessionId,
-      originalChannelId: sessionData.originalChannelId,
-      originalThreadTs: sessionData.originalThreadTs,
-      editedKnowledgeLength: editedKnowledge.trim().length,
-      publicMessageUpdated: !!sessionData.publicMessageTs,
-    });
+    // originalChannelId에서 채널 정보 추출
+    const actualChannelId = sessionData.originalChannelId || 'modal';
+    let actualChannelType: 'public' | 'private' | 'dm' = 'dm';
+    try {
+      if (sessionData.originalChannelId) {
+        const channelInfo = await client.conversations.info({ channel: sessionData.originalChannelId });
+        if (channelInfo.channel?.is_private) {
+          actualChannelType = 'private';
+        } else if (channelInfo.channel?.is_im) {
+          actualChannelType = 'dm';
+        } else {
+          actualChannelType = 'public';
+        }
+      }
+    } catch (channelInfoError) {
+      logger.warn('Could not get channel info for logging:', channelInfoError);
+    }
+    logModalSubmit(
+      body.user.id,
+      workspaceId,
+      'knowledge_edit_modal',
+      Date.now() - startTime,
+      true,
+      {
+        sessionId,
+        originalChannelId: sessionData.originalChannelId,
+        originalThreadTs: sessionData.originalThreadTs,
+        originalKnowledge: sessionData.extractedKnowledge || '',
+        editedKnowledge: editedKnowledge.trim(),
+        editedKnowledgeLength: editedKnowledge.trim().length,
+        publicMessageUpdated: !!sessionData.publicMessageTs,
+      },
+      client,
+      actualChannelId,
+      actualChannelType,
+    );
   } catch (error) {
     logger.error('Error processing knowledge edit modal:', error);
 
@@ -134,10 +183,25 @@ export async function handleKnowledgeEditModal({
       }
     }
 
-    logModalSubmit(body.user.id, workspaceId || 'unknown', 'knowledge_edit_modal', Date.now() - startTime, false, {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      errorStack: error instanceof Error ? error.stack : undefined,
-      sessionId: body.view.private_metadata,
-    });
+    try {
+      const logWorkspaceId = workspaceId || (await getWorkspaceId(client));
+      logModalSubmit(
+        body.user.id,
+        logWorkspaceId,
+        'knowledge_edit_modal',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          sessionId: body.view.private_metadata,
+        },
+        client,
+        'modal',
+        'dm',
+      );
+    } catch (logError) {
+      logger.warn('Failed to log error:', logError);
+    }
   }
 }
