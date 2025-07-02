@@ -20,7 +20,7 @@ export function formatSectionPath(metadata: DocumentMetadata): string {
   if (metadata.headingPath && metadata.headingPath.length > 0) {
     return metadata.headingPath.join(' > ');
   }
-  return metadata.sectionName || '문서 본문';
+  return metadata.sectionName || 'Main Content';
 }
 
 /**
@@ -28,7 +28,7 @@ export function formatSectionPath(metadata: DocumentMetadata): string {
  */
 export function formatSectionPathWithLinks(metadata: DocumentMetadata): string {
   if (!metadata.headingPath || metadata.headingPath.length === 0) {
-    return metadata.sectionName || '문서 본문';
+    return metadata.sectionName || 'Main Content';
   }
 
   const githubUrl = metadata.githubUrl;

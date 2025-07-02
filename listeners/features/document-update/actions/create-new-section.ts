@@ -256,7 +256,7 @@ export const createNewSectionAction = async ({
         githubUrl,
         originalChannelId,
         originalThreadTs,
-        editUrl,
+        editUrl: recommendedFileEditUrl,
       },
       client,
     );

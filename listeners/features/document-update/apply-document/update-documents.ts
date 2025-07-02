@@ -268,7 +268,16 @@ export const handleNewSectionModalSubmission = async ({
 
     // Extract metadata
     const metadata = JSON.parse(body.view.private_metadata || '{}');
-    const { recommendedFile, userId, editUrl, sessionId, buttonMessageTs, buttonChannelId } = metadata;
+    const {
+      recommendedFile,
+      userId,
+      editUrl,
+      sessionId,
+      buttonMessageTs,
+      buttonChannelId,
+      originalChannelId,
+      originalThreadTs,
+    } = metadata;
 
     // Use selected file if available, otherwise fall back to recommended file
     const targetFile = selectedFile || recommendedFile;
@@ -499,6 +508,49 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
       }
     } catch (updateError) {
       logger.warn(`Failed to update original message: ${updateError}`);
+    }
+
+    // 9. Post success message to original channel (similar to document updates)
+    if (originalChannelId) {
+      try {
+        const channelUpdateText = `🎉 Good news, everyone! *${userName}* just added a new section to our documentation!
+
+📁 *File:* <${githubUrl}|${targetFile}>
+📝 *Section:* ${sectionTitle}
+
+I've added the new content. Knowledge grows stronger! ✨`;
+
+        const updateBlocks = [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: channelUpdateText,
+            },
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `🔍 *Preview of new section:*\n\`\`\`# ${sectionTitle}\n${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``,
+            },
+          },
+        ];
+
+        await client.chat.postMessage({
+          channel: originalChannelId,
+          ...(originalThreadTs ? { thread_ts: originalThreadTs } : {}),
+          text: `✅ New Section Added: ${sectionTitle} in ${targetFile} by *${userName}* (with CHOIR)`,
+          blocks: updateBlocks,
+          unfurl_links: false,
+          unfurl_media: false,
+        });
+
+        logger.info(`Posted new section success message to original channel: ${originalChannelId}`);
+      } catch (channelError) {
+        logger.error('Failed to post new section update to original channel:', channelError);
+        // Continue execution even if channel posting fails
+      }
     }
 
     logger.info(`Successfully created new section "${sectionTitle}" for ${recommendedFile} and pushed to GitHub`);
