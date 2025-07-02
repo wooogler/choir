@@ -97,7 +97,18 @@ export async function classifyMessageIntent(
   message: string,
   organizationName: string,
   descOrg: string,
+  messageHistory?: any[],
 ): Promise<'question' | 'update_request' | 'general_conversation'> {
+  // Build context from message history if available
+  let contextSection = '';
+  if (messageHistory && messageHistory.length > 0) {
+    const contextMessages = messageHistory.map((msg: any) => {
+      const role = msg.bot_id ? 'Assistant' : 'User';
+      return `${role}: ${msg.text}`;
+    }).join('\n');
+    contextSection = `\n\nRecent conversation context:\n${contextMessages}\n\nUse this context to better understand the intent of the current message.`;
+  }
+
   const systemPrompt = `You are an intelligent agent that answers questions or helps update documents that manages the institutional knowledge or polices of an organization, such as a university research lab.
 Your task is to classify the user message as 'question' (asking for information about the organization), 'update_request' (containing new knowledge, information, or facts that could be documented, or explicitly asking to save/store information about the organization), or 'general_conversation' (a general statement, greeting, or chit-chat without substantial new information, questions that are not necessarily about the organization or the members).
 
@@ -116,7 +127,7 @@ Respond with only 'question', 'update_request', or 'general_conversation'.
 
 Organization Context:
 ${organizationName ? `- Organization: ${organizationName}` : ''}
-${descOrg ? `- About: ${descOrg}` : ''}`;
+${descOrg ? `- About: ${descOrg}` : ''}${contextSection}`;
 
   const result = await createChatCompletion(
     [
