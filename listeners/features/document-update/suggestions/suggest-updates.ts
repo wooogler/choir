@@ -69,7 +69,17 @@ export const suggestUpdatesCallback = async ({
         if (history.messages && history.messages.length > 0) {
           const originalMessage = history.messages[0];
           if (originalMessage.blocks) {
-            const updatedBlocks = originalMessage.blocks.filter((block: any) => block.type !== 'actions');
+            const updatedBlocks = originalMessage.blocks.filter((block: any) => {
+              // Remove actions blocks
+              if (block.type === 'actions') {
+                return false;
+              }
+              // Remove bonus idea sections (identified by text starting with 💡)
+              if (block.type === 'section' && block.text?.text?.startsWith('💡')) {
+                return false;
+              }
+              return true;
+            });
             const textForUpdate =
               updatedBlocks.length < originalMessage.blocks.length
                 ? `Processing... (Buttons removed)`
@@ -106,7 +116,17 @@ export const suggestUpdatesCallback = async ({
         if (history.messages && history.messages.length > 0) {
           const previousMessage = history.messages[0];
           if (previousMessage.blocks) {
-            const updatedBlocks = previousMessage.blocks.filter((block: any) => block.type !== 'actions');
+            const updatedBlocks = previousMessage.blocks.filter((block: any) => {
+              // Remove actions blocks
+              if (block.type === 'actions') {
+                return false;
+              }
+              // Remove bonus idea sections (identified by text starting with 💡)
+              if (block.type === 'section' && block.text?.text?.startsWith('💡')) {
+                return false;
+              }
+              return true;
+            });
             if (updatedBlocks.length < previousMessage.blocks.length) {
               await client.chat.update({
                 channel: currentDmChannelId,
@@ -402,7 +422,7 @@ export const suggestUpdatesCallback = async ({
             }, SessionType.NEW_SECTION);
 
             // Show new section creation modal directly
-            await client.chat.postMessage({
+            const emptyVectorStoreMessage = await client.chat.postMessage({
               channel: currentDmChannelId,
               text: `💡 Since you don't have any existing content in your vector store, I'll help you create a new section for this knowledge!`,
               blocks: [
@@ -423,7 +443,6 @@ export const suggestUpdatesCallback = async ({
                         text: '📝 Create New Section',
                         emoji: true,
                       },
-                      style: 'primary',
                       action_id: 'create_new_section',
                       value: JSON.stringify({
                         newSectionSessionId,
@@ -434,6 +453,16 @@ export const suggestUpdatesCallback = async ({
                 },
               ],
             });
+
+            // Store message timestamp for later update
+            if (emptyVectorStoreMessage.ts && sessionId) {
+              const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
+              if (sessionData) {
+                sessionData.emptyVectorStoreMessageTs = emptyVectorStoreMessage.ts;
+                sessionData.emptyVectorStoreChannelId = currentDmChannelId;
+                storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+              }
+            }
             return;
           }
         } catch (error) {
@@ -661,7 +690,8 @@ export const suggestUpdatesCallback = async ({
       suggestionType: processedDoc.suggestionType,
     };
 
-    const actionButtons = [
+    // Main action buttons (Edit, Apply, Stop Review)
+    const mainActionButtons = [
       {
         type: 'button' as const,
         text: { type: 'plain_text' as const, text: 'Edit This', emoji: true },
@@ -679,41 +709,6 @@ export const suggestUpdatesCallback = async ({
         action_id: 'suggest_updates',
         value: JSON.stringify(updateButtonValue),
       },
-      ...(processedDoc.suggestionType === 'APPEND' && processedDoc.newSectionSuggestion
-        ? [
-            {
-              type: 'button' as const,
-              text: { type: 'plain_text' as const, text: '💡 Create New Section', emoji: true },
-              action_id: 'create_new_section',
-              value: JSON.stringify(
-                (() => {
-                  // 새 섹션 데이터를 세션에 저장
-                  const newSectionSessionId = `new_section_${userId}_${Date.now()}`;
-                  storeSessionData(
-                    newSectionSessionId,
-                    {
-                      sectionTitle: processedDoc.newSectionSuggestion!.sectionTitle,
-                      sectionContent: processedDoc.newSectionSuggestion!.sectionContent,
-                      recommendedFile: processedDoc.newSectionSuggestion!.recommendedFile,
-                      reasoning: processedDoc.newSectionSuggestion!.reasoning,
-                      githubUrl: processedDoc.githubUrl,
-                      originalChannelId: knowledgeSourceChannelId,
-                      originalThreadTs: knowledgeSourceThreadTs,
-                      sessionId: sessionId,
-                    },
-                    SessionType.NEW_SECTION,
-                  );
-
-                  // 버튼 value에는 sessionId만 저장
-                  return {
-                    newSectionSessionId,
-                    userId,
-                  };
-                })(),
-              ),
-            },
-          ]
-        : []),
       {
         type: 'button' as const,
         text: { type: 'plain_text' as const, text: 'Stop Review', emoji: false },
@@ -723,23 +718,46 @@ export const suggestUpdatesCallback = async ({
       },
     ];
 
-    // CHOIR의 작업별 설명 메시지
+    // Create New Section button (separate actions block)
+    const newSectionButton = processedDoc.suggestionType === 'APPEND' && processedDoc.newSectionSuggestion ? {
+      type: 'button' as const,
+      text: { type: 'plain_text' as const, text: '💡 Create New Section', emoji: true },
+      action_id: 'create_new_section',
+      value: JSON.stringify(
+        (() => {
+          // 새 섹션 데이터를 세션에 저장
+          const newSectionSessionId = `new_section_${userId}_${Date.now()}`;
+          storeSessionData(
+            newSectionSessionId,
+            {
+              sectionTitle: processedDoc.newSectionSuggestion!.sectionTitle,
+              sectionContent: processedDoc.newSectionSuggestion!.sectionContent,
+              recommendedFile: processedDoc.newSectionSuggestion!.recommendedFile,
+              reasoning: processedDoc.newSectionSuggestion!.reasoning,
+              githubUrl: processedDoc.githubUrl,
+              originalChannelId: knowledgeSourceChannelId,
+              originalThreadTs: knowledgeSourceThreadTs,
+              sessionId: sessionId,
+            },
+            SessionType.NEW_SECTION,
+          );
+
+          // 버튼 value에는 sessionId만 저장
+          return {
+            newSectionSessionId,
+            userId,
+          };
+        })(),
+      ),
+    } : null;
+
+    // CHOIR의 작업별 설명 메시지 (bonus idea 제외)
     let explanationText = '';
     if (processedDoc.suggestionType === 'APPEND') {
       if (processedDoc.hasChanges) {
         explanationText = `🔍 I found a section that could benefit from additional content based on your knowledge. I'm suggesting we *append new information* to the existing content rather than replacing it, since the current content is still valuable.`;
-
-        // Create New Section 버튼이 있는 경우 추가 설명
-        if (processedDoc.newSectionSuggestion) {
-          explanationText += `\n\n💡 *Bonus idea:* I also think your knowledge would make a great standalone section! If you'd like, I can suggest creating a completely new section instead of appending to the existing one. Just click the "Create New Section" button to see my recommendation!`;
-        }
       } else {
         explanationText = `✅ I reviewed this section and it looks good! The existing content already covers what you mentioned, so no changes are needed here.`;
-
-        // Create New Section 버튼이 있는 경우 추가 설명
-        if (processedDoc.newSectionSuggestion) {
-          explanationText += `\n\n💡 *But here's a thought:* Even though this section is already complete, your knowledge might deserve its own dedicated section! I can suggest where and how to create a new section for your content. Check out the "Create New Section" option below!`;
-        }
       }
     } else {
       if (processedDoc.hasChanges) {
@@ -749,13 +767,32 @@ export const suggestUpdatesCallback = async ({
       }
     }
 
+    // Separate bonus idea text for APPEND suggestions
+    let bonusIdeaText = '';
+    if (processedDoc.suggestionType === 'APPEND' && processedDoc.newSectionSuggestion) {
+      if (processedDoc.hasChanges) {
+        bonusIdeaText = `💡 *Bonus idea:* I also think your knowledge would make a great standalone section! If you'd like, I can suggest creating a completely new section instead of appending to the existing one. Just click the "Create New Section" button below to see my recommendation!`;
+      } else {
+        bonusIdeaText = `💡 *But here's a thought:* Even though this section is already complete, your knowledge might deserve its own dedicated section! I can suggest where and how to create a new section for your content. Check out the "Create New Section" option below!`;
+      }
+    }
+
     blocks.push(
       { type: 'section', text: { type: 'mrkdwn', text: suggestionTitleText } },
       { type: 'section', text: { type: 'mrkdwn', text: explanationText } },
       processedDoc.diffBlock,
-      { type: 'actions', elements: actionButtons },
-      { type: 'divider' },
+      { type: 'actions', elements: mainActionButtons },
     );
+
+    // Add bonus idea section and Create New Section button if available
+    if (bonusIdeaText && newSectionButton) {
+      blocks.push(
+        { type: 'section', text: { type: 'mrkdwn', text: bonusIdeaText } },
+        { type: 'actions', elements: [newSectionButton] }
+      );
+    }
+
+    blocks.push({ type: 'divider' });
 
     const result = await client.chat.postMessage({
       channel: currentDmChannelId!,
@@ -767,6 +804,16 @@ export const suggestUpdatesCallback = async ({
 
     if (result.ts) {
       setLastMessageTimestamp(userId, result.ts);
+    }
+
+    // Store main message timestamp for Create New Section updates
+    if (result.ts && sessionId && processedDoc.suggestionType === 'APPEND' && processedDoc.newSectionSuggestion) {
+      const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
+      if (sessionData) {
+        sessionData.mainMessageTs = result.ts;
+        sessionData.mainChannelId = currentDmChannelId;
+        storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+      }
     }
 
     // 로그: 문서 업데이트 제안 성공

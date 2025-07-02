@@ -21,6 +21,10 @@ export const createNewSectionAction = async ({
     const parsedValue = JSON.parse(value);
     const { newSectionSessionId, userId } = parsedValue;
 
+    // Store the original message info for later update
+    const originalMessageTs = body.container?.message_ts;
+    const buttonChannelId = body.channel?.id;
+
     // 세션에서 새 섹션 데이터 가져오기
     const newSectionData = getSessionData(newSectionSessionId, SessionType.NEW_SECTION);
     if (!newSectionData) {
@@ -81,9 +85,12 @@ export const createNewSectionAction = async ({
         recommendedFile,
         copyText,
         sectionTitle,
-        originalChannelId,
+        originalChannelId: originalChannelId,
         originalThreadTs,
         userId,
+        sessionId,
+        buttonMessageTs: originalMessageTs,
+        buttonChannelId: buttonChannelId,
       }),
       blocks: [
         {

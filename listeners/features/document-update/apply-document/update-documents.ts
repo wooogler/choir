@@ -7,6 +7,7 @@ import type {
   UsersSelectAction,
   ViewSubmitAction,
 } from '@slack/bolt';
+import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
 import { DocumentUpdate, getStoredDocumentUpdates } from 'services/document';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
@@ -266,7 +267,7 @@ export const handleNewSectionModalSubmission = async ({
 
     // Extract metadata
     const metadata = JSON.parse(body.view.private_metadata || '{}');
-    const { recommendedFile, userId, editUrl } = metadata;
+    const { recommendedFile, userId, editUrl, sessionId, buttonMessageTs, buttonChannelId } = metadata;
 
     logger.info(`New section modal submitted by user ${user.id}`);
     logger.info(`Section title: ${sectionTitle}`);
@@ -443,18 +444,58 @@ Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''
       message: commitMessage,
     });
 
-    // 7. 성공 메시지 전송
-    await client.chat.postMessage({
-      channel: user.id,
-      text: `✅ New section "${sectionTitle}" added successfully to GitHub!
+    // 7. Skip DM success message - will be shown in updated message instead
+
+    // 8. Update the original message to show completion
+    try {
+      // Use the same UI format as the success message (lines 448-458)
+      const successText = `✅ New section "${sectionTitle}" added successfully to GitHub!
 
 📁 *File:* <${githubUrl}|${recommendedFile}>
 📝 *Added by:* ${userName}
 
 🔍 *Preview:*
 \`\`\`# ${sectionTitle}
-${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``,
-    });
+${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
+
+      // First try to update the button message directly (for cases where we have button info)
+      if (buttonMessageTs && buttonChannelId) {
+        await client.chat.update({
+          channel: buttonChannelId,
+          ts: buttonMessageTs,
+          text: successText
+        });
+
+        logger.info(`Updated button message after successful section creation`);
+      }
+      // Check for main message from integrated UI
+      else if (sessionId) {
+        const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
+        
+        // Check for main message (integrated UI)
+        if (sessionData?.mainMessageTs && sessionData?.mainChannelId) {
+          await client.chat.update({
+            channel: sessionData.mainChannelId,
+            ts: sessionData.mainMessageTs,
+            text: successText
+          });
+
+          logger.info(`Updated main message after successful section creation`);
+        }
+        // Check for empty vector store message
+        else if (sessionData?.emptyVectorStoreMessageTs && sessionData?.emptyVectorStoreChannelId) {
+          await client.chat.update({
+            channel: sessionData.emptyVectorStoreChannelId,
+            ts: sessionData.emptyVectorStoreMessageTs,
+            text: successText
+          });
+
+          logger.info(`Updated empty vector store message after successful section creation`);
+        }
+      }
+    } catch (updateError) {
+      logger.warn(`Failed to update original message: ${updateError}`);
+    }
 
     logger.info(`Successfully created new section "${sectionTitle}" for ${recommendedFile} and pushed to GitHub`);
 
