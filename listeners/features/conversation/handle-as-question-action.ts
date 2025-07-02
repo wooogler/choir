@@ -31,8 +31,13 @@ export const handleAsQuestionCallback = async ({
       channel_type: messageData.channelType,
     };
 
-    // 원본 메시지를 question으로 처리
-    await handleQuestionMessage(client, reconstructedEvent, messageData.originalMessage, logger);
+    // Send friendly public notification first
+    await client.chat.postMessage({
+      channel: messageData.channelId,
+      text: `🤔 <@${messageData.userId}> let me know this was actually a question - I'll handle it properly now!`,
+      unfurl_links: false,
+      unfurl_media: false,
+    });
 
     // 원본 메시지 업데이트 (버튼 제거)
     const channelId = body.channel?.id;
@@ -54,6 +59,9 @@ export const handleAsQuestionCallback = async ({
         ],
       });
     }
+
+    // 원본 메시지를 question으로 처리
+    await handleQuestionMessage(client, reconstructedEvent, messageData.originalMessage, logger);
 
     logger.info(`Message re-processed as question for user ${messageData.userId}`);
 

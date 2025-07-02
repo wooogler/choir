@@ -50,6 +50,12 @@ export async function handleGeneralConversationMessage(
       URLtoGithubORWebsite,
     );
 
+    // Add document source reference naturally if GitHub URL is available
+    let fullReplyText = replyText;
+    if (URLtoGithubORWebsite) {
+      fullReplyText += `\n\n_Based on <${URLtoGithubORWebsite}|${organizationName}'s documentation>_`;
+    }
+
     // 원본 메시지 정보를 JSON으로 인코딩
     const messageData = JSON.stringify({
       originalMessage: message,
@@ -62,13 +68,13 @@ export async function handleGeneralConversationMessage(
     // Send the main response to everyone
     await client.chat.postMessage({
       channel: event.channel,
-      text: replyText,
+      text: fullReplyText,
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: replyText,
+            text: fullReplyText,
           },
         },
       ],

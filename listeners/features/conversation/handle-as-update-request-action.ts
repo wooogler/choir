@@ -31,8 +31,13 @@ export const handleAsUpdateRequestCallback = async ({
       channel_type: messageData.channelType,
     };
 
-    // 원본 메시지를 update request로 처리
-    await handleUpdateRequestMessage(client, reconstructedEvent, logger);
+    // Send friendly public notification first
+    await client.chat.postMessage({
+      channel: messageData.channelId,
+      text: `📝 <@${messageData.userId}> clarified this was a suggestion for updating our docs - I'll work on that now!`,
+      unfurl_links: false,
+      unfurl_media: false,
+    });
 
     // 원본 메시지 업데이트 (버튼 제거)
     const channelId = body.channel?.id;
@@ -54,6 +59,9 @@ export const handleAsUpdateRequestCallback = async ({
         ],
       });
     }
+
+    // 원본 메시지를 update request로 처리
+    await handleUpdateRequestMessage(client, reconstructedEvent, logger);
 
     logger.info(`Message re-processed as update request for user ${messageData.userId}`);
 

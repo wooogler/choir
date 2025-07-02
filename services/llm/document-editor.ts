@@ -99,10 +99,24 @@ export async function classifyMessageIntent(
   descOrg: string,
   messageHistory?: any[],
 ): Promise<'question' | 'update_request' | 'general_conversation'> {
-  // Build context from message history if available
+  // Build context from message history if available, filtering out reclassification notifications
   let contextSection = '';
   if (messageHistory && messageHistory.length > 0) {
-    const contextMessages = messageHistory.map((msg: any) => {
+    const filteredHistory = messageHistory.filter((msg: any) => {
+      if (!msg.text) return false;
+      
+      // Filter out reclassification notification messages
+      const notificationPatterns = [
+        'let me know this was actually a question',
+        'clarified this was a suggestion for updating our docs',
+        ':thinking_face:',
+        ':memo:',
+      ];
+      
+      return !notificationPatterns.some((pattern) => msg.text.includes(pattern));
+    });
+    
+    const contextMessages = filteredHistory.map((msg: any) => {
       const role = msg.bot_id ? 'Assistant' : 'User';
       return `${role}: ${msg.text}`;
     }).join('\n');

@@ -15,7 +15,7 @@ const processMessageHistory = async (messages: any[], client?: WebClient) => {
     // Basic filters
     if (!msg.text || msg.subtype) return false;
 
-    // Filter out loading and temporary messages
+    // Filter out loading and temporary messages, including reclassification notifications
     const loadingPatterns = [
       'Searching relevant documents',
       'Preparing document update suggestions',
@@ -24,6 +24,10 @@ const processMessageHistory = async (messages: any[], client?: WebClient) => {
       ':brain:',
       'Extracting knowledge from',
       'Analyzing conversation',
+      'let me know this was actually a question',
+      'clarified this was a suggestion for updating our docs',
+      ':thinking_face:',
+      ':memo:',
     ];
 
     // Check if message contains any loading patterns
