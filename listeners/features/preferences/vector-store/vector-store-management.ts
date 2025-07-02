@@ -7,9 +7,9 @@ import { VectorStoreService } from 'services/vector/main-service';
 import { appHomeOpenedCallback } from '../../../event-handlers/app-home-handler';
 
 /**
- * Vector store cache rebuild action handler
+ * Reload files from GitHub and update vector store
  */
-export const rebuildVectorCacheAction = async ({
+export const reloadFromGithubAction = async ({
   ack,
   client,
   body,
@@ -25,23 +25,61 @@ export const rebuildVectorCacheAction = async ({
     if (!isUserManager && !isOwner) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ You don't have permission to rebuild vector cache.",
+        text: "❌ You don't have permission to reload from GitHub.",
       });
       return;
     }
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: '🔄 Starting vector cache rebuild...',
+      text: '🔄 Reloading files from GitHub...',
     });
 
+    const githubService = GithubService.getInstance();
     const vectorStore = VectorStoreService.getInstance();
-    const success = await vectorStore.forceRebuildCache();
+
+    // GitHub 저장소 정보 가져오기
+    let repoInfo = await getGithubRepo(workspaceId);
+
+    // 저장소 정보가 없으면 VectorStoreService에서 현재 로드된 파일들로부터 추출
+    if (!repoInfo) {
+      const extractedRepoInfo = vectorStore.extractRepoInfoFromFiles();
+      if (extractedRepoInfo) {
+        repoInfo = extractedRepoInfo;
+      }
+    }
+
+    if (!repoInfo) {
+      await client.chat.postMessage({
+        channel: body.user.id,
+        text: '❌ No GitHub repository connected. Please connect a repository first.',
+      });
+      return;
+    }
+
+    // GitHub에서 최신 마크다운 파일들 가져오기
+    const markdownFiles = await githubService.getAllMarkdownFiles({
+      owner: repoInfo.owner,
+      repo: repoInfo.repo,
+      path: repoInfo.path || '',
+    });
+
+    if (markdownFiles.length === 0) {
+      await client.chat.postMessage({
+        channel: body.user.id,
+        text: '❌ No markdown files found in the repository.',
+      });
+      return;
+    }
+
+    // 벡터 저장소 업데이트
+    await vectorStore.setMarkdownFiles(markdownFiles, repoInfo);
+    const success = await vectorStore.initialize(markdownFiles, true, false);
 
     if (success) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '✅ Vector cache successfully rebuilt!',
+        text: `✅ Successfully reloaded ${markdownFiles.length} files from GitHub and updated vector store!`,
       });
 
       // Auto-refresh home screen
@@ -63,99 +101,22 @@ export const rebuildVectorCacheAction = async ({
           };
 
           await appHomeOpenedCallback(handlerArgs as any);
-          logger.info(`Home screen refreshed for user ${body.user.id} after vector cache rebuild`);
+          logger.info(`Home screen refreshed for user ${body.user.id} after GitHub reload`);
         } catch (error) {
-          logger.error('Error refreshing home view after vector cache rebuild:', error);
+          logger.error('Error refreshing home view after GitHub reload:', error);
         }
       }, 1000);
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ Failed to rebuild vector cache. Please check the logs.',
+        text: '❌ Failed to update vector store with new files. Please check the logs.',
       });
     }
   } catch (error) {
-    logger.error('Error rebuilding vector cache:', error);
+    logger.error('Error reloading from GitHub:', error);
     await client.chat.postMessage({
       channel: body.user.id,
-      text: '❌ Error occurred while rebuilding vector cache.',
-    });
-  }
-};
-
-/**
- * Vector store emergency reset action handler
- */
-export const resetVectorStoreAction = async ({
-  ack,
-  client,
-  body,
-  logger,
-}: AllMiddlewareArgs & SlackActionMiddlewareArgs<any>) => {
-  await ack();
-
-  try {
-    const workspaceId = await getWorkspaceId(client);
-    const isOwner = await isWorkspaceOwner(body.user.id, client);
-    const isUserManager = await isManager(workspaceId, body.user.id);
-
-    if (!isUserManager && !isOwner) {
-      await client.chat.postMessage({
-        channel: body.user.id,
-        text: "❌ You don't have permission to reset vector store.",
-      });
-      return;
-    }
-
-    await client.chat.postMessage({
-      channel: body.user.id,
-      text: '🔄 Starting vector store reset...',
-    });
-
-    const vectorStore = VectorStoreService.getInstance();
-    const success = await vectorStore.resetAndRebuildVectorStore();
-
-    if (success) {
-      await client.chat.postMessage({
-        channel: body.user.id,
-        text: '✅ Vector store successfully reset and rebuilt!',
-      });
-
-      // Auto-refresh home screen
-      setTimeout(async () => {
-        try {
-          const mockEvent = {
-            type: 'app_home_opened' as const,
-            user: body.user.id,
-            tab: 'home' as const,
-            event_ts: Date.now().toString(),
-          };
-
-          const handlerArgs = {
-            client,
-            event: mockEvent,
-            logger,
-            context: {},
-            payload: mockEvent,
-          };
-
-          await appHomeOpenedCallback(handlerArgs as any);
-          logger.info(`Home screen refreshed for user ${body.user.id} after vector store reset`);
-        } catch (error) {
-          logger.error('Error refreshing home view after vector store reset:', error);
-        }
-      }, 1000);
-    } else {
-      await client.chat.postMessage({
-        channel: body.user.id,
-        text: '❌ Failed to reset vector store. Please check the logs.',
-      });
-    }
-  } catch (error) {
-    logger.error('Error resetting vector store:', error);
-    await client.chat.postMessage({
-      channel: body.user.id,
-      text: '❌ Error occurred while resetting vector store.',
+      text: '❌ Error occurred while reloading from GitHub.',
     });
   }
 };

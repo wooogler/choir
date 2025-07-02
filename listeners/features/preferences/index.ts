@@ -5,8 +5,7 @@ import qaChannelActions from './qa-channel-actions'; // default export { registe
 import { diagnoseVectorStoreAction } from './vector-store/vector-store-diagnosis';
 import {
   normalizeMarkdownFilesAction,
-  rebuildVectorCacheAction,
-  resetVectorStoreAction,
+  reloadFromGithubAction,
 } from './vector-store/vector-store-management';
 
 export const registerPreferencesFeature = (app: App) => {
@@ -26,8 +25,7 @@ export const registerPreferencesFeature = (app: App) => {
   app.action('diagnose_vector_store', diagnoseVectorStoreAction);
 
   // Vector Store Management
-  app.action('rebuild_vector_cache', rebuildVectorCacheAction);
-  app.action('reset_vector_store', resetVectorStoreAction);
+  app.action('reload_from_github', reloadFromGithubAction);
   app.action('normalize_markdown_files', normalizeMarkdownFilesAction);
 };
 

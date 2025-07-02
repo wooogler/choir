@@ -135,10 +135,13 @@ export class VectorStoreManager {
 
       let status: 'healthy' | 'degraded' | 'error' = 'healthy';
 
-      if (vectorsCount === 0 || this.documents.length === 0) {
-        status = 'error';
+      // 벡터 저장소가 초기화되었지만 문서가 없는 경우는 정상 (빈 파일들)
+      if (vectorsCount === 0 && this.documents.length === 0) {
+        status = 'healthy'; // 빈 상태도 정상
+      } else if (vectorsCount === 0 && this.documents.length > 0) {
+        status = 'error'; // 문서는 있는데 벡터가 없으면 오류
       } else if (vectorsCount < this.documents.length * 0.9) {
-        status = 'degraded';
+        status = 'degraded'; // 벡터가 문서 대비 부족하면 성능 저하
       }
 
       return {

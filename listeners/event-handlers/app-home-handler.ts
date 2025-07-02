@@ -154,16 +154,6 @@ const appHomeOpenedCallback = async ({
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: 'Rebuild Cache',
-                emoji: true,
-              },
-              style: 'primary',
-              action_id: 'rebuild_vector_cache',
-            },
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
                 text: 'Normalize Markdown',
                 emoji: true,
               },
@@ -192,23 +182,23 @@ const appHomeOpenedCallback = async ({
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: 'Emergency Reset',
+                text: 'Reload from GitHub',
                 emoji: true,
               },
-              style: 'danger',
-              action_id: 'reset_vector_store',
+              style: 'primary',
+              action_id: 'reload_from_github',
               confirm: {
                 title: {
                   type: 'plain_text',
-                  text: 'Are you sure?',
+                  text: 'Reload from GitHub?',
                 },
                 text: {
                   type: 'plain_text',
-                  text: 'This will completely reset the vector store and rebuild it. This action cannot be undone.',
+                  text: 'This will fetch the latest files from GitHub and update the vector store. Any unsaved changes will be overwritten.',
                 },
                 confirm: {
                   type: 'plain_text',
-                  text: 'Execute Reset',
+                  text: 'Reload',
                 },
                 deny: {
                   type: 'plain_text',
@@ -273,7 +263,7 @@ const appHomeOpenedCallback = async ({
               type: 'channels_select',
               placeholder: {
                 type: 'plain_text',
-                text: 'Select Q&A Channel',
+                text: 'Select Channel',
                 emoji: true,
               },
               action_id: 'select_qa_channel',

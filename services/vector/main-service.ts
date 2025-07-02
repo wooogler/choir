@@ -486,12 +486,6 @@ export class VectorStoreService {
     return null;
   }
 
-  /**
-   * 강제 캐시 재빌드
-   */
-  public async forceRebuildCache(): Promise<boolean> {
-    return await this.resetAndRebuildVectorStore();
-  }
 
   /**
    * 향상된 검색 (기존 호환성)

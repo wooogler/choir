@@ -12,8 +12,8 @@ export async function checkVectorStoreHealth(client: WebClient, dmChannelId: str
   const vectorStore = VectorStoreService.getInstance();
   const diagnosis = vectorStore.diagnoseVectorStore();
 
-  // 벡터 스토어에 문제가 있는 경우
-  if (diagnosis.status !== 'healthy' || diagnosis.details.vectorsCount === 0) {
+  // 벡터 스토어에 실제 문제가 있는 경우 (빈 상태가 아닌 오류)
+  if (diagnosis.status === 'error' || diagnosis.status === 'degraded') {
     console.log(`벡터 스토어 문제 발견: ${diagnosis.status}, 벡터 수: ${diagnosis.details.vectorsCount}`);
 
     // 벡터가 완전히 없는 경우, 사용자에게 자동 초기화 옵션 제공
