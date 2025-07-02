@@ -14,6 +14,9 @@ import {
   setOrganizationName,
 } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import archiver from 'archiver';
 
 const appHomeOpenedCallback = async ({
   client,
@@ -582,6 +585,46 @@ ${organizationDescription}`,
       );
     }
 
+    // Log download section (only for managers)
+    const logDownloadBlocks = [];
+    if (isUserManager || isOwner) {
+      logDownloadBlocks.push(
+        {
+          type: 'header',
+          text: {
+            type: 'plain_text',
+            text: '📊 Interaction Logs Download',
+            emoji: true,
+          },
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: 'Download user interaction logs for analysis and research purposes.',
+          },
+        },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
+              text: {
+                type: 'plain_text',
+                text: 'Download Logs',
+                emoji: true,
+              },
+              action_id: 'download_interaction_logs',
+              style: 'primary',
+            },
+          ],
+        },
+        {
+          type: 'divider',
+        },
+      );
+    }
+
     // Combine all blocks
     const blocks = [
       ...homeBlocks,
@@ -591,6 +634,7 @@ ${organizationDescription}`,
       ...qaChannelBlocks,
       ...vectorStoreBlocks,
       ...githubBlocks,
+      ...logDownloadBlocks,
     ];
 
     // Publish the view
@@ -706,6 +750,144 @@ const register = (app: App) => {
         user: body.user.id,
         channel: body.user.id,
         text: 'Error updating organization description. Please try again.',
+      });
+    }
+  });
+
+  // Handler for downloading interaction logs
+  app.action('download_interaction_logs', async ({ ack, body, client, logger }) => {
+    await ack();
+    
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      
+      // Create logs directory path
+      const logsDir = path.join(process.cwd(), 'data', 'logs');
+      
+      // Check if logs directory exists
+      if (!fs.existsSync(logsDir)) {
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '❌ No interaction logs found.',
+        });
+        return;
+      }
+
+      // Get all log files
+      const logFiles = fs.readdirSync(logsDir).filter((file: string) => file.endsWith('.jsonl'));
+      
+      if (logFiles.length === 0) {
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '❌ No interaction log files found.',
+        });
+        return;
+      }
+
+      // Send initial message
+      await client.chat.postEphemeral({
+        user: body.user.id,
+        channel: body.user.id,
+        text: '📊 Preparing interaction logs for download...',
+      });
+
+      // Create a zip file with all logs
+      const timestamp = new Date().toISOString().split('T')[0];
+      const zipPath = path.join(process.cwd(), 'data', `interaction-logs-${workspaceId}-${Date.now()}.zip`);
+      const output = fs.createWriteStream(zipPath);
+      const archive = archiver('zip', { zlib: { level: 9 } });
+
+      // Promise to handle archive completion
+      const archivePromise = new Promise<void>((resolve, reject) => {
+        output.on('close', () => {
+          logger.info(`Archive created: ${archive.pointer()} total bytes`);
+          resolve();
+        });
+
+        archive.on('error', (err: Error) => {
+          logger.error('Archive error:', err);
+          reject(err);
+        });
+
+        archive.on('warning', (err: archiver.ArchiverError) => {
+          if (err.code === 'ENOENT') {
+            logger.warn('Archive warning:', err);
+          } else {
+            reject(err);
+          }
+        });
+      });
+
+      archive.pipe(output);
+
+      // Add all log files to the archive
+      for (const logFile of logFiles) {
+        const filePath = path.join(logsDir, logFile);
+        if (fs.existsSync(filePath)) {
+          archive.file(filePath, { name: logFile });
+        }
+      }
+
+      await archive.finalize();
+      await archivePromise;
+
+      // Upload the zip file to Slack using files.uploadV2
+      try {
+        const fileSize = fs.statSync(zipPath).size;
+        const fileName = `interaction-logs-${timestamp}.zip`;
+        
+        // Open DM channel first to get proper channel ID
+        const dmChannel = await client.conversations.open({
+          users: body.user.id,
+        });
+        
+        if (!dmChannel.channel?.id) {
+          throw new Error('Could not open DM channel');
+        }
+
+        // Use the newer files.uploadV2 API
+        await client.files.uploadV2({
+          channel_id: dmChannel.channel.id,
+          file: fs.createReadStream(zipPath),
+          filename: fileName,
+          title: 'Interaction Logs',
+          initial_comment: '📊 Here are your interaction logs for analysis.',
+        });
+
+        // Clean up the temporary zip file
+        fs.unlinkSync(zipPath);
+
+        logger.info(`Interaction logs (${fileSize} bytes) downloaded by user ${body.user.id}`);
+        
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: `✅ Successfully uploaded interaction logs (${Math.round(fileSize / 1024)}KB)`,
+        });
+
+      } catch (uploadError) {
+        logger.error('Error uploading log file:', uploadError);
+        
+        // Clean up the temporary zip file
+        if (fs.existsSync(zipPath)) {
+          fs.unlinkSync(zipPath);
+        }
+        
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '❌ Error uploading log files. Please try again.',
+        });
+      }
+
+    } catch (error) {
+      logger.error('Error downloading interaction logs:', error);
+      await client.chat.postEphemeral({
+        user: body.user.id,
+        channel: body.user.id,
+        text: '❌ Error preparing interaction logs. Please try again.',
       });
     }
   });
