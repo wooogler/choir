@@ -226,26 +226,22 @@ export class VectorStoreManager {
       }
 
       // 제거할 문서들의 ID 세트 생성
-      const idsToRemove = new Set(
-        documentsToRemove.map(doc => doc.metadata.nodeId)
-      );
+      const idsToRemove = new Set(documentsToRemove.map((doc) => doc.metadata.nodeId));
 
       // 내부 documents 배열에서 제거
       const originalLength = this.documents.length;
-      this.documents = this.documents.filter(
-        doc => !idsToRemove.has(doc.metadata.nodeId)
-      );
+      this.documents = this.documents.filter((doc) => !idsToRemove.has(doc.metadata.nodeId));
       const removedCount = originalLength - this.documents.length;
 
       // MemoryVectorStore는 직접적인 제거를 지원하지 않으므로
       // 남은 문서들로 스토어를 재구성
       if (removedCount > 0) {
         Logger.info(`Rebuilding vector store after removing ${removedCount} documents`);
-        
+
         // 남은 문서들의 임베딩을 다시 생성
-        const remainingTexts = this.documents.map(doc => doc.pageContent);
+        const remainingTexts = this.documents.map((doc) => doc.pageContent);
         const newEmbeddings = await this.embeddingService.createEmbeddings(remainingTexts);
-        
+
         if (!newEmbeddings) {
           Logger.error('Failed to create embeddings for remaining documents');
           return false;
@@ -272,10 +268,8 @@ export class VectorStoreManager {
    */
   async removeDocumentsByNodeId(nodeId: string): Promise<boolean> {
     try {
-      const documentsToRemove = this.documents.filter(
-        doc => doc.metadata.nodeId === nodeId
-      );
-      
+      const documentsToRemove = this.documents.filter((doc) => doc.metadata.nodeId === nodeId);
+
       if (documentsToRemove.length === 0) {
         Logger.info(`No documents found for node ${nodeId}`);
         return true;
@@ -299,6 +293,6 @@ export class VectorStoreManager {
    * 특정 노드 ID의 문서들을 반환
    */
   getDocumentsByNodeId(nodeId: string): Document<DocumentMetadata>[] {
-    return this.documents.filter(doc => doc.metadata.nodeId === nodeId);
+    return this.documents.filter((doc) => doc.metadata.nodeId === nodeId);
   }
 }

@@ -382,7 +382,7 @@ export const suggestUpdatesCallback = async ({
       const diagnosis = vectorStore.diagnoseVectorStore();
       if (diagnosis.details.vectorsCount === 0) {
         console.log('Vector store is empty, skipping to new section creation');
-        
+
         // Create new section directly since there are no existing documents to update
         const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
         if (allMarkdownFiles.length === 0) {
@@ -402,24 +402,30 @@ export const suggestUpdatesCallback = async ({
         try {
           const { createNewSectionFromKnowledge } = await import('services/llm/content-generator');
           const newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
-          
+
           if (newSectionSuggestion) {
             // Find the GitHub URL for the recommended file
-            const recommendedFileInfo = availableFiles.find(file => file.fileName === newSectionSuggestion.recommendedFile);
+            const recommendedFileInfo = availableFiles.find(
+              (file) => file.fileName === newSectionSuggestion.recommendedFile,
+            );
             const githubUrl = recommendedFileInfo?.githubUrl || availableFiles[0]?.githubUrl || '';
-            
+
             // Store the new section data in session
             const newSectionSessionId = `new_section_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-            storeSessionData(newSectionSessionId, {
-              sectionTitle: newSectionSuggestion.sectionTitle,
-              sectionContent: newSectionSuggestion.sectionContent,
-              recommendedFile: newSectionSuggestion.recommendedFile,
-              reasoning: newSectionSuggestion.reasoning,
-              githubUrl: githubUrl,
-              originalChannelId: knowledgeSourceChannelId,
-              originalThreadTs: knowledgeSourceThreadTs,
-              sessionId: sessionId,
-            }, SessionType.NEW_SECTION);
+            storeSessionData(
+              newSectionSessionId,
+              {
+                sectionTitle: newSectionSuggestion.sectionTitle,
+                sectionContent: newSectionSuggestion.sectionContent,
+                recommendedFile: newSectionSuggestion.recommendedFile,
+                reasoning: newSectionSuggestion.reasoning,
+                githubUrl: githubUrl,
+                originalChannelId: knowledgeSourceChannelId,
+                originalThreadTs: knowledgeSourceThreadTs,
+                sessionId: sessionId,
+              },
+              SessionType.NEW_SECTION,
+            );
 
             // Show new section creation modal directly
             const emptyVectorStoreMessage = await client.chat.postMessage({
@@ -469,7 +475,7 @@ export const suggestUpdatesCallback = async ({
           console.error('Error creating new section from empty vector store:', error);
         }
       }
-      
+
       // For other health check failures, show the original error
       if (healthCheckResult.blocks) {
         await client.chat.postMessage({
@@ -719,37 +725,40 @@ export const suggestUpdatesCallback = async ({
     ];
 
     // Create New Section button (separate actions block)
-    const newSectionButton = processedDoc.suggestionType === 'APPEND' && processedDoc.newSectionSuggestion ? {
-      type: 'button' as const,
-      text: { type: 'plain_text' as const, text: '💡 Create New Section', emoji: true },
-      action_id: 'create_new_section',
-      value: JSON.stringify(
-        (() => {
-          // 새 섹션 데이터를 세션에 저장
-          const newSectionSessionId = `new_section_${userId}_${Date.now()}`;
-          storeSessionData(
-            newSectionSessionId,
-            {
-              sectionTitle: processedDoc.newSectionSuggestion!.sectionTitle,
-              sectionContent: processedDoc.newSectionSuggestion!.sectionContent,
-              recommendedFile: processedDoc.newSectionSuggestion!.recommendedFile,
-              reasoning: processedDoc.newSectionSuggestion!.reasoning,
-              githubUrl: processedDoc.githubUrl,
-              originalChannelId: knowledgeSourceChannelId,
-              originalThreadTs: knowledgeSourceThreadTs,
-              sessionId: sessionId,
-            },
-            SessionType.NEW_SECTION,
-          );
+    const newSectionButton =
+      processedDoc.suggestionType === 'APPEND' && processedDoc.newSectionSuggestion
+        ? {
+            type: 'button' as const,
+            text: { type: 'plain_text' as const, text: '💡 Create New Section', emoji: true },
+            action_id: 'create_new_section',
+            value: JSON.stringify(
+              (() => {
+                // 새 섹션 데이터를 세션에 저장
+                const newSectionSessionId = `new_section_${userId}_${Date.now()}`;
+                storeSessionData(
+                  newSectionSessionId,
+                  {
+                    sectionTitle: processedDoc.newSectionSuggestion!.sectionTitle,
+                    sectionContent: processedDoc.newSectionSuggestion!.sectionContent,
+                    recommendedFile: processedDoc.newSectionSuggestion!.recommendedFile,
+                    reasoning: processedDoc.newSectionSuggestion!.reasoning,
+                    githubUrl: processedDoc.githubUrl,
+                    originalChannelId: knowledgeSourceChannelId,
+                    originalThreadTs: knowledgeSourceThreadTs,
+                    sessionId: sessionId,
+                  },
+                  SessionType.NEW_SECTION,
+                );
 
-          // 버튼 value에는 sessionId만 저장
-          return {
-            newSectionSessionId,
-            userId,
-          };
-        })(),
-      ),
-    } : null;
+                // 버튼 value에는 sessionId만 저장
+                return {
+                  newSectionSessionId,
+                  userId,
+                };
+              })(),
+            ),
+          }
+        : null;
 
     // CHOIR의 작업별 설명 메시지 (bonus idea 제외)
     let explanationText = '';
@@ -788,7 +797,7 @@ export const suggestUpdatesCallback = async ({
     if (bonusIdeaText && newSectionButton) {
       blocks.push(
         { type: 'section', text: { type: 'mrkdwn', text: bonusIdeaText } },
-        { type: 'actions', elements: [newSectionButton] }
+        { type: 'actions', elements: [newSectionButton] },
       );
     }
 

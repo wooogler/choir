@@ -2,6 +2,9 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import type { ModalView } from '@slack/web-api';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
+import { GitHubFileManager } from 'services/github/file-manager';
+import { getWorkspaceId } from 'services/slack';
+import { WorkspaceStore } from 'services/workspace/workspace-store';
 
 export const createNewSectionAction = async ({
   ack,
@@ -42,8 +45,52 @@ export const createNewSectionAction = async ({
       sessionId,
     } = newSectionData;
 
-    // GitHub edit 링크 생성 (blob을 edit으로 변경)
-    const editUrl = githubUrl.replace('/blob/', '/edit/');
+    // Get available markdown files for file selection dropdown
+    const workspaceStore = new WorkspaceStore();
+    const workspaceId = await getWorkspaceId(client);
+    const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+    if (!config || !config.githubRepo) {
+      throw new Error('Workspace configuration or GitHub repository not found');
+    }
+
+    // Try to get cached file list first
+    let fileList = await workspaceStore.getCachedMarkdownFiles(workspaceId);
+
+    if (!fileList) {
+      // If no cache, load from GitHub and cache the result
+      const { owner, repo, path } = config.githubRepo;
+      const fileManager = new GitHubFileManager();
+      const markdownFiles = await fileManager.getAllMarkdownFiles({ owner, repo, path });
+
+      fileList = markdownFiles.map((file) => ({
+        name: file.name,
+        path: file.path,
+      }));
+
+      // Cache the file list
+      await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
+    }
+
+    // Create file options for dropdown
+    const fileOptions = fileList.map((file) => ({
+      text: {
+        type: 'plain_text' as const,
+        text: file.name,
+      },
+      value: file.path,
+    }));
+
+    // Find the recommended file option
+    const recommendedFileOption = fileOptions.find((option) => option.value === recommendedFile);
+
+    // GitHub 편집 URL 생성 함수
+    const { owner, repo, path } = config.githubRepo;
+    const createEditUrl = (filePath: string) => {
+      return `https://github.com/${owner}/${repo}/edit/main/${filePath}`;
+    };
+
+    // 추천 파일의 편집 URL
+    const recommendedFileEditUrl = createEditUrl(recommendedFile);
 
     // 복사할 텍스트 생성 - 첫 번째 항목을 리스트 아이템으로 변환
     const contentLines = sectionContent.split('\n');
@@ -68,11 +115,11 @@ export const createNewSectionAction = async ({
       notify_on_close: true,
       title: {
         type: 'plain_text' as const,
-        text: '💡 New Section Idea',
+        text: 'Create a New Section',
       },
       close: {
         type: 'plain_text' as const,
-        text: 'Maybe Later',
+        text: 'Cancel',
       },
       submit: {
         type: 'plain_text' as const,
@@ -81,8 +128,10 @@ export const createNewSectionAction = async ({
       },
       private_metadata: JSON.stringify({
         newSectionSessionId,
-        editUrl,
+        recommendedFileEditUrl,
         recommendedFile,
+        owner,
+        repo,
         copyText,
         sectionTitle,
         originalChannelId: originalChannelId,
@@ -97,7 +146,7 @@ export const createNewSectionAction = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `👋 Great news! I've crafted a perfect new section for your knowledge.`,
+            text: `👋 I've prepared a new section for your documentation. Review and edit the content below, then click *Submit* to automatically add it to your selected file.`,
           },
         },
         {
@@ -109,6 +158,25 @@ export const createNewSectionAction = async ({
         },
         {
           type: 'divider',
+        },
+        {
+          type: 'input',
+          block_id: 'file_selection_input',
+          label: {
+            type: 'plain_text',
+            text: 'Select Target File',
+            emoji: true,
+          },
+          element: {
+            type: 'static_select',
+            action_id: 'file_selection',
+            placeholder: {
+              type: 'plain_text',
+              text: 'Choose a file...',
+            },
+            initial_option: recommendedFileOption || fileOptions[0],
+            options: fileOptions,
+          },
         },
         {
           type: 'section',
@@ -158,23 +226,8 @@ export const createNewSectionAction = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: "✨ *Ready to add this to your documentation?* Edit the content above if needed, then click the button below - I'll take you directly to the right place in GitHub where you can paste it!",
+            text: `📝 *Alternatively, you can edit the file manually:* <${recommendedFileEditUrl}|Open ${recommendedFile.split('/').pop()} in GitHub>`,
           },
-        },
-        {
-          type: 'actions',
-          elements: [
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
-                text: "🚀 Let's do this!",
-                emoji: true,
-              },
-              style: 'primary',
-              url: editUrl,
-            },
-          ],
         },
       ],
     };

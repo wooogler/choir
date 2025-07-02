@@ -2,6 +2,7 @@ import type { AllMiddlewareArgs, BlockAction, SlackActionMiddlewareArgs } from '
 import { GithubService } from 'services/github';
 import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
+import { WorkspaceStore } from 'services/workspace/workspace-store';
 
 // 타입 정의
 interface ActionWithValue {
@@ -145,6 +146,15 @@ export const testGithubConnectionCallback = async ({
           path: repoInfo.path || '',
         });
         logger.info(`Successfully loaded ${markdownFiles.length} files from repository`);
+
+        // 파일 목록을 워크스페이스 설정에 캐시
+        const workspaceStore = new WorkspaceStore();
+        const fileList = markdownFiles.map((file) => ({
+          name: file.name,
+          path: file.path,
+        }));
+        await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
+        logger.info(`Cached ${fileList.length} markdown files in workspace configuration`);
 
         const vectorStore = VectorStoreService.getInstance();
         // 새로운 파일들로 벡터스토어 설정 (기존 캐시 교체)

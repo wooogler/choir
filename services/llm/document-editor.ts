@@ -104,7 +104,7 @@ export async function classifyMessageIntent(
   if (messageHistory && messageHistory.length > 0) {
     const filteredHistory = messageHistory.filter((msg: any) => {
       if (!msg.text) return false;
-      
+
       // Filter out reclassification notification messages
       const notificationPatterns = [
         'let me know this was actually a question',
@@ -112,14 +112,16 @@ export async function classifyMessageIntent(
         ':thinking_face:',
         ':memo:',
       ];
-      
+
       return !notificationPatterns.some((pattern) => msg.text.includes(pattern));
     });
-    
-    const contextMessages = filteredHistory.map((msg: any) => {
-      const role = msg.bot_id ? 'Assistant' : 'User';
-      return `${role}: ${msg.text}`;
-    }).join('\n');
+
+    const contextMessages = filteredHistory
+      .map((msg: any) => {
+        const role = msg.bot_id ? 'Assistant' : 'User';
+        return `${role}: ${msg.text}`;
+      })
+      .join('\n');
     contextSection = `\n\nRecent conversation context:\n${contextMessages}\n\nUse this context to better understand the intent of the current message.`;
   }
 

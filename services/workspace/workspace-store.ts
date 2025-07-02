@@ -14,6 +14,11 @@ export interface WorkspaceConfig {
   organizationName?: string;
   organizationDescription?: string;
   managers: string[];
+  markdownFiles?: Array<{
+    name: string;
+    path: string;
+  }>;
+  markdownFilesCachedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -84,6 +89,9 @@ export class WorkspaceStore {
       // Date 객체 복원
       config.createdAt = new Date(config.createdAt);
       config.updatedAt = new Date(config.updatedAt);
+      if (config.markdownFilesCachedAt) {
+        config.markdownFilesCachedAt = new Date(config.markdownFilesCachedAt);
+      }
 
       return config;
     } catch (error) {
@@ -229,6 +237,40 @@ export class WorkspaceStore {
     } catch (error) {
       this.logger.error(`Failed to remove workspace: ${error}`);
     }
+  }
+
+  /**
+   * 마크다운 파일 목록 캐시 업데이트
+   */
+  public async setMarkdownFilesCache(workspaceId: string, files: Array<{ name: string; path: string }>): Promise<void> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+
+    config.markdownFiles = files;
+    config.markdownFilesCachedAt = new Date();
+    await this.saveWorkspaceConfig(config);
+  }
+
+  /**
+   * 캐시된 마크다운 파일 목록 가져오기
+   */
+  public async getCachedMarkdownFiles(workspaceId: string): Promise<Array<{ name: string; path: string }> | null> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config?.markdownFiles || !config.markdownFilesCachedAt) {
+      return null;
+    }
+
+    // 캐시가 24시간 이상 오래된 경우 무효화
+    const cacheAge = Date.now() - config.markdownFilesCachedAt.getTime();
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+
+    if (cacheAge > twentyFourHours) {
+      return null;
+    }
+
+    return config.markdownFiles;
   }
 
   /**

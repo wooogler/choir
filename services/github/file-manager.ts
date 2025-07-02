@@ -45,7 +45,7 @@ export class GitHubFileManager {
     ref?: string;
   }): Promise<MarkdownFile[]> {
     try {
-      const actualRef = ref || await this.getDefaultBranch(owner, repo);
+      const actualRef = ref || (await this.getDefaultBranch(owner, repo));
       const allMarkdownFiles: MarkdownFile[] = [];
 
       const exploreDirectory = async (dirPath: string): Promise<void> => {
@@ -125,7 +125,7 @@ export class GitHubFileManager {
     ref?: string;
   }): Promise<MarkdownFile | null> {
     try {
-      const actualRef = ref || await this.getDefaultBranch(owner, repo);
+      const actualRef = ref || (await this.getDefaultBranch(owner, repo));
       Logger.info(`Loading markdown file: ${path} (${owner}/${repo})`);
 
       const { data: fileData } = await this.octokit.rest.repos.getContent({

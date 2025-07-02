@@ -1,5 +1,8 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { AppConfig } from '@/config';
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
+import archiver from 'archiver';
 import {
   getChannelName,
   getGithubRepo,
@@ -14,9 +17,6 @@ import {
   setOrganizationName,
 } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import archiver from 'archiver';
 
 const appHomeOpenedCallback = async ({
   client,
@@ -757,13 +757,13 @@ const register = (app: App) => {
   // Handler for downloading interaction logs
   app.action('download_interaction_logs', async ({ ack, body, client, logger }) => {
     await ack();
-    
+
     try {
       const workspaceId = await getWorkspaceId(client);
-      
+
       // Create logs directory path
       const logsDir = path.join(process.cwd(), 'data', 'logs');
-      
+
       // Check if logs directory exists
       if (!fs.existsSync(logsDir)) {
         await client.chat.postEphemeral({
@@ -776,7 +776,7 @@ const register = (app: App) => {
 
       // Get all log files
       const logFiles = fs.readdirSync(logsDir).filter((file: string) => file.endsWith('.jsonl'));
-      
+
       if (logFiles.length === 0) {
         await client.chat.postEphemeral({
           user: body.user.id,
@@ -837,12 +837,12 @@ const register = (app: App) => {
       try {
         const fileSize = fs.statSync(zipPath).size;
         const fileName = `interaction-logs-${timestamp}.zip`;
-        
+
         // Open DM channel first to get proper channel ID
         const dmChannel = await client.conversations.open({
           users: body.user.id,
         });
-        
+
         if (!dmChannel.channel?.id) {
           throw new Error('Could not open DM channel');
         }
@@ -860,28 +860,26 @@ const register = (app: App) => {
         fs.unlinkSync(zipPath);
 
         logger.info(`Interaction logs (${fileSize} bytes) downloaded by user ${body.user.id}`);
-        
+
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
           text: `✅ Successfully uploaded interaction logs (${Math.round(fileSize / 1024)}KB)`,
         });
-
       } catch (uploadError) {
         logger.error('Error uploading log file:', uploadError);
-        
+
         // Clean up the temporary zip file
         if (fs.existsSync(zipPath)) {
           fs.unlinkSync(zipPath);
         }
-        
+
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
           text: '❌ Error uploading log files. Please try again.',
         });
       }
-
     } catch (error) {
       logger.error('Error downloading interaction logs:', error);
       await client.chat.postEphemeral({

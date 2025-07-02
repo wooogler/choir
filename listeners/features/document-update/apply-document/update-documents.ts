@@ -264,10 +264,14 @@ export const handleNewSectionModalSubmission = async ({
     // Extract form values
     const sectionTitle = values.section_title_input?.section_title?.value || '';
     const sectionBody = values.section_body_input?.section_body?.value || '';
+    const selectedFile = values.file_selection_input?.file_selection?.selected_option?.value || '';
 
     // Extract metadata
     const metadata = JSON.parse(body.view.private_metadata || '{}');
     const { recommendedFile, userId, editUrl, sessionId, buttonMessageTs, buttonChannelId } = metadata;
+
+    // Use selected file if available, otherwise fall back to recommended file
+    const targetFile = selectedFile || recommendedFile;
 
     logger.info(`New section modal submitted by user ${user.id}`);
     logger.info(`Section title: ${sectionTitle}`);
@@ -292,7 +296,7 @@ export const handleNewSectionModalSubmission = async ({
           error: 'Missing section title or body',
           sectionTitle: !!sectionTitle,
           sectionBody: !!sectionBody,
-          recommendedFile,
+          targetFile,
         },
         client,
         'modal',
@@ -301,13 +305,13 @@ export const handleNewSectionModalSubmission = async ({
       return;
     }
 
-    if (!recommendedFile) {
+    if (!targetFile) {
       await client.chat.postMessage({
         channel: user.id,
-        text: '❌ No recommended file found. Please try again.',
+        text: '❌ No target file found. Please try again.',
       });
 
-      // 로그: 추천 파일 없음
+      // 로그: 대상 파일 없음
       const workspaceId = await getWorkspaceId(client);
       logModalSubmit(
         user.id,
@@ -316,7 +320,7 @@ export const handleNewSectionModalSubmission = async ({
         Date.now() - startTime,
         false,
         {
-          error: 'No recommended file found',
+          error: 'No target file found',
           sectionTitle,
           sectionBodyLength: sectionBody.length,
         },
@@ -331,12 +335,12 @@ export const handleNewSectionModalSubmission = async ({
     const vectorStore = VectorStoreService.getInstance();
 
     // 1. 벡터 스토어에 새 섹션 추가
-    const success = await vectorStore.addNewSection(recommendedFile, sectionTitle, sectionBody);
+    const success = await vectorStore.addNewSection(targetFile, sectionTitle, sectionBody);
 
     if (!success) {
       await client.chat.postMessage({
         channel: user.id,
-        text: `❌ Failed to add new section to vector store for file: ${recommendedFile}`,
+        text: `❌ Failed to add new section to vector store for file: ${targetFile}`,
       });
 
       // 로그: 벡터 스토어 추가 실패
@@ -349,7 +353,7 @@ export const handleNewSectionModalSubmission = async ({
         false,
         {
           error: 'Failed to add new section to vector store',
-          recommendedFile,
+          targetFile,
           sectionTitle,
           sectionBodyLength: sectionBody.length,
         },
@@ -361,11 +365,11 @@ export const handleNewSectionModalSubmission = async ({
     }
 
     // 2. 업데이트된 마크다운 파일 가져오기
-    const markdownFile = vectorStore.getMarkdownFile(recommendedFile);
+    const markdownFile = vectorStore.getMarkdownFile(targetFile);
     if (!markdownFile) {
       await client.chat.postMessage({
         channel: user.id,
-        text: `❌ Updated markdown file not found: ${recommendedFile}`,
+        text: `❌ Updated markdown file not found: ${targetFile}`,
       });
 
       // 로그: 마크다운 파일 없음
@@ -378,7 +382,7 @@ export const handleNewSectionModalSubmission = async ({
         false,
         {
           error: 'Updated markdown file not found',
-          recommendedFile,
+          targetFile,
           sectionTitle,
           sectionBodyLength: sectionBody.length,
         },
@@ -413,7 +417,7 @@ export const handleNewSectionModalSubmission = async ({
         {
           error: 'Invalid GitHub URL',
           githubUrl,
-          recommendedFile,
+          targetFile,
           sectionTitle,
           sectionBodyLength: sectionBody.length,
         },
@@ -431,7 +435,7 @@ export const handleNewSectionModalSubmission = async ({
     const commitMessage = `Add new section: ${sectionTitle}
 
 Added by: ${userName}
-File: ${recommendedFile}
+File: ${targetFile}
 Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''}`;
 
     // 6. GitHub에 파일 업데이트
@@ -451,7 +455,7 @@ Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''
       // Use the same UI format as the success message (lines 448-458)
       const successText = `✅ New section "${sectionTitle}" added successfully to GitHub!
 
-📁 *File:* <${githubUrl}|${recommendedFile}>
+📁 *File:* <${githubUrl}|${targetFile}>
 📝 *Added by:* ${userName}
 
 🔍 *Preview:*
@@ -463,7 +467,7 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
         await client.chat.update({
           channel: buttonChannelId,
           ts: buttonMessageTs,
-          text: successText
+          text: successText,
         });
 
         logger.info(`Updated button message after successful section creation`);
@@ -471,13 +475,13 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
       // Check for main message from integrated UI
       else if (sessionId) {
         const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
-        
+
         // Check for main message (integrated UI)
         if (sessionData?.mainMessageTs && sessionData?.mainChannelId) {
           await client.chat.update({
             channel: sessionData.mainChannelId,
             ts: sessionData.mainMessageTs,
-            text: successText
+            text: successText,
           });
 
           logger.info(`Updated main message after successful section creation`);
@@ -487,7 +491,7 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
           await client.chat.update({
             channel: sessionData.emptyVectorStoreChannelId,
             ts: sessionData.emptyVectorStoreMessageTs,
-            text: successText
+            text: successText,
           });
 
           logger.info(`Updated empty vector store message after successful section creation`);

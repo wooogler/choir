@@ -45,7 +45,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
 
     // 컨텍스트를 위한 메시지 히스토리 가져오기 (최근 5분 이내, 최대 10개 가져와서 5개로 제한)
     const fiveMinutesAgo = Math.floor((Date.now() - 5 * 60 * 1000) / 1000);
-    
+
     const historyResult = event.thread_ts
       ? await client.conversations.replies({
           channel: event.channel,
@@ -69,13 +69,15 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         const messageTime = Number.parseFloat(msg.ts);
         return messageTime >= fiveMinutesAgo;
       });
-      
+
       // 타임스탬프순으로 정렬하고 최신 5개만 유지
-      messages = [...messages].sort((a, b) => {
-        const tsA = Number.parseFloat(a.ts || '0');
-        const tsB = Number.parseFloat(b.ts || '0');
-        return tsA - tsB;
-      }).slice(-5);
+      messages = [...messages]
+        .sort((a, b) => {
+          const tsA = Number.parseFloat(a.ts || '0');
+          const tsB = Number.parseFloat(b.ts || '0');
+          return tsA - tsB;
+        })
+        .slice(-5);
     }
 
     // historyResult.messages를 필터링된 메시지로 업데이트

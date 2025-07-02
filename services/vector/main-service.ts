@@ -24,7 +24,7 @@ export class VectorStoreService {
   private documentProcessor: DocumentProcessor;
   private markdownFiles: MarkdownFile[] = [];
   private cacheId = '';
-  
+
   // 증분 업데이트를 위한 노드별 Document 추적
   private nodeDocumentMap = new Map<string, Document<DocumentMetadata>[]>();
 
@@ -319,7 +319,7 @@ export class VectorStoreService {
     Logger.info('Resetting and rebuilding vector store');
 
     this.storeManager.reset();
-    
+
     // 현재 작업 중인 repository의 캐시만 무효화
     if (this.markdownFiles.length > 0) {
       const firstFile = this.markdownFiles[0];
@@ -338,7 +338,7 @@ export class VectorStoreService {
         Logger.warn('No GitHub URL found, invalidating all cache');
         await this.cacheManager.invalidateCache();
       }
-      
+
       return await this.initialize(this.markdownFiles, true, true);
     }
 
@@ -376,14 +376,14 @@ export class VectorStoreService {
       // 2. 새로 추가된 노드들만 증분 업데이트
       if (afterNodeCount > beforeNodeCount) {
         Logger.info('Performing incremental vector store update for new section');
-        
+
         // 간단한 증분 업데이트: 전체 파일을 다시 처리하되 캐시된 웹 콘텐츠는 유지
         const success = await this.updateSingleFileInVectorStore(file);
         if (!success) {
           Logger.warn('Failed to update vector store incrementally, but tree was updated');
           return false;
         }
-        
+
         Logger.info('Successfully updated vector store with new section');
       }
 
@@ -408,7 +408,7 @@ export class VectorStoreService {
       // 1. 트리에 내용 추가
       file.tree = appendNodeContent(file.tree, nodeId, content);
       Logger.info(`Appended content to node ${nodeId} in ${fileName}`);
-      
+
       // 2. 벡터 스토어 증분 업데이트
       Logger.info('Performing incremental vector store update for appended content');
       const success = await this.updateSingleFileInVectorStore(file);
@@ -416,7 +416,7 @@ export class VectorStoreService {
         Logger.warn('Failed to update vector store incrementally, but tree was updated');
         return false;
       }
-      
+
       return true;
     } catch (error) {
       Logger.error('Error appending to specific node', error as Error);
@@ -444,7 +444,7 @@ export class VectorStoreService {
       }
 
       Logger.info(`Updated ${updates.length} nodes in ${fileName}`);
-      
+
       // 2. 벡터 스토어 증분 업데이트
       Logger.info('Performing incremental vector store update for updated nodes');
       const success = await this.updateSingleFileInVectorStore(file);
@@ -452,7 +452,7 @@ export class VectorStoreService {
         Logger.warn('Failed to update vector store incrementally, but tree was updated');
         return false;
       }
-      
+
       return true;
     } catch (error) {
       Logger.error('Error updating specific nodes', error as Error);
@@ -501,11 +501,16 @@ export class VectorStoreService {
   }
 
   // ===== 증분 업데이트 메서드들 =====
-  
+
   /**
    * 단일 노드를 증분으로 벡터 스토어에 추가
    */
-  public async addNodeIncremental(fileName: string, nodeId: string, nodeContent: string, nodeType: 'paragraph' | 'listItem' | 'code' | 'blockquote' = 'paragraph'): Promise<boolean> {
+  public async addNodeIncremental(
+    fileName: string,
+    nodeId: string,
+    nodeContent: string,
+    nodeType: 'paragraph' | 'listItem' | 'code' | 'blockquote' = 'paragraph',
+  ): Promise<boolean> {
     try {
       const file = this.getMarkdownFile(fileName);
       if (!file) {
@@ -544,7 +549,12 @@ export class VectorStoreService {
   /**
    * 단일 노드를 증분으로 업데이트 (기존 제거 후 새로 추가)
    */
-  public async updateNodeIncremental(fileName: string, nodeId: string, newContent: string, nodeType: 'paragraph' | 'listItem' | 'code' | 'blockquote' = 'paragraph'): Promise<boolean> {
+  public async updateNodeIncremental(
+    fileName: string,
+    nodeId: string,
+    newContent: string,
+    nodeType: 'paragraph' | 'listItem' | 'code' | 'blockquote' = 'paragraph',
+  ): Promise<boolean> {
     try {
       // 1. 기존 노드의 Document들 제거
       await this.removeNodeFromVectorStore(nodeId);
@@ -570,10 +580,10 @@ export class VectorStoreService {
           Logger.error(`Failed to remove documents for node ${nodeId} from vector store`);
           throw new Error(`Failed to remove documents for node ${nodeId}`);
         }
-        
+
         // 맵에서도 제거
         this.nodeDocumentMap.delete(nodeId);
-        
+
         Logger.info(`Successfully removed ${existingDocuments.length} documents for node ${nodeId} from vector store`);
       }
     } catch (error) {
@@ -586,14 +596,14 @@ export class VectorStoreService {
    * 단일 노드에서 Document 생성
    */
   private async createDocumentsFromSingleNode(
-    file: MarkdownFile, 
-    nodeId: string, 
-    nodeContent: string, 
-    nodeType: string
+    file: MarkdownFile,
+    nodeId: string,
+    nodeContent: string,
+    nodeType: string,
   ): Promise<Document<DocumentMetadata>[]> {
     try {
       Logger.info(`Creating documents for single node ${nodeId} (type: ${nodeType})`);
-      
+
       // 단일 Document 생성
       const document = new Document({
         pageContent: nodeContent,
@@ -611,7 +621,7 @@ export class VectorStoreService {
           entityMentions: this.extractSimpleEntities(nodeContent),
         },
       });
-      
+
       Logger.info(`Successfully created document for node ${nodeId}`);
       return [document];
     } catch (error) {
@@ -628,10 +638,8 @@ export class VectorStoreService {
       // 간단한 키워드 추출
       const words = text.match(/\b[A-Za-z0-9_]{3,}\b/g) || [];
       const stopwords = new Set(['the', 'and', 'or', 'but', 'is', 'are', 'in', 'to', 'for', 'of', 'with', 'on', 'at']);
-      
-      return [...new Set(words)]
-        .filter(word => !stopwords.has(word.toLowerCase()))
-        .slice(0, 10); // 최대 10개
+
+      return [...new Set(words)].filter((word) => !stopwords.has(word.toLowerCase())).slice(0, 10); // 최대 10개
     } catch (error) {
       Logger.error('Error extracting entities', error as Error);
       return [];
@@ -643,8 +651,7 @@ export class VectorStoreService {
    */
   private async enhanceNewDocuments(documents: Document<DocumentMetadata>[]): Promise<Document<DocumentMetadata>[]> {
     try {
-      const isWebContentEnabled = 
-        process.env.ENABLE_WEB_CONTENT !== 'false' && process.env.NODE_ENV !== 'development';
+      const isWebContentEnabled = process.env.ENABLE_WEB_CONTENT !== 'false' && process.env.NODE_ENV !== 'development';
 
       if (!isWebContentEnabled) {
         Logger.info('Skipping web content enhancement for new documents');
@@ -653,7 +660,7 @@ export class VectorStoreService {
 
       const { DocumentEnhancer } = await import('../web-content/document-enhancer');
       const enhancer = DocumentEnhancer.getInstance();
-      
+
       return await enhancer.enhanceDocuments(documents);
     } catch (error) {
       Logger.error('Error enhancing new documents', error as Error);
@@ -673,7 +680,7 @@ export class VectorStoreService {
       // 텍스트 추출 및 임베딩 생성
       const texts = this.documentProcessor.prepareTextsForEmbedding(documents);
       const embeddings = await this.embeddingService.createEmbeddings(texts);
-      
+
       if (!embeddings || embeddings.length === 0) {
         Logger.error('Failed to create embeddings for new documents');
         return false;
@@ -686,7 +693,7 @@ export class VectorStoreService {
         Logger.error('Failed to add documents to vector store incrementally');
         return false;
       }
-      
+
       Logger.info(`Successfully added ${documents.length} documents to vector store incrementally`);
       return true;
     } catch (error) {
@@ -701,7 +708,7 @@ export class VectorStoreService {
   private async updateSingleFileInVectorStore(file: MarkdownFile): Promise<boolean> {
     try {
       Logger.info(`Updating vector store for file: ${file.name}`);
-      
+
       // 현재는 전체 재빌드 사용, 향후 개선 가능
       // TODO: 실제 증분 업데이트 구현
       return await this.resetAndRebuildVectorStore();
