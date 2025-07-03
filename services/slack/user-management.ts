@@ -1,3 +1,4 @@
+import { AppConfig } from '@/config';
 import type { WebClient } from '@slack/web-api';
 import { ErrorCodes, SlackError } from 'services/common/error-handler';
 import { Logger } from 'services/common/logger';
@@ -137,5 +138,49 @@ export async function getWorkspaceId(client: WebClient): Promise<string> {
   } catch (error) {
     Logger.error('Error getting workspace info', error as Error);
     throw new Error(`Failed to get workspace ID: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * 비밀번호를 통해 사용자를 관리자로 승격시킵니다.
+ */
+export async function promoteToManagerWithPassword(
+  workspaceId: string,
+  userId: string,
+  password: string,
+): Promise<boolean> {
+  try {
+    const config = AppConfig.getManagerPromotionConfig();
+
+    if (!config.password) {
+      Logger.warn('Manager promotion password is not configured');
+      return false;
+    }
+
+    if (password !== config.password) {
+      Logger.warn('Invalid password for manager promotion', { workspaceId, userId });
+      return false;
+    }
+
+    // 이미 관리자인지 확인
+    const isAlreadyManager = await isManager(workspaceId, userId);
+    if (isAlreadyManager) {
+      Logger.info('User is already a manager', { workspaceId, userId });
+      return true;
+    }
+
+    // 관리자로 승격
+    const result = await workspaceStore.addManager(workspaceId, userId, 'self-promotion');
+
+    if (result) {
+      Logger.info('User promoted to manager via password', { workspaceId, userId });
+    } else {
+      Logger.error('Failed to promote user to manager', undefined, { workspaceId, userId });
+    }
+
+    return result;
+  } catch (error) {
+    Logger.error('Error promoting user to manager with password', error as Error);
+    return false;
   }
 }

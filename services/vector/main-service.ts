@@ -486,7 +486,6 @@ export class VectorStoreService {
     return null;
   }
 
-
   /**
    * 향상된 검색 (기존 호환성)
    */

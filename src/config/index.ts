@@ -62,4 +62,10 @@ export class AppConfig {
       userId: this.getOptionalEnvVar('DEVELOPER_USER_ID'),
     };
   }
+
+  static getManagerPromotionConfig() {
+    return {
+      password: this.getOptionalEnvVar('MANAGER_PROMOTION_PASSWORD'),
+    };
+  }
 }

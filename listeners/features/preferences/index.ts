@@ -3,10 +3,7 @@ import { githubRepoUrlInputCallback, testGithubConnectionCallback } from './gith
 import { addManagerCallback, removeManagerCallback, selectUserCallback } from './manage-permissions';
 import qaChannelActions from './qa-channel-actions'; // default export { register }
 import { diagnoseVectorStoreAction } from './vector-store/vector-store-diagnosis';
-import {
-  normalizeMarkdownFilesAction,
-  reloadFromGithubAction,
-} from './vector-store/vector-store-management';
+import { normalizeMarkdownFilesAction, reloadFromGithubAction } from './vector-store/vector-store-management';
 
 export const registerPreferencesFeature = (app: App) => {
   // Manage Permissions

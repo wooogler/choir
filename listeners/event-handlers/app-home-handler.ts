@@ -13,6 +13,7 @@ import {
   getWorkspaceId,
   isManager,
   isWorkspaceOwner,
+  promoteToManagerWithPassword,
   setOrganizationDescription,
   setOrganizationName,
 } from 'services/slack';
@@ -575,6 +576,46 @@ ${organizationDescription}`,
       );
     }
 
+    // Become Manager section (only for non-managers)
+    const becomeManagerBlocks = [];
+    if (!isUserManager && !isOwner) {
+      becomeManagerBlocks.push(
+        {
+          type: 'header',
+          text: {
+            type: 'plain_text',
+            text: '👑 Request Manager Access',
+            emoji: true,
+          },
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: 'Enter the manager password to gain access to advanced features and settings.',
+          },
+        },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
+              text: {
+                type: 'plain_text',
+                text: 'Become Manager',
+                emoji: true,
+              },
+              style: 'primary',
+              action_id: 'request_manager_permission',
+            },
+          ],
+        },
+        {
+          type: 'divider',
+        },
+      );
+    }
+
     // Log download section (only for managers)
     const logDownloadBlocks = [];
     if (isUserManager || isOwner) {
@@ -620,6 +661,7 @@ ${organizationDescription}`,
       ...homeBlocks,
       ...managerManagementBlocks,
       ...managerBlocks,
+      ...becomeManagerBlocks,
       ...organizationDescriptionBlocks,
       ...qaChannelBlocks,
       ...vectorStoreBlocks,
@@ -876,6 +918,123 @@ const register = (app: App) => {
         user: body.user.id,
         channel: body.user.id,
         text: '❌ Error preparing interaction logs. Please try again.',
+      });
+    }
+  });
+
+  // Handler for requesting manager permission (password modal)
+  app.action('request_manager_permission', async ({ ack, body, client, logger }) => {
+    await ack();
+
+    try {
+      // Open modal with password input
+      await client.views.open({
+        trigger_id: (body as any).trigger_id,
+        view: {
+          type: 'modal',
+          callback_id: 'manager_password_modal',
+          title: {
+            type: 'plain_text',
+            text: 'Become Manager',
+          },
+          submit: {
+            type: 'plain_text',
+            text: 'Submit',
+          },
+          close: {
+            type: 'plain_text',
+            text: 'Cancel',
+          },
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '🔐 Enter the manager password to gain access to advanced features.',
+              },
+            },
+            {
+              type: 'input',
+              block_id: 'password_input',
+              element: {
+                type: 'plain_text_input',
+                action_id: 'password_value',
+                placeholder: {
+                  type: 'plain_text',
+                  text: 'Enter manager password...',
+                },
+                min_length: 1,
+              },
+              label: {
+                type: 'plain_text',
+                text: 'Manager Password',
+              },
+            },
+          ],
+        },
+      });
+    } catch (error) {
+      logger.error('Error opening manager permission modal:', error);
+
+      // Show error message to user
+      if ('user' in body && body.user?.id) {
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '❌ Error opening password modal. Please try again.',
+        });
+      }
+    }
+  });
+
+  // Handler for password modal submission
+  app.view('manager_password_modal', async ({ ack, body, client, logger, view }) => {
+    try {
+      const password = view.state.values.password_input.password_value.value;
+
+      if (!password) {
+        await ack({
+          response_action: 'errors',
+          errors: {
+            password_input: 'Password is required',
+          },
+        });
+        return;
+      }
+
+      // Get workspace ID
+      const workspaceId = await getWorkspaceId(client);
+
+      // Attempt to promote user to manager
+      const success = await promoteToManagerWithPassword(workspaceId, body.user.id, password);
+
+      if (success) {
+        await ack();
+
+        // Show success message
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '🎉 Welcome! You are now a manager and have access to all features. Please refresh your app home to see the changes.',
+        });
+
+        logger.info('User promoted to manager via password', { workspaceId, userId: body.user.id });
+      } else {
+        await ack({
+          response_action: 'errors',
+          errors: {
+            password_input: 'Invalid password. Please try again.',
+          },
+        });
+      }
+    } catch (error) {
+      logger.error('Error processing manager password modal:', error);
+
+      await ack({
+        response_action: 'errors',
+        errors: {
+          password_input: 'An error occurred. Please try again.',
+        },
       });
     }
   });

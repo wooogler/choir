@@ -12,6 +12,7 @@ export {
   isWorkspaceOwner,
   isBotUser,
   getWorkspaceId,
+  promoteToManagerWithPassword,
 } from './user-management';
 
 // Message Utils
