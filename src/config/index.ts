@@ -57,11 +57,6 @@ export class AppConfig {
     };
   }
 
-  static getDeveloperConfig() {
-    return {
-      userId: this.getOptionalEnvVar('DEVELOPER_USER_ID'),
-    };
-  }
 
   static getManagerPromotionConfig() {
     return {

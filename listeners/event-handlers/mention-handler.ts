@@ -1,6 +1,12 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
 // import cancelDocumentUpdatesCallback from "../features/document-update/cancel-document-updates-action"; // 삭제: document-update feature에서 중앙 관리
 import { handleIncomingMessage } from './message-router';
+import { 
+  getWorkspaceId, 
+  isCHOIRUser, 
+  getManagers, 
+  getNonUserResponseMessage 
+} from 'services/slack';
 // import { rejectUpdateCallback } from "../features/document-update/reject-update"; // 삭제: document-update feature에서 중앙 관리
 // import suggestUpdatesCallback from "../features/document-update/suggest-updates"; // 삭제: document-update feature에서 중앙 관리
 // import { applySelectedToGithubAction } from "../features/document-update/update-documents"; // 삭제: document-update feature에서 중앙 관리
@@ -14,6 +20,33 @@ const appMentionCallback = async ({
   logger,
 }: AllMiddlewareArgs & SlackEventMiddlewareArgs<'app_mention'>) => {
   try {
+    // Get workspace and check if user is a CHOIR user
+    const workspaceId = await getWorkspaceId(client);
+    const userId = event.user || '';
+    if (!userId) return;
+    
+    const isUserCHOIRUser = await isCHOIRUser(workspaceId, userId);
+
+    // If user is not a CHOIR user, send Non-user response
+    if (!isUserCHOIRUser) {
+      const managers = await getManagers(workspaceId);
+      const consentFormUrl = process.env.CHOIR_CONSENT_FORM_URL; // Optional consent form URL
+      const nonUserMessage = await getNonUserResponseMessage(managers, consentFormUrl);
+
+      await client.chat.postMessage({
+        channel: event.channel,
+        thread_ts: event.ts,
+        text: nonUserMessage,
+      });
+
+      logger.info('Non-CHOIR user attempted to use mention', { 
+        workspaceId, 
+        userId, 
+        channel: event.channel 
+      });
+      return;
+    }
+
     // 멘션 이벤트에서 사용자 메시지 추출 (봇 ID 제거)
     const userMessage =
       'text' in event && typeof event.text === 'string' ? event.text.replace(/<@[A-Z0-9]+>/, '').trim() : '';

@@ -16,6 +16,8 @@ import {
   promoteToManagerWithPassword,
   setOrganizationDescription,
   setOrganizationName,
+  getCHOIRUsers,
+  setCHOIRUsers,
 } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
 
@@ -39,8 +41,9 @@ const appHomeOpenedCallback = async ({
     // Check if user is workspace owner (for initial setup)
     const isOwner = await isWorkspaceOwner(event.user, client);
 
-    // Get current manager list
+    // Get current manager list and CHOIR users
     const managers = await getManagers(workspaceId);
+    const choirUsers = await getCHOIRUsers(workspaceId);
 
     // Get organization description
     const organizationDescription = (await getOrganizationDescription(workspaceId)) || 'No description set.';
@@ -510,6 +513,46 @@ ${organizationDescription}`,
       );
     }
 
+    // CHOIR User Management section
+    const choirUserManagementBlocks = [];
+    if (isUserManager || isOwner) {
+      choirUserManagementBlocks.push(
+        {
+          type: 'header',
+          text: {
+            type: 'plain_text',
+            text: '👥 CHOIR User Management',
+            emoji: true,
+          },
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Current CHOIR Users:* ${choirUsers.length} registered\n\nCHOIR users are authorized to use CHOIR features and participate in the research study. Managers are automatically included as CHOIR users.`,
+          },
+        },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
+              text: {
+                type: 'plain_text',
+                text: 'Manage CHOIR Users',
+                emoji: true,
+              },
+              style: 'primary',
+              action_id: 'manage_choir_users',
+            },
+          ],
+        },
+        {
+          type: 'divider',
+        },
+      );
+    }
+
     // Show management UI only for managers or workspace owners
     if (isUserManager || isOwner) {
       managerManagementBlocks.push(
@@ -659,6 +702,7 @@ ${organizationDescription}`,
     // Combine all blocks
     const blocks = [
       ...homeBlocks,
+      ...choirUserManagementBlocks,
       ...managerManagementBlocks,
       ...managerBlocks,
       ...becomeManagerBlocks,
@@ -984,6 +1028,173 @@ const register = (app: App) => {
           text: '❌ Error opening password modal. Please try again.',
         });
       }
+    }
+  });
+
+  // Handler for managing CHOIR users
+  app.action('manage_choir_users', async ({ ack, body, client, logger }) => {
+    await ack();
+
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      const choirUsers = await getCHOIRUsers(workspaceId);
+
+      // Note: multi_users_select automatically shows all workspace users
+
+      // Open modal with multi-select for CHOIR users
+      await client.views.open({
+        trigger_id: (body as any).trigger_id,
+        view: {
+          type: 'modal',
+          callback_id: 'choir_users_modal',
+          title: {
+            type: 'plain_text',
+            text: 'Manage CHOIR Users',
+          },
+          submit: {
+            type: 'plain_text',
+            text: 'Update Users',
+          },
+          close: {
+            type: 'plain_text',
+            text: 'Cancel',
+          },
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '👥 *Select CHOIR Users*\n\nChoose which workspace members can use CHOIR features and participate in the research study. Managers are automatically included.',
+              },
+            },
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `📊 *Current Status:* ${choirUsers.length} users registered`,
+              },
+            },
+            {
+              type: 'input',
+              block_id: 'choir_users_select_block',
+              element: {
+                type: 'multi_users_select',
+                action_id: 'choir_users_select',
+                initial_users: choirUsers,
+                placeholder: {
+                  type: 'plain_text',
+                  text: 'Select users to include in CHOIR...',
+                },
+              },
+              label: {
+                type: 'plain_text',
+                text: 'CHOIR Users',
+              },
+              hint: {
+                type: 'plain_text',
+                text: 'Selected users will be able to use CHOIR features. Managers are automatically included.',
+              },
+            },
+            {
+              type: 'context',
+              elements: [
+                {
+                  type: 'mrkdwn',
+                  text: '🔒 *Privacy Note:* Only selected users\' messages will be included in CHOIR\'s conversation history and research data.',
+                },
+              ],
+            },
+          ],
+        },
+      });
+    } catch (error) {
+      logger.error('Error opening CHOIR users management modal:', error);
+
+      // Show error message to user
+      if ('user' in body && body.user?.id) {
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '❌ Error opening user management modal. Please try again.',
+        });
+      }
+    }
+  });
+
+  // Handler for CHOIR users modal submission
+  app.view('choir_users_modal', async ({ ack, body, client, logger, view }) => {
+    try {
+      const selectedUsers = view.state.values.choir_users_select_block.choir_users_select.selected_users || [];
+
+      if (selectedUsers.length === 0) {
+        await ack({
+          response_action: 'errors',
+          errors: {
+            choir_users_select_block: 'Please select at least one user or cancel to keep current settings.',
+          },
+        });
+        return;
+      }
+
+      // Get workspace ID
+      const workspaceId = await getWorkspaceId(client);
+
+      // Update CHOIR users
+      const success = await setCHOIRUsers(workspaceId, selectedUsers);
+
+      if (success) {
+        await ack();
+
+        // Show success message
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: `✅ CHOIR users updated successfully! ${selectedUsers.length} users are now registered. Please refresh your app home to see the changes.`,
+        });
+
+        // Auto-refresh home screen
+        setTimeout(async () => {
+          try {
+            const mockEvent = {
+              type: 'app_home_opened' as const,
+              user: body.user.id,
+              tab: 'home' as const,
+              event_ts: Date.now().toString(),
+            };
+
+            const handlerArgs = {
+              client,
+              event: mockEvent,
+              logger,
+              context: {},
+              payload: mockEvent,
+            };
+
+            await appHomeOpenedCallback(handlerArgs as any);
+            logger.info(`Home screen refreshed for user ${body.user.id} after CHOIR users update`);
+          } catch (error) {
+            logger.error('Error refreshing home view after CHOIR users update:', error);
+          }
+        }, 1000);
+
+        logger.info('CHOIR users updated via modal', { workspaceId, userId: body.user.id, userCount: selectedUsers.length });
+      } else {
+        await ack({
+          response_action: 'errors',
+          errors: {
+            choir_users_select_block: 'Failed to update CHOIR users. Please try again.',
+          },
+        });
+      }
+    } catch (error) {
+      logger.error('Error processing CHOIR users modal:', error);
+
+      await ack({
+        response_action: 'errors',
+        errors: {
+          choir_users_select_block: 'An error occurred while updating users. Please try again.',
+        },
+      });
     }
   });
 

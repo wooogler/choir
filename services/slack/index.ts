@@ -13,6 +13,9 @@ export {
   isBotUser,
   getWorkspaceId,
   promoteToManagerWithPassword,
+  getCHOIRUsers,
+  setCHOIRUsers,
+  isCHOIRUser,
 } from './user-management';
 
 // Message Utils
@@ -63,3 +66,10 @@ export { HomeScreenService } from './home-screen';
 
 // Utils
 export { createGitbookSectionLink } from './utils';
+
+// Conversation History
+export {
+  getFilteredConversationHistory,
+  isCHOIRUser as isCHOIRUserFromHistory,
+  getNonUserResponseMessage,
+} from './conversation-history';

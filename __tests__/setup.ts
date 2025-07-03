@@ -6,7 +6,7 @@ process.env.NODE_ENV = 'test';
 process.env.SLACK_BOT_TOKEN = 'xoxb-test-token';
 process.env.SLACK_APP_TOKEN = 'xapp-test-token';
 process.env.SLACK_SIGNING_SECRET = 'test-signing-secret';
-process.env.DEVELOPER_USER_ID = 'U123456789';
+process.env.MANAGER_PROMOTION_PASSWORD = 'test-password';
 
 // Extend Jest matchers if needed
 // import '@testing-library/jest-dom';

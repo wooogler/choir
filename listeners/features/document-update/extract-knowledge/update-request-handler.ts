@@ -11,6 +11,8 @@ import {
   getWorkspaceId,
   isBotUser,
   isManager,
+  getCHOIRUsers,
+  getFilteredConversationHistory,
 } from 'services/slack';
 
 interface MessageResult {
@@ -49,22 +51,19 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       throw new Error('Failed to post loading message');
     }
 
-    // Get message history (last 10 messages within the last 5 minutes)
-    const fiveMinutesAgo = Math.floor((Date.now() - 5 * 60 * 1000) / 1000);
+    // Get workspace info and CHOIR users for filtering
+    const workspaceId = await getWorkspaceId(client);
+    const choirUsers = await getCHOIRUsers(workspaceId);
 
-    const historyResult = isThreadMention
-      ? await client.conversations.replies({
-          channel: originalChannelId,
-          ts: event.thread_ts,
-          limit: 15, // Get more to filter out bot messages
-          inclusive: true,
-          oldest: fiveMinutesAgo.toString(), // Only get messages from the last 5 minutes
-        })
-      : await client.conversations.history({
-          channel: originalChannelId,
-          limit: 15, // Get more to filter out bot messages
-          oldest: fiveMinutesAgo.toString(), // Only get messages from the last 5 minutes
-        });
+    // Get filtered conversation history (excludes Non-CHOIR users)
+    const filteredMessages = await getFilteredConversationHistory(client, event, choirUsers, {
+      timeLimit: 5, // 5 minutes
+      messageLimit: 15, // fetch up to 15 messages
+      maxResults: 15 // return up to 15 messages (we'll filter out bots later)
+    });
+
+    // Create historyResult object for compatibility
+    const historyResult = { messages: filteredMessages };
 
     if (!historyResult.messages?.length) {
       await client.chat.update({
@@ -83,7 +82,6 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       });
 
       // 로그: 메시지가 없어서 실패한 경우
-      const workspaceId = await getWorkspaceId(client);
       await logUpdateRequestProcessing(
         userId,
         workspaceId,

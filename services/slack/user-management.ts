@@ -184,3 +184,42 @@ export async function promoteToManagerWithPassword(
     return false;
   }
 }
+
+/**
+ * CHOIR 사용자 목록을 가져옵니다.
+ */
+export async function getCHOIRUsers(workspaceId: string): Promise<string[]> {
+  try {
+    return await workspaceStore.getCHOIRUsers(workspaceId);
+  } catch (error) {
+    Logger.error('Error getting CHOIR users', error as Error, { workspaceId });
+    return [];
+  }
+}
+
+/**
+ * CHOIR 사용자 목록을 설정합니다.
+ */
+export async function setCHOIRUsers(workspaceId: string, userIds: string[]): Promise<boolean> {
+  try {
+    const result = await workspaceStore.setCHOIRUsers(workspaceId, userIds);
+    Logger.info('CHOIR users updated', { workspaceId, userCount: userIds.length });
+    return result;
+  } catch (error) {
+    Logger.error('Error setting CHOIR users', error as Error, { workspaceId, userIds });
+    return false;
+  }
+}
+
+/**
+ * 사용자가 CHOIR 사용자인지 확인합니다.
+ */
+export async function isCHOIRUser(workspaceId: string, userId: string): Promise<boolean> {
+  try {
+    const choirUsers = await workspaceStore.getCHOIRUsers(workspaceId);
+    return choirUsers.includes(userId);
+  } catch (error) {
+    Logger.error('Error checking CHOIR user status', error as Error, { workspaceId, userId });
+    return false;
+  }
+}

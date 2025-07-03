@@ -111,8 +111,9 @@ AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME=
 # GitHub Integration
 GITHUB_TOKEN=             # For repository access
 
-# Development
-DEVELOPER_USER_ID=        # Initial admin user setup
+# Manager Access
+MANAGER_PROMOTION_PASSWORD=  # Password for user promotion to manager
+CHOIR_CONSENT_FORM_URL=      # Optional URL for research consent form
 ```
 
 ## Code Conventions
@@ -125,7 +126,7 @@ DEVELOPER_USER_ID=        # Initial admin user setup
 
 ## Testing & Quality
 
-- Run `npm test` before commits (builds + lints)
+- Run `pnpm build` before commits to check for TypeScript errors
 - Biome handles both linting and formatting
 - Use `npm run lint:fix` for automatic code fixes
 - All new features should include comprehensive error handling and logging

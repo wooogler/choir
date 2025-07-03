@@ -1,9 +1,10 @@
 name: Build and Lint
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
+  # Disabled - use pnpm build locally instead
+  # push:
+  #   branches: [ main ]
+  # pull_request:
 
 jobs:
   build:

@@ -52,15 +52,6 @@ registerListeners(app);
     // 워크스페이스 ID 가져오기
     const workspaceId = await getWorkspaceId(app.client);
 
-    // 개발자를 초기 관리자로 설정
-    const developerConfig = AppConfig.getDeveloperConfig();
-    if (developerConfig.userId) {
-      await setupInitialManager(workspaceId, developerConfig.userId, app.client);
-      app.logger.info(`Initialized developer (${developerConfig.userId}) as a manager`);
-    } else {
-      app.logger.warn('DEVELOPER_USER_ID environment variable is not set');
-    }
-
     // 워크스페이스 소유자를 초기 관리자로 설정
     try {
       // 워크스페이스 관리자 찾기 - 사용자 목록에서 is_owner가 true인 사용자

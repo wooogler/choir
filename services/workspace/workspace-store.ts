@@ -14,6 +14,7 @@ export interface WorkspaceConfig {
   organizationName?: string;
   organizationDescription?: string;
   managers: string[];
+  choirUsers: string[]; // Users authorized to use CHOIR (includes managers)
   markdownFiles?: Array<{
     name: string;
     path: string;
@@ -120,6 +121,7 @@ export class WorkspaceStore {
     const config: WorkspaceConfig = {
       workspaceId,
       managers: [initialManagerId],
+      choirUsers: [initialManagerId], // Manager is automatically a CHOIR user
       organizationName: teamInfo.team?.name || workspaceInfo.team || 'Our Organization',
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -138,12 +140,19 @@ export class WorkspaceStore {
     const config = await this.getWorkspaceConfig(workspaceId);
     if (!config) return false;
 
-    if (!config.managers.includes(grantedBy)) {
+    // 'self-promotion'인 경우 권한 확인 건너뛰기
+    if (grantedBy !== 'self-promotion' && !config.managers.includes(grantedBy)) {
       return false; // 권한 부여자가 관리자가 아님
     }
 
     if (!config.managers.includes(userId)) {
       config.managers.push(userId);
+      
+      // Ensure manager is also a CHOIR user
+      if (!config.choirUsers.includes(userId)) {
+        config.choirUsers.push(userId);
+      }
+      
       await this.saveWorkspaceConfig(config);
     }
 
@@ -163,6 +172,10 @@ export class WorkspaceStore {
 
     if (config.managers.includes(userId)) {
       config.managers = config.managers.filter((id) => id !== userId);
+      
+      // Note: We don't automatically remove from choirUsers when removing manager
+      // This allows former managers to continue using CHOIR if desired
+      
       await this.saveWorkspaceConfig(config);
     }
 
@@ -271,6 +284,60 @@ export class WorkspaceStore {
     }
 
     return config.markdownFiles;
+  }
+
+  /**
+   * CHOIR 사용자 목록 가져오기
+   */
+  public async getCHOIRUsers(workspaceId: string): Promise<string[]> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.choirUsers || [];
+  }
+
+  /**
+   * CHOIR 사용자 설정 (기존 목록 대체)
+   */
+  public async setCHOIRUsers(workspaceId: string, userIds: string[]): Promise<boolean> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) return false;
+
+    // Ensure all managers are included in CHOIR users
+    const allCHOIRUsers = [...new Set([...config.managers, ...userIds])];
+    
+    config.choirUsers = allCHOIRUsers;
+    await this.saveWorkspaceConfig(config);
+    return true;
+  }
+
+  /**
+   * CHOIR 사용자 추가
+   */
+  public async addCHOIRUser(workspaceId: string, userId: string): Promise<boolean> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) return false;
+
+    if (!config.choirUsers.includes(userId)) {
+      config.choirUsers.push(userId);
+      await this.saveWorkspaceConfig(config);
+    }
+    return true;
+  }
+
+  /**
+   * CHOIR 사용자 제거 (관리자는 제거할 수 없음)
+   */
+  public async removeCHOIRUser(workspaceId: string, userId: string): Promise<boolean> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) return false;
+
+    // 관리자는 CHOIR 사용자에서 제거할 수 없음
+    if (config.managers.includes(userId)) {
+      return false;
+    }
+
+    config.choirUsers = config.choirUsers.filter(id => id !== userId);
+    await this.saveWorkspaceConfig(config);
+    return true;
   }
 
   /**
