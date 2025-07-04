@@ -23,18 +23,14 @@
           "bot": [
               "app_mentions:read",
               "channels:history",
-              "channels:join",
               "channels:read",
               "chat:write",
-              "commands",
               "groups:history",
               "im:history",
               "im:read",
               "im:write",
               "mpim:history",
               "mpim:write",
-              "reactions:read",
-              "reactions:write",
               "team:read",
               "users:read",
               "files:write"
@@ -47,11 +43,7 @@
           "bot_events": [
               "app_home_opened",
               "app_mention",
-              "message.channels",
-              "message.groups",
-              "message.im",
-              "message.mpim",
-              "reaction_added"
+              "message.im"
           ]
       },
       "interactivity": {
