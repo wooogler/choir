@@ -41,18 +41,18 @@ This mixed-methods approach enables comprehensive understanding of how AI-assist
 
 ```bash
 # Development
-npm run dev              # Development mode with ts-node
-npm run dev:watch        # Watch mode with nodemon
-npm run dev:prod         # Production mode locally
+pnpm run dev              # Development mode with ts-node
+pnpm run dev:watch        # Watch mode with nodemon
+pnpm run dev:prod         # Production mode locally
 
 # Build & Quality
-npm run build           # TypeScript compilation to dist/
-npm run lint            # Run Biome linting
-npm run lint:fix        # Auto-fix linting issues
-npm test               # Build + lint (full test suite)
+pnpm run build           # TypeScript compilation to dist/
+pnpm run lint            # Run Biome linting
+pnpm run lint:fix        # Auto-fix linting issues
+pnpm test               # Build + lint (full test suite)
 
 # Dependencies
-npm install            # Install dependencies using npm
+pnpm install            # Install dependencies using pnpm
 ```
 
 ## Technology Stack
@@ -128,7 +128,7 @@ CHOIR_CONSENT_FORM_URL=      # Optional URL for research consent form
 
 - Run `pnpm build` before commits to check for TypeScript errors
 - Biome handles both linting and formatting
-- Use `npm run lint:fix` for automatic code fixes
+- Use `pnpm run lint:fix` for automatic code fixes
 - All new features should include comprehensive error handling and logging
 
 ## Deployment Notes
