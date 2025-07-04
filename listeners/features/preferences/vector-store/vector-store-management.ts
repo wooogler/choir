@@ -72,9 +72,8 @@ export const reloadFromGithubAction = async ({
       return;
     }
 
-    // 벡터 저장소 업데이트
-    await vectorStore.setMarkdownFiles(markdownFiles, repoInfo);
-    const success = await vectorStore.initialize(markdownFiles, true, false);
+    // 벡터 저장소 업데이트 (캐시 사용 안 함, 강제 새로고침)
+    const success = await vectorStore.initialize(markdownFiles, false, true);
 
     if (success) {
       await client.chat.postMessage({
@@ -82,7 +81,7 @@ export const reloadFromGithubAction = async ({
         text: `✅ Successfully reloaded ${markdownFiles.length} files from GitHub and updated vector store!`,
       });
 
-      // Auto-refresh home screen
+      // Auto-refresh home screen after a longer delay to avoid conflicts
       setTimeout(async () => {
         try {
           const mockEvent = {
@@ -105,7 +104,7 @@ export const reloadFromGithubAction = async ({
         } catch (error) {
           logger.error('Error refreshing home view after GitHub reload:', error);
         }
-      }, 1000);
+      }, 3000);
     } else {
       await client.chat.postMessage({
         channel: body.user.id,

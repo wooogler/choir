@@ -494,6 +494,89 @@ export const suggestUpdatesCallback = async ({
     if (currentIndex === 0) {
       searchResults = await vectorStore.similaritySearch(knowledgeContent, 5);
       if (!searchResults || searchResults.length === 0) {
+        // No search results, redirect to new section creation
+        const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
+        if (allMarkdownFiles.length === 0) {
+          await client.chat.postMessage({
+            channel: currentDmChannelId,
+            text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.',
+          });
+          return;
+        }
+
+        const availableFiles = allMarkdownFiles.map((file) => ({
+          fileName: file.name,
+          githubUrl: file.githubUrl,
+          description: `${file.name} - Documentation file`,
+        }));
+
+        try {
+          const { createNewSectionFromKnowledge } = await import('services/llm/content-generator');
+          const newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
+
+          if (newSectionSuggestion) {
+            // Find the GitHub URL for the recommended file
+            const recommendedFileInfo = availableFiles.find(
+              (file) => file.fileName === newSectionSuggestion.recommendedFile,
+            );
+            const githubUrl = recommendedFileInfo?.githubUrl || availableFiles[0]?.githubUrl || '';
+
+            // Store the new section data in session
+            const newSectionSessionId = `new_section_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+            storeSessionData(
+              newSectionSessionId,
+              {
+                sectionTitle: newSectionSuggestion.sectionTitle,
+                sectionContent: newSectionSuggestion.sectionContent,
+                recommendedFile: newSectionSuggestion.recommendedFile,
+                reasoning: newSectionSuggestion.reasoning,
+                githubUrl: githubUrl,
+                originalChannelId: knowledgeSourceChannelId,
+                originalThreadTs: knowledgeSourceThreadTs,
+                sessionId: sessionId,
+              },
+              SessionType.NEW_SECTION,
+            );
+
+            // Show new section creation modal directly
+            await client.chat.postMessage({
+              channel: currentDmChannelId,
+              text: `💡 Since you don't have any existing content in your vector store, I'll help you create a new section for this knowledge!`,
+              blocks: [
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `💡 *No existing content found - Let's create something new!*\n\nI've prepared a new section for your knowledge. Click below to review and add it to your documentation.`,
+                  },
+                },
+                {
+                  type: 'actions',
+                  elements: [
+                    {
+                      type: 'button',
+                      text: {
+                        type: 'plain_text',
+                        text: '📝 Create New Section',
+                        emoji: true,
+                      },
+                      action_id: 'create_new_section',
+                      value: JSON.stringify({
+                        newSectionSessionId,
+                        userId,
+                      }),
+                    },
+                  ],
+                },
+              ],
+            });
+            return;
+          }
+        } catch (error) {
+          console.error('Error creating new section when no search results found:', error);
+        }
+
+        // Fallback if new section creation fails
         await client.chat.postMessage({
           channel: currentDmChannelId,
           text: 'No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.',

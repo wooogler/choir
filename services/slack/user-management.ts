@@ -223,3 +223,42 @@ export async function isCHOIRUser(workspaceId: string, userId: string): Promise<
     return false;
   }
 }
+
+/**
+ * Get standardized Non-user response message with manager list and consent form URL
+ */
+export async function getNonUserResponseMessage(managers: string[], consentFormUrl?: string, client?: WebClient): Promise<string> {
+  let managerMentions: string;
+  
+  if (client) {
+    // Get actual usernames
+    const managerNames = await Promise.all(
+      managers.map(async id => {
+        const name = await getUserName(id, client);
+        return `*${name}*`;
+      })
+    );
+    managerMentions = managerNames.join(', ');
+  } else {
+    // Fallback to user IDs if no client provided
+    managerMentions = managers.map(id => `*${id}*`).join(', ');
+  }
+  
+  const consentSection = consentFormUrl 
+    ? `2. *Complete the research consent form* - <${consentFormUrl}|Click here to access the consent form>`
+    : '2. *Complete the research consent form* - your manager will provide you with the consent form link';
+
+  return `Hi there! 👋 
+
+I'd love to help you, but it looks like you're not currently registered as a CHOIR user. CHOIR is part of a research study designed to help teams manage and access their collective knowledge more effectively.
+
+To start using CHOIR, you'll need to:
+1. *Contact a workspace manager* - ${managerMentions} can add you to the CHOIR user list
+${consentSection}
+
+*Why join?* CHOIR can help you quickly find answers from your team's documentation, get contextual responses to questions, and contribute to advancing research on AI-powered collaboration tools.
+
+If you're interested in participating, please reach out to one of your workspace managers who can guide you through the process. We'd be happy to have you as part of our research community! 🎓✨
+
+_Note: Your messages and interactions are not being recorded or used for research purposes until you officially join as a CHOIR user._`;
+}

@@ -35,7 +35,6 @@ const appMentionCallback = async ({
 
       await client.chat.postMessage({
         channel: event.channel,
-        thread_ts: event.ts,
         text: nonUserMessage,
       });
 

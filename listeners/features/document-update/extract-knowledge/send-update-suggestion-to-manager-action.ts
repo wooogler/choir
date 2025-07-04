@@ -191,7 +191,6 @@ export const sendUpdateSuggestionToManagerCallback = async ({
               },
             ],
           },
-          client,
         );
 
         const postedMessage = await client.chat.postMessage({

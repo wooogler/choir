@@ -99,9 +99,8 @@ export const askToChannelSubmitCallback = async ({
 
     // 사용자에게 성공 메시지 전송 (원본 채널이 있는 경우)
     if (sessionData.originalChannelId) {
-      await client.chat.postEphemeral({
+      await client.chat.postMessage({
         channel: sessionData.originalChannelId,
-        user: userId,
         text: `✅ Your Q&A has been posted to <#${qaChannelId}>`,
       });
     }

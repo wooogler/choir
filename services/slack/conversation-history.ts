@@ -1,5 +1,6 @@
 import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
+import { processMessageText } from 'services/llm/qa-service';
 
 export interface ConversationHistoryOptions {
   timeLimit?: number; // minutes
@@ -33,23 +34,50 @@ export async function getFilteredConversationHistory(
 
   try {
     const timeLimitAgo = Math.floor((Date.now() - timeLimit * 60 * 1000) / 1000);
+    const now = Math.floor(Date.now() / 1000);
+
+    Logger.debug('Getting conversation history', {
+      channel: event.channel,
+      thread_ts: event.thread_ts,
+      timeLimit,
+      messageLimit,
+      maxResults,
+      timeLimitAgo,
+      currentTime: now,
+      timeDiffMinutes: (now - timeLimitAgo) / 60
+    });
 
     // Get conversation history or replies
+    // For longer time limits, get more messages without oldest filter to ensure we get recent messages
+    const adjustedLimit = timeLimit > 60 ? messageLimit * 5 : messageLimit; // Increase limit for longer time periods
+    
     const historyResult = event.thread_ts
       ? await client.conversations.replies({
           channel: event.channel,
           ts: event.thread_ts,
-          limit: messageLimit,
+          limit: adjustedLimit,
           inclusive: true,
-          oldest: timeLimitAgo.toString(),
+          // Don't use oldest filter for long time periods to ensure we get recent messages
+          ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
         })
       : await client.conversations.history({
           channel: event.channel,
-          limit: messageLimit,
-          oldest: timeLimitAgo.toString(),
+          limit: adjustedLimit,
+          // Don't use oldest filter for long time periods to ensure we get recent messages  
+          ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
         });
 
     let messages = historyResult.messages || [];
+
+    Logger.debug('Raw messages from Slack API', {
+      messageCount: messages.length,
+      messages: messages.map(msg => ({
+        ts: msg.ts,
+        user: msg.user,
+        text: msg.text?.substring(0, 100) + '...',
+        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp'
+      }))
+    });
 
     if (messages.length === 0) {
       return [];
@@ -60,6 +88,16 @@ export async function getFilteredConversationHistory(
       if (!msg.ts) return false;
       const messageTime = Number.parseFloat(msg.ts);
       return messageTime >= timeLimitAgo;
+    });
+
+    Logger.debug('After time filter', {
+      messageCount: messages.length,
+      messages: messages.map(msg => ({
+        ts: msg.ts,
+        user: msg.user,
+        text: msg.text?.substring(0, 100) + '...',
+        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp'
+      }))
     });
 
     // Filter out Non-CHOIR users (exclude messages from users not in choirUsers list)
@@ -75,6 +113,18 @@ export async function getFilteredConversationHistory(
       return false;
     });
 
+    Logger.debug('After CHOIR user filter', {
+      messageCount: messages.length,
+      choirUsers,
+      messages: messages.map(msg => ({
+        ts: msg.ts,
+        user: msg.user,
+        bot_id: msg.bot_id,
+        text: msg.text?.substring(0, 100) + '...',
+        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp'
+      }))
+    });
+
     // Sort by timestamp and limit results
     const sortedMessages = [...messages]
       .sort((a, b) => {
@@ -84,16 +134,47 @@ export async function getFilteredConversationHistory(
       })
       .slice(-maxResults);
 
+    Logger.debug('Final sorted messages', {
+      messageCount: sortedMessages.length,
+      messages: sortedMessages.map(msg => ({
+        ts: msg.ts,
+        user: msg.user,
+        text: msg.text?.substring(0, 100) + '...',
+        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp'
+      }))
+    });
+
+    // Process mentions in message text to replace user IDs with names
+    const processedMessages = await Promise.all(
+      sortedMessages.map(async (msg) => {
+        if (msg.text) {
+          const processedText = await processMessageText(msg.text, client);
+          return { ...msg, text: processedText };
+        }
+        return msg;
+      })
+    );
+
+    Logger.debug('After mention processing', {
+      messageCount: processedMessages.length,
+      messages: processedMessages.map(msg => ({
+        ts: msg.ts,
+        user: msg.user,
+        text: msg.text?.substring(0, 100) + '...',
+        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp'
+      }))
+    });
+
     Logger.debug('Filtered conversation history', {
       originalCount: historyResult.messages?.length || 0,
-      filteredCount: sortedMessages.length,
+      filteredCount: processedMessages.length,
       choirUsersCount: choirUsers.length,
       timeLimit,
       messageLimit,
       maxResults
     });
 
-    return sortedMessages;
+    return processedMessages;
   } catch (error) {
     Logger.error('Error getting filtered conversation history', error as Error, {
       channel: event.channel,
@@ -113,27 +194,3 @@ export function isCHOIRUser(userId: string, choirUsers: string[]): boolean {
   return choirUsers.includes(userId);
 }
 
-/**
- * Get standardized Non-user response message with manager list and consent form URL
- */
-export async function getNonUserResponseMessage(managers: string[], consentFormUrl?: string): Promise<string> {
-  const managerMentions = managers.map(id => `<@${id}>`).join(', ');
-  
-  const consentSection = consentFormUrl 
-    ? `2. *Complete the research consent form* - <${consentFormUrl}|Click here to access the consent form>`
-    : '2. *Complete the research consent form* - your manager will provide you with the consent form link';
-
-  return `Hi there! 👋 
-
-I'd love to help you, but it looks like you're not currently registered as a CHOIR user. CHOIR is part of a research study designed to help teams manage and access their collective knowledge more effectively.
-
-To start using CHOIR, you'll need to:
-1. *Contact a workspace manager* - ${managerMentions} can add you to the CHOIR user list
-${consentSection}
-
-*Why join?* CHOIR can help you quickly find answers from your team's documentation, get contextual responses to questions, and contribute to advancing research on AI-powered collaboration tools.
-
-If you're interested in participating, please reach out to one of your workspace managers who can guide you through the process. We'd be happy to have you as part of our research community! 🎓✨
-
-_Note: Your messages and interactions are not being recorded or used for research purposes until you officially join as a CHOIR user._`;
-}

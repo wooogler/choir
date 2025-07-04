@@ -16,6 +16,7 @@ export {
   getCHOIRUsers,
   setCHOIRUsers,
   isCHOIRUser,
+  getNonUserResponseMessage,
 } from './user-management';
 
 // Message Utils
@@ -71,5 +72,4 @@ export { createGitbookSectionLink } from './utils';
 export {
   getFilteredConversationHistory,
   isCHOIRUser as isCHOIRUserFromHistory,
-  getNonUserResponseMessage,
 } from './conversation-history';

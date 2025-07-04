@@ -13,6 +13,7 @@ import {
   isManager,
   getCHOIRUsers,
   getFilteredConversationHistory,
+  getQAChannel,
 } from 'services/slack';
 
 interface MessageResult {
@@ -55,9 +56,14 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     const workspaceId = await getWorkspaceId(client);
     const choirUsers = await getCHOIRUsers(workspaceId);
 
+    // Check if current channel is Q&A channel
+    const qaChannelId = await getQAChannel(workspaceId, client);
+    const isQAChannel = qaChannelId === event.channel;
+
     // Get filtered conversation history (excludes Non-CHOIR users)
+    // Use longer timeLimit for Q&A channels to capture delayed responses
     const filteredMessages = await getFilteredConversationHistory(client, event, choirUsers, {
-      timeLimit: 5, // 5 minutes
+      timeLimit: isQAChannel ? 4320 : 10, // 3 days for Q&A channels, 10 minutes for regular channels
       messageLimit: 15, // fetch up to 15 messages
       maxResults: 15 // return up to 15 messages (we'll filter out bots later)
     });
