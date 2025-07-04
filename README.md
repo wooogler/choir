@@ -31,21 +31,21 @@ This app supports Azure OpenAI for AI services. To configure Azure OpenAI:
 3. Add the following environment variables to your `.env` file:
 
 ```env
-# Azure OpenAI 설정
+# Azure OpenAI Configuration
 AZURE_OPENAI_API_KEY=your_azure_openai_api_key
 AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com
 AZURE_OPENAI_API_VERSION=2024-10-21
 AZURE_OPENAI_DEPLOYMENT_NAME=your-chat-deployment-name
 AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME=your-embeddings-deployment-name
 
-# 사용할 AI 서비스 선택 (openai 또는 azure)
+# Select AI service to use (openai or azure)
 AI_PROVIDER=azure
 ```
 
 4. Validate your configuration using the provided utility:
 ```typescript
-import { validateAzureOpenAIConfig } from 'services/llm';
-validateAzureOpenAIConfig(); // Returns true if configuration is valid
+import { validateCurrentProvider } from 'services/llm';
+validateCurrentProvider(); // Returns true if current provider configuration is valid
 ```
 
 #### Install Dependencies

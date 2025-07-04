@@ -17,5 +17,14 @@ export {
 // Content generation functions
 export { createNewContentFromKnowledge } from './content-generator';
 
-// Azure OpenAI configuration
-export { validateAzureOpenAIConfig, getAzureOpenAIConfig, isAzureOpenAIEnabled } from './azure-config';
+// LLM configuration (Azure OpenAI and OpenAI)
+export { 
+  validateAzureOpenAIConfig, 
+  getAzureOpenAIConfig, 
+  isAzureOpenAIEnabled,
+  validateOpenAIConfig,
+  getOpenAIConfig,
+  isOpenAIEnabled,
+  getAIProvider,
+  validateCurrentProvider
+} from './llm-config';

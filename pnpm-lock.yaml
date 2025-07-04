@@ -24,7 +24,7 @@ importers:
         specifier: ^0.3.36
         version: 0.3.57(openai@4.104.0(ws@8.18.2)(zod@3.25.47))
       '@langchain/openai':
-        specifier: ^0.4.2
+        specifier: ^0.4.9
         version: 0.4.9(@langchain/core@0.3.57(openai@4.104.0(ws@8.18.2)(zod@3.25.47)))(ws@8.18.2)
       '@octokit/types':
         specifier: ^13.7.0
@@ -5912,7 +5912,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.2
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.9.0)
+      retry-axios: 2.6.0(axios@1.9.0(debug@4.4.1))
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -7157,7 +7157,7 @@ snapshots:
 
   resolve-pkg-maps@1.0.0: {}
 
-  retry-axios@2.6.0(axios@1.9.0):
+  retry-axios@2.6.0(axios@1.9.0(debug@4.4.1)):
     dependencies:
       axios: 1.9.0(debug@4.4.1)
 

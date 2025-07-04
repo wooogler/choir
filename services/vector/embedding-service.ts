@@ -1,33 +1,41 @@
-import { AzureOpenAIEmbeddings } from '@langchain/azure-openai';
+import { AzureOpenAIEmbeddings } from '@langchain/openai';
+import { OpenAIEmbeddings } from '@langchain/openai';
 import type { Document } from '@langchain/core/documents';
 import type { MemoryVectorStore } from 'langchain/vectorstores/memory';
 import type { DocumentMetadata } from './types';
+import { getAIProvider, getAzureOpenAIConfig, getOpenAIConfig } from '../llm/llm-config';
 
 /**
  * 임베딩 생성 및 관리를 담당하는 서비스 클래스
  */
 export class EmbeddingService {
-  private embeddings: AzureOpenAIEmbeddings;
+  private embeddings: AzureOpenAIEmbeddings | OpenAIEmbeddings;
   private logger: Console;
+  private provider: 'azure' | 'openai';
 
-  constructor(apiKey: string = process.env.AZURE_OPENAI_API_KEY || '', logger: Console = console) {
-    this.embeddings = new AzureOpenAIEmbeddings({
-      azureOpenAIApiKey: apiKey,
-      azureOpenAIEndpoint: process.env.AZURE_OPENAI_ENDPOINT || '',
-      azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME || '',
-      azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-10-21',
-      batchSize: 512,
-    });
+  constructor(apiKey?: string, logger: Console = console) {
+    this.provider = getAIProvider();
     this.logger = logger;
+    
+    if (this.provider === 'azure') {
+      const config = getAzureOpenAIConfig();
+      this.embeddings = new AzureOpenAIEmbeddings({
+        apiKey: apiKey || config.apiKey,
+        azureOpenAIEndpoint: config.endpoint,
+        azureOpenAIApiDeploymentName: config.embeddingsDeploymentName,
+        azureOpenAIApiVersion: config.apiVersion,
+        batchSize: 512,
+      });
+    } else {
+      const config = getOpenAIConfig();
+      this.embeddings = new OpenAIEmbeddings({
+        apiKey: apiKey || config.apiKey,
+        modelName: config.embeddingsModel,
+        batchSize: 512,
+      });
+    }
   }
 
-  /**
-   * Azure OpenAI 엔드포인트에서 인스턴스 이름 추출
-   */
-  private extractInstanceName(endpoint: string): string {
-    const match = endpoint.match(/https:\/\/([^.]+)\.openai\.azure\.com/);
-    return match ? match[1] : '';
-  }
 
   /**
    * 벡터가 유효한지 검사합니다
@@ -381,9 +389,16 @@ export class EmbeddingService {
   }
 
   /**
-   * Azure OpenAI 임베딩 API 인스턴스 반환
+   * 임베딩 API 인스턴스 반환
    */
-  public getEmbeddingAPI(): AzureOpenAIEmbeddings {
+  public getEmbeddingAPI(): AzureOpenAIEmbeddings | OpenAIEmbeddings {
     return this.embeddings;
+  }
+
+  /**
+   * 현재 사용 중인 AI 프로바이더 반환
+   */
+  public getProvider(): 'azure' | 'openai' {
+    return this.provider;
   }
 }

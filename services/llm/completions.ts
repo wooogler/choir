@@ -1,15 +1,33 @@
 import dotenv from 'dotenv';
-import { AzureOpenAI } from 'openai';
+import { AzureOpenAI, OpenAI } from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import { getAIProvider, getAzureOpenAIConfig, getOpenAIConfig } from './llm-config';
 
 dotenv.config();
 
-const azureOpenAI = new AzureOpenAI({
-  apiKey: process.env.AZURE_OPENAI_API_KEY,
-  endpoint: process.env.AZURE_OPENAI_ENDPOINT,
-  apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-10-21',
-  deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
-});
+let azureOpenAI: AzureOpenAI | null = null;
+let openAI: OpenAI | null = null;
+
+function initializeClients() {
+  const provider = getAIProvider();
+  
+  if (provider === 'azure') {
+    const config = getAzureOpenAIConfig();
+    azureOpenAI = new AzureOpenAI({
+      apiKey: config.apiKey,
+      endpoint: config.endpoint,
+      apiVersion: config.apiVersion,
+      deployment: config.deploymentName,
+    });
+  } else {
+    const config = getOpenAIConfig();
+    openAI = new OpenAI({
+      apiKey: config.apiKey,
+    });
+  }
+}
+
+initializeClients();
 
 export interface ChatCompletionOptions {
   model?: string;
@@ -20,13 +38,13 @@ export interface ChatCompletionOptions {
   response_format?: { type: 'text' | 'json_object' };
 }
 
-// Create chat completion with Azure OpenAI
+// Create chat completion with Azure OpenAI or OpenAI
 export const createChatCompletion = async (
   messages: ChatCompletionMessageParam[],
   options: ChatCompletionOptions = {},
 ) => {
   const {
-    model = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-4o-mini', // Azure에서는 deployment name 사용
+    model,
     temperature = 0.2,
     max_tokens = 1000,
     function_name = 'None',
@@ -34,13 +52,34 @@ export const createChatCompletion = async (
     response_format,
   } = options;
 
-  const completion = await azureOpenAI.chat.completions.create({
-    model, // Azure에서는 deployment name
-    messages,
-    temperature,
-    max_tokens,
-    ...(response_format && { response_format }),
-  });
+  const provider = getAIProvider();
+  let completion;
+
+  if (provider === 'azure') {
+    if (!azureOpenAI) {
+      throw new Error('Azure OpenAI client not initialized');
+    }
+    const config = getAzureOpenAIConfig();
+    completion = await azureOpenAI.chat.completions.create({
+      model: (model || config.deploymentName) as string,
+      messages,
+      temperature,
+      max_tokens,
+      ...(response_format && { response_format }),
+    });
+  } else {
+    if (!openAI) {
+      throw new Error('OpenAI client not initialized');
+    }
+    const config = getOpenAIConfig();
+    completion = await openAI.chat.completions.create({
+      model: (model || config.model) as string,
+      messages,
+      temperature,
+      max_tokens,
+      ...(response_format && { response_format }),
+    });
+  }
 
   const response = completion.choices[0].message.content;
   if (debug) {
