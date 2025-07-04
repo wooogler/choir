@@ -24,6 +24,7 @@ export class EmbeddingService {
         azureOpenAIEndpoint: config.endpoint,
         azureOpenAIApiDeploymentName: config.embeddingsDeploymentName,
         azureOpenAIApiVersion: config.apiVersion,
+        azureOpenAIApiInstanceName: this.extractInstanceName(config.endpoint || ''),
         batchSize: 512,
       });
     } else {
@@ -36,6 +37,13 @@ export class EmbeddingService {
     }
   }
 
+  /**
+   * Azure OpenAI 엔드포인트에서 인스턴스 이름 추출
+   */
+  private extractInstanceName(endpoint: string): string {
+    const match = endpoint.match(/https:\/\/([^.]+)\.openai\.azure\.com/);
+    return match ? match[1] : '';
+  }
 
   /**
    * 벡터가 유효한지 검사합니다
