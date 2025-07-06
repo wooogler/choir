@@ -63,7 +63,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     // Get filtered conversation history (excludes Non-CHOIR users)
     // Use longer timeLimit for Q&A channels to capture delayed responses
     const filteredMessages = await getFilteredConversationHistory(client, event, choirUsers, {
-      timeLimit: isQAChannel ? 4320 : 10, // 3 days for Q&A channels, 10 minutes for regular channels
+      timeLimit: isQAChannel ? 4320 : (event.thread_ts ? 1440 : 10), // 3 days for Q&A, 24 hours for threads, 10 minutes for regular
       messageLimit: 15, // fetch up to 15 messages
       maxResults: 15 // return up to 15 messages (we'll filter out bots later)
     });
