@@ -1,6 +1,7 @@
 import type { App } from '@slack/bolt';
 
 import { createNewSectionAction } from './actions/create-new-section';
+import { viewAnalyzedMessagesAction } from './actions/view-analyzed-messages';
 import { cancelDocumentUpdatesCallback } from './apply-document/cancel-document-updates-action';
 import { rejectUpdateCallback } from './apply-document/reject-update'; // Named export from reject-update.ts
 import { applySelectedToGithubAction, handleNewSectionModalSubmission } from './apply-document/update-documents'; // Named export from update-documents.ts
@@ -31,6 +32,7 @@ export const registerDocumentUpdateFeature = (app: App) => {
   app.action('cancel_update_suggestion_review', cancelUpdateSuggestionReviewCallback);
   app.action('open_knowledge_edit_manager_modal', openKnowledgeEditManagerModalCallback);
   app.action('create_new_section', createNewSectionAction);
+  app.action('view_analyzed_messages', viewAnalyzedMessagesAction);
 
   // Views
   app.view('update_editor_submission', handleSuggestionEditorSubmission);

@@ -36,13 +36,13 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     const loadingMessage = await client.chat.postMessage({
       channel: originalChannelId,
       ...(isThreadMention && { thread_ts: event.thread_ts }),
-      text: '🔍 Analyzing recent messages (last 5 minutes) to extract knowledge...',
+      text: '🔍 Analyzing recent messages to extract knowledge...',
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '🔍 Analyzing recent messages (last 5 minutes) to extract knowledge...',
+            text: '🔍 Analyzing recent messages to extract knowledge...',
           },
         },
       ],
@@ -197,10 +197,38 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         managerText = managers.length === 1 ? firstManagerName : `${firstManagerName} and other managers`;
       }
 
-      // Delete the loading message first
-      await client.chat.delete({
+      // Update loading message with compact analysis summary
+      await client.chat.update({
         channel: originalChannelId,
         ts: loadingMessage.ts,
+        text: `✅ Analyzed ${last10Messages.length} message${last10Messages.length > 1 ? 's' : ''} to extract knowledge`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `✅ *Analysis Complete* • 📊 ${last10Messages.length} message${last10Messages.length > 1 ? 's' : ''} analyzed`,
+            },
+            accessory: {
+              type: 'button',
+              text: {
+                type: 'plain_text',
+                text: 'View Messages',
+                emoji: true,
+              },
+              action_id: 'view_analyzed_messages',
+              value: JSON.stringify({
+                sessionId,
+                messageCount: last10Messages.length,
+                messages: last10Messages.map(msg => ({
+                  username: msg.username,
+                  text: msg.text.substring(0, 200), // Limit text length for storage
+                  ts: msg.ts,
+                })),
+              }),
+            },
+          },
+        ],
       });
 
       // First: Send public message with the suggested update content

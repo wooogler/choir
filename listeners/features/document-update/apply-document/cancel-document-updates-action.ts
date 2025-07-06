@@ -54,8 +54,9 @@ export const cancelDocumentUpdatesCallback = async ({
           ts: progressTs,
         });
         deleteProgressMessageTimestamp(userId);
+        logger.info('Progress message deleted successfully');
       } catch (deleteError) {
-        logger.error('진행 중 메시지 삭제 실패:', deleteError);
+        logger.warn('진행 중 메시지 삭제 실패 (메시지가 이미 없을 수 있음):', deleteError);
       }
     }
 
@@ -67,9 +68,57 @@ export const cancelDocumentUpdatesCallback = async ({
           channel: dmChannelId,
           ts: lastMessageTs,
           text: cancelMessage,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `${cancelText} ${cancelMessage}`,
+              },
+            },
+          ],
         });
-      } catch (error) {
-        logger.error('마지막 메시지 업데이트 실패:', error);
+        logger.info('Last message updated successfully with cancellation');
+      } catch (updateError) {
+        logger.warn('마지막 메시지 업데이트 실패, 새 메시지로 대체:', updateError);
+        // 업데이트 실패 시 새 메시지 전송
+        try {
+          await client.chat.postMessage({
+            channel: dmChannelId,
+            text: cancelMessage,
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: `${cancelText} ${cancelMessage}`,
+                },
+              },
+            ],
+          });
+        } catch (postError) {
+          logger.error('새 취소 메시지 전송도 실패:', postError);
+        }
+      }
+    } else {
+      // lastMessageTs가 없는 경우 새 메시지 전송
+      try {
+        await client.chat.postMessage({
+          channel: dmChannelId,
+          text: cancelMessage,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `${cancelText} ${cancelMessage}`,
+              },
+            },
+          ],
+        });
+        logger.info('New cancellation message sent');
+      } catch (postError) {
+        logger.error('새 취소 메시지 전송 실패:', postError);
       }
     }
 
@@ -121,6 +170,28 @@ export const cancelDocumentUpdatesCallback = async ({
   } catch (error) {
     logger.error('Error cancelling document updates:', error);
 
+    // 에러 로깅
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        'dm',
+        'dm',
+        'cancel_document_updates',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Failed to log cancel error:', logError);
+    }
+
+    // 사용자에게 에러 메시지 전송
     try {
       const dmResult = await client.conversations.open({
         users: body.user.id,
@@ -130,6 +201,15 @@ export const cancelDocumentUpdatesCallback = async ({
         await client.chat.postMessage({
           channel: dmResult.channel.id,
           text: `❌ Failed to cancel document updates: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `❌ *Error occurred while cancelling*\n${error instanceof Error ? error.message : 'Unknown error'}`,
+              },
+            },
+          ],
         });
       }
     } catch (dmError) {
