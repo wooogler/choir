@@ -56,10 +56,25 @@ export async function getQAChannel(workspaceId: string, client?: WebClient): Pro
  */
 export async function getChannelName(channelId: string, client: WebClient): Promise<string> {
   try {
+    // Handle DM channels (channel IDs starting with 'D')
+    if (channelId.startsWith('D')) {
+      return 'DM';
+    }
+    
     const channelInfo = await client.conversations.info({ channel: channelId });
     return channelInfo.channel?.name ? `<#${channelId}|${channelInfo.channel.name}>` : 'this channel';
   } catch (error) {
     Logger.error('Error getting channel name', error as Error, { channelId });
+    
+    // Check if this might be a group DM that failed to fetch
+    if (error && typeof error === 'object' && 'data' in error) {
+      const slackError = error as any;
+      if (slackError.data?.error === 'channel_not_found' || slackError.data?.error === 'missing_scope') {
+        // This might be a group DM with C-prefix that we can't access
+        return 'DM';
+      }
+    }
+    
     return 'this channel';
   }
 }

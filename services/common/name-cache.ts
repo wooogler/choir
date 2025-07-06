@@ -153,13 +153,40 @@ class NameCacheService {
       return channelId;
     }
 
-    // Check cache first
-    const cached = this.cache.channels[channelId];
-    if (cached && !this.isExpired(cached.lastUpdated)) {
-      return cached.name;
+    // Handle DM channels (channel IDs starting with 'D')
+    if (channelId.startsWith('D')) {
+      // Check cache first for DM channels
+      const cached = this.cache.channels[channelId];
+      if (cached && !this.isExpired(cached.lastUpdated)) {
+        return cached.name;
+      }
+
+      // For DM channels, return a simple "DM" name
+      const dmName = 'DM';
+      
+      // Update cache
+      this.cache.channels[channelId] = {
+        name: dmName,
+        workspaceId,
+        lastUpdated: new Date().toISOString(),
+      };
+      this.saveCache();
+      
+      return dmName;
     }
 
-    // Fetch from API
+    // Check cache first for regular channels
+    const cached = this.cache.channels[channelId];
+    if (cached && !this.isExpired(cached.lastUpdated)) {
+      // Special case: If a DM channel is cached as "Unknown Channel", re-validate it
+      if (channelId.startsWith('D') && cached.name === 'Unknown Channel') {
+        // Force refresh for DM channels that were previously unknown
+      } else {
+        return cached.name;
+      }
+    }
+
+    // Fetch from API for regular channels
     try {
       const result = await client.conversations.info({ channel: channelId });
       const channelName = result.channel?.name || 'Unknown Channel';
@@ -175,6 +202,27 @@ class NameCacheService {
       return channelName;
     } catch (error) {
       console.warn(`Failed to fetch channel name for ${channelId}:`, error);
+      
+      // Check if this might be a group DM that failed to fetch
+      // Group DMs sometimes have C-prefixed IDs but fail conversations.info calls
+      if (error && typeof error === 'object' && 'data' in error) {
+        const slackError = error as any;
+        if (slackError.data?.error === 'channel_not_found' || slackError.data?.error === 'missing_scope') {
+          // This might be a group DM with C-prefix that we can't access
+          const dmName = 'DM';
+          
+          // Update cache with DM name
+          this.cache.channels[channelId] = {
+            name: dmName,
+            workspaceId,
+            lastUpdated: new Date().toISOString(),
+          };
+          this.saveCache();
+          
+          return dmName;
+        }
+      }
+      
       return cached?.name || 'Unknown Channel';
     }
   }

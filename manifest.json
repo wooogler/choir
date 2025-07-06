@@ -30,6 +30,7 @@
               "im:read",
               "im:write",
               "mpim:history",
+              "mpim:read",
               "mpim:write",
               "team:read",
               "users:read",
