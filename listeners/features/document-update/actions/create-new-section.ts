@@ -15,6 +15,10 @@ export const createNewSectionAction = async ({
   const startTime = Date.now();
   await ack();
 
+  // Variables that need to be accessible in catch block
+  let workspaceId: string | undefined;
+  let originalChannelId: string | undefined;
+
   try {
     const value = body.actions?.[0]?.value;
     if (!value) {
@@ -28,6 +32,9 @@ export const createNewSectionAction = async ({
     const originalMessageTs = body.container?.message_ts;
     const buttonChannelId = body.channel?.id;
 
+    // Get workspace info early for logging
+    workspaceId = await getWorkspaceId(client);
+
     // 세션에서 새 섹션 데이터 가져오기
     const newSectionData = getSessionData(newSectionSessionId, SessionType.NEW_SECTION);
     if (!newSectionData) {
@@ -40,14 +47,16 @@ export const createNewSectionAction = async ({
       recommendedFile,
       reasoning,
       githubUrl,
-      originalChannelId,
+      originalChannelId: originalChannelIdFromSession,
       originalThreadTs,
       sessionId,
     } = newSectionData;
 
+    // Assign to outer scope variable for error logging
+    originalChannelId = originalChannelIdFromSession;
+
     // Get available markdown files for file selection dropdown
     const workspaceStore = new WorkspaceStore();
-    const workspaceId = await getWorkspaceId(client);
     const config = await workspaceStore.getWorkspaceConfig(workspaceId);
     if (!config || !config.githubRepo) {
       throw new Error('Workspace configuration or GitHub repository not found');
@@ -232,17 +241,21 @@ export const createNewSectionAction = async ({
       ],
     };
 
+    if (!body.trigger_id) {
+      throw new Error('Trigger ID not found');
+    }
+    
     await client.views.open({
-      trigger_id: body.trigger_id!,
+      trigger_id: body.trigger_id,
       view: modal,
     });
 
     // 로그: 성공
     await logButtonClick(
       body.user.id,
-      'unknown',
-      body.channel?.id || 'dm',
-      'dm',
+      workspaceId,
+      originalChannelId || body.channel?.id || 'dm',
+      originalChannelId ? 'public' : 'dm',
       'create_new_section',
       Date.now() - startTime,
       true,
@@ -269,20 +282,25 @@ export const createNewSectionAction = async ({
     });
 
     // 로그: 실패
-    await logButtonClick(
-      body.user.id,
-      'unknown',
-      body.channel?.id || 'dm',
-      'dm',
-      'create_new_section',
-      Date.now() - startTime,
-      false,
-      {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        errorStack: error instanceof Error ? error.stack : undefined,
-        buttonValue: body.actions?.[0]?.value,
-      },
-      client,
-    );
+    try {
+      const logWorkspaceId = workspaceId || await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        logWorkspaceId,
+        originalChannelId || body.channel?.id || 'dm',
+        originalChannelId ? 'public' : 'dm',
+        'create_new_section',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          buttonValue: body.actions?.[0]?.value,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Error logging button click failure:', logError);
+    }
   }
 };

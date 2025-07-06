@@ -308,8 +308,8 @@ export const handleNewSectionModalSubmission = async ({
           targetFile,
         },
         client,
-        'modal',
-        'dm',
+        originalChannelId || 'dm',
+        originalChannelId ? 'public' : 'dm',
       );
       return;
     }
@@ -334,8 +334,8 @@ export const handleNewSectionModalSubmission = async ({
           sectionBodyLength: sectionBody.length,
         },
         client,
-        'modal',
-        'dm',
+        originalChannelId || 'dm',
+        originalChannelId ? 'public' : 'dm',
       );
       return;
     }
@@ -574,8 +574,8 @@ I've added the new content. Knowledge grows stronger! ✨`;
         updatedMarkdownLength: updatedMarkdown.length,
       },
       client,
-      'modal',
-      'dm',
+      originalChannelId || 'dm',
+      originalChannelId ? 'public' : 'dm',
     );
   } catch (error) {
     logger.error('Error handling new section modal submission:', error);
@@ -588,6 +588,10 @@ I've added the new content. Knowledge grows stronger! ✨`;
     // 로그: 실패
     try {
       const workspaceId = await getWorkspaceId(client);
+      // Extract originalChannelId from metadata for error logging
+      const errorMetadata = JSON.parse(body.view.private_metadata || '{}');
+      const errorOriginalChannelId = errorMetadata.originalChannelId;
+      
       logModalSubmit(
         body.user.id,
         workspaceId,
@@ -600,8 +604,8 @@ I've added the new content. Knowledge grows stronger! ✨`;
           privateMetadata: body.view.private_metadata,
         },
         client,
-        'modal',
-        'dm',
+        errorOriginalChannelId || 'dm',
+        errorOriginalChannelId ? 'public' : 'dm',
       );
     } catch (logError) {
       logger.error('Failed to log error:', logError);

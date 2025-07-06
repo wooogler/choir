@@ -315,35 +315,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       // 로그: 성공적인 지식 추출
       const totalProcessingTime = Date.now() - startTime;
 
-      // 업데이트 요청 처리 로그
-      await logUpdateRequestProcessing(
-        userId,
-        workspaceId,
-        originalChannelId,
-        event.channel_type || 'public',
-        isThreadMention,
-        totalProcessingTime,
-        true,
-        `Update request from ${extractorName}`,
-        extractionResult.cleanContent,
-        {
-          sessionId,
-          channelName,
-          extractorName,
-          isUserManager,
-          managersCount: managers.length,
-          sourceMessageCount: last10Messages.length,
-          sourceMessages: last10Messages.map((msg) => ({
-            userId: msg.userId,
-            username: msg.username,
-            text: msg.text,
-            ts: msg.ts,
-          })),
-        },
-        client,
-      );
-
-      // 지식 추출 로그
+      // 지식 추출 로그 (업데이트 요청 처리와 지식 추출을 하나로 통합)
       await logKnowledgeExtraction(
         userId,
         workspaceId,

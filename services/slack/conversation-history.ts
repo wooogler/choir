@@ -51,23 +51,57 @@ export async function getFilteredConversationHistory(
     // For longer time limits, get more messages without oldest filter to ensure we get recent messages
     const adjustedLimit = timeLimit > 60 ? messageLimit * 5 : messageLimit; // Increase limit for longer time periods
     
-    const historyResult = event.thread_ts
-      ? await client.conversations.replies({
-          channel: event.channel,
-          ts: event.thread_ts,
-          limit: adjustedLimit,
-          inclusive: true,
-          // Don't use oldest filter for long time periods to ensure we get recent messages
-          ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
-        })
-      : await client.conversations.history({
-          channel: event.channel,
-          limit: adjustedLimit,
-          // Don't use oldest filter for long time periods to ensure we get recent messages  
-          ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
-        });
+    let messages: SlackMessage[] = [];
 
-    let messages = historyResult.messages || [];
+    if (event.thread_ts) {
+      // For thread mentions, get both thread messages AND conversation before the parent message
+      
+      // 1. Get thread messages (including parent message)
+      const threadResult = await client.conversations.replies({
+        channel: event.channel,
+        ts: event.thread_ts,
+        limit: Math.ceil(adjustedLimit / 2), // Use half the limit for thread messages
+        inclusive: true,
+        ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
+      });
+      
+      const threadMessages = threadResult.messages || [];
+      
+      // 2. Get conversation history before the parent message (thread_ts)
+      const parentTimestamp = Number.parseFloat(event.thread_ts);
+      const preThreadResult = await client.conversations.history({
+        channel: event.channel,
+        latest: event.thread_ts, // Stop at the parent message
+        limit: Math.ceil(adjustedLimit / 2), // Use remaining half for pre-thread context
+        ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
+      });
+      
+      const preThreadMessages = (preThreadResult.messages || [])
+        .filter((msg: SlackMessage) => {
+          if (!msg.ts) return false;
+          const msgTimestamp = Number.parseFloat(msg.ts);
+          return msgTimestamp < parentTimestamp; // Exclude the parent message to avoid duplication
+        });
+      
+      // 3. Combine pre-thread conversation + thread messages (chronological order)
+      messages = [...preThreadMessages.reverse(), ...threadMessages];
+      
+      Logger.debug('Thread context enhanced', {
+        preThreadCount: preThreadMessages.length,
+        threadCount: threadMessages.length,
+        totalCount: messages.length,
+        threadTs: event.thread_ts
+      });
+    } else {
+      // Non-thread mentions: use regular channel history
+      const historyResult = await client.conversations.history({
+        channel: event.channel,
+        limit: adjustedLimit,
+        ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
+      });
+      
+      messages = historyResult.messages || [];
+    }
 
     Logger.debug('Raw messages from Slack API', {
       messageCount: messages.length,
@@ -166,7 +200,7 @@ export async function getFilteredConversationHistory(
     });
 
     Logger.debug('Filtered conversation history', {
-      originalCount: historyResult.messages?.length || 0,
+      originalCount: messages.length || 0,
       filteredCount: processedMessages.length,
       choirUsersCount: choirUsers.length,
       timeLimit,
