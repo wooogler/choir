@@ -5,15 +5,15 @@ import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { answerQuestion } from 'services/llm/qa-service';
 import {
   createGitbookSectionLink,
+  getCHOIRUsers,
   getChannelName,
+  getFilteredConversationHistory,
   getManagers,
   getOrganizationDescription,
   getOrganizationName,
   getQAChannel,
   getUserName,
   getWorkspaceId,
-  getCHOIRUsers,
-  getFilteredConversationHistory,
 } from 'services/slack';
 import type { SlackMessage } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
@@ -53,7 +53,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     const messages = await getFilteredConversationHistory(client, event, choirUsers, {
       timeLimit: 5, // 5 minutes
       messageLimit: 10, // fetch up to 10 messages
-      maxResults: 5 // return up to 5 messages
+      maxResults: 5, // return up to 5 messages
     });
 
     // Create historyResult object for compatibility with existing code

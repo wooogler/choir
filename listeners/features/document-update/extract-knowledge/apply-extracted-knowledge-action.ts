@@ -53,52 +53,58 @@ export const applyExtractedKnowledgeCallback = async ({
       return;
     }
 
-    // Send public notification to channel
-    await client.chat.postMessage({
-      channel: sessionData.originalChannelId,
-      ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
-      text: '🔄 Processing knowledge and generating document updates...',
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '🔄 Manager is processing the knowledge and generating document updates...',
-          },
-        },
-      ],
-    });
+    // Check if this is already a DM conversation
+    const isDMConversation = sessionData.originalChannelId?.startsWith('D');
 
-    // Show ephemeral processing message with DM button
-    await client.chat.postEphemeral({
-      channel: sessionData.originalChannelId,
-      user: body.user.id,
-      text: '🔄 Processing knowledge and generating document updates...',
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '🔄 Processing knowledge and generating document updates...\nDocument suggestions will be sent to your DM.',
-          },
-        },
-        {
-          type: 'actions',
-          elements: [
-            {
-              type: 'button' as const,
-              text: {
-                type: 'plain_text' as const,
-                text: 'Open DM',
-                emoji: true,
-              },
-              style: 'primary' as const,
-              url: `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
+    // Only send processing messages if this is NOT a DM conversation
+    if (!isDMConversation) {
+      // Send public notification to channel
+      await client.chat.postMessage({
+        channel: sessionData.originalChannelId,
+        ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
+        text: '🔄 Processing knowledge and generating document updates...',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '🔄 Manager is processing the knowledge and generating document updates...',
             },
-          ],
-        },
-      ],
-    });
+          },
+        ],
+      });
+
+      // Show ephemeral processing message with DM button
+      await client.chat.postEphemeral({
+        channel: sessionData.originalChannelId,
+        user: body.user.id,
+        text: '🔄 Processing knowledge and generating document updates...',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '🔄 Processing knowledge and generating document updates...\nDocument suggestions will be sent to your DM.',
+            },
+          },
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button' as const,
+                text: {
+                  type: 'plain_text' as const,
+                  text: 'Open DM',
+                  emoji: true,
+                },
+                style: 'primary' as const,
+                url: `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
+              },
+            ],
+          },
+        ],
+      });
+    }
 
     // Prepare source messages based on knowledgeItem.source indices
     let sourceMessages = [];

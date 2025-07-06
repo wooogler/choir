@@ -227,24 +227,28 @@ export async function isCHOIRUser(workspaceId: string, userId: string): Promise<
 /**
  * Get standardized Non-user response message with manager list and consent form URL
  */
-export async function getNonUserResponseMessage(managers: string[], consentFormUrl?: string, client?: WebClient): Promise<string> {
+export async function getNonUserResponseMessage(
+  managers: string[],
+  consentFormUrl?: string,
+  client?: WebClient,
+): Promise<string> {
   let managerMentions: string;
-  
+
   if (client) {
     // Get actual usernames
     const managerNames = await Promise.all(
-      managers.map(async id => {
+      managers.map(async (id) => {
         const name = await getUserName(id, client);
         return `*${name}*`;
-      })
+      }),
     );
     managerMentions = managerNames.join(', ');
   } else {
     // Fallback to user IDs if no client provided
-    managerMentions = managers.map(id => `*${id}*`).join(', ');
+    managerMentions = managers.map((id) => `*${id}*`).join(', ');
   }
-  
-  const consentSection = consentFormUrl 
+
+  const consentSection = consentFormUrl
     ? `2. *Complete the research consent form* - <${consentFormUrl}|Click here to access the consent form>`
     : '2. *Complete the research consent form* - your manager will provide you with the consent form link';
 

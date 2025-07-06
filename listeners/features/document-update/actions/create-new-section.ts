@@ -244,7 +244,7 @@ export const createNewSectionAction = async ({
     if (!body.trigger_id) {
       throw new Error('Trigger ID not found');
     }
-    
+
     await client.views.open({
       trigger_id: body.trigger_id,
       view: modal,
@@ -283,7 +283,7 @@ export const createNewSectionAction = async ({
 
     // 로그: 실패
     try {
-      const logWorkspaceId = workspaceId || await getWorkspaceId(client);
+      const logWorkspaceId = workspaceId || (await getWorkspaceId(client));
       await logButtonClick(
         body.user.id,
         logWorkspaceId,

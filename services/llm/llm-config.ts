@@ -76,7 +76,7 @@ export function getAIProvider(): 'azure' | 'openai' {
   if (process.env.AI_PROVIDER === 'azure') {
     return 'azure';
   }
-  
+
   // Default behavior: prefer Azure if available, otherwise OpenAI
   if (process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT) {
     return 'azure';
@@ -84,13 +84,13 @@ export function getAIProvider(): 'azure' | 'openai' {
   if (process.env.OPENAI_API_KEY) {
     return 'openai';
   }
-  
+
   return 'azure'; // Default fallback
 }
 
 export function validateCurrentProvider(): boolean {
   const provider = getAIProvider();
-  
+
   if (provider === 'azure') {
     return validateAzureOpenAIConfig();
   } else {

@@ -18,13 +18,13 @@ export {
 export { createNewContentFromKnowledge } from './content-generator';
 
 // LLM configuration (Azure OpenAI and OpenAI)
-export { 
-  validateAzureOpenAIConfig, 
-  getAzureOpenAIConfig, 
+export {
+  validateAzureOpenAIConfig,
+  getAzureOpenAIConfig,
   isAzureOpenAIEnabled,
   validateOpenAIConfig,
   getOpenAIConfig,
   isOpenAIEnabled,
   getAIProvider,
-  validateCurrentProvider
+  validateCurrentProvider,
 } from './llm-config';

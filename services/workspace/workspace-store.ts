@@ -147,12 +147,12 @@ export class WorkspaceStore {
 
     if (!config.managers.includes(userId)) {
       config.managers.push(userId);
-      
+
       // Ensure manager is also a CHOIR user
       if (!config.choirUsers.includes(userId)) {
         config.choirUsers.push(userId);
       }
-      
+
       await this.saveWorkspaceConfig(config);
     }
 
@@ -172,10 +172,10 @@ export class WorkspaceStore {
 
     if (config.managers.includes(userId)) {
       config.managers = config.managers.filter((id) => id !== userId);
-      
+
       // Note: We don't automatically remove from choirUsers when removing manager
       // This allows former managers to continue using CHOIR if desired
-      
+
       await this.saveWorkspaceConfig(config);
     }
 
@@ -303,7 +303,7 @@ export class WorkspaceStore {
 
     // Ensure all managers are included in CHOIR users
     const allCHOIRUsers = [...new Set([...config.managers, ...userIds])];
-    
+
     config.choirUsers = allCHOIRUsers;
     await this.saveWorkspaceConfig(config);
     return true;
@@ -335,7 +335,7 @@ export class WorkspaceStore {
       return false;
     }
 
-    config.choirUsers = config.choirUsers.filter(id => id !== userId);
+    config.choirUsers = config.choirUsers.filter((id) => id !== userId);
     await this.saveWorkspaceConfig(config);
     return true;
   }

@@ -1,11 +1,6 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
+import { getManagers, getNonUserResponseMessage, getWorkspaceId, isCHOIRUser } from 'services/slack';
 import { handleIncomingMessage } from './message-router';
-import { 
-  getWorkspaceId, 
-  isCHOIRUser, 
-  getManagers, 
-  getNonUserResponseMessage 
-} from 'services/slack';
 
 /**
  * DM 메시지 처리 콜백
@@ -23,7 +18,7 @@ const dmMessageCallback = async ({
     const workspaceId = await getWorkspaceId(client);
     const userId = 'user' in event ? event.user : '';
     if (!userId) return;
-    
+
     const isUserCHOIRUser = await isCHOIRUser(workspaceId, userId);
 
     // If user is not a CHOIR user, send Non-user response
@@ -37,10 +32,10 @@ const dmMessageCallback = async ({
         text: nonUserMessage,
       });
 
-      logger.info('Non-CHOIR user attempted to use DM', { 
-        workspaceId, 
-        userId, 
-        channel: event.channel 
+      logger.info('Non-CHOIR user attempted to use DM', {
+        workspaceId,
+        userId,
+        channel: event.channel,
       });
       return;
     }

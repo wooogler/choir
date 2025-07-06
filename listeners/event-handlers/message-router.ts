@@ -1,11 +1,11 @@
 import { classifyMessageIntent } from 'services/llm/document-editor';
-import { 
-  getOrganizationDescription, 
-  getOrganizationName, 
-  getWorkspaceId, 
-  isManager, 
+import {
   getCHOIRUsers,
-  getFilteredConversationHistory 
+  getFilteredConversationHistory,
+  getOrganizationDescription,
+  getOrganizationName,
+  getWorkspaceId,
+  isManager,
 } from 'services/slack';
 import { logMessageProcessing } from '../../services/common/user-interaction-logger';
 import { handleGeneralConversationMessage } from '../features/conversation/general-conversation-handler';
@@ -41,7 +41,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     const messages = await getFilteredConversationHistory(client, event, choirUsers, {
       timeLimit: 5, // 5 minutes
       messageLimit: 10, // fetch up to 10 messages
-      maxResults: 5 // return up to 5 messages
+      maxResults: 5, // return up to 5 messages
     });
 
     // 메시지 의도 분류 (질문 또는 업데이트 요청 또는 일반 대화)

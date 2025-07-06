@@ -4,6 +4,7 @@ import { AppConfig } from '@/config';
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
 import archiver from 'archiver';
 import {
+  getCHOIRUsers,
   getChannelName,
   getGithubRepo,
   getManagers,
@@ -14,10 +15,9 @@ import {
   isManager,
   isWorkspaceOwner,
   promoteToManagerWithPassword,
+  setCHOIRUsers,
   setOrganizationDescription,
   setOrganizationName,
-  getCHOIRUsers,
-  setCHOIRUsers,
 } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
 
@@ -1100,7 +1100,7 @@ const register = (app: App) => {
               elements: [
                 {
                   type: 'mrkdwn',
-                  text: '🔒 *Privacy Note:* Only selected users\' messages will be included in CHOIR\'s conversation history and research data.',
+                  text: "🔒 *Privacy Note:* Only selected users' messages will be included in CHOIR's conversation history and research data.",
                 },
               ],
             },
@@ -1177,7 +1177,11 @@ const register = (app: App) => {
           }
         }, 1000);
 
-        logger.info('CHOIR users updated via modal', { workspaceId, userId: body.user.id, userCount: selectedUsers.length });
+        logger.info('CHOIR users updated via modal', {
+          workspaceId,
+          userId: body.user.id,
+          userCount: selectedUsers.length,
+        });
       } else {
         await ack({
           response_action: 'errors',

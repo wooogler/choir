@@ -591,7 +591,7 @@ I've added the new content. Knowledge grows stronger! ✨`;
       // Extract originalChannelId from metadata for error logging
       const errorMetadata = JSON.parse(body.view.private_metadata || '{}');
       const errorOriginalChannelId = errorMetadata.originalChannelId;
-      
+
       logModalSubmit(
         body.user.id,
         workspaceId,

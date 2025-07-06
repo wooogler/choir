@@ -1,9 +1,9 @@
+import type { Document } from '@langchain/core/documents';
 import { AzureOpenAIEmbeddings } from '@langchain/openai';
 import { OpenAIEmbeddings } from '@langchain/openai';
-import type { Document } from '@langchain/core/documents';
 import type { MemoryVectorStore } from 'langchain/vectorstores/memory';
-import type { DocumentMetadata } from './types';
 import { getAIProvider, getAzureOpenAIConfig, getOpenAIConfig } from '../llm/llm-config';
+import type { DocumentMetadata } from './types';
 
 /**
  * 임베딩 생성 및 관리를 담당하는 서비스 클래스
@@ -16,7 +16,7 @@ export class EmbeddingService {
   constructor(apiKey?: string, logger: Console = console) {
     this.provider = getAIProvider();
     this.logger = logger;
-    
+
     if (this.provider === 'azure') {
       const config = getAzureOpenAIConfig();
       this.embeddings = new AzureOpenAIEmbeddings({

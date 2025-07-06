@@ -10,7 +10,7 @@ let openAI: OpenAI | null = null;
 
 function initializeClients() {
   const provider = getAIProvider();
-  
+
   if (provider === 'azure') {
     const config = getAzureOpenAIConfig();
     azureOpenAI = new AzureOpenAI({

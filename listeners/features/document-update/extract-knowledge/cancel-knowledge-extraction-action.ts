@@ -49,7 +49,7 @@ export const cancelKnowledgeExtractionCallback = async ({
       });
     } catch (updateError) {
       logger.warn('Failed to update ephemeral message, will send new message:', updateError);
-      
+
       // If update fails, send a new ephemeral message
       await client.chat.postEphemeral({
         channel: originalChannelId,

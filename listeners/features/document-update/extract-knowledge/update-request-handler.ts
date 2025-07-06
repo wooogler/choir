@@ -5,15 +5,15 @@ import { extractKnowledgeFromMessages } from 'services/llm/knowledge-extractor';
 import {
   type SlackMessage,
   createSlackMessageWithName,
+  getCHOIRUsers,
   getChannelName,
+  getFilteredConversationHistory,
   getManagers,
+  getQAChannel,
   getUserName,
   getWorkspaceId,
   isBotUser,
   isManager,
-  getCHOIRUsers,
-  getFilteredConversationHistory,
-  getQAChannel,
 } from 'services/slack';
 
 interface MessageResult {
@@ -63,9 +63,9 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     // Get filtered conversation history (excludes Non-CHOIR users)
     // Use longer timeLimit for Q&A channels to capture delayed responses
     const filteredMessages = await getFilteredConversationHistory(client, event, choirUsers, {
-      timeLimit: isQAChannel ? 4320 : (event.thread_ts ? 1440 : 10), // 3 days for Q&A, 24 hours for threads, 10 minutes for regular
+      timeLimit: isQAChannel ? 4320 : event.thread_ts ? 1440 : 10, // 3 days for Q&A, 24 hours for threads, 10 minutes for regular
       messageLimit: 15, // fetch up to 15 messages
-      maxResults: 15 // return up to 15 messages (we'll filter out bots later)
+      maxResults: 15, // return up to 15 messages (we'll filter out bots later)
     });
 
     // Create historyResult object for compatibility
@@ -220,7 +220,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
               value: JSON.stringify({
                 sessionId,
                 messageCount: last10Messages.length,
-                messages: last10Messages.map(msg => ({
+                messages: last10Messages.map((msg) => ({
                   username: msg.username,
                   text: msg.text.substring(0, 200), // Limit text length for storage
                   ts: msg.ts,
