@@ -119,6 +119,16 @@ export async function getFilteredConversationHistory(
       
       const threadMessages = threadResult.messages || [];
       
+      Logger.debug('Thread messages retrieved', {
+        threadMessageCount: threadMessages.length,
+        threadMessages: threadMessages.map(msg => ({
+          ts: msg.ts,
+          user: msg.user,
+          text: msg.text?.substring(0, 100) + '...',
+          timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp'
+        }))
+      });
+      
       // 2. Get conversation history before the parent message (thread_ts)
       const parentTimestamp = Number.parseFloat(event.thread_ts);
       const preThreadResult = await client.conversations.history({
@@ -128,12 +138,35 @@ export async function getFilteredConversationHistory(
         ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
       });
       
+      Logger.debug('Pre-thread raw messages retrieved', {
+        preThreadRawCount: preThreadResult.messages?.length || 0,
+        parentTimestamp,
+        parentTimestampISO: new Date(parentTimestamp * 1000).toISOString(),
+        preThreadRawMessages: (preThreadResult.messages || []).map(msg => ({
+          ts: msg.ts,
+          user: msg.user,
+          text: msg.text?.substring(0, 100) + '...',
+          timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp',
+          isBeforeParent: msg.ts ? Number.parseFloat(msg.ts) < parentTimestamp : false
+        }))
+      });
+      
       const preThreadMessages = (preThreadResult.messages || [])
         .filter((msg: SlackMessage) => {
           if (!msg.ts) return false;
           const msgTimestamp = Number.parseFloat(msg.ts);
           return msgTimestamp < parentTimestamp; // Exclude the parent message to avoid duplication
         });
+      
+      Logger.debug('Pre-thread messages after parent filter', {
+        preThreadFilteredCount: preThreadMessages.length,
+        preThreadFilteredMessages: preThreadMessages.map(msg => ({
+          ts: msg.ts,
+          user: msg.user,
+          text: msg.text?.substring(0, 100) + '...',
+          timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp'
+        }))
+      });
       
       // 3. Combine pre-thread conversation + thread messages (chronological order)
       messages = [...preThreadMessages.reverse(), ...threadMessages];
@@ -144,7 +177,9 @@ export async function getFilteredConversationHistory(
         totalCount: messages.length,
         threadTs: event.thread_ts,
         timeLimitHours: timeLimit / 60,
-        isExtendedContext: timeLimit > 60
+        isExtendedContext: timeLimit > 60,
+        timeLimitAgoISO: new Date(timeLimitAgo * 1000).toISOString(),
+        referenceTimestampISO: new Date(Math.floor(referenceTimestamp / 1000) * 1000).toISOString()
       });
     } else {
       // Non-thread mentions: use regular channel history
