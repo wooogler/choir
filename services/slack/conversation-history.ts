@@ -207,15 +207,42 @@ export async function getFilteredConversationHistory(
     }
 
     // Filter messages within time limit
+    const beforeTimeFilter = messages.length;
+    const rejectedByTimeFilter: any[] = [];
+    
     messages = messages.filter((msg: SlackMessage) => {
-      if (!msg.ts) return false;
+      if (!msg.ts) {
+        rejectedByTimeFilter.push({ msg, reason: 'no_timestamp' });
+        return false;
+      }
       const messageTime = Number.parseFloat(msg.ts);
-      return messageTime >= timeLimitAgo;
+      const isWithinTimeLimit = messageTime >= timeLimitAgo;
+      
+      if (!isWithinTimeLimit) {
+        rejectedByTimeFilter.push({ 
+          msg: {
+            ts: msg.ts,
+            user: msg.user,
+            text: msg.text?.substring(0, 50) + '...',
+            timestamp: new Date(messageTime * 1000).toISOString()
+          }, 
+          reason: 'outside_time_limit',
+          messageTime,
+          timeLimitAgo,
+          timeDiff: (messageTime - timeLimitAgo) / 3600 // hours
+        });
+      }
+      
+      return isWithinTimeLimit;
     });
 
     Logger.debug('After time filter', {
-      messageCount: messages.length,
-      messages: messages.map(msg => ({
+      beforeCount: beforeTimeFilter,
+      afterCount: messages.length,
+      rejectedCount: rejectedByTimeFilter.length,
+      timeLimitAgoISO: new Date(timeLimitAgo * 1000).toISOString(),
+      rejectedMessages: rejectedByTimeFilter,
+      remainingMessages: messages.map(msg => ({
         ts: msg.ts,
         user: msg.user,
         text: msg.text?.substring(0, 100) + '...',
@@ -225,6 +252,9 @@ export async function getFilteredConversationHistory(
 
     // Filter out Non-CHOIR users (exclude messages from users not in choirUsers list)
     // Keep messages from bots and CHOIR users only
+    const beforeChoirFilter = messages.length;
+    const rejectedByChoirFilter: any[] = [];
+    
     messages = messages.filter((msg: SlackMessage) => {
       // Always include bot messages
       if (msg.bot_id) return true;
@@ -233,33 +263,62 @@ export async function getFilteredConversationHistory(
       if (msg.user && choirUsers.includes(msg.user)) return true;
       
       // Exclude messages from Non-users
+      rejectedByChoirFilter.push({
+        msg: {
+          ts: msg.ts,
+          user: msg.user,
+          text: msg.text?.substring(0, 50) + '...',
+          timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp'
+        },
+        reason: 'not_choir_user',
+        isInChoirUsers: msg.user ? choirUsers.includes(msg.user) : false
+      });
+      
       return false;
     });
 
     Logger.debug('After CHOIR user filter', {
-      messageCount: messages.length,
+      beforeCount: beforeChoirFilter,
+      afterCount: messages.length,
+      rejectedCount: rejectedByChoirFilter.length,
+      choirUsersCount: choirUsers.length,
       choirUsers,
-      messages: messages.map(msg => ({
+      rejectedMessages: rejectedByChoirFilter,
+      remainingMessages: messages.map(msg => ({
         ts: msg.ts,
         user: msg.user,
         bot_id: msg.bot_id,
         text: msg.text?.substring(0, 100) + '...',
-        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp'
+        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp',
+        isChoirUser: msg.user ? choirUsers.includes(msg.user) : false
       }))
     });
 
     // Sort by timestamp and limit results
+    const beforeSortAndLimit = messages.length;
     const sortedMessages = [...messages]
       .sort((a, b) => {
         const tsA = Number.parseFloat(a.ts || '0');
         const tsB = Number.parseFloat(b.ts || '0');
         return tsA - tsB;
-      })
-      .slice(-maxResults);
+      });
+      
+    const finalMessages = sortedMessages.slice(-maxResults);
+    const droppedByLimit = sortedMessages.slice(0, -maxResults);
 
-    Logger.debug('Final sorted messages', {
-      messageCount: sortedMessages.length,
-      messages: sortedMessages.map(msg => ({
+    Logger.debug('Final sorted and limited messages', {
+      beforeLimitCount: beforeSortAndLimit,
+      afterSortCount: sortedMessages.length,
+      maxResults,
+      finalCount: finalMessages.length,
+      droppedByLimitCount: droppedByLimit.length,
+      droppedMessages: droppedByLimit.map(msg => ({
+        ts: msg.ts,
+        user: msg.user,
+        text: msg.text?.substring(0, 50) + '...',
+        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp'
+      })),
+      finalMessages: finalMessages.map(msg => ({
         ts: msg.ts,
         user: msg.user,
         text: msg.text?.substring(0, 100) + '...',
@@ -269,7 +328,7 @@ export async function getFilteredConversationHistory(
 
     // Process mentions in message text to replace user IDs with names
     const processedMessages = await Promise.all(
-      sortedMessages.map(async (msg) => {
+      finalMessages.map(async (msg) => {
         if (msg.text) {
           const processedText = await processMessageText(msg.text, client);
           return { ...msg, text: processedText };
