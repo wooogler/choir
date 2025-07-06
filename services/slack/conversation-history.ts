@@ -26,8 +26,11 @@ export async function getFilteredConversationHistory(
   choirUsers: string[],
   options: ConversationHistoryOptions = {}
 ): Promise<SlackMessage[]> {
+  // Use extended time limit for thread replies when not explicitly specified
+  const defaultTimeLimit = event.thread_ts ? 1440 : 5; // 24 hours for thread replies, 5 minutes for regular mentions
+  
   const {
-    timeLimit = 5, // 5 minutes by default
+    timeLimit = defaultTimeLimit,
     messageLimit = 10, // fetch up to 10 messages
     maxResults = 5 // return up to 5 messages
   } = options;
@@ -90,7 +93,9 @@ export async function getFilteredConversationHistory(
         preThreadCount: preThreadMessages.length,
         threadCount: threadMessages.length,
         totalCount: messages.length,
-        threadTs: event.thread_ts
+        threadTs: event.thread_ts,
+        timeLimitHours: timeLimit / 60,
+        isExtendedContext: timeLimit > 60
       });
     } else {
       // Non-thread mentions: use regular channel history
