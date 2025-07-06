@@ -26,17 +26,64 @@ export async function getFilteredConversationHistory(
   choirUsers: string[],
   options: ConversationHistoryOptions = {}
 ): Promise<SlackMessage[]> {
-  // Use extended time limit for thread replies when not explicitly specified
+  // Use extended time limit and message counts for thread replies when not explicitly specified
   const defaultTimeLimit = event.thread_ts ? 1440 : 5; // 24 hours for thread replies, 5 minutes for regular mentions
+  const defaultMessageLimit = event.thread_ts ? 20 : 10; // More messages for thread context
+  const defaultMaxResults = event.thread_ts ? 15 : 5; // Return more results for thread context
   
   const {
     timeLimit = defaultTimeLimit,
-    messageLimit = 10, // fetch up to 10 messages
-    maxResults = 5 // return up to 5 messages
+    messageLimit = defaultMessageLimit,
+    maxResults = defaultMaxResults
   } = options;
 
   try {
-    const timeLimitAgo = Math.floor((Date.now() - timeLimit * 60 * 1000) / 1000);
+    let referenceTimestamp = Date.now(); // Default to current time
+    
+    // For thread replies, find the timestamp of the message just before the mention
+    if (event.thread_ts) {
+      try {
+        // Get thread messages to find the message before the current mention
+        const threadResult = await client.conversations.replies({
+          channel: event.channel,
+          ts: event.thread_ts,
+          limit: 50, // Get enough messages to find the previous one
+          inclusive: true,
+        });
+        
+        const threadMessages = threadResult.messages || [];
+        const currentMentionTs = event.ts;
+        
+        // Find the message just before the mention message
+        let previousMessage = null;
+        for (let i = 0; i < threadMessages.length; i++) {
+          if (threadMessages[i].ts === currentMentionTs && i > 0) {
+            previousMessage = threadMessages[i - 1];
+            break;
+          }
+        }
+        
+        // Use the previous message timestamp, or parent message if this is the first reply
+        if (previousMessage && previousMessage.ts) {
+          referenceTimestamp = Number.parseFloat(previousMessage.ts) * 1000;
+        } else {
+          // If no previous message, use parent message timestamp
+          referenceTimestamp = Number.parseFloat(event.thread_ts) * 1000;
+        }
+        
+        Logger.debug('Thread reference timestamp calculation', {
+          currentMentionTs,
+          previousMessageTs: previousMessage?.ts,
+          parentTs: event.thread_ts,
+          selectedReferenceTs: Math.floor(referenceTimestamp / 1000)
+        });
+      } catch (error) {
+        Logger.warn('Failed to get thread reference timestamp, using current time', error as Error);
+        referenceTimestamp = Date.now();
+      }
+    }
+    
+    const timeLimitAgo = Math.floor((referenceTimestamp - timeLimit * 60 * 1000) / 1000);
     const now = Math.floor(Date.now() / 1000);
 
     Logger.debug('Getting conversation history', {
@@ -47,7 +94,9 @@ export async function getFilteredConversationHistory(
       maxResults,
       timeLimitAgo,
       currentTime: now,
-      timeDiffMinutes: (now - timeLimitAgo) / 60
+      referenceTime: event.thread_ts ? 'previous_message' : 'current_time',
+      referenceTimestamp: Math.floor(referenceTimestamp / 1000),
+      timeDiffMinutes: (Math.floor(referenceTimestamp / 1000) - timeLimitAgo) / 60
     });
 
     // Get conversation history or replies
