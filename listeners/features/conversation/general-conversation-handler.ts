@@ -87,6 +87,7 @@ export async function handleGeneralConversationMessage(
 
     await client.chat.postEphemeral({
       channel: event.channel,
+      ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
       user: event.user,
       text: '💡 If I misunderstood your message, please click one of the buttons below:',
       blocks: [

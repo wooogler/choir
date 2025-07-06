@@ -232,6 +232,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       // Second: Send ephemeral message with buttons for the requester only
       await client.chat.postEphemeral({
         channel: originalChannelId,
+        ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
         user: userId,
         text: 'You can edit the suggested update if needed.',
         blocks: [

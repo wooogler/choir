@@ -274,6 +274,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
 
       await client.chat.postEphemeral({
         channel: event.channel,
+        ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
         user: event.user,
         text: ephemeralText,
         blocks: [

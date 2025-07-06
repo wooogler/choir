@@ -25,6 +25,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     // CHOIR 페르소나를 반영한 로딩 메시지 전송 (채널에 표시)
     const loadingMessage = await client.chat.postMessage({
       channel: event.channel,
+      ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
       text: '🤔 Let me think about how I can best help you with that...',
     });
 
