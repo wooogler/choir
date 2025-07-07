@@ -1,5 +1,6 @@
 import type { SlackMessage } from 'services/slack';
 import { type ChatCompletionOptions, createChatCompletion } from './completions';
+import { anonymizeText } from 'services/common/name-cache';
 
 interface ExtractedKnowledge {
   content: string;
@@ -12,30 +13,68 @@ interface KnowledgeExtractionResult {
   knowledgeItem: ExtractedKnowledge | null;
 }
 
+interface OrganizationalContext {
+  organizationName?: string;
+  organizationDescription?: string;
+  isUserManager?: boolean;
+  managerText?: string;
+  channelType?: string;
+  extractorName?: string;
+}
+
 /**
  * Extract knowledge from a collection of Slack messages
  */
-export async function extractKnowledgeFromMessages(messages: SlackMessage[]): Promise<KnowledgeExtractionResult> {
+export async function extractKnowledgeFromMessages(
+  messages: SlackMessage[], 
+  context?: OrganizationalContext
+): Promise<KnowledgeExtractionResult> {
   try {
-    // Format messages for the prompt with numbered references
+    // Format messages for the prompt with numbered references and anonymization
     const formattedMessages = messages
       .map((msg, index) => {
         const timestamp = new Date(Number(msg.ts) * 1000).toLocaleString();
-        return `[${index + 1}] ${msg.username || 'User'} (${timestamp}): ${msg.text}`;
+        const anonymizedUsername = msg.username ? anonymizeText(msg.username) : 'User';
+        const anonymizedText = anonymizeText(msg.text || '');
+        return `[${index + 1}] ${anonymizedUsername} (${timestamp}): ${anonymizedText}`;
       })
       .join('\n');
+
+    // Build organizational context section
+    let contextSection = '';
+    if (context) {
+      contextSection = '\n**Organizational Context**:\n';
+      if (context.organizationName) {
+        contextSection += `- Organization: ${context.organizationName}\n`;
+      }
+      if (context.organizationDescription) {
+        contextSection += `- About: ${context.organizationDescription}\n`;
+      }
+      if (context.channelType) {
+        contextSection += `- Channel Type: ${context.channelType}\n`;
+      }
+      if (context.managerText) {
+        // Anonymize manager names and format properly
+        const anonymizedManagerText = anonymizeText(context.managerText);
+        contextSection += `- Managers: ${anonymizedManagerText}\n`;
+      }
+      if (context.isUserManager !== undefined) {
+        contextSection += `- Extraction requested by: ${context.isUserManager ? 'Manager' : 'Team Member'}\n`;
+      }
+      contextSection += '\n';
+    }
 
     const prompt = `Analyze the following numbered Slack conversation and extract the single most important piece of knowledge that should be documented for organizational purposes.
 
 IMPORTANT: You must specify which message numbers contain this knowledge using the [number] references.
-
+${contextSection}
 **Context**: This knowledge will be used to update team documentation, so focus on organizational decisions, processes, and standards rather than individual actions.
 
 **Writing Guidelines**:
-- Use organizational perspective (e.g., "Our team uses...", "The organization has decided...", "We will implement...")
-- Avoid personal names or individual references
-- Focus on what the team/organization does, not what specific individuals do
-- Write as if documenting a team policy or standard
+- Write from the organization's perspective when appropriate
+- Focus on knowledge that would be valuable for the team to remember
+- Use natural language that fits the organizational context
+- Avoid including personal names or individual references
 
 Focus on the most valuable information from these categories:
 1. **Decisions & Agreements**: Choices made, tools selected, or agreements reached

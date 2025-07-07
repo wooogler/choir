@@ -111,7 +111,7 @@ export const registerManagementHandlers = (app: App) => {
 
       const workspaceId = await getWorkspaceId(client);
 
-      const success = await setCHOIRUsers(workspaceId, selectedUsers);
+      const success = await setCHOIRUsers(workspaceId, selectedUsers, client);
 
       if (success) {
         await ack();

@@ -2,6 +2,7 @@ import type { WebClient } from '@slack/web-api';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { SlackMessage } from 'services/slack';
 import { getUserName, isBotUser } from 'services/slack';
+import { getAnonymizationMapping, anonymizeText } from 'services/common/name-cache';
 import { createChatCompletion } from './completions';
 
 // Format context from documents
@@ -46,10 +47,24 @@ const processMessageHistory = async (messages: any[], client?: WebClient) => {
       )
     : filteredMessages;
 
-  return processedMessages.reverse().map((msg) => ({
-    role: msg.bot_id ? 'assistant' : 'user',
-    content: msg.text,
-  }));
+  return await Promise.all(
+    processedMessages.reverse().map(async (msg) => {
+      let role = msg.bot_id ? 'assistant' : 'user';
+      let content = msg.text;
+      
+      // For user messages, add anonymized username
+      if (!msg.bot_id && msg.user && client) {
+        const userName = await getUserName(msg.user, client);
+        const anonymizationMapping = getAnonymizationMapping(msg.user, userName);
+        content = `${anonymizationMapping.fakeNickname}: ${msg.text}`;
+      }
+      
+      return {
+        role,
+        content,
+      };
+    })
+  );
 };
 
 // Process message text to handle user and bot mentions
@@ -82,13 +97,17 @@ export async function processMessageText(text: string, client: WebClient): Promi
         processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), '');
       }
     } else {
-      // Replace user mentions with their names
+      // Replace user mentions with anonymized names
       const userName = await getUserName(userId, client);
-      processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), userName);
+      const anonymizationMapping = getAnonymizationMapping(userId, userName);
+      processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), anonymizationMapping.fakeNickname);
     }
   }
 
-  return processedText.trim();
+  // Apply general text anonymization for any remaining real names
+  const anonymizedText = anonymizeText(processedText);
+  
+  return anonymizedText.trim();
 }
 
 // Interface for answer result
@@ -109,6 +128,9 @@ export const answerQuestion = async (
 ): Promise<AnswerResult> => {
   const context = formatContext(relevantDocs);
   const messages = await processMessageHistory(messageHistory, client);
+  
+  // Anonymize the user message
+  const anonymizedUserMessage = anonymizeText(userMessage);
 
   // Get today's date
   const today = new Date().toLocaleDateString('en-US', {
@@ -162,7 +184,7 @@ ${context}
 User's conversation history:
 ${messages.map((m) => `${m.role}: ${m.content}`).join('\n')}
 
-Current question: ${userMessage}
+Current question: ${anonymizedUserMessage}
 
 Analyze whether you can answer based on the documentation and provide your response as JSON:`;
 

@@ -1,5 +1,6 @@
 import type { WebClient } from '@slack/web-api';
 import { SessionType, generateSessionId, storeSessionData } from 'services/common';
+import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { logKnowledgeExtraction, logUpdateRequestProcessing } from 'services/common/user-interaction-logger';
 import { extractKnowledgeFromMessages } from 'services/llm/knowledge-extractor';
 import {
@@ -167,9 +168,6 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     }
 
     try {
-      // Extract knowledge from messages
-      const extractionResult = await extractKnowledgeFromMessages(last10Messages);
-
       // Generate session ID for this knowledge extraction
       const sessionId = generateSessionId('knowledge_extraction');
 
@@ -196,6 +194,32 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         const firstManagerName = await getUserName(managers[0], client);
         managerText = managers.length === 1 ? firstManagerName : `${firstManagerName} and other managers`;
       }
+
+      // Get workspace configuration for organizational context
+      const workspaceStore = new WorkspaceStore();
+      const workspaceConfig = await workspaceStore.getWorkspaceConfig(workspaceId);
+      
+      // Determine channel type for context
+      const qaChannelId = await getQAChannel(workspaceId, client);
+      let channelType = 'General Discussion';
+      if (qaChannelId === originalChannelId) {
+        channelType = 'Q&A Channel';
+      } else if (event.thread_ts) {
+        channelType = 'Thread Discussion';
+      }
+
+      // Build organizational context
+      const organizationalContext = {
+        organizationName: workspaceConfig?.organizationName,
+        organizationDescription: workspaceConfig?.organizationDescription,
+        isUserManager,
+        managerText,
+        channelType,
+        extractorName,
+      };
+
+      // Extract knowledge from messages with organizational context
+      const extractionResult = await extractKnowledgeFromMessages(last10Messages, organizationalContext);
 
       // Update loading message with compact analysis summary
       await client.chat.update({

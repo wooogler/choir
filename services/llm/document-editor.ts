@@ -2,23 +2,28 @@ import type { WebClient } from '@slack/web-api';
 import type { SlackMessage } from 'services/slack';
 import { createChatCompletion } from './completions';
 import { processMessageText } from './qa-service';
+import { getAnonymizationMapping, anonymizeText } from 'services/common/name-cache';
+import { getUserName } from 'services/slack';
 
 export async function editMarkdownWithUserMessages(markdown: string, userMessages: SlackMessage[], client: WebClient) {
-  // Anonymize users by replacing usernames with generic identifiers
-  const userMap = new Map<string, string>();
-  let userCounter = 1;
-
-  // Process message texts to handle mentions
+  // Process message texts to handle mentions and anonymize content
   const processedMessages = await Promise.all(
     userMessages.map(async (message) => {
       const processedText = await processMessageText(message.text, client);
-
-      if (!userMap.has(message.username)) {
-        userMap.set(message.username, `User${userCounter++}`);
+      
+      // Get anonymized username using consistent name-cache system
+      let anonUser = 'Unknown';
+      if (message.userId) {
+        const userName = await getUserName(message.userId, client);
+        const anonymizationMapping = getAnonymizationMapping(message.userId, userName);
+        anonUser = anonymizationMapping.fakeNickname;
+      } else if (message.username) {
+        // Fallback: anonymize username directly if no userId field
+        anonUser = anonymizeText(message.username);
       }
 
       return {
-        anonUser: userMap.get(message.username) || 'Unknown',
+        anonUser,
         text: processedText,
       };
     }),
@@ -58,6 +63,9 @@ ${processedMessages.map((message) => `${message.anonUser}: ${message.text}`).joi
 }
 
 export async function editMarkdownWithKnowledge(markdown: string, knowledgeContent: string) {
+  // Anonymize the knowledge content before sending to LLM
+  const anonymizedKnowledge = anonymizeText(knowledgeContent);
+  
   const responseContent = await createChatCompletion(
     [
       {
@@ -77,7 +85,7 @@ Key rules:
         role: 'user',
         content: `<markdown>${markdown}</markdown>
 <knowledge>
-${knowledgeContent}
+${anonymizedKnowledge}
 </knowledge>`,
       },
     ],
@@ -99,6 +107,9 @@ export async function classifyMessageIntent(
   descOrg: string,
   messageHistory?: any[],
 ): Promise<'question' | 'update_request' | 'general_conversation'> {
+  // Anonymize the input message
+  const anonymizedMessage = anonymizeText(message);
+  
   // Build context from message history if available, filtering out reclassification notifications
   let contextSection = '';
   if (messageHistory && messageHistory.length > 0) {
@@ -119,7 +130,9 @@ export async function classifyMessageIntent(
     const contextMessages = filteredHistory
       .map((msg: any) => {
         const role = msg.bot_id ? 'Assistant' : 'User';
-        return `${role}: ${msg.text}`;
+        // Anonymize message history content
+        const anonymizedText = anonymizeText(msg.text);
+        return `${role}: ${anonymizedText}`;
       })
       .join('\n');
     contextSection = `\n\nRecent conversation context:\n${contextMessages}\n\nUse this context to better understand the intent of the current message.`;
@@ -153,7 +166,7 @@ ${descOrg ? `- About: ${descOrg}` : ''}${contextSection}`;
       },
       {
         role: 'user',
-        content: message,
+        content: anonymizedMessage,
       },
     ],
     {

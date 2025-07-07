@@ -404,11 +404,11 @@ class NameCacheService {
         anonymizedText = anonymizedText.replace(nicknameRegex, mapping.fakeNickname);
       }
       
-      // Replace full name
+      // Replace full name with nickname only
       const fullNameRegex = new RegExp(`\\b${this.escapeRegex(mapping.realName)}\\b`, 'g');
-      anonymizedText = anonymizedText.replace(fullNameRegex, mapping.fakeName);
+      anonymizedText = anonymizedText.replace(fullNameRegex, mapping.fakeNickname);
       
-      // Replace first name (extracted from real name)
+      // Replace first name (extracted from real name) with nickname only
       const firstName = mapping.realName.split(' ')[0];
       if (firstName && firstName !== mapping.nickname) {
         const firstNameRegex = new RegExp(`\\b${this.escapeRegex(firstName)}\\b`, 'g');

@@ -55,13 +55,11 @@ export const createChatCompletion = async (
 
   const provider = getAIProvider();
   
-  // Apply anonymization for OpenAI (not Azure)
-  const processedMessages: ChatCompletionMessageParam[] = provider === 'openai' 
-    ? messages.map(msg => ({
-        ...msg,
-        content: typeof msg.content === 'string' ? anonymizeText(msg.content) : msg.content
-      })) as ChatCompletionMessageParam[]
-    : messages;
+  // Apply anonymization for all providers
+  const processedMessages: ChatCompletionMessageParam[] = messages.map(msg => ({
+    ...msg,
+    content: typeof msg.content === 'string' ? anonymizeText(msg.content) : msg.content
+  })) as ChatCompletionMessageParam[];
 
   let completion;
 
@@ -93,8 +91,12 @@ export const createChatCompletion = async (
 
   let response = completion.choices[0].message.content;
   
-  // Apply de-anonymization for OpenAI responses
-  if (provider === 'openai' && response) {
+  if (debug && response) {
+    console.log('raw response (before de-anonymization): ', response);
+  }
+  
+  // Apply de-anonymization for all responses
+  if (response) {
     response = deAnonymizeText(response);
   }
 

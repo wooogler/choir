@@ -2,6 +2,7 @@ import { AppConfig } from '@/config';
 import type { WebClient } from '@slack/web-api';
 import { ErrorCodes, SlackError } from 'services/common/error-handler';
 import { Logger } from 'services/common/logger';
+import { getAnonymizationMapping } from 'services/common/name-cache';
 import { WorkspaceStore } from '../workspace/workspace-store';
 
 const workspaceStore = new WorkspaceStore();
@@ -200,9 +201,23 @@ export async function getCHOIRUsers(workspaceId: string): Promise<string[]> {
 /**
  * CHOIR 사용자 목록을 설정합니다.
  */
-export async function setCHOIRUsers(workspaceId: string, userIds: string[]): Promise<boolean> {
+export async function setCHOIRUsers(workspaceId: string, userIds: string[], client?: WebClient): Promise<boolean> {
   try {
     const result = await workspaceStore.setCHOIRUsers(workspaceId, userIds);
+    
+    // Register users in name-mapping for anonymization
+    if (client) {
+      for (const userId of userIds) {
+        try {
+          const userName = await getUserName(userId, client);
+          getAnonymizationMapping(userId, userName);
+          Logger.info('User registered in anonymization mapping', { userId, userName });
+        } catch (error) {
+          Logger.warn('Failed to register user in anonymization mapping', { userId, error });
+        }
+      }
+    }
+    
     Logger.info('CHOIR users updated', { workspaceId, userCount: userIds.length });
     return result;
   } catch (error) {
