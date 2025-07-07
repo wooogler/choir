@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, App, BlockAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { getChannelName, getWorkspaceId, isManager, isWorkspaceOwner, setQAChannel } from 'services/slack';
+import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 // 선택된 채널을 임시 저장할 Map
 const selectedChannelStore = new Map<string, string>();
@@ -117,7 +118,6 @@ const setQAChannelCallback = async ({
     // Auto-refresh home screen
     setTimeout(async () => {
       try {
-        const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
 
         const mockEvent = {
           type: 'app_home_opened' as const,

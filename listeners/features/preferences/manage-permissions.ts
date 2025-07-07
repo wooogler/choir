@@ -6,6 +6,7 @@ import type {
   UsersSelectAction,
 } from '@slack/bolt';
 import { addManager, getWorkspaceId, isWorkspaceOwner, removeManager, setupInitialManager } from 'services/slack';
+import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();
@@ -89,7 +90,6 @@ const addManagerCallback = async ({
       // Auto-refresh home screen
       setTimeout(async () => {
         try {
-          const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
 
           const mockEvent = {
             type: 'app_home_opened' as const,
@@ -194,7 +194,6 @@ const removeManagerCallback = async ({
       // Auto-refresh home screen
       setTimeout(async () => {
         try {
-          const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
 
           const mockEvent = {
             type: 'app_home_opened' as const,

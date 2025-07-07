@@ -69,18 +69,34 @@ class NameCacheService {
   private loadCache(): void {
     try {
       if (fs.existsSync(this.cacheFile)) {
-        const cacheData = fs.readFileSync(this.cacheFile, 'utf-8');
+        const cacheData = fs.readFileSync(this.cacheFile, 'utf-8').trim();
+        
+        // Check if file is empty or contains only whitespace
+        if (!cacheData) {
+          console.info('Name cache file is empty, initializing with default structure');
+          this.initializeEmptyCache();
+          return;
+        }
+        
         this.cache = JSON.parse(cacheData);
+      } else {
+        console.info('Name cache file does not exist, creating new cache');
+        this.initializeEmptyCache();
       }
     } catch (error) {
       console.warn('Failed to load name cache, starting with empty cache:', error);
-      this.cache = {
-        users: {},
-        workspaces: {},
-        channels: {},
-        anonymization: {},
-      };
+      this.initializeEmptyCache();
     }
+  }
+
+  private initializeEmptyCache(): void {
+    this.cache = {
+      users: {},
+      workspaces: {},
+      channels: {},
+      anonymization: {},
+    };
+    this.saveCache(); // Save the initial empty structure
   }
 
   private saveCache(): void {

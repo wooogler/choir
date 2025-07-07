@@ -3,6 +3,7 @@ import { GithubService } from 'services/github';
 import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
+import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 // 타입 정의
 interface ActionWithValue {
@@ -192,8 +193,6 @@ export const testGithubConnectionCallback = async ({
       // 3단계: 홈 화면 자동 새로고침
       setTimeout(async () => {
         try {
-          // Import the home handler callback
-          const { appHomeOpenedCallback } = await import('../../event-handlers/app-home-handler');
 
           // Create mock event and args for the callback
           const mockEvent = {
