@@ -313,6 +313,11 @@ const buildDocumentConnectionBlocks = async (
   isOwner: boolean,
   userGithubInfo: any,
 ) => {
+  // Only show Document Connection section for managers and owners
+  if (!isUserManager && !isOwner) {
+    return [];
+  }
+
   const blocks = [];
 
   blocks.push({
