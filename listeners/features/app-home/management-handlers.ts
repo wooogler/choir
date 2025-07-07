@@ -4,12 +4,150 @@ import {
   getCHOIRUsers,
   getManagers,
   getWorkspaceId,
+  promoteToManagerWithPassword,
   removeManager,
   setCHOIRUsers,
 } from 'services/slack';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 export const registerManagementHandlers = (app: App) => {
+  app.action('request_manager_permission', async ({ ack, body, client, logger }) => {
+    await ack();
+
+    try {
+      await client.views.open({
+        trigger_id: (body as any).trigger_id,
+        view: {
+          type: 'modal',
+          callback_id: 'manager_promotion_modal',
+          title: {
+            type: 'plain_text',
+            text: 'Become Manager',
+          },
+          submit: {
+            type: 'plain_text',
+            text: 'Submit',
+          },
+          close: {
+            type: 'plain_text',
+            text: 'Cancel',
+          },
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '🔐 *Manager Promotion*\n\nEnter the manager promotion password to gain manager permissions.',
+              },
+            },
+            {
+              type: 'input',
+              block_id: 'password_block',
+              element: {
+                type: 'plain_text_input',
+                action_id: 'password_input',
+                placeholder: {
+                  type: 'plain_text',
+                  text: 'Enter promotion password...',
+                },
+              },
+              label: {
+                type: 'plain_text',
+                text: 'Password',
+              },
+            },
+          ],
+        },
+      });
+    } catch (error) {
+      logger.error('Error opening manager promotion modal:', error);
+
+      if ('user' in body && body.user?.id) {
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '❌ Error opening manager promotion modal. Please try again.',
+        });
+      }
+    }
+  });
+
+  app.view('manager_promotion_modal', async ({ ack, body, client, logger, view }) => {
+    try {
+      const password = view.state.values.password_block.password_input.value;
+
+      if (!password) {
+        await ack({
+          response_action: 'errors',
+          errors: {
+            password_block: 'Please enter the promotion password.',
+          },
+        });
+        return;
+      }
+
+      const workspaceId = await getWorkspaceId(client);
+      const userId = body.user.id;
+
+      const success = await promoteToManagerWithPassword(workspaceId, userId, password);
+
+      if (success) {
+        await ack();
+
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '✅ Congratulations! You have been promoted to manager. Please refresh your app home to see the changes.',
+        });
+
+        setTimeout(async () => {
+          try {
+            const mockEvent = {
+              type: 'app_home_opened' as const,
+              user: body.user.id,
+              tab: 'home' as const,
+              event_ts: Date.now().toString(),
+            };
+
+            const handlerArgs = {
+              client,
+              event: mockEvent,
+              logger,
+              context: {},
+              payload: mockEvent,
+            };
+
+            await appHomeOpenedCallback(handlerArgs as any);
+            logger.info(`Home screen refreshed for user ${body.user.id} after manager promotion`);
+          } catch (error) {
+            logger.error('Error refreshing home view after manager promotion:', error);
+          }
+        }, 1000);
+
+        logger.info('User promoted to manager via password', {
+          workspaceId,
+          userId,
+        });
+      } else {
+        await ack({
+          response_action: 'errors',
+          errors: {
+            password_block: 'Invalid password. Please check the password and try again.',
+          },
+        });
+      }
+    } catch (error) {
+      logger.error('Error processing manager promotion modal:', error);
+
+      await ack({
+        response_action: 'errors',
+        errors: {
+          password_block: 'An error occurred while processing your request. Please try again.',
+        },
+      });
+    }
+  });
+
   app.action('manage_choir_users', async ({ ack, body, client, logger }) => {
     await ack();
 
