@@ -56,7 +56,7 @@ export class VectorStoreService {
       this.markdownFiles = markdownFiles;
 
       if (!this.markdownFiles.length) {
-        Logger.warn('No markdown files provided, initializing empty vector store');
+        Logger.info('No documents loaded, starting with empty vector store');
         return await this.storeManager.initializeStore([], []);
       }
 

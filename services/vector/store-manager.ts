@@ -25,7 +25,7 @@ export class VectorStoreManager {
       this.documents = documents;
 
       if (documents.length === 0) {
-        Logger.warn('Initializing empty vector store');
+        Logger.debug('Initializing empty vector store');
         const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
         this.store = new MemoryVectorStore(openAIEmbeddings);
         this.searchService = new SearchService(this.store, this.embeddingService);

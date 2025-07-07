@@ -1,15 +1,8 @@
-import { DEFAULT_REPOS, NODE_ENV } from '@/constants';
-import type { GitHubRepo } from '@/types';
+import { NODE_ENV } from '@/constants';
 import { Logger } from 'services/common/logger';
 import { CHOIRError, ErrorCodes } from 'services/common/error-handler';
 
 export class AppConfig {
-  static getDefaultRepo(): GitHubRepo {
-    const isDevelopment = process.env.NODE_ENV === NODE_ENV.DEVELOPMENT;
-    const repo = isDevelopment ? DEFAULT_REPOS.DEVELOPMENT : DEFAULT_REPOS.PRODUCTION;
-    Logger.debug('Using default repository', { repo, isDevelopment });
-    return repo;
-  }
 
   static getRequiredEnvVar(name: string): string {
     const value = process.env[name];
@@ -51,11 +44,6 @@ export class AppConfig {
     };
   }
 
-  static getGitHubConfig() {
-    return {
-      token: this.getOptionalEnvVar('GITHUB_TOKEN'),
-    };
-  }
 
 
   static getManagerPromotionConfig() {

@@ -4,19 +4,6 @@ export const NODE_ENV = {
   PRODUCTION: 'production',
 } as const;
 
-// Default repository configurations
-export const DEFAULT_REPOS = {
-  DEVELOPMENT: {
-    owner: 'wooogler',
-    repo: 'assets',
-    branch: 'master',
-  },
-  PRODUCTION: {
-    owner: 'wooogler',
-    repo: 'choirlab',
-    branch: 'main',
-  },
-} as const;
 
 // Slack UI constants
 export const SLACK_UI = {

@@ -28,7 +28,7 @@ export class GitHubFileManager {
       });
       return data.default_branch;
     } catch (error) {
-      Logger.warn(`Failed to get default branch for ${owner}/${repo}, using 'main'`, error as Error);
+      Logger.debug(`Repository ${owner}/${repo} not accessible, using 'main' as default branch`);
       return 'main';
     }
   }
@@ -97,7 +97,7 @@ export class GitHubFileManager {
             }
           }
         } catch (dirError) {
-          Logger.error(`Error exploring directory ${dirPath}`, dirError as Error);
+          Logger.debug(`Directory ${dirPath} not accessible`);
         }
       };
 
@@ -105,7 +105,7 @@ export class GitHubFileManager {
       Logger.info(`Loaded ${allMarkdownFiles.length} markdown files total`);
       return allMarkdownFiles;
     } catch (error) {
-      Logger.error('Error loading markdown files', error as Error);
+      Logger.info(`Repository ${owner}/${repo} not accessible or empty`);
       throw new GitHubError('Failed to load markdown files', {
         code: ErrorCodes.GITHUB_CONNECTION_FAILED,
         metadata: { owner, repo, path },

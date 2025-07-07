@@ -16,7 +16,7 @@ export class DocumentProcessor {
       Logger.info(`Preparing documents from ${files.length} markdown files`);
 
       if (!files || files.length === 0) {
-        Logger.warn('No markdown files provided');
+        Logger.debug('No markdown files to process');
         return [];
       }
 

@@ -74,33 +74,32 @@ registerListeners(app);
     if (repoInfo) {
       app.logger.info(`Using saved GitHub repository: ${repoInfo.owner}/${repoInfo.repo}`);
 
-      // 저장된 저장소 정보로 마크다운 파일 가져오기
-      const markdownFiles = await githubService.getAllMarkdownFiles({
-        owner: repoInfo.owner,
-        repo: repoInfo.repo,
-        path: repoInfo.path,
-      });
+      try {
+        // 저장된 저장소 정보로 마크다운 파일 가져오기
+        const markdownFiles = await githubService.getAllMarkdownFiles({
+          owner: repoInfo.owner,
+          repo: repoInfo.repo,
+          path: repoInfo.path,
+        });
 
-      await vectorStore.setMarkdownFiles(markdownFiles, {
-        owner: repoInfo.owner,
-        repo: repoInfo.repo,
-      });
+        await vectorStore.setMarkdownFiles(markdownFiles, {
+          owner: repoInfo.owner,
+          repo: repoInfo.repo,
+        });
+      } catch (error) {
+        app.logger.info('Connected GitHub repository not accessible. Starting with empty vector store.');
+        // Initialize empty vector store
+        await vectorStore.setMarkdownFiles([], {
+          owner: 'empty',
+          repo: 'empty',
+        });
+      }
     } else {
-      app.logger.info('No GitHub repository configured. Using default repository.');
-
-      // 기본 저장소 설정 (환경에 따라 다르게 설정)
-      const defaultRepo = AppConfig.getDefaultRepo();
-
-      const markdownFiles = await githubService.getAllMarkdownFiles({
-        owner: defaultRepo.owner,
-        repo: defaultRepo.repo,
-        path: '',
-        ref: defaultRepo.branch,
-      });
-
-      await vectorStore.setMarkdownFiles(markdownFiles, {
-        owner: defaultRepo.owner,
-        repo: defaultRepo.repo,
+      app.logger.info('No GitHub repository configured. Starting with empty vector store.');
+      // Initialize empty vector store
+      await vectorStore.setMarkdownFiles([], {
+        owner: 'empty',
+        repo: 'empty',
       });
     }
 

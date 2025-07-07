@@ -20,6 +20,19 @@ export interface WorkspaceConfig {
     path: string;
   }>;
   markdownFilesCachedAt?: Date;
+  githubTokens?: {
+    [userId: string]: {
+      accessToken: string;
+      user: {
+        id: number;
+        login: string;
+        name: string;
+        email: string;
+        avatar_url: string;
+      };
+      connectedAt: Date;
+    };
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -92,6 +105,11 @@ export class WorkspaceStore {
       config.updatedAt = new Date(config.updatedAt);
       if (config.markdownFilesCachedAt) {
         config.markdownFilesCachedAt = new Date(config.markdownFilesCachedAt);
+      }
+      if (config.githubTokens) {
+        for (const userId in config.githubTokens) {
+          config.githubTokens[userId].connectedAt = new Date(config.githubTokens[userId].connectedAt);
+        }
       }
 
       return config;
@@ -338,6 +356,105 @@ export class WorkspaceStore {
     config.choirUsers = config.choirUsers.filter((id) => id !== userId);
     await this.saveWorkspaceConfig(config);
     return true;
+  }
+
+  /**
+   * 사용자의 GitHub 토큰 저장
+   */
+  public async setUserGithubToken(
+    workspaceId: string,
+    userId: string,
+    tokenData: {
+      accessToken: string;
+      user: {
+        id: number;
+        login: string;
+        name: string;
+        email: string;
+        avatar_url: string;
+      };
+    },
+  ): Promise<void> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+
+    if (!config.githubTokens) {
+      config.githubTokens = {};
+    }
+
+    config.githubTokens[userId] = {
+      ...tokenData,
+      connectedAt: new Date(),
+    };
+
+    await this.saveWorkspaceConfig(config);
+    this.logger.info(`Saved GitHub token for user ${userId} in workspace ${workspaceId}`);
+  }
+
+  /**
+   * 사용자의 GitHub 토큰 가져오기
+   */
+  public async getUserGithubToken(workspaceId: string, userId: string): Promise<string | null> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config?.githubTokens?.[userId]) {
+      return null;
+    }
+
+    return config.githubTokens[userId].accessToken;
+  }
+
+  /**
+   * 사용자의 GitHub 정보 가져오기
+   */
+  public async getUserGithubInfo(workspaceId: string, userId: string): Promise<{
+    accessToken: string;
+    user: {
+      id: number;
+      login: string;
+      name: string;
+      email: string;
+      avatar_url: string;
+    };
+    connectedAt: Date;
+  } | null> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config?.githubTokens?.[userId]) {
+      return null;
+    }
+
+    const tokenData = config.githubTokens[userId];
+    return {
+      ...tokenData,
+      connectedAt: new Date(tokenData.connectedAt),
+    };
+  }
+
+  /**
+   * 사용자의 GitHub 토큰 제거
+   */
+  public async removeUserGithubToken(workspaceId: string, userId: string): Promise<void> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config?.githubTokens?.[userId]) {
+      return;
+    }
+
+    delete config.githubTokens[userId];
+    await this.saveWorkspaceConfig(config);
+    this.logger.info(`Removed GitHub token for user ${userId} in workspace ${workspaceId}`);
+  }
+
+  /**
+   * 워크스페이스의 모든 GitHub 연결된 사용자 가져오기
+   */
+  public async getGithubConnectedUsers(workspaceId: string): Promise<string[]> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config?.githubTokens) {
+      return [];
+    }
+
+    return Object.keys(config.githubTokens);
   }
 
   /**
