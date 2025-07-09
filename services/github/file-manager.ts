@@ -3,6 +3,26 @@ import { ErrorCodes, GitHubError } from 'services/common/error-handler';
 import { Logger } from 'services/common/logger';
 import { type DocumentTree, parseMarkdownToTree } from 'services/document';
 
+interface ThrottleOptions {
+  maxConcurrent: number;
+  retryAttempts: number;
+  baseDelay: number;
+}
+
+interface FileTreeItem {
+  path: string;
+  type: 'blob' | 'tree';
+  sha: string;
+  size?: number;
+  url: string;
+}
+
+interface FileContentCache {
+  sha: string;
+  content: string;
+  lastModified: Date;
+}
+
 export interface MarkdownFile {
   name: string;
   path: string;
@@ -13,6 +33,12 @@ export interface MarkdownFile {
 
 export class GitHubFileManager {
   private octokit: Octokit;
+  private throttleOptions: ThrottleOptions = {
+    maxConcurrent: 3,
+    retryAttempts: 3,
+    baseDelay: 1000
+  };
+  private fileContentCache = new Map<string, FileContentCache>();
 
   constructor(token?: string) {
     this.octokit = new Octokit({
@@ -20,12 +46,47 @@ export class GitHubFileManager {
     });
   }
 
+  private async delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private async throttledRequest<T>(
+    fn: () => Promise<T>,
+    retries = this.throttleOptions.retryAttempts
+  ): Promise<T> {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        if (error.status === 403 || error.status === 429) {
+          const delayMs = this.throttleOptions.baseDelay * Math.pow(2, i);
+          Logger.warn(`Rate limit hit, retrying in ${delayMs}ms (attempt ${i + 1}/${retries})`);
+          await this.delay(delayMs);
+        } else {
+          throw error;
+        }
+      }
+    }
+    throw new Error(`Max retries (${retries}) exceeded`);
+  }
+
+  private chunkArray<T>(array: T[], chunkSize: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += chunkSize) {
+      chunks.push(array.slice(i, i + chunkSize));
+    }
+    return chunks;
+  }
+
   private async getDefaultBranch(owner: string, repo: string): Promise<string> {
     try {
-      const { data } = await this.octokit.rest.repos.get({
-        owner,
-        repo,
-      });
+      const response = await this.throttledRequest(() => 
+        this.octokit.rest.repos.get({
+          owner,
+          repo,
+        })
+      );
+      const data = (response as any).data;
       return data.default_branch;
     } catch (error) {
       Logger.debug(`Repository ${owner}/${repo} not accessible, using 'main' as default branch`);
@@ -46,66 +107,113 @@ export class GitHubFileManager {
   }): Promise<MarkdownFile[]> {
     try {
       const actualRef = ref || (await this.getDefaultBranch(owner, repo));
+      Logger.info(`Using efficient Tree API to scan ${owner}/${repo} for markdown files`);
+
+      // 1. Get repository tree using Tree API (single API call)
+      const treeResponse = await this.throttledRequest(() => 
+        this.octokit.rest.git.getTree({
+          owner,
+          repo,
+          tree_sha: actualRef,
+          recursive: true
+        })
+      );
+      const tree = (treeResponse as any).data;
+
+      // 2. Filter markdown files from tree
+      const markdownTreeItems = tree.tree.filter((item: any) => 
+        item.type === 'blob' && 
+        item.path && 
+        item.path.endsWith('.md') && 
+        (path === '' || item.path.startsWith(path))
+      ) as FileTreeItem[];
+
+      Logger.info(`Found ${markdownTreeItems.length} markdown files in tree`);
+
+      if (markdownTreeItems.length === 0) {
+        return [];
+      }
+
+      // 3. Fetch file contents in batches with concurrency control
       const allMarkdownFiles: MarkdownFile[] = [];
+      const chunks = this.chunkArray(markdownTreeItems, this.throttleOptions.maxConcurrent);
 
-      const exploreDirectory = async (dirPath: string): Promise<void> => {
-        try {
-          const { data: contents } = await this.octokit.rest.repos.getContent({
-            owner,
-            repo,
-            path: dirPath,
-            ref: actualRef,
-          });
+      for (const chunk of chunks) {
+        const filePromises = chunk.map(async (item) => {
+          try {
+            // Check cache first
+            const cacheKey = `${owner}/${repo}/${item.path}:${item.sha}`;
+            const cached = this.fileContentCache.get(cacheKey);
+            
+            if (cached && cached.sha === item.sha) {
+              Logger.debug(`Using cached content for ${item.path}`);
+              return {
+                item,
+                content: cached.content
+              };
+            }
 
-          if (!Array.isArray(contents)) {
-            Logger.debug(`${dirPath} is not a directory`);
-            return;
+            // Fetch from GitHub using blob API (more efficient than content API)
+            const blobResponse = await this.throttledRequest(() => 
+              this.octokit.rest.git.getBlob({
+                owner,
+                repo,
+                file_sha: item.sha
+              })
+            );
+            const blobData = (blobResponse as any).data;
+
+            const content = Buffer.from(blobData.content, 'base64').toString('utf-8');
+            
+            // Cache the content
+            this.fileContentCache.set(cacheKey, {
+              sha: item.sha,
+              content,
+              lastModified: new Date()
+            });
+
+            return {
+              item,
+              content
+            };
+          } catch (error) {
+            Logger.error(`Error loading file ${item.path}`, error as Error);
+            return null;
           }
+        });
 
-          for (const item of contents) {
-            if (item.type === 'dir') {
-              await exploreDirectory(item.path);
-            } else if (item.type === 'file' && item.name.endsWith('.md')) {
-              try {
-                const { data: fileData } = await this.octokit.rest.repos.getContent({
-                  owner,
-                  repo,
-                  path: item.path,
-                  ref: actualRef,
-                });
+        const results = await Promise.all(filePromises);
+        
+        // Process successful results
+        for (const result of results) {
+          if (result) {
+            try {
+              const { item, content } = result;
+              const tree = parseMarkdownToTree(content, item.path.split('/').pop() || '');
+              
+              // Construct GitHub URL
+              const githubUrl = `https://github.com/${owner}/${repo}/blob/${actualRef}/${item.path}`;
 
-                if (Array.isArray(fileData) || !('content' in fileData)) {
-                  Logger.warn(`Cannot get content for ${item.path}`);
-                  continue;
-                }
+              allMarkdownFiles.push({
+                name: item.path.split('/').pop() || '',
+                path: item.path,
+                content,
+                githubUrl,
+                tree,
+              });
 
-                const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
-                const tree = parseMarkdownToTree(content, item.name);
-
-                allMarkdownFiles.push({
-                  name: item.name,
-                  path: item.path,
-                  content,
-                  githubUrl: item.html_url,
-                  tree,
-                });
-
-                Logger.info(`Loaded markdown file: ${item.path}`);
-              } catch (fileError) {
-                Logger.error(`Error loading file ${item.path}`, fileError as Error);
-              }
+              Logger.info(`Loaded markdown file: ${item.path}`);
+            } catch (parseError) {
+              Logger.error(`Error parsing markdown file ${result.item.path}`, parseError as Error);
             }
           }
-        } catch (dirError) {
-          Logger.debug(`Directory ${dirPath} not accessible`);
         }
-      };
+      }
 
-      await exploreDirectory(path);
-      Logger.info(`Loaded ${allMarkdownFiles.length} markdown files total`);
+      Logger.info(`Loaded ${allMarkdownFiles.length} markdown files total using efficient Tree API`);
       return allMarkdownFiles;
     } catch (error) {
-      Logger.info(`Repository ${owner}/${repo} not accessible or empty`);
+      Logger.error(`Repository ${owner}/${repo} not accessible or empty`, error as Error);
       throw new GitHubError('Failed to load markdown files', {
         code: ErrorCodes.GITHUB_CONNECTION_FAILED,
         metadata: { owner, repo, path },
@@ -128,12 +236,15 @@ export class GitHubFileManager {
       const actualRef = ref || (await this.getDefaultBranch(owner, repo));
       Logger.info(`Loading markdown file: ${path} (${owner}/${repo})`);
 
-      const { data: fileData } = await this.octokit.rest.repos.getContent({
-        owner,
-        repo,
-        path,
-        ref: actualRef,
-      });
+      const fileResponse = await this.throttledRequest(() => 
+        this.octokit.rest.repos.getContent({
+          owner,
+          repo,
+          path,
+          ref: actualRef,
+        })
+      );
+      const fileData = (fileResponse as any).data;
 
       if (Array.isArray(fileData) || !('content' in fileData)) {
         Logger.warn(`Cannot get content for ${path}`);
@@ -173,11 +284,14 @@ export class GitHubFileManager {
     message?: string;
   }): Promise<void> {
     try {
-      const { data: currentFile } = await this.octokit.rest.repos.getContent({
-        owner,
-        repo,
-        path,
-      });
+      const currentFileResponse = await this.throttledRequest(() => 
+        this.octokit.rest.repos.getContent({
+          owner,
+          repo,
+          path,
+        })
+      );
+      const currentFile = (currentFileResponse as any).data;
 
       if (Array.isArray(currentFile) || !('sha' in currentFile)) {
         throw new GitHubError('Invalid file data', {
@@ -185,14 +299,22 @@ export class GitHubFileManager {
         });
       }
 
-      await this.octokit.rest.repos.createOrUpdateFileContents({
-        owner,
-        repo,
-        path,
-        message,
-        content: Buffer.from(content).toString('base64'),
-        sha: currentFile.sha,
-      });
+      await this.throttledRequest(() => 
+        this.octokit.rest.repos.createOrUpdateFileContents({
+          owner,
+          repo,
+          path,
+          message,
+          content: Buffer.from(content).toString('base64'),
+          sha: currentFile.sha,
+        })
+      );
+
+      // Invalidate cache for this file
+      const cacheKeys = Array.from(this.fileContentCache.keys()).filter(key => 
+        key.startsWith(`${owner}/${repo}/${path}:`)
+      );
+      cacheKeys.forEach(key => this.fileContentCache.delete(key));
 
       Logger.info(`Successfully updated file: ${path}`);
     } catch (error) {
@@ -212,10 +334,13 @@ export class GitHubFileManager {
     repo: string;
   }): Promise<{ success: boolean; message: string }> {
     try {
-      const { data } = await this.octokit.rest.repos.get({
-        owner,
-        repo,
-      });
+      const response = await this.throttledRequest(() => 
+        this.octokit.rest.repos.get({
+          owner,
+          repo,
+        })
+      );
+      const data = (response as any).data;
 
       const message = `Repository connection successful: ${data.full_name} (${data.description || 'No description'})`;
       Logger.info('GitHub connection test successful', { owner, repo });
@@ -251,5 +376,22 @@ export class GitHubFileManager {
         };
       }
     }
+  }
+
+  // Cache management methods
+  public clearCache(): void {
+    this.fileContentCache.clear();
+    Logger.info('File content cache cleared');
+  }
+
+  public getCacheSize(): number {
+    return this.fileContentCache.size;
+  }
+
+  public getCacheStats(): { size: number; keys: string[] } {
+    return {
+      size: this.fileContentCache.size,
+      keys: Array.from(this.fileContentCache.keys())
+    };
   }
 }
