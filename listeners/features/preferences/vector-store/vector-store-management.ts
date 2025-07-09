@@ -62,6 +62,8 @@ export const reloadFromGithubAction = async ({
       owner: repoInfo.owner,
       repo: repoInfo.repo,
       path: repoInfo.path || '',
+      workspaceId: workspaceId,
+      userId: body.user.id,
     });
 
     if (markdownFiles.length === 0) {
@@ -184,6 +186,8 @@ export const normalizeMarkdownFilesAction = async ({
       owner: repoInfo.owner,
       repo: repoInfo.repo,
       path: repoInfo.path || '',
+      workspaceId: workspaceId,
+      userId: body.user.id,
     });
 
     if (markdownFiles.length === 0) {

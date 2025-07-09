@@ -330,6 +330,8 @@ export const registerGitHubHandlers = (app: App) => {
         owner: repoInfo.owner,
         repo: repoInfo.repo,
         path: path.trim(),
+        workspaceId: workspaceId,
+        userId: userId,
       });
 
       if (markdownFiles.length === 0) {

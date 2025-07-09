@@ -9,7 +9,7 @@ export class QuestionProcessor {
     try {
       // 벡터 스토어에서 관련 문서 가져오기
       const vectorStore = VectorStoreService.getInstance();
-      let relevantDocs = await vectorStore.similaritySearch(userMessage, 3);
+      let relevantDocs = await vectorStore.similaritySearch(userMessage, 10);
 
       // 웹 콘텐츠가 있는 문서들의 pageContent를 확장
       relevantDocs = relevantDocs.map((doc) => {

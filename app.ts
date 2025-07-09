@@ -55,12 +55,14 @@ registerListeners(app);
     const workspaceId = await getWorkspaceId(app.client);
 
     // 워크스페이스 소유자를 초기 관리자로 설정
+    let workspaceOwner: string | undefined;
     try {
       // 워크스페이스 관리자 찾기 - 사용자 목록에서 is_owner가 true인 사용자
       const usersList = await app.client.users.list({});
       const owner = usersList.members?.find((user) => user.is_owner === true);
 
       if (owner?.id) {
+        workspaceOwner = owner.id;
         await setupInitialManager(workspaceId, owner.id, app.client);
         app.logger.info(`Initialized workspace owner (${owner.id}) as a manager`);
       } else {
@@ -90,6 +92,8 @@ registerListeners(app);
             owner: repoInfo.owner,
             repo: repoInfo.repo,
             path: repoInfo.path,
+            workspaceId: workspaceId,
+            userId: workspaceOwner, // 워크스페이스 소유자 ID 사용
           });
 
           await vectorStore.setMarkdownFiles(markdownFiles, {

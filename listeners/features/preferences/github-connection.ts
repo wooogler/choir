@@ -127,6 +127,8 @@ export const testGithubConnectionCallback = async ({
     const testResult = await githubService.testConnection({
       owner: repoInfo.owner,
       repo: repoInfo.repo,
+      workspaceId: workspaceId,
+      userId: userId,
     });
 
     logger.info(`GitHub connection test result:`, { testResult, repoInfo });
@@ -145,6 +147,8 @@ export const testGithubConnectionCallback = async ({
           owner: repoInfo.owner,
           repo: repoInfo.repo,
           path: repoInfo.path || '',
+          workspaceId: workspaceId,
+          userId: userId,
         });
         logger.info(`Successfully loaded ${markdownFiles.length} files from repository`);
 

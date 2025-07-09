@@ -2,22 +2,18 @@ import { SessionType, generateSessionId, storeSessionData } from 'services/commo
 import { logQuestionProcessing } from 'services/common/user-interaction-logger';
 import { convertMarkdownToSlackText } from 'services/document/markdown';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
-import { answerQuestion } from 'services/llm/qa-service';
+import { QuestionProcessor } from 'services/qa/question-processor';
 import {
   createGitbookSectionLink,
   getCHOIRUsers,
   getChannelName,
   getFilteredConversationHistory,
   getManagers,
-  getOrganizationDescription,
-  getOrganizationName,
   getQAChannel,
   getUserName,
   getWorkspaceId,
 } from 'services/slack';
 import type { SlackMessage } from 'services/slack';
-import { VectorStoreService } from 'services/vector/main-service';
-import { DocumentEnhancer } from 'services/web-content/document-enhancer';
 
 /**
  * 질문 메시지 처리
@@ -59,47 +55,12 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     // Create historyResult object for compatibility with existing code
     const historyResult = { messages };
 
-    // 벡터 스토어에서 관련 문서 가져오기
-    const vectorStore = VectorStoreService.getInstance();
-    relevantDocs = await vectorStore.similaritySearch(userMessage, 3);
+    // QuestionProcessor로 질문 처리
+    const questionProcessor = new QuestionProcessor();
+    const processingResult = await questionProcessor.processQuestion(userMessage, historyResult.messages || [], client, logger);
 
-    // 웹 콘텐츠가 있는 문서들의 pageContent를 확장
-    relevantDocs = relevantDocs.map((doc) => {
-      if (doc.metadata.webContent && doc.metadata.webContent.length > 0) {
-        // 웹 콘텐츠를 포함한 전체 콘텐츠로 pageContent 확장
-        const enhancedContent = DocumentEnhancer.getFullContentForSearch(doc);
-        return {
-          ...doc,
-          pageContent: enhancedContent,
-        };
-      }
-      return doc;
-    });
-
-    // 워크스페이스 이름 가져오기
-    let workspaceName = '';
-    try {
-      const teamInfo = await client.team.info();
-      workspaceName = teamInfo.team?.name || '';
-    } catch (error) {
-      logger.warn('Could not get workspace name:', error);
-    }
-
-    // Organization 정보 가져오기 (workspaceId는 이미 아래에서 선언되어 있으므로 먼저 가져오기)
-    const workspaceIdForOrg = await getWorkspaceId(client);
-    const organizationName = await getOrganizationName(workspaceIdForOrg);
-    const organizationDescription = await getOrganizationDescription(workspaceIdForOrg);
-
-    // 응답 생성
-    const answerResult = await answerQuestion(
-      userMessage,
-      historyResult.messages || [],
-      relevantDocs,
-      client,
-      workspaceName,
-      organizationName || undefined,
-      organizationDescription || undefined,
-    );
+    const { answerResult, relevantDocs: processedDocs, workspaceName, organizationName, organizationDescription } = processingResult;
+    relevantDocs = processedDocs;
 
     // 마크다운을 Slack 형식으로 변환
     const response = await convertMarkdownToSlackText(answerResult.response || '');
@@ -222,7 +183,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       },
     ];
 
-    const result = await client.chat.postMessage({
+    const messageResult = await client.chat.postMessage({
       channel: event.channel,
       ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
       text: displayResponse,
@@ -294,7 +255,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     }
 
     // 관련 문서 정보를 응답의 스레드에 추가 (답변 가능한 경우에만)
-    if (result.ts && relevantDocs.length > 0 && answerResult.canAnswer) {
+    if (messageResult.ts && relevantDocs.length > 0 && answerResult.canAnswer) {
       // 문서 정보를 스레드용으로 포맷
       const documentInfo = await Promise.all(
         relevantDocs.map(async (doc, index) => {
@@ -358,7 +319,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       // 문서 정보를 응답의 스레드에 추가
       await client.chat.postMessage({
         channel: event.channel,
-        thread_ts: result.ts,
+        thread_ts: messageResult.ts,
         text: `${documentInfo.join('\n')}`,
         mrkdwn: true,
         unfurl_links: false,

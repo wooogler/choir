@@ -2,7 +2,7 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import type { ModalView } from '@slack/web-api';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
-import { GitHubFileManager } from 'services/github/file-manager';
+import { GithubService } from 'services/github';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 
@@ -68,8 +68,14 @@ export const createNewSectionAction = async ({
     if (!fileList) {
       // If no cache, load from GitHub and cache the result
       const { owner, repo, path } = config.githubRepo;
-      const fileManager = new GitHubFileManager();
-      const markdownFiles = await fileManager.getAllMarkdownFiles({ owner, repo, path });
+      const githubService = GithubService.getInstance();
+      const markdownFiles = await githubService.getAllMarkdownFiles({ 
+        owner, 
+        repo, 
+        path,
+        workspaceId: workspaceId,
+        userId: userId,
+      });
 
       fileList = markdownFiles.map((file) => ({
         name: file.name,

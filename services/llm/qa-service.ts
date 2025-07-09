@@ -7,7 +7,7 @@ import { createChatCompletion } from './completions';
 
 // Format context from documents
 const formatContext = (docs: any[]) => {
-  return docs.map((doc) => `File: ${doc.metadata.fileName}\nContent: ${doc.pageContent}`).join('\n\n');
+  return docs.map((doc) => doc.pageContent).join('\n\n');
 };
 
 // Process message history with filtering and mention processing
