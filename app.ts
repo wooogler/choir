@@ -6,7 +6,7 @@ import { GithubService } from './services/github';
 
 import { AppConfig } from '@/config';
 import { Logger } from 'services/common/logger';
-import { isAzureOpenAIEnabled, validateAzureOpenAIConfig } from 'services/llm';
+import { validateCurrentProvider, getAIProvider } from 'services/llm';
 import { getGithubRepo, getWorkspaceId, setupInitialManager } from 'services/slack';
 import { HomeScreenService } from 'services/slack/home-screen';
 import { VectorStoreService } from 'services/vector/main-service';
@@ -34,20 +34,22 @@ registerListeners(app);
 /** Start Bolt App */
 (async () => {
   try {
-    // Azure OpenAI 설정 검증
-    if (isAzureOpenAIEnabled()) {
-      app.logger.info('Azure OpenAI is enabled, validating configuration...');
-      if (!validateAzureOpenAIConfig()) {
-        app.logger.error('Azure OpenAI configuration is invalid. Please check your environment variables.');
+    // AI Provider 설정 검증
+    const aiProvider = getAIProvider();
+    app.logger.info(`AI Provider: ${aiProvider}`);
+    
+    if (!validateCurrentProvider()) {
+      app.logger.error(`${aiProvider} configuration is invalid. Please check your environment variables.`);
+      if (aiProvider === 'azure') {
         app.logger.error(
           'Required variables: AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_NAME, AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME',
         );
-        process.exit(1);
+      } else {
+        app.logger.error('Required variables: OPENAI_API_KEY');
       }
-      app.logger.info('Azure OpenAI configuration is valid');
-    } else {
-      app.logger.info('Azure OpenAI is not enabled. Using default OpenAI configuration.');
+      process.exit(1);
     }
+    app.logger.info(`${aiProvider} configuration is valid`);
 
     // 워크스페이스 ID 가져오기
     const workspaceId = await getWorkspaceId(app.client);
@@ -74,25 +76,34 @@ registerListeners(app);
     if (repoInfo) {
       app.logger.info(`Using saved GitHub repository: ${repoInfo.owner}/${repoInfo.repo}`);
 
-      try {
-        // 저장된 저장소 정보로 마크다운 파일 가져오기
-        const markdownFiles = await githubService.getAllMarkdownFiles({
-          owner: repoInfo.owner,
-          repo: repoInfo.repo,
-          path: repoInfo.path,
-        });
+      // 먼저 캐시에서 벡터 스토어 초기화 시도
+      const cacheInitialized = await vectorStore.initializeFromCacheOnly(repoInfo.owner, repoInfo.repo);
+      
+      if (cacheInitialized) {
+        app.logger.info('Vector store successfully initialized from cache. Skipping GitHub API calls.');
+      } else {
+        app.logger.info('Cache not available or invalid. Fetching from GitHub...');
+        
+        try {
+          // 캐시가 없거나 무효한 경우에만 GitHub API 호출
+          const markdownFiles = await githubService.getAllMarkdownFiles({
+            owner: repoInfo.owner,
+            repo: repoInfo.repo,
+            path: repoInfo.path,
+          });
 
-        await vectorStore.setMarkdownFiles(markdownFiles, {
-          owner: repoInfo.owner,
-          repo: repoInfo.repo,
-        });
-      } catch (error) {
-        app.logger.info('Connected GitHub repository not accessible. Starting with empty vector store.');
-        // Initialize empty vector store
-        await vectorStore.setMarkdownFiles([], {
-          owner: 'empty',
-          repo: 'empty',
-        });
+          await vectorStore.setMarkdownFiles(markdownFiles, {
+            owner: repoInfo.owner,
+            repo: repoInfo.repo,
+          });
+        } catch (error) {
+          app.logger.info('Connected GitHub repository not accessible. Starting with empty vector store.');
+          // Initialize empty vector store
+          await vectorStore.setMarkdownFiles([], {
+            owner: 'empty',
+            repo: 'empty',
+          });
+        }
       }
     } else {
       app.logger.info('No GitHub repository configured. Starting with empty vector store.');

@@ -60,13 +60,29 @@ export function getOpenAIConfig() {
 }
 
 export function isAzureOpenAIEnabled(): boolean {
-  return (
-    process.env.AI_PROVIDER === 'azure' || !!(process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT)
-  );
+  // If AI_PROVIDER is explicitly set, respect that choice
+  if (process.env.AI_PROVIDER === 'azure') {
+    return true;
+  }
+  if (process.env.AI_PROVIDER === 'openai') {
+    return false;
+  }
+  
+  // Default behavior: prefer Azure if available, otherwise OpenAI
+  return !!(process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT);
 }
 
 export function isOpenAIEnabled(): boolean {
-  return process.env.AI_PROVIDER === 'openai' || !!process.env.OPENAI_API_KEY;
+  // If AI_PROVIDER is explicitly set, respect that choice
+  if (process.env.AI_PROVIDER === 'openai') {
+    return true;
+  }
+  if (process.env.AI_PROVIDER === 'azure') {
+    return false;
+  }
+  
+  // Default behavior: use OpenAI if available and Azure is not available
+  return !!process.env.OPENAI_API_KEY && !(process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT);
 }
 
 export function getAIProvider(): 'azure' | 'openai' {

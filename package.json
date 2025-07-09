@@ -8,6 +8,7 @@
     "dev": "NODE_ENV=development ts-node -r tsconfig-paths/register app.ts",
     "dev:watch": "nodemon --watch '**/*.ts' --exec 'ts-node -r tsconfig-paths/register' app.ts",
     "dev:prod": "NODE_ENV=production ts-node -r tsconfig-paths/register app.ts",
+    "dev:web": "NODE_ENV=development ENABLE_WEB_CONTENT=true ts-node -r tsconfig-paths/register app.ts",
     "lint": "npx @biomejs/biome check *.ts listeners services",
     "lint:fix": "npx @biomejs/biome check --write *.ts listeners services",
     "test:unit": "jest",

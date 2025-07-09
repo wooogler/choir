@@ -45,7 +45,7 @@ export class DocumentProcessor {
       // 웹 콘텐츠로 문서 향상
       try {
         const isWebContentEnabled =
-          process.env.ENABLE_WEB_CONTENT !== 'false' && process.env.NODE_ENV !== 'development';
+          process.env.ENABLE_WEB_CONTENT === 'true';
 
         if (!isWebContentEnabled) {
           Logger.info(

@@ -28,13 +28,14 @@ export class VectorStoreService {
   // 증분 업데이트를 위한 노드별 Document 추적
   private nodeDocumentMap = new Map<string, Document<DocumentMetadata>[]>();
 
-  private constructor(openAIApiKey: string = process.env.AZURE_OPENAI_API_KEY || '') {
-    this.embeddingService = new EmbeddingService(openAIApiKey);
+  private constructor(apiKey?: string) {
+    this.embeddingService = new EmbeddingService(apiKey);
     this.cacheManager = new VectorCacheManager();
     this.storeManager = new VectorStoreManager(this.embeddingService);
     this.documentProcessor = new DocumentProcessor();
 
-    Logger.info('VectorStoreService instance created with Azure OpenAI');
+    const provider = this.embeddingService.getProvider();
+    Logger.info(`VectorStoreService instance created with ${provider} provider`);
   }
 
   public static getInstance(): VectorStoreService {
@@ -249,6 +250,63 @@ export class VectorStoreService {
     } catch (error) {
       Logger.error('Error performing similarity search', error as Error);
       return [];
+    }
+  }
+
+  /**
+   * 캐시에서 벡터 스토어 초기화 시도 (GitHub API 호출 없이)
+   */
+  public async initializeFromCacheOnly(owner: string, repo: string): Promise<boolean> {
+    try {
+      Logger.info(`Attempting to initialize vector store from cache only: ${owner}/${repo}`);
+      
+      const cacheFilePath = this.cacheManager.getCacheFilePath(owner, repo);
+      
+      // 캐시 파일이 존재하는지 확인
+      if (!require('fs').existsSync(cacheFilePath)) {
+        Logger.info(`No cache file found at ${cacheFilePath}`);
+        return false;
+      }
+      
+      // 캐시 로드 시도 (파일 검증 없이)
+      const cacheData = await this.cacheManager.loadEmbeddingsCache(cacheFilePath, []);
+      
+      if (!cacheData) {
+        Logger.info('Cache data is invalid or corrupted');
+        return false;
+      }
+      
+      Logger.info(`Found cached data with ${cacheData.documents.length} documents`);
+      
+      // 캐시된 문서 트리 복원
+      const markdownFiles: MarkdownFile[] = [];
+      if (cacheData.documentTrees) {
+        for (const [fileName, tree] of cacheData.documentTrees.entries()) {
+          markdownFiles.push({
+            name: fileName,
+            path: fileName,
+            content: '', // 캐시에서 로드할 때는 전체 내용 불필요
+            githubUrl: `https://github.com/${owner}/${repo}/blob/main/${fileName}`,
+            tree: tree
+          });
+        }
+      }
+      
+      this.markdownFiles = markdownFiles;
+      
+      // 벡터 스토어 초기화
+      const success = await this.storeManager.initializeStore(cacheData.documents, cacheData.embeddings);
+      
+      if (success) {
+        Logger.info(`Successfully initialized vector store from cache with ${cacheData.documents.length} documents`);
+        return true;
+      } else {
+        Logger.error('Failed to initialize vector store from cache');
+        return false;
+      }
+    } catch (error) {
+      Logger.error('Error initializing from cache only', error as Error);
+      return false;
     }
   }
 
@@ -644,7 +702,7 @@ export class VectorStoreService {
    */
   private async enhanceNewDocuments(documents: Document<DocumentMetadata>[]): Promise<Document<DocumentMetadata>[]> {
     try {
-      const isWebContentEnabled = process.env.ENABLE_WEB_CONTENT !== 'false' && process.env.NODE_ENV !== 'development';
+      const isWebContentEnabled = process.env.ENABLE_WEB_CONTENT === 'true';
 
       if (!isWebContentEnabled) {
         Logger.info('Skipping web content enhancement for new documents');
