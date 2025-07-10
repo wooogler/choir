@@ -42,17 +42,17 @@ export class DocumentProcessor {
 
       Logger.info(`Total documents prepared: ${allDocuments.length}`);
 
-      // 웹 콘텐츠로 문서 향상
-      try {
-        const isWebContentEnabled =
-          process.env.ENABLE_WEB_CONTENT === 'true';
+              // 웹 콘텐츠로 문서 향상
+        try {
+          const isWebContentEnabled =
+            process.env.ENABLE_WEB_CONTENT === 'true' || process.env.NODE_ENV === 'production';
 
-        if (!isWebContentEnabled) {
-          Logger.info(
-            `Skipping web content enhancement (NODE_ENV: ${process.env.NODE_ENV}, ENABLE_WEB_CONTENT: ${process.env.ENABLE_WEB_CONTENT})`,
-          );
-          return allDocuments;
-        }
+          if (!isWebContentEnabled) {
+            Logger.info(
+              `Skipping web content enhancement (NODE_ENV: ${process.env.NODE_ENV}, ENABLE_WEB_CONTENT: ${process.env.ENABLE_WEB_CONTENT})`,
+            );
+            return allDocuments;
+          }
 
         Logger.info('Starting document enhancement with web content...');
         const enhancer = DocumentEnhancer.getInstance();
