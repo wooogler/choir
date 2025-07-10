@@ -45,7 +45,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     });
 
     // 메시지 의도 분류 (질문 또는 업데이트 요청 또는 일반 대화)
-    messageIntent = await classifyMessageIntent(message, orgName, orgDescription, messages);
+    messageIntent = await classifyMessageIntent(message, orgName, orgDescription, messages, client);
     logger.info(`Message intent classified as: ${messageIntent}`);
 
     // Log the intent classification result to interaction logs

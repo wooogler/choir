@@ -1,7 +1,7 @@
 import type { WebClient } from '@slack/web-api';
 import type { SlackMessage } from 'services/slack';
 import { createChatCompletion } from './completions';
-import { processMessageText } from './qa-service';
+import { processMessageText, processMessageHistory } from 'services/slack/conversation-history';
 import { getAnonymizationMapping, anonymizeText } from 'services/common/name-cache';
 import { getUserName } from 'services/slack';
 
@@ -106,36 +106,22 @@ export async function classifyMessageIntent(
   organizationName: string,
   descOrg: string,
   messageHistory?: any[],
+  client?: WebClient,
 ): Promise<'question' | 'update_request' | 'general_conversation'> {
   // Anonymize the input message
   const anonymizedMessage = anonymizeText(message);
   
-  // Build context from message history if available, filtering out reclassification notifications
+  // Build context from message history if available using centralized processMessageHistory
   let contextSection = '';
-  if (messageHistory && messageHistory.length > 0) {
-    const filteredHistory = messageHistory.filter((msg: any) => {
-      if (!msg.text) return false;
-
-      // Filter out reclassification notification messages
-      const notificationPatterns = [
-        'let me know this was actually a question',
-        'clarified this was a suggestion for updating our docs',
-        ':thinking_face:',
-        ':memo:',
-      ];
-
-      return !notificationPatterns.some((pattern) => msg.text.includes(pattern));
-    });
-
-    const contextMessages = filteredHistory
-      .map((msg: any) => {
-        const role = msg.bot_id ? 'Assistant' : 'User';
-        // Anonymize message history content
-        const anonymizedText = anonymizeText(msg.text);
-        return `${role}: ${anonymizedText}`;
-      })
-      .join('\n');
-    contextSection = `\n\nRecent conversation context:\n${contextMessages}\n\nUse this context to better understand the intent of the current message.`;
+  if (messageHistory && messageHistory.length > 0 && client) {
+    const processedMessages = await processMessageHistory(messageHistory, client);
+    
+    if (processedMessages.length > 0) {
+      const contextMessages = processedMessages
+        .map((msg: any) => msg.content)
+        .join('\n');
+      contextSection = `\n\nRecent conversation context:\n${contextMessages}\n\nUse this context to better understand the intent of the current message.`;
+    }
   }
 
   const systemPrompt = `You are an intelligent agent that answers questions or helps update documents that manages the institutional knowledge or polices of an organization, such as a university research lab.
@@ -173,6 +159,7 @@ ${descOrg ? `- About: ${descOrg}` : ''}${contextSection}`;
       temperature: 0.1,
       max_tokens: 15,
       function_name: 'classifyMessageIntent',
+      debug: true,
     },
   );
 

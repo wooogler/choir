@@ -1,6 +1,7 @@
 import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
-import { processMessageText } from 'services/llm/qa-service';
+import { getUserName, isBotUser } from 'services/slack';
+import { getAnonymizationMapping, anonymizeText } from 'services/common/name-cache';
 
 export interface ConversationHistoryOptions {
   timeLimit?: number; // minutes
@@ -16,6 +17,113 @@ export interface SlackMessage {
   thread_ts?: string;
   [key: string]: any;
 }
+
+// Process message text to handle user and bot mentions
+export async function processMessageText(text: string, client: WebClient): Promise<string> {
+  // Regular expression to find all user/bot mentions like <@U089Q1VAB3J>
+  const mentionRegex = /<@([A-Z0-9]+)>/g;
+  let matches;
+  let processedText = text;
+
+  // Get current bot user ID
+  const authResult = await client.auth.test();
+  const currentBotId = authResult.user_id;
+
+  // Collect all unique user IDs mentioned in the text
+  const mentionedIds = new Set<string>();
+  while ((matches = mentionRegex.exec(text)) !== null) {
+    mentionedIds.add(matches[1]);
+  }
+
+  // Process each unique user ID
+  for (const userId of mentionedIds) {
+    const isBot = await isBotUser(userId, client);
+
+    if (isBot) {
+      if (userId === currentBotId) {
+        // Replace current chatbot mention with @CHOIR
+        processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), '@CHOIR');
+      } else {
+        // Remove other bot mentions completely
+        processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), '');
+      }
+    } else {
+      // Replace user mentions with anonymized names
+      const userName = await getUserName(userId, client);
+      const anonymizationMapping = getAnonymizationMapping(userId, userName);
+      processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), anonymizationMapping.fakeNickname);
+    }
+  }
+
+  // Apply general text anonymization for any remaining real names
+  const anonymizedText = anonymizeText(processedText);
+  
+  return anonymizedText.trim();
+}
+
+// Process message history with filtering and mention processing
+export const processMessageHistory = async (messages: any[], client?: WebClient) => {
+  const filteredMessages = messages.filter((msg) => {
+    // Basic filters
+    if (!msg.text || msg.subtype) return false;
+
+    // Only filter out loading messages from bots, not actual responses
+    if (msg.bot_id) {
+      const loadingPatterns = [
+        'Searching relevant documents',
+        'Preparing document update suggestions', 
+        'Processing knowledge and generating',
+        ':mag:',
+        ':brain:',
+        'Extracting knowledge from',
+        'Analyzing conversation',
+        'let me know this was actually a question',
+        'clarified this was a suggestion for updating our docs',
+        ':thinking_face:',
+        ':memo:',
+      ];
+
+      // Filter out loading messages but keep actual responses
+      const isLoadingMessage = loadingPatterns.some((pattern) => msg.text.includes(pattern));
+      return !isLoadingMessage;
+    }
+
+    // Keep all user messages
+    return true;
+  });
+
+  // Process mentions if client is provided
+  const processedMessages = client
+    ? await Promise.all(
+        filteredMessages.map(async (msg) => ({
+          ...msg,
+          text: await processMessageText(msg.text, client),
+        })),
+      )
+    : filteredMessages;
+
+  return await Promise.all(
+    processedMessages.reverse().map(async (msg) => {
+      let role = msg.bot_id ? 'CHOIR' : 'user';
+      let content = msg.text;
+      
+      if (msg.bot_id) {
+        // For bot messages, add CHOIR: prefix
+        content = `CHOIR: ${msg.text}`;
+      } else if (msg.user && client) {
+        // For user messages, format as "Username: message"
+        const userName = await getUserName(msg.user, client);
+        const anonymizationMapping = getAnonymizationMapping(msg.user, userName);
+        content = `${anonymizationMapping.fakeNickname}: ${msg.text}`;
+      }
+      
+      return {
+        role,
+        content,
+      };
+    })
+  );
+};
 
 /**
  * Get filtered conversation history excluding Non-CHOIR users
@@ -67,12 +175,6 @@ export async function getFilteredConversationHistory(
           referenceTimestamp = Number.parseFloat(event.thread_ts) * 1000;
         }
 
-        Logger.debug('Thread reference timestamp calculation', {
-          currentMentionTs,
-          previousMessageTs: previousMessage?.ts,
-          parentTs: event.thread_ts,
-          selectedReferenceTs: Math.floor(referenceTimestamp / 1000),
-        });
       } catch (error) {
         Logger.warn('Failed to get thread reference timestamp, using current time', error as Error);
         referenceTimestamp = Date.now();
@@ -82,18 +184,6 @@ export async function getFilteredConversationHistory(
     const timeLimitAgo = Math.floor((referenceTimestamp - timeLimit * 60 * 1000) / 1000);
     const now = Math.floor(Date.now() / 1000);
 
-    Logger.debug('Getting conversation history', {
-      channel: event.channel,
-      thread_ts: event.thread_ts,
-      timeLimit,
-      messageLimit,
-      maxResults,
-      timeLimitAgo,
-      currentTime: now,
-      referenceTime: event.thread_ts ? 'previous_message' : 'current_time',
-      referenceTimestamp: Math.floor(referenceTimestamp / 1000),
-      timeDiffMinutes: (Math.floor(referenceTimestamp / 1000) - timeLimitAgo) / 60,
-    });
 
     // Get conversation history or replies
     // For longer time limits, get more messages without oldest filter to ensure we get recent messages
@@ -115,15 +205,6 @@ export async function getFilteredConversationHistory(
 
       const threadMessages = threadResult.messages || [];
 
-      Logger.debug('Thread messages retrieved', {
-        threadMessageCount: threadMessages.length,
-        threadMessages: threadMessages.map((msg) => ({
-          ts: msg.ts,
-          user: msg.user,
-          text: msg.text?.substring(0, 100) + '...',
-          timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp',
-        })),
-      });
 
       // 2. Get conversation history before the parent message (thread_ts)
       const parentTimestamp = Number.parseFloat(event.thread_ts);
@@ -134,18 +215,6 @@ export async function getFilteredConversationHistory(
         ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
       });
 
-      Logger.debug('Pre-thread raw messages retrieved', {
-        preThreadRawCount: preThreadResult.messages?.length || 0,
-        parentTimestamp,
-        parentTimestampISO: new Date(parentTimestamp * 1000).toISOString(),
-        preThreadRawMessages: (preThreadResult.messages || []).map((msg) => ({
-          ts: msg.ts,
-          user: msg.user,
-          text: msg.text?.substring(0, 100) + '...',
-          timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp',
-          isBeforeParent: msg.ts ? Number.parseFloat(msg.ts) < parentTimestamp : false,
-        })),
-      });
 
       const preThreadMessages = (preThreadResult.messages || []).filter((msg: SlackMessage) => {
         if (!msg.ts) return false;
@@ -153,29 +222,10 @@ export async function getFilteredConversationHistory(
         return msgTimestamp < parentTimestamp; // Exclude the parent message to avoid duplication
       });
 
-      Logger.debug('Pre-thread messages after parent filter', {
-        preThreadFilteredCount: preThreadMessages.length,
-        preThreadFilteredMessages: preThreadMessages.map((msg) => ({
-          ts: msg.ts,
-          user: msg.user,
-          text: msg.text?.substring(0, 100) + '...',
-          timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp',
-        })),
-      });
 
       // 3. Combine pre-thread conversation + thread messages (chronological order)
       messages = [...preThreadMessages.reverse(), ...threadMessages];
 
-      Logger.debug('Thread context enhanced', {
-        preThreadCount: preThreadMessages.length,
-        threadCount: threadMessages.length,
-        totalCount: messages.length,
-        threadTs: event.thread_ts,
-        timeLimitHours: timeLimit / 60,
-        isExtendedContext: timeLimit > 60,
-        timeLimitAgoISO: new Date(timeLimitAgo * 1000).toISOString(),
-        referenceTimestampISO: new Date(Math.floor(referenceTimestamp / 1000) * 1000).toISOString(),
-      });
     } else {
       // Non-thread mentions: use regular channel history
       const historyResult = await client.conversations.history({
@@ -187,15 +237,6 @@ export async function getFilteredConversationHistory(
       messages = historyResult.messages || [];
     }
 
-    Logger.debug('Raw messages from Slack API', {
-      messageCount: messages.length,
-      messages: messages.map((msg) => ({
-        ts: msg.ts,
-        user: msg.user,
-        text: msg.text?.substring(0, 100) + '...',
-        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp',
-      })),
-    });
 
     if (messages.length === 0) {
       return [];
@@ -231,19 +272,6 @@ export async function getFilteredConversationHistory(
       return isWithinTimeLimit;
     });
 
-    Logger.debug('After time filter', {
-      beforeCount: beforeTimeFilter,
-      afterCount: messages.length,
-      rejectedCount: rejectedByTimeFilter.length,
-      timeLimitAgoISO: new Date(timeLimitAgo * 1000).toISOString(),
-      rejectedMessages: rejectedByTimeFilter,
-      remainingMessages: messages.map((msg) => ({
-        ts: msg.ts,
-        user: msg.user,
-        text: msg.text?.substring(0, 100) + '...',
-        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp',
-      })),
-    });
 
     // Filter out Non-CHOIR users (exclude messages from users not in choirUsers list)
     // Keep messages from bots and CHOIR users only
@@ -272,22 +300,6 @@ export async function getFilteredConversationHistory(
       return false;
     });
 
-    Logger.debug('After CHOIR user filter', {
-      beforeCount: beforeChoirFilter,
-      afterCount: messages.length,
-      rejectedCount: rejectedByChoirFilter.length,
-      choirUsersCount: choirUsers.length,
-      choirUsers,
-      rejectedMessages: rejectedByChoirFilter,
-      remainingMessages: messages.map((msg) => ({
-        ts: msg.ts,
-        user: msg.user,
-        bot_id: msg.bot_id,
-        text: msg.text?.substring(0, 100) + '...',
-        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp',
-        isChoirUser: msg.user ? choirUsers.includes(msg.user) : false,
-      })),
-    });
 
     // Sort by timestamp and limit results
     const beforeSortAndLimit = messages.length;
@@ -300,25 +312,6 @@ export async function getFilteredConversationHistory(
     const finalMessages = sortedMessages.slice(-maxResults);
     const droppedByLimit = sortedMessages.slice(0, -maxResults);
 
-    Logger.debug('Final sorted and limited messages', {
-      beforeLimitCount: beforeSortAndLimit,
-      afterSortCount: sortedMessages.length,
-      maxResults,
-      finalCount: finalMessages.length,
-      droppedByLimitCount: droppedByLimit.length,
-      droppedMessages: droppedByLimit.map((msg) => ({
-        ts: msg.ts,
-        user: msg.user,
-        text: msg.text?.substring(0, 50) + '...',
-        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp',
-      })),
-      finalMessages: finalMessages.map((msg) => ({
-        ts: msg.ts,
-        user: msg.user,
-        text: msg.text?.substring(0, 100) + '...',
-        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp',
-      })),
-    });
 
     // Process mentions in message text to replace user IDs with names
     const processedMessages = await Promise.all(
@@ -331,24 +324,7 @@ export async function getFilteredConversationHistory(
       }),
     );
 
-    Logger.debug('After mention processing', {
-      messageCount: processedMessages.length,
-      messages: processedMessages.map((msg) => ({
-        ts: msg.ts,
-        user: msg.user,
-        text: msg.text?.substring(0, 100) + '...',
-        timestamp: msg.ts ? new Date(Number.parseFloat(msg.ts) * 1000).toISOString() : 'no timestamp',
-      })),
-    });
 
-    Logger.debug('Filtered conversation history', {
-      originalCount: messages.length || 0,
-      filteredCount: processedMessages.length,
-      choirUsersCount: choirUsers.length,
-      timeLimit,
-      messageLimit,
-      maxResults,
-    });
 
     return processedMessages;
   } catch (error) {

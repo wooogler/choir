@@ -90,10 +90,7 @@ export const createChatCompletion = async (
   }
 
   let response = completion.choices[0].message.content;
-  
-  if (debug && response) {
-    console.log('raw response (before de-anonymization): ', response);
-  }
+  const rawResponse = response; // Save raw response before de-anonymization
   
   // Apply de-anonymization for all responses
   if (response) {
@@ -102,12 +99,14 @@ export const createChatCompletion = async (
 
   if (debug) {
     console.log('function: ', function_name);
-    console.log('messages: ');
+    console.log('messages: \n');
     messages.forEach((message) => {
       console.log(`${message.role}: ${message.content}`);
     });
     console.log('--------------------------------');
-    console.log('response: ', response);
+    console.log('raw response (before de-anonymization): \n', rawResponse);
+    console.log('--------------------------------');
+    console.log('response (after de-anonymization): \n', response);
   }
 
   return response;

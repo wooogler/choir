@@ -5,7 +5,7 @@ export { createChatCompletion } from './completions';
 export type { ChatCompletionOptions } from './completions';
 
 // Q&A related functions
-export { answerQuestion, processMessageText } from './qa-service';
+export { answerQuestion } from './qa-service';
 
 // Document editing functions
 export {

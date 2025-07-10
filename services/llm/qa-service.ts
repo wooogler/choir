@@ -1,8 +1,9 @@
 import type { WebClient } from '@slack/web-api';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { SlackMessage } from 'services/slack';
-import { getUserName, isBotUser } from 'services/slack';
+import { getUserName } from 'services/slack';
 import { getAnonymizationMapping, anonymizeText } from 'services/common/name-cache';
+import { processMessageHistory, processMessageText } from 'services/slack/conversation-history';
 import { createChatCompletion } from './completions';
 
 // Format context from documents
@@ -10,105 +11,6 @@ const formatContext = (docs: any[]) => {
   return docs.map((doc) => doc.pageContent).join('\n\n');
 };
 
-// Process message history with filtering and mention processing
-const processMessageHistory = async (messages: any[], client?: WebClient) => {
-  const filteredMessages = messages.filter((msg) => {
-    // Basic filters
-    if (!msg.text || msg.subtype) return false;
-
-    // Filter out loading and temporary messages, including reclassification notifications
-    const loadingPatterns = [
-      'Searching relevant documents',
-      'Preparing document update suggestions',
-      'Processing knowledge and generating',
-      ':mag:',
-      ':brain:',
-      'Extracting knowledge from',
-      'Analyzing conversation',
-      'let me know this was actually a question',
-      'clarified this was a suggestion for updating our docs',
-      ':thinking_face:',
-      ':memo:',
-    ];
-
-    // Check if message contains any loading patterns
-    const isLoadingMessage = loadingPatterns.some((pattern) => msg.text.includes(pattern));
-
-    return !isLoadingMessage;
-  });
-
-  // Process mentions if client is provided
-  const processedMessages = client
-    ? await Promise.all(
-        filteredMessages.map(async (msg) => ({
-          ...msg,
-          text: await processMessageText(msg.text, client),
-        })),
-      )
-    : filteredMessages;
-
-  return await Promise.all(
-    processedMessages.reverse().map(async (msg) => {
-      let role = msg.bot_id ? 'assistant' : 'user';
-      let content = msg.text;
-      
-      // For user messages, add anonymized username
-      if (!msg.bot_id && msg.user && client) {
-        const userName = await getUserName(msg.user, client);
-        const anonymizationMapping = getAnonymizationMapping(msg.user, userName);
-        content = `${anonymizationMapping.fakeNickname}: ${msg.text}`;
-      }
-      
-      return {
-        role,
-        content,
-      };
-    })
-  );
-};
-
-// Process message text to handle user and bot mentions
-export async function processMessageText(text: string, client: WebClient): Promise<string> {
-  // Regular expression to find all user/bot mentions like <@U089Q1VAB3J>
-  const mentionRegex = /<@([A-Z0-9]+)>/g;
-  let matches;
-  let processedText = text;
-
-  // Get current bot user ID
-  const authResult = await client.auth.test();
-  const currentBotId = authResult.user_id;
-
-  // Collect all unique user IDs mentioned in the text
-  const mentionedIds = new Set<string>();
-  while ((matches = mentionRegex.exec(text)) !== null) {
-    mentionedIds.add(matches[1]);
-  }
-
-  // Process each unique user ID
-  for (const userId of mentionedIds) {
-    const isBot = await isBotUser(userId, client);
-
-    if (isBot) {
-      if (userId === currentBotId) {
-        // Replace current chatbot mention with @CHOIR
-        processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), '@CHOIR');
-      } else {
-        // Remove other bot mentions completely
-        processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), '');
-      }
-    } else {
-      // Replace user mentions with anonymized names
-      const userName = await getUserName(userId, client);
-      const anonymizationMapping = getAnonymizationMapping(userId, userName);
-      processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), anonymizationMapping.fakeNickname);
-    }
-  }
-
-  // Apply general text anonymization for any remaining real names
-  const anonymizedText = anonymizeText(processedText);
-  
-  return anonymizedText.trim();
-}
 
 // Interface for answer result
 interface AnswerResult {
@@ -129,8 +31,24 @@ export const answerQuestion = async (
   const context = formatContext(relevantDocs);
   const messages = await processMessageHistory(messageHistory, client);
   
-  // Anonymize the user message
-  const anonymizedUserMessage = anonymizeText(userMessage);
+  // Get the current user from the most recent message to format current question
+  let currentQuestionWithUser = userMessage;
+  if (messageHistory.length > 0 && client) {
+    const lastMessage = messageHistory[messageHistory.length - 1];
+    if (lastMessage.user) {
+      try {
+        const userName = await getUserName(lastMessage.user, client);
+        const anonymizationMapping = getAnonymizationMapping(lastMessage.user, userName);
+        currentQuestionWithUser = `${anonymizationMapping.fakeNickname}: ${userMessage}`;
+      } catch (error) {
+        // Fallback to just the message if user name lookup fails
+        currentQuestionWithUser = userMessage;
+      }
+    }
+  }
+  
+  // Anonymize the final message
+  const anonymizedCurrentQuestion = anonymizeText(currentQuestionWithUser);
 
   // Get today's date
   const today = new Date().toLocaleDateString('en-US', {
@@ -182,9 +100,9 @@ Here's the relevant documentation I can reference:
 ${context}
 
 User's conversation history:
-${messages.map((m) => `${m.role}: ${m.content}`).join('\n')}
+${messages.map((m) => m.content).join('\n')}
 
-Current question: ${anonymizedUserMessage}
+Current question: ${anonymizedCurrentQuestion}
 
 Analyze whether you can answer based on the documentation and provide your response as JSON:`;
 
