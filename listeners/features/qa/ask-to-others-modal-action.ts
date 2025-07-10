@@ -111,7 +111,7 @@ export const askToOthersModalCallback = async ({
                 {
                   text: {
                     type: 'plain_text',
-                    text: "Share anonymously (show as 'A team member' instead of your name)",
+                    text: "Share anonymously (show as 'A team member' and exclude me from the DM)",
                   },
                   value: 'anonymous',
                 },

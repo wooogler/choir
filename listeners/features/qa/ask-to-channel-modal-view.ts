@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
-import { createQAChannelMessage, getUserName, getWorkspaceId } from 'services/slack';
+import { createQAChannelMessage, createQAChannelPreview, getUserName, getWorkspaceId } from 'services/slack';
 import { logModalSubmit } from '../../../services/common/user-interaction-logger';
 
 /**
@@ -88,7 +88,16 @@ export const askToChannelSubmitCallback = async ({
       userName,
     );
 
-    const messageText = isAnonymous ? 'Q&A from a team member' : `Q&A from ${userName}`;
+    // Create comprehensive text that matches the blocks content for conversation history
+    const messageText = createQAChannelPreview(
+      channelName,
+      userId,
+      sessionData.originalQuestion,
+      sessionData.botResponse,
+      true, // canAnswer - assume true for channel sharing
+      isAnonymous,
+      userName,
+    );
 
     // Q&A 채널에 메시지 전달
     await client.chat.postMessage({

@@ -622,7 +622,7 @@ class GithubService {
 
     const messagesWithReplacedMentions = await Promise.all(
       messagesWithUsernames.map(async (message) => {
-        const replacedText = await replaceMentionsInText(message.text, client);
+        const replacedText = await replaceMentionsInText(message.text || '', client);
         return {
           ...message,
           text: replacedText,

@@ -29,10 +29,23 @@ export function extractKeysFromMessages(messages: SlackMessage[]): string[] {
 }
 
 export async function createSlackMessageWithName(
-  message: { user?: string; text?: string; ts?: string },
+  message: { user?: string; bot_id?: string; text?: string; ts?: string },
   client: WebClient,
 ): Promise<SlackMessage | null> {
-  if (!message.user || !message.text || !message.ts) return null;
+  if (!message.text || !message.ts) return null;
+  
+  // Handle bot messages
+  if (message.bot_id && !message.user) {
+    return {
+      userId: message.bot_id,
+      username: 'CHOIR',
+      text: message.text,
+      ts: message.ts,
+    };
+  }
+  
+  // Handle user messages
+  if (!message.user) return null;
 
   const username = await getUserName(message.user, client);
   return {
@@ -139,7 +152,7 @@ export const removeDuplicateMessages = (messages: SlackMessage[]): SlackMessage[
     }
   });
 
-  return Array.from(uniqueMessages.values()).sort((a, b) => Number.parseInt(a.ts) - Number.parseInt(b.ts));
+  return Array.from(uniqueMessages.values()).sort((a, b) => Number.parseInt(a.ts || '0') - Number.parseInt(b.ts || '0'));
 };
 
 export function formatTimestampToDateString(timestamp: string): string {

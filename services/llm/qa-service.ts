@@ -110,7 +110,7 @@ Analyze whether you can answer based on the documentation and provide your respo
       {
         role: 'system',
         content:
-          "You are a helpful documentation assistant that answers questions based only on provided documents. Always respond with a JSON object containing 'canAnswer' (boolean) and 'response' (string).",
+          "You are CHOIR, a helpful documentation assistant that answers questions based only on provided documents. Always respond with a JSON object containing 'canAnswer' (boolean) and 'response' (string).",
       },
       {
         role: 'user',

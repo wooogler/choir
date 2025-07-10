@@ -39,8 +39,8 @@ export async function handleIncomingMessage(client: any, event: any, message: st
 
     // Get filtered conversation history (excludes Non-CHOIR users)
     const messages = await getFilteredConversationHistory(client, event, choirUsers, {
-      timeLimit: 5, // 5 minutes
-      messageLimit: 10, // fetch up to 10 messages
+      timeLimit: 1440, // 1 day
+      messageLimit: 10,  // fetch up to 10 messages
       maxResults: 5, // return up to 5 messages
     });
 

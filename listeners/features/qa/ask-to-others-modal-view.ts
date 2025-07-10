@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
-import { createPrivateMessage, getUserName, getWorkspaceId } from 'services/slack';
+import { createPrivateMessage, createPrivateMessagePreview, getUserName, getWorkspaceId } from 'services/slack';
 import { logModalSubmit } from '../../../services/common/user-interaction-logger';
 
 /**
@@ -69,14 +69,43 @@ export const askToOthersSubmitCallback = async ({
     // 사용자 이름 가져오기
     const userName = await getUserName(userId, client);
 
-    // 선택된 각 멤버에게 DM으로 질문과 답변 전달
+    // DM 참여자 결정: anonymous가 아닌 경우 질문자도 포함
+    const dmParticipants = isAnonymous ? selectedUsers : [userId, ...selectedUsers];
+    
+    // 변수 선언
     let successCount = 0;
     let failCount = 0;
-    for (const targetUserId of selectedUsers) {
-      try {
+    let conversationId = '';
+    let participantNames: string[] = [];
+    
+    try {
+      // 참여자 이름들 가져오기
+      for (const participantId of dmParticipants) {
+        try {
+          const name = await getUserName(participantId, client);
+          participantNames.push(name);
+        } catch (error) {
+          logger.warn(`Failed to get user name for ${participantId}:`, error);
+          participantNames.push(`<@${participantId}>`);
+        }
+      }
+      
+      // 그룹 DM 생성 (참여자가 2명 이상인 경우) 또는 개별 DM (1명인 경우)
+      if (dmParticipants.length === 1) {
+        // 1명인 경우 개별 DM
+        conversationId = dmParticipants[0];
+      } else {
+        // 2명 이상인 경우 그룹 DM 생성
+        const conversation = await client.conversations.open({
+          users: dmParticipants.join(','),
+        });
+        conversationId = conversation.channel?.id || '';
+      }
+      
+      if (conversationId) {
         // 공통 함수를 사용해 메시지 블록 생성 (anonymous 옵션 포함)
         const messageBlocks = createPrivateMessage(
-          targetUserId,
+          conversationId,
           userId,
           sessionData.originalQuestion,
           sessionData.botResponse,
@@ -85,26 +114,89 @@ export const askToOthersSubmitCallback = async ({
           userName,
         );
 
-        const messageText = isAnonymous ? 'Private Q&A from a team member' : `Private Q&A from ${userName}`;
+        // Create comprehensive text that matches the blocks content for conversation history
+        const messageText = createPrivateMessagePreview(
+          'team member', // recipientName - generic since it could be multiple people
+          userName,
+          sessionData.originalQuestion,
+          sessionData.botResponse,
+          true, // canAnswer - assume true for private sharing
+          isAnonymous
+        );
 
         await client.chat.postMessage({
-          channel: targetUserId,
+          channel: conversationId,
           text: messageText,
           blocks: messageBlocks,
         });
-        successCount++;
-      } catch (error) {
-        logger.error(`Failed to send private Q&A to user ${targetUserId}:`, error);
-        failCount++;
+        
+        successCount = 1;
+        failCount = 0;
+      } else {
+        throw new Error('Failed to create conversation');
       }
+    } catch (error) {
+      logger.error(`Failed to send private Q&A to group DM:`, error);
+      successCount = 0;
+      failCount = 1;
     }
 
     // 사용자에게 성공 메시지 전송 (원본 채널이 있는 경우)
-    if (sessionData.originalChannelId) {
+    if (sessionData.originalChannelId && successCount > 0) {
+      // 참여자 이름들 표시
+      const participantsList = participantNames.join(', ');
+      
+      // 공통 성공 메시지 (채널에 공개)
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,
-        text: `✅ Your Q&A has been sent privately to ${selectedUsers.length} person(s)`,
+        text: `✅ Private DM created with: ${participantsList}`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `✅ *Private DM created*\n📋 Participants: ${participantsList}`,
+            },
+          },
+        ],
       });
+      
+      // Anonymous가 아닌 경우에만 질문자에게 Open DM 버튼 제공 (ephemeral)
+      if (!isAnonymous) {
+        // 팀 ID 가져오기 (DM 링크용)
+        const authInfo = await client.auth.test();
+        const teamId = authInfo.team_id;
+        
+        await client.chat.postEphemeral({
+          channel: sessionData.originalChannelId,
+          user: userId,
+          text: 'Access your private DM',
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '💬 *Your private DM is ready*\nClick the button below to open the conversation.',
+              },
+            },
+            {
+              type: 'actions',
+              elements: [
+                {
+                  type: 'button',
+                  text: {
+                    type: 'plain_text',
+                    text: 'Open DM',
+                    emoji: true,
+                  },
+                  style: 'primary',
+                  url: `slack://channel?team=${teamId}&id=${conversationId}`,
+                },
+              ],
+            },
+          ],
+        });
+      }
     }
 
     logger.info(`Private Q&A sent to ${selectedUsers.length} users by user ${userId}`);

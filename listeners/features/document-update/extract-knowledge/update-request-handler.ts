@@ -4,7 +4,6 @@ import { logKnowledgeExtraction, logUpdateRequestProcessing } from 'services/com
 import { extractKnowledgeFromMessages } from 'services/llm/knowledge-extractor';
 import {
   type SlackMessage,
-  createSlackMessageWithName,
   getCHOIRUsers,
   getChannelName,
   getFilteredConversationHistory,
@@ -12,16 +11,11 @@ import {
   getQAChannel,
   getUserName,
   getWorkspaceId,
-  isBotUser,
+  classifyChannel,
   isManager,
 } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 
-interface MessageResult {
-  ts: string;
-  channel: string;
-  ok: boolean;
-}
 
 /**
  * Handle update request message with automatic knowledge extraction
@@ -57,22 +51,29 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     const workspaceId = await getWorkspaceId(client);
     const choirUsers = await getCHOIRUsers(workspaceId);
 
-    // Check if current channel is Q&A channel
+    // Classify channel type to determine timeLimit and context
     const qaChannelId = await getQAChannel(workspaceId, client);
-    const isQAChannel = qaChannelId === event.channel;
-
-    // Get filtered conversation history (excludes Non-CHOIR users)
-    // Use longer timeLimit for Q&A channels to capture delayed responses
-    const filteredMessages = await getFilteredConversationHistory(client, event, choirUsers, {
-      timeLimit: isQAChannel ? 4320 : event.thread_ts ? 1440 : 10, // 3 days for Q&A, 24 hours for threads, 10 minutes for regular
-      messageLimit: 15, // fetch up to 15 messages
-      maxResults: 15, // return up to 15 messages (we'll filter out bots later)
+    const channelClassification = await classifyChannel(originalChannelId, client, qaChannelId);
+    
+    console.log('🏷️ CHANNEL CLASSIFICATION:', {
+      channelId: originalChannelId,
+      type: channelClassification.type,
+      displayName: channelClassification.displayName,
+      timeLimit: channelClassification.timeLimit,
+      description: channelClassification.description,
+      choirUsersCount: choirUsers.length
     });
 
-    // Create historyResult object for compatibility
-    const historyResult = { messages: filteredMessages };
+    // Use timeLimit from channel classification, with thread override
+    const timeLimit = event.thread_ts ? 1440 : channelClassification.timeLimit; // 24 hours for threads, otherwise use classification
+    
+    const filteredMessages = await getFilteredConversationHistory(client, event, choirUsers, {
+      timeLimit, // Use classified timeLimit
+      messageLimit: 15, // fetch up to 15 messages
+      maxResults: 15, // return up to 15 messages including bot responses
+    });
 
-    if (!historyResult.messages?.length) {
+    if (!filteredMessages?.length) {
       await client.chat.update({
         channel: originalChannelId,
         ts: loadingMessage.ts,
@@ -106,44 +107,28 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       return false;
     }
 
-    // Sort messages by timestamp (oldest first) and filter out bot messages
-    const messages = [...(historyResult.messages ?? [])].sort((a, b) => {
+    // filteredMessages is already SlackMessage[] from getFilteredConversationHistory
+    // Sort messages by timestamp (oldest first) - they should already be sorted but ensure consistency
+    const sortedMessages = [...filteredMessages].sort((a, b) => {
       const tsA = Number.parseFloat(a.ts || '0');
       const tsB = Number.parseFloat(b.ts || '0');
       return tsA - tsB;
     });
 
-    // Filter out bot messages
-    const nonBotMessages = await Promise.all(
-      messages.map(async (msg: any) => {
-        if (!msg.user) return null;
-        const isBot = await isBotUser(msg.user, client);
-        return isBot ? null : msg;
-      }),
-    );
-
-    const slackMessages = (
-      await Promise.all(
-        nonBotMessages
-          .filter((msg): msg is any => msg !== null)
-          .map((msg: any) => createSlackMessageWithName(msg, client)),
-      )
-    ).filter((msg): msg is SlackMessage => msg !== null);
-
-    // Take the last 10 non-bot messages
-    const last10Messages = slackMessages.slice(-10);
+    // Take the last 10 messages for knowledge extraction
+    const last10Messages = sortedMessages.slice(-10);
 
     if (last10Messages.length === 0) {
       await client.chat.update({
         channel: originalChannelId,
         ts: loadingMessage.ts,
-        text: '❌ No user messages found to analyze.',
+        text: '❌ No messages found to analyze.',
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ No user messages found to analyze.',
+              text: '❌ No messages found to analyze.',
             },
           },
         ],
@@ -159,9 +144,9 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         isThreadMention,
         Date.now() - startTime,
         false,
-        'No user messages found to analyze',
+        'No messages found to analyze',
         '',
-        { error: 'No user messages found' },
+        { error: 'No messages found' },
       );
 
       return false;
@@ -199,12 +184,9 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       const workspaceStore = new WorkspaceStore();
       const workspaceConfig = await workspaceStore.getWorkspaceConfig(workspaceId);
 
-      // Determine channel type for context
-      const qaChannelId = await getQAChannel(workspaceId, client);
-      let channelType = 'General Discussion';
-      if (qaChannelId === originalChannelId) {
-        channelType = 'Q&A Channel';
-      } else if (event.thread_ts) {
+      // Use channel classification for context
+      let channelType = channelClassification.displayName;
+      if (event.thread_ts) {
         channelType = 'Thread Discussion';
       }
 
@@ -219,7 +201,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       };
 
       // Extract knowledge from messages with organizational context
-      const extractionResult = await extractKnowledgeFromMessages(last10Messages, organizationalContext);
+      const extractionResult = await extractKnowledgeFromMessages(last10Messages, organizationalContext, client);
 
       // Update loading message with compact analysis summary
       await client.chat.update({
@@ -246,7 +228,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
                 messageCount: last10Messages.length,
                 messages: last10Messages.map((msg) => ({
                   username: msg.username,
-                  text: msg.text.substring(0, 200), // Limit text length for storage
+                  text: msg.text?.substring(0, 200) || '', // Limit text length for storage
                   ts: msg.ts,
                 })),
               }),
@@ -388,10 +370,10 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           sourceMessageCount: last10Messages.length,
           hasKnowledgeItem: !!extractionResult.knowledgeItem,
           sourceMessages: last10Messages.map((msg) => ({
-            userId: msg.userId,
-            username: msg.username,
-            text: msg.text.substring(0, 200), // 메시지 내용 일부만 저장
-            ts: msg.ts,
+            userId: msg.user || msg.bot_id || 'unknown',
+            username: msg.username || 'Unknown',
+            text: msg.text?.substring(0, 200) || '', // 메시지 내용 일부만 저장
+            ts: msg.ts || '',
           })),
         },
         client,

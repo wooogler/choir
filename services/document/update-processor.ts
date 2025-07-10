@@ -173,11 +173,11 @@ export async function processDocument(
     const uniqueMessageInfo = Array.from(
       new Map(
         validMessages.map((msg) => [
-          `${msg.userId}-${msg.ts}-${msg.text}`,
+          `${msg.user || msg.bot_id}-${msg.ts}-${msg.text}`,
           {
-            userId: msg.userId,
-            text: msg.text,
-            ts: msg.ts,
+            userId: msg.user || msg.bot_id || 'unknown',
+            text: msg.text || '',
+            ts: msg.ts || '',
             username: msg.username || 'Unknown',
           },
         ]),

@@ -9,13 +9,14 @@ export async function editMarkdownWithUserMessages(markdown: string, userMessage
   // Process message texts to handle mentions and anonymize content
   const processedMessages = await Promise.all(
     userMessages.map(async (message) => {
-      const processedText = await processMessageText(message.text, client);
+      const processedText = await processMessageText(message.text || '', client);
 
       // Get anonymized username using consistent name-cache system
       let anonUser = 'Unknown';
-      if (message.userId) {
-        const userName = await getUserName(message.userId, client);
-        const anonymizationMapping = getAnonymizationMapping(message.userId, userName);
+      const userId = message.user || message.bot_id;
+      if (userId) {
+        const userName = await getUserName(userId, client);
+        const anonymizationMapping = getAnonymizationMapping(userId, userName);
         anonUser = anonymizationMapping.fakeNickname;
       } else if (message.username) {
         // Fallback: anonymize username directly if no userId field
@@ -122,7 +123,7 @@ export async function classifyMessageIntent(
     }
   }
 
-  const systemPrompt = `You are an intelligent agent that answers questions or helps update documents that manages the institutional knowledge or polices of an organization, such as a university research lab.
+  const systemPrompt = `You are CHOIR, an intelligent agent that answers questions or helps update documents that manages the institutional knowledge or polices of an organization, such as a university research lab.
 Your task is to classify the user message as 'question' (asking for information about the organization), 'update_request' (containing new knowledge, information, or facts that could be documented, or explicitly asking to save/store information about the organization), or 'general_conversation' (a general statement, greeting, or chit-chat without substantial new information, questions that are not necessarily about the organization or the members).
 
 Update_request includes: direct requests to save information about the organization, suggestions for document changes, AND statements containing new knowledge, facts, decisions, tools being used, processes, or any information that could be valuable for documentation.
@@ -171,15 +172,6 @@ ${descOrg ? `- About: ${descOrg}` : ''}${contextSection}`;
   } else {
     finalIntent = 'general_conversation';
   }
-
-  // Log the classification result
-  console.log(`[MESSAGE INTENT CLASSIFICATION]`, {
-    originalMessage: message.substring(0, 100) + (message.length > 100 ? '...' : ''),
-    rawLLMResponse: result,
-    classifiedAs: finalIntent,
-    organizationName,
-    descOrg,
-  });
 
   return finalIntent;
 }

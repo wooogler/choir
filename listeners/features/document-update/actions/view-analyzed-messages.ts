@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getWorkspaceId } from 'services/slack';
+import { deAnonymizeText } from 'services/common/name-cache';
 
 export const viewAnalyzedMessagesAction = async ({
   ack,
@@ -50,13 +51,21 @@ export const viewAnalyzedMessagesAction = async ({
             text: '*📝 Messages analyzed for knowledge extraction:*',
           },
         },
-        ...messages.map((msg: any, index: number) => ({
-          type: 'section' as const,
-          text: {
-            type: 'mrkdwn' as const,
-            text: `*${index + 1}. ${msg.username}*\n${msg.text}${msg.text.length >= 200 ? '...' : ''}`,
-          },
-        })),
+        ...messages.map((msg: any, index: number) => {
+          // De-anonymize the username and text for user display
+          const username = msg.username || 'Unknown User';
+          const text = msg.text || 'No text';
+          const deAnonymizedUsername = deAnonymizeText(username);
+          const deAnonymizedText = deAnonymizeText(text);
+          
+          return {
+            type: 'section' as const,
+            text: {
+              type: 'mrkdwn' as const,
+              text: `*${index + 1}. ${deAnonymizedUsername}*\n${deAnonymizedText}${deAnonymizedText.length >= 200 ? '...' : ''}`,
+            },
+          };
+        }),
       ],
     };
 

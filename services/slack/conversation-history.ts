@@ -63,13 +63,42 @@ export async function processMessageText(text: string, client: WebClient): Promi
 
 // Process message history with filtering and mention processing
 export const processMessageHistory = async (messages: any[], client?: WebClient) => {
-  const filteredMessages = messages.filter((msg) => {
+  // First, find session boundaries - messages that start new conversations
+  const sessionBoundaryPatterns = [
+    'Hi there!', // QA session start
+    'Sure! I\'ll suggest the following update to',
+    'I\'ll suggest the following update to',
+  ];
+
+  let sessionStartIndex = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.bot_id && msg.text) {
+      const isSessionBoundary = sessionBoundaryPatterns.some((pattern) => msg.text.includes(pattern));
+      if (isSessionBoundary) {
+        // If it's a "Hi there!" message, start from that message
+        // If it's a "Sure! I'll suggest..." message, start after it
+        if (msg.text.includes('Hi there!')) {
+          sessionStartIndex = i;
+        } else {
+          sessionStartIndex = i + 1;
+        }
+        break;
+      }
+    }
+  }
+
+  // Take only messages from the current session
+  const currentSessionMessages = messages.slice(sessionStartIndex);
+
+  const filteredMessages = currentSessionMessages.filter((msg) => {
     // Basic filters
     if (!msg.text || msg.subtype) return false;
 
-    // Only filter out loading messages from bots, not actual responses
+    // Filter out loading messages and status messages from bots
     if (msg.bot_id) {
-      const loadingPatterns = [
+      const excludePatterns = [
+        // Loading messages
         'Searching relevant documents',
         'Preparing document update suggestions',
         'Processing knowledge and generating',
@@ -77,15 +106,21 @@ export const processMessageHistory = async (messages: any[], client?: WebClient)
         ':brain:',
         'Extracting knowledge from',
         'Analyzing conversation',
+        'Analyzing recent messages to extract knowledge',
         'let me know this was actually a question',
         'clarified this was a suggestion for updating our docs',
         ':thinking_face:',
         ':memo:',
+        // Status messages to exclude
+        '✅ Analyzed',
+        'messages to extract knowledge',
+        'Sure! I\'ll suggest the following update to',
+        'I\'ll suggest the following update to',
       ];
 
-      // Filter out loading messages but keep actual responses
-      const isLoadingMessage = loadingPatterns.some((pattern) => msg.text.includes(pattern));
-      return !isLoadingMessage;
+      // Filter out messages matching exclude patterns
+      const shouldExclude = excludePatterns.some((pattern) => msg.text.includes(pattern));
+      return !shouldExclude;
     }
 
     // Keep all user messages
@@ -103,7 +138,7 @@ export const processMessageHistory = async (messages: any[], client?: WebClient)
     : filteredMessages;
 
   return await Promise.all(
-    processedMessages.reverse().map(async (msg) => {
+    processedMessages.map(async (msg) => {
       const role = msg.bot_id ? 'CHOIR' : 'user';
       let content = msg.text;
 
@@ -229,6 +264,7 @@ export async function getFilteredConversationHistory(
       });
 
       messages = historyResult.messages || [];
+
     }
 
     if (messages.length === 0) {
@@ -293,7 +329,6 @@ export async function getFilteredConversationHistory(
     });
 
     // Sort by timestamp and limit results
-    const beforeSortAndLimit = messages.length;
     const sortedMessages = [...messages].sort((a, b) => {
       const tsA = Number.parseFloat(a.ts || '0');
       const tsB = Number.parseFloat(b.ts || '0');
@@ -301,7 +336,7 @@ export async function getFilteredConversationHistory(
     });
 
     const finalMessages = sortedMessages.slice(-maxResults);
-    const droppedByLimit = sortedMessages.slice(0, -maxResults);
+
 
     // Process mentions in message text to replace user IDs with names
     const processedMessages = await Promise.all(

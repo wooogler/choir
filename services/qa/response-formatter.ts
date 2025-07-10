@@ -64,8 +64,8 @@ export class ResponseFormatter {
 
     // 타임스탬프별로 메시지 정렬 (내림차순)
     validMessages.sort((a: SlackMessage, b: SlackMessage) => {
-      const tsA = Number.parseFloat(a.ts);
-      const tsB = Number.parseFloat(b.ts);
+      const tsA = Number.parseFloat(a.ts || '0');
+      const tsB = Number.parseFloat(b.ts || '0');
       return tsB - tsA;
     });
 

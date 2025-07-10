@@ -217,7 +217,7 @@ export const suggestUpdatesCallback = async ({
       validMessages = sourceMessages;
       console.log(
         `[DEBUG] Using actual source messages:`,
-        validMessages.map((m) => `${m.username}(${m.userId}): ${m.text.substring(0, 50)}...`),
+        validMessages.map((m) => `${m.username}(${m.user || m.bot_id}): ${m.text?.substring(0, 50) || ''}...`),
       );
     } else {
       // source messages가 없는 경우: 실제 userId와 username 사용

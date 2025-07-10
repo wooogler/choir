@@ -1,5 +1,5 @@
 export * from './slack-diff';
-export * from './types';
+export type { SlackMessage } from './conversation-history';
 
 // User Management
 export {
@@ -66,7 +66,16 @@ export {
 export { HomeScreenService } from './home-screen';
 
 // Utils
-export { createGitbookSectionLink } from './utils';
+export { 
+  createGitbookSectionLink, 
+  isDM, 
+  isDMByAPI, 
+  is1to1DM, 
+  isGroupDM,
+  classifyChannel,
+  ChannelType,
+  type ChannelClassification 
+} from './utils';
 
 // Conversation History
 export {

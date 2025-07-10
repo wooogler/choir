@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { WebClient } from '@slack/web-api';
+import { anonymizationService } from 'services/anonymization/anonymization-service';
 
 interface UserCache {
   [userId: string]: {
@@ -24,21 +25,11 @@ interface ChannelCache {
   };
 }
 
-interface AnonymizationMapping {
-  [userId: string]: {
-    realName: string;
-    fakeName: string;
-    nickname?: string;
-    fakeNickname: string;
-    lastUsed: string;
-  };
-}
 
 interface NameCacheData {
   users: UserCache;
   workspaces: WorkspaceCache;
   channels: ChannelCache;
-  anonymization: AnonymizationMapping;
 }
 
 class NameCacheService {
@@ -54,7 +45,6 @@ class NameCacheService {
       users: {},
       workspaces: {},
       channels: {},
-      anonymization: {},
     };
     this.ensureCacheDirectory();
     this.loadCache();
@@ -94,7 +84,6 @@ class NameCacheService {
       users: {},
       workspaces: {},
       channels: {},
-      anonymization: {},
     };
     this.saveCache(); // Save the initial empty structure
   }
@@ -310,204 +299,6 @@ class NameCacheService {
     this.saveCache();
   }
 
-  // Fake names pool for anonymization
-  private readonly FAKE_FIRST_NAMES = [
-    'John',
-    'Jane',
-    'Alex',
-    'Sam',
-    'Chris',
-    'Taylor',
-    'Jordan',
-    'Casey',
-    'Morgan',
-    'Riley',
-    'Avery',
-    'Drew',
-    'Quinn',
-    'Sage',
-    'Rowan',
-    'Emery',
-    'Finley',
-    'Hayden',
-    'Peyton',
-    'Reese',
-    'Blake',
-    'Cameron',
-    'Dakota',
-    'Elliot',
-    'Frankie',
-    'Hunter',
-    'Kai',
-    'Logan',
-    'Parker',
-    'River',
-  ];
-
-  private readonly FAKE_LAST_NAMES = [
-    'Smith',
-    'Johnson',
-    'Williams',
-    'Brown',
-    'Jones',
-    'Garcia',
-    'Miller',
-    'Davis',
-    'Rodriguez',
-    'Martinez',
-    'Hernandez',
-    'Lopez',
-    'Gonzalez',
-    'Wilson',
-    'Anderson',
-    'Thomas',
-    'Taylor',
-    'Moore',
-    'Jackson',
-    'Martin',
-    'Lee',
-    'Perez',
-    'Thompson',
-    'White',
-    'Harris',
-    'Sanchez',
-    'Clark',
-    'Ramirez',
-    'Lewis',
-    'Robinson',
-  ];
-
-  /**
-   * Generate a unique fake name combination
-   */
-  private generateFakeName(): { fakeName: string; fakeNickname: string } {
-    const usedNames = new Set(Object.values(this.cache.anonymization).map((entry) => entry.fakeName));
-
-    let attempts = 0;
-    while (attempts < 100) {
-      const firstName = this.FAKE_FIRST_NAMES[Math.floor(Math.random() * this.FAKE_FIRST_NAMES.length)];
-      const lastName = this.FAKE_LAST_NAMES[Math.floor(Math.random() * this.FAKE_LAST_NAMES.length)];
-      const fakeName = `${firstName} ${lastName}`;
-
-      if (!usedNames.has(fakeName)) {
-        return { fakeName, fakeNickname: firstName };
-      }
-      attempts++;
-    }
-
-    // Fallback if all combinations are used
-    const timestamp = Date.now();
-    const firstName = this.FAKE_FIRST_NAMES[0];
-    const lastName = this.FAKE_LAST_NAMES[0];
-    return {
-      fakeName: `${firstName} ${lastName}${timestamp}`,
-      fakeNickname: firstName,
-    };
-  }
-
-  /**
-   * Get or create anonymization mapping for a user
-   */
-  getAnonymizationMapping(
-    userId: string,
-    realName: string,
-    nickname?: string,
-  ): {
-    realName: string;
-    fakeName: string;
-    nickname?: string;
-    fakeNickname: string;
-  } {
-    let mapping = this.cache.anonymization[userId];
-
-    if (!mapping) {
-      const { fakeName, fakeNickname } = this.generateFakeName();
-      mapping = {
-        realName,
-        fakeName,
-        nickname,
-        fakeNickname,
-        lastUsed: new Date().toISOString(),
-      };
-      this.cache.anonymization[userId] = mapping;
-      this.saveCache();
-    } else {
-      // Update last used timestamp
-      mapping.lastUsed = new Date().toISOString();
-      this.saveCache();
-    }
-
-    return mapping;
-  }
-
-  /**
-   * Anonymize text by replacing real names with fake names
-   */
-  anonymizeText(text: string): string {
-    let anonymizedText = text;
-
-    // Sort mappings by lastUsed (most recent first) to handle duplicate names
-    const sortedMappings = Object.entries(this.cache.anonymization).sort(
-      ([, a], [, b]) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime(),
-    );
-
-    for (const [userId, mapping] of sortedMappings) {
-      // Replace user ID mentions first
-      const userMentionRegex = new RegExp(`<@${userId}>`, 'g');
-      anonymizedText = anonymizedText.replace(userMentionRegex, mapping.fakeNickname);
-
-      // Replace nickname first (highest priority)
-      if (mapping.nickname) {
-        const nicknameRegex = new RegExp(`\\b${this.escapeRegex(mapping.nickname)}\\b`, 'g');
-        anonymizedText = anonymizedText.replace(nicknameRegex, mapping.fakeNickname);
-      }
-
-      // Replace full name with nickname only
-      const fullNameRegex = new RegExp(`\\b${this.escapeRegex(mapping.realName)}\\b`, 'g');
-      anonymizedText = anonymizedText.replace(fullNameRegex, mapping.fakeNickname);
-
-      // Replace first name (extracted from real name) with nickname only
-      const firstName = mapping.realName.split(' ')[0];
-      if (firstName && firstName !== mapping.nickname) {
-        const firstNameRegex = new RegExp(`\\b${this.escapeRegex(firstName)}\\b`, 'g');
-        anonymizedText = anonymizedText.replace(firstNameRegex, mapping.fakeNickname);
-      }
-    }
-
-    return anonymizedText;
-  }
-
-  /**
-   * De-anonymize text by replacing fake names with real names
-   */
-  deAnonymizeText(text: string): string {
-    let deAnonymizedText = text;
-
-    // Sort mappings by lastUsed (most recent first) to handle duplicate names
-    const sortedMappings = Object.entries(this.cache.anonymization).sort(
-      ([, a], [, b]) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime(),
-    );
-
-    for (const [, mapping] of sortedMappings) {
-      // Replace fake full name with real name
-      const fakeFullNameRegex = new RegExp(`\\b${this.escapeRegex(mapping.fakeName)}\\b`, 'g');
-      deAnonymizedText = deAnonymizedText.replace(fakeFullNameRegex, mapping.realName);
-
-      // Replace fake nickname with real nickname (if exists) or first name
-      const realNickname = mapping.nickname || mapping.realName.split(' ')[0];
-      const fakeNicknameRegex = new RegExp(`\\b${this.escapeRegex(mapping.fakeNickname)}\\b`, 'g');
-      deAnonymizedText = deAnonymizedText.replace(fakeNicknameRegex, realNickname);
-    }
-
-    return deAnonymizedText;
-  }
-
-  /**
-   * Helper method to escape regex special characters
-   */
-  private escapeRegex(text: string): string {
-    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
 
   /**
    * Get cache statistics
@@ -516,14 +307,12 @@ class NameCacheService {
     totalUsers: number;
     totalWorkspaces: number;
     totalChannels: number;
-    totalAnonymizations: number;
     cacheFile: string;
   } {
     return {
       totalUsers: Object.keys(this.cache.users).length,
       totalWorkspaces: Object.keys(this.cache.workspaces).length,
       totalChannels: Object.keys(this.cache.channels).length,
-      totalAnonymizations: Object.keys(this.cache.anonymization).length,
       cacheFile: this.cacheFile,
     };
   }
@@ -538,7 +327,7 @@ export const getCachedWorkspaceName = nameCacheService.getWorkspaceName.bind(nam
 export const getCachedChannelName = nameCacheService.getChannelName.bind(nameCacheService);
 export const getAllCachedNames = nameCacheService.getAllNames.bind(nameCacheService);
 
-// Anonymization functions
-export const getAnonymizationMapping = nameCacheService.getAnonymizationMapping.bind(nameCacheService);
-export const anonymizeText = nameCacheService.anonymizeText.bind(nameCacheService);
-export const deAnonymizeText = nameCacheService.deAnonymizeText.bind(nameCacheService);
+// Anonymization functions (delegated to anonymization service)
+export const getAnonymizationMapping = anonymizationService.getAnonymizationMapping.bind(anonymizationService);
+export const anonymizeText = anonymizationService.anonymizeText.bind(anonymizationService);
+export const deAnonymizeText = anonymizationService.deAnonymizeText.bind(anonymizationService);

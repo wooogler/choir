@@ -1,6 +1,8 @@
 import { anonymizeText } from 'services/common/name-cache';
 import type { SlackMessage } from 'services/slack';
+import { processMessageHistory } from 'services/slack/conversation-history';
 import { type ChatCompletionOptions, createChatCompletion } from './completions';
+import type { WebClient } from '@slack/web-api';
 
 interface ExtractedKnowledge {
   content: string;
@@ -28,16 +30,15 @@ interface OrganizationalContext {
 export async function extractKnowledgeFromMessages(
   messages: SlackMessage[],
   context?: OrganizationalContext,
+  client?: WebClient,
 ): Promise<KnowledgeExtractionResult> {
   try {
-    // Format messages for the prompt with numbered references and anonymization
-    const formattedMessages = messages
-      .map((msg, index) => {
-        const timestamp = new Date(Number(msg.ts) * 1000).toLocaleString();
-        const anonymizedUsername = msg.username ? anonymizeText(msg.username) : 'User';
-        const anonymizedText = anonymizeText(msg.text || '');
-        return `[${index + 1}] ${anonymizedUsername} (${timestamp}): ${anonymizedText}`;
-      })
+    // Use processMessageHistory to format messages with proper anonymization
+    const processedMessages = await processMessageHistory(messages, client);
+    
+    // Format messages with numbered references for source tracking
+    const formattedMessages = processedMessages
+      .map((msg, index) => `[${index + 1}] ${msg.content}`)
       .join('\n');
 
     // Build organizational context section
@@ -107,7 +108,7 @@ Extract the most important organizational knowledge as JSON:`;
         {
           role: 'system',
           content:
-            'You are a helpful knowledge curator who extracts organizational knowledge from team conversations for documentation purposes. Focus on decisions, processes, and standards that represent what the organization or team does, rather than individual actions. Always write from an organizational perspective and provide source message numbers.',
+            'You are CHOIR, a helpful knowledge curator who extracts organizational knowledge from team conversations for documentation purposes. Focus on decisions, processes, and standards that represent what the organization or team does, rather than individual actions. Always write from an organizational perspective and provide source message numbers.',
         },
         {
           role: 'user',
