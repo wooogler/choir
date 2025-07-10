@@ -197,7 +197,6 @@ export const testGithubConnectionCallback = async ({
       // 3단계: 홈 화면 자동 새로고침
       setTimeout(async () => {
         try {
-
           // Create mock event and args for the callback
           const mockEvent = {
             type: 'app_home_opened' as const,

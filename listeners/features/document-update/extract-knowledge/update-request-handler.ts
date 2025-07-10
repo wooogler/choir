@@ -1,6 +1,5 @@
 import type { WebClient } from '@slack/web-api';
 import { SessionType, generateSessionId, storeSessionData } from 'services/common';
-import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { logKnowledgeExtraction, logUpdateRequestProcessing } from 'services/common/user-interaction-logger';
 import { extractKnowledgeFromMessages } from 'services/llm/knowledge-extractor';
 import {
@@ -16,6 +15,7 @@ import {
   isBotUser,
   isManager,
 } from 'services/slack';
+import { WorkspaceStore } from 'services/workspace/workspace-store';
 
 interface MessageResult {
   ts: string;
@@ -198,7 +198,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       // Get workspace configuration for organizational context
       const workspaceStore = new WorkspaceStore();
       const workspaceConfig = await workspaceStore.getWorkspaceConfig(workspaceId);
-      
+
       // Determine channel type for context
       const qaChannelId = await getQAChannel(workspaceId, client);
       let channelType = 'General Discussion';

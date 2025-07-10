@@ -1,8 +1,8 @@
 import dotenv from 'dotenv';
 import { AzureOpenAI, OpenAI } from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import { getAIProvider, getAzureOpenAIConfig, getOpenAIConfig } from './llm-config';
 import { anonymizeText, deAnonymizeText } from 'services/common/name-cache';
+import { getAIProvider, getAzureOpenAIConfig, getOpenAIConfig } from './llm-config';
 
 dotenv.config();
 
@@ -54,11 +54,11 @@ export const createChatCompletion = async (
   } = options;
 
   const provider = getAIProvider();
-  
+
   // Apply anonymization for all providers
-  const processedMessages: ChatCompletionMessageParam[] = messages.map(msg => ({
+  const processedMessages: ChatCompletionMessageParam[] = messages.map((msg) => ({
     ...msg,
-    content: typeof msg.content === 'string' ? anonymizeText(msg.content) : msg.content
+    content: typeof msg.content === 'string' ? anonymizeText(msg.content) : msg.content,
   })) as ChatCompletionMessageParam[];
 
   let completion;
@@ -91,7 +91,7 @@ export const createChatCompletion = async (
 
   let response = completion.choices[0].message.content;
   const rawResponse = response; // Save raw response before de-anonymization
-  
+
   // Apply de-anonymization for all responses
   if (response) {
     response = deAnonymizeText(response);

@@ -1,5 +1,5 @@
-import type { WebClient } from '@slack/web-api';
 import type { Logger } from '@slack/bolt';
+import type { WebClient } from '@slack/web-api';
 import {
   getCHOIRUsers,
   getGithubRepo,
@@ -13,12 +13,7 @@ import {
 import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 
-export const buildHomeView = async (
-  client: WebClient,
-  logger: Logger,
-  workspaceId: string,
-  userId: string,
-) => {
+export const buildHomeView = async (client: WebClient, logger: Logger, workspaceId: string, userId: string) => {
   const isUserManager = await isManager(workspaceId, userId);
   const isOwner = await isWorkspaceOwner(userId, client);
   const managers = await getManagers(workspaceId);
@@ -133,7 +128,7 @@ const buildChoirManagementBlocks = async (
         managerNames.push(`<@${managerId}>`);
       }
     }
-    managersListText = `*Current Managers:*\n${managerNames.map(name => `• ${name}`).join('\n')}`;
+    managersListText = `*Current Managers:*\n${managerNames.map((name) => `• ${name}`).join('\n')}`;
   } else {
     managersListText = '*Current Managers:* None assigned';
   }
@@ -329,7 +324,19 @@ const buildDocumentConnectionBlocks = async (
     },
   });
 
-  if (userGithubInfo) {
+  // Check if environment token is available
+  const hasEnvToken = !!process.env.GITHUB_TOKEN;
+
+  if (hasEnvToken) {
+    // Show environment token status instead of personal GitHub connection
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '*GitHub Access:* ✅ Environment token configured\n\nUsing GitHub Personal Access Token from environment variables.',
+      },
+    });
+  } else if (userGithubInfo) {
     blocks.push(
       {
         type: 'section',
@@ -404,7 +411,7 @@ const buildDocumentConnectionBlocks = async (
     );
   }
 
-  if ((isUserManager || isOwner) && userGithubInfo) {
+  if ((isUserManager || isOwner) && (userGithubInfo || hasEnvToken)) {
     const savedRepoInfo = await getGithubRepo(workspaceId);
     if (savedRepoInfo) {
       blocks.push({
@@ -443,7 +450,7 @@ const buildDocumentConnectionBlocks = async (
     });
   }
 
-  if ((isUserManager || isOwner) && userGithubInfo) {
+  if ((isUserManager || isOwner) && (userGithubInfo || hasEnvToken)) {
     const vectorStore = VectorStoreService.getInstance();
     const diagnosis = vectorStore.diagnoseVectorStore();
 

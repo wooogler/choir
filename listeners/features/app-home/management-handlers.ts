@@ -432,8 +432,8 @@ export const registerManagementHandlers = (app: App) => {
       const currentManagers = await getManagers(workspaceId);
       const currentUser = body.user.id;
 
-      const managersToAdd = selectedUsers.filter(userId => !currentManagers.includes(userId));
-      const managersToRemove = currentManagers.filter(userId => !selectedUsers.includes(userId));
+      const managersToAdd = selectedUsers.filter((userId) => !currentManagers.includes(userId));
+      const managersToRemove = currentManagers.filter((userId) => !selectedUsers.includes(userId));
 
       let success = true;
       const results = [];

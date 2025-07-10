@@ -1,6 +1,6 @@
+import { anonymizeText } from 'services/common/name-cache';
 import type { SlackMessage } from 'services/slack';
 import { type ChatCompletionOptions, createChatCompletion } from './completions';
-import { anonymizeText } from 'services/common/name-cache';
 
 interface ExtractedKnowledge {
   content: string;
@@ -26,8 +26,8 @@ interface OrganizationalContext {
  * Extract knowledge from a collection of Slack messages
  */
 export async function extractKnowledgeFromMessages(
-  messages: SlackMessage[], 
-  context?: OrganizationalContext
+  messages: SlackMessage[],
+  context?: OrganizationalContext,
 ): Promise<KnowledgeExtractionResult> {
   try {
     // Format messages for the prompt with numbered references and anonymization

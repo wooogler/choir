@@ -90,7 +90,6 @@ const addManagerCallback = async ({
       // Auto-refresh home screen
       setTimeout(async () => {
         try {
-
           const mockEvent = {
             type: 'app_home_opened' as const,
             user: userId,
@@ -194,7 +193,6 @@ const removeManagerCallback = async ({
       // Auto-refresh home screen
       setTimeout(async () => {
         try {
-
           const mockEvent = {
             type: 'app_home_opened' as const,
             user: userId,

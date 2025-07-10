@@ -3,8 +3,7 @@ import { Logger } from 'services/common/logger';
 import { type DocumentUpdate, updateDocTreeWithChanges } from 'services/document';
 import { parseGithubUrl } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
-import { GitHubCommitManager } from './commit-manager';
-import RefactoredGithubService from './refactored-service';
+import GithubService from './github-service';
 
 /**
  * 문서 업데이트들을 GitHub에 적용합니다.
@@ -29,8 +28,7 @@ export async function applyDocumentUpdatesToGithub({
     updatesByFile.get(update.fileName)!.push(update);
   }
 
-  const githubService = RefactoredGithubService.getInstance();
-  const commitManager = new GitHubCommitManager();
+  const githubService = GithubService.getInstance();
   const vectorStore = VectorStoreService.getInstance();
 
   for (const [fileName, fileUpdates] of updatesByFile.entries()) {
@@ -85,7 +83,7 @@ export async function applyDocumentUpdatesToGithub({
       }
 
       const allMessages = fileUpdates.flatMap((update) => update.messages || []);
-      const commitMessage = await commitManager.createCommitMessage(
+      const commitMessage = await githubService.createCommitMessage(
         fileName,
         userId,
         fileUpdates[0].nodeId,

@@ -1,11 +1,10 @@
 // Export types and interfaces
-export type { MarkdownFile } from './file-manager';
-export type { GithubCommit, CommitInfo, CommitMessage } from './commit-manager';
+export type { MarkdownFile, GithubCommit, CommitInfo, CommitMessage } from './github-service';
 
 // Export main service
-export { default as GithubService } from './refactored-service';
+export { default as GithubService } from './github-service';
 
-// Export component services for direct access if needed
+// Export component services for direct access if needed (deprecated)
 export { GitHubFileManager } from './file-manager';
 export { GitHubCommitManager } from './commit-manager';
 

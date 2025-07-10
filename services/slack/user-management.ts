@@ -204,7 +204,7 @@ export async function getCHOIRUsers(workspaceId: string): Promise<string[]> {
 export async function setCHOIRUsers(workspaceId: string, userIds: string[], client?: WebClient): Promise<boolean> {
   try {
     const result = await workspaceStore.setCHOIRUsers(workspaceId, userIds);
-    
+
     // Register users in name-mapping for anonymization
     if (client) {
       for (const userId of userIds) {
@@ -217,7 +217,7 @@ export async function setCHOIRUsers(workspaceId: string, userIds: string[], clie
         }
       }
     }
-    
+
     Logger.info('CHOIR users updated', { workspaceId, userCount: userIds.length });
     return result;
   } catch (error) {

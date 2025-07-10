@@ -57,9 +57,20 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
 
     // QuestionProcessor로 질문 처리
     const questionProcessor = new QuestionProcessor();
-    const processingResult = await questionProcessor.processQuestion(userMessage, historyResult.messages || [], client, logger);
+    const processingResult = await questionProcessor.processQuestion(
+      userMessage,
+      historyResult.messages || [],
+      client,
+      logger,
+    );
 
-    const { answerResult, relevantDocs: processedDocs, workspaceName, organizationName, organizationDescription } = processingResult;
+    const {
+      answerResult,
+      relevantDocs: processedDocs,
+      workspaceName,
+      organizationName,
+      organizationDescription,
+    } = processingResult;
     relevantDocs = processedDocs;
 
     // 마크다운을 Slack 형식으로 변환

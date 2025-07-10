@@ -60,12 +60,12 @@ export async function getChannelName(channelId: string, client: WebClient): Prom
     if (channelId.startsWith('D')) {
       return 'DM';
     }
-    
+
     const channelInfo = await client.conversations.info({ channel: channelId });
     return channelInfo.channel?.name ? `<#${channelId}|${channelInfo.channel.name}>` : 'this channel';
   } catch (error) {
     Logger.error('Error getting channel name', error as Error, { channelId });
-    
+
     // Check if this might be a group DM that failed to fetch
     if (error && typeof error === 'object' && 'data' in error) {
       const slackError = error as any;
@@ -74,7 +74,7 @@ export async function getChannelName(channelId: string, client: WebClient): Prom
         return 'DM';
       }
     }
-    
+
     return 'this channel';
   }
 }

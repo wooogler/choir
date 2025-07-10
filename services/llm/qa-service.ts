@@ -1,8 +1,8 @@
 import type { WebClient } from '@slack/web-api';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import { anonymizeText, getAnonymizationMapping } from 'services/common/name-cache';
 import { SlackMessage } from 'services/slack';
 import { getUserName } from 'services/slack';
-import { getAnonymizationMapping, anonymizeText } from 'services/common/name-cache';
 import { processMessageHistory, processMessageText } from 'services/slack/conversation-history';
 import { createChatCompletion } from './completions';
 
@@ -10,7 +10,6 @@ import { createChatCompletion } from './completions';
 const formatContext = (docs: any[]) => {
   return docs.map((doc) => doc.pageContent).join('\n\n');
 };
-
 
 // Interface for answer result
 interface AnswerResult {
@@ -30,7 +29,7 @@ export const answerQuestion = async (
 ): Promise<AnswerResult> => {
   const context = formatContext(relevantDocs);
   const messages = await processMessageHistory(messageHistory, client);
-  
+
   // Get the current user from the most recent message to format current question
   let currentQuestionWithUser = userMessage;
   if (messageHistory.length > 0 && client) {
@@ -46,7 +45,7 @@ export const answerQuestion = async (
       }
     }
   }
-  
+
   // Anonymize the final message
   const anonymizedCurrentQuestion = anonymizeText(currentQuestionWithUser);
 

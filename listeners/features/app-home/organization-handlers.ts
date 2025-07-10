@@ -111,7 +111,7 @@ export const registerOrganizationHandlers = (app: App) => {
 
     try {
       const workspaceId = await getWorkspaceId(client);
-      const organizationName = await getOrganizationName(workspaceId) || 'Our Organization';
+      const organizationName = (await getOrganizationName(workspaceId)) || 'Our Organization';
       const organizationDescription = (await getOrganizationDescription(workspaceId)) || 'No description set.';
 
       await client.views.open({
@@ -183,7 +183,8 @@ export const registerOrganizationHandlers = (app: App) => {
   app.view('edit_organization_modal', async ({ ack, body, client, logger, view }) => {
     try {
       const newName = view.state.values.organization_name_input_block.organization_name_input.value;
-      const newDescription = view.state.values.organization_description_input_block.organization_description_input.value;
+      const newDescription =
+        view.state.values.organization_description_input_block.organization_description_input.value;
 
       if (!newName || newName.trim().length === 0) {
         await ack({
@@ -198,7 +199,7 @@ export const registerOrganizationHandlers = (app: App) => {
       await ack();
 
       const workspaceId = await getWorkspaceId(client);
-      
+
       await setOrganizationName(workspaceId, newName.trim());
       await setOrganizationDescription(workspaceId, newDescription?.trim() || '');
 

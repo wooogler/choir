@@ -6,7 +6,7 @@ import { GithubService } from './services/github';
 
 import { AppConfig } from '@/config';
 import { Logger } from 'services/common/logger';
-import { validateCurrentProvider, getAIProvider } from 'services/llm';
+import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { getGithubRepo, getWorkspaceId, setupInitialManager } from 'services/slack';
 import { HomeScreenService } from 'services/slack/home-screen';
 import { VectorStoreService } from 'services/vector/main-service';
@@ -37,7 +37,7 @@ registerListeners(app);
     // AI Provider 설정 검증
     const aiProvider = getAIProvider();
     app.logger.info(`AI Provider: ${aiProvider}`);
-    
+
     if (!validateCurrentProvider()) {
       app.logger.error(`${aiProvider} configuration is invalid. Please check your environment variables.`);
       if (aiProvider === 'azure') {
@@ -80,12 +80,12 @@ registerListeners(app);
 
       // 먼저 캐시에서 벡터 스토어 초기화 시도
       const cacheInitialized = await vectorStore.initializeFromCacheOnly(repoInfo.owner, repoInfo.repo);
-      
+
       if (cacheInitialized) {
         app.logger.info('Vector store successfully initialized from cache. Skipping GitHub API calls.');
       } else {
         app.logger.info('Cache not available or invalid. Fetching from GitHub...');
-        
+
         try {
           // 캐시가 없거나 무효한 경우에만 GitHub API 호출
           const markdownFiles = await githubService.getAllMarkdownFiles({

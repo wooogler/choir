@@ -76,7 +76,7 @@ export class GitHubOAuthDeviceFlow {
       const response = await fetch('https://github.com/login/device/code', {
         method: 'POST',
         headers: {
-          'Accept': 'application/json',
+          Accept: 'application/json',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -91,9 +91,9 @@ export class GitHubOAuthDeviceFlow {
       }
 
       const data = await response.json();
-      Logger.info('Device code requested successfully', { 
+      Logger.info('Device code requested successfully', {
         user_code: data.user_code,
-        expires_in: data.expires_in 
+        expires_in: data.expires_in,
       });
 
       return data;
@@ -106,7 +106,7 @@ export class GitHubOAuthDeviceFlow {
   /**
    * Step 2: Poll for access token
    */
-  async pollForAccessToken(deviceCode: string, interval: number = 5): Promise<AccessTokenResponse> {
+  async pollForAccessToken(deviceCode: string, interval = 5): Promise<AccessTokenResponse> {
     const maxAttempts = 120; // 10 minutes max (120 * 5 seconds)
     let attempts = 0;
 
@@ -115,7 +115,7 @@ export class GitHubOAuthDeviceFlow {
         const response = await fetch('https://github.com/login/oauth/access_token', {
           method: 'POST',
           headers: {
-            'Accept': 'application/json',
+            Accept: 'application/json',
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -135,7 +135,7 @@ export class GitHubOAuthDeviceFlow {
         if (data.error === 'authorization_pending') {
           // User hasn't completed authorization yet, continue polling
           attempts++;
-          await new Promise(resolve => setTimeout(resolve, interval * 1000));
+          await new Promise((resolve) => setTimeout(resolve, interval * 1000));
           continue;
         }
 
@@ -143,7 +143,7 @@ export class GitHubOAuthDeviceFlow {
           // GitHub is asking us to slow down
           interval += 5;
           attempts++;
-          await new Promise(resolve => setTimeout(resolve, interval * 1000));
+          await new Promise((resolve) => setTimeout(resolve, interval * 1000));
           continue;
         }
 
@@ -156,7 +156,6 @@ export class GitHubOAuthDeviceFlow {
         }
 
         throw new Error(`GitHub OAuth error: ${data.error_description || data.error}`);
-
       } catch (error) {
         if (error instanceof Error) {
           throw error;
@@ -176,8 +175,8 @@ export class GitHubOAuthDeviceFlow {
     try {
       const response = await fetch('https://api.github.com/user', {
         headers: {
-          'Authorization': `token ${accessToken}`,
-          'Accept': 'application/vnd.github.v3+json',
+          Authorization: `token ${accessToken}`,
+          Accept: 'application/vnd.github.v3+json',
         },
       });
 
@@ -187,14 +186,14 @@ export class GitHubOAuthDeviceFlow {
       }
 
       const userData = await response.json();
-      
+
       // Get primary email if not public
       let email = userData.email;
       if (!email) {
         const emailResponse = await fetch('https://api.github.com/user/emails', {
           headers: {
-            'Authorization': `token ${accessToken}`,
-            'Accept': 'application/vnd.github.v3+json',
+            Authorization: `token ${accessToken}`,
+            Accept: 'application/vnd.github.v3+json',
           },
         });
 
@@ -221,28 +220,25 @@ export class GitHubOAuthDeviceFlow {
   /**
    * Get user's repositories
    */
-  async getUserRepositories(accessToken: string, options: {
-    type?: 'all' | 'owner' | 'member';
-    sort?: 'created' | 'updated' | 'pushed' | 'full_name';
-    direction?: 'asc' | 'desc';
-    per_page?: number;
-    page?: number;
-  } = {}): Promise<GitHubRepository[]> {
+  async getUserRepositories(
+    accessToken: string,
+    options: {
+      type?: 'all' | 'owner' | 'member';
+      sort?: 'created' | 'updated' | 'pushed' | 'full_name';
+      direction?: 'asc' | 'desc';
+      per_page?: number;
+      page?: number;
+    } = {},
+  ): Promise<GitHubRepository[]> {
     try {
-      const {
-        type = 'all',
-        sort = 'updated',
-        direction = 'desc',
-        per_page = 100,
-        page = 1
-      } = options;
+      const { type = 'all', sort = 'updated', direction = 'desc', per_page = 100, page = 1 } = options;
 
       const url = `https://api.github.com/user/repos?type=${type}&sort=${sort}&direction=${direction}&per_page=${per_page}&page=${page}`;
-      
+
       const response = await fetch(url, {
         headers: {
-          'Authorization': `token ${accessToken}`,
-          'Accept': 'application/vnd.github.v3+json',
+          Authorization: `token ${accessToken}`,
+          Accept: 'application/vnd.github.v3+json',
         },
       });
 
@@ -253,7 +249,7 @@ export class GitHubOAuthDeviceFlow {
 
       const repositories = await response.json();
       Logger.info(`Retrieved ${repositories.length} repositories for user`);
-      
+
       return repositories;
     } catch (error) {
       Logger.error('Failed to get user repositories:', error as Error);
@@ -270,12 +266,12 @@ export class GitHubOAuthDeviceFlow {
         type: 'all',
         sort: 'updated',
         direction: 'desc',
-        per_page: 100
+        per_page: 100,
       });
 
       // Filter repositories that user has push access to
-      const writableRepos = repositories.filter(repo => 
-        repo.permissions && (repo.permissions.push || repo.permissions.admin || repo.permissions.maintain)
+      const writableRepos = repositories.filter(
+        (repo) => repo.permissions && (repo.permissions.push || repo.permissions.admin || repo.permissions.maintain),
       );
 
       Logger.info(`Found ${writableRepos.length} writable repositories out of ${repositories.length} total`);
@@ -291,12 +287,15 @@ export class GitHubOAuthDeviceFlow {
    */
   async searchUserRepositories(accessToken: string, query: string): Promise<GitHubRepository[]> {
     try {
-      const response = await fetch(`https://api.github.com/search/repositories?q=${encodeURIComponent(query)}+user:${encodeURIComponent(query)}`, {
-        headers: {
-          'Authorization': `token ${accessToken}`,
-          'Accept': 'application/vnd.github.v3+json',
+      const response = await fetch(
+        `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}+user:${encodeURIComponent(query)}`,
+        {
+          headers: {
+            Authorization: `token ${accessToken}`,
+            Accept: 'application/vnd.github.v3+json',
+          },
         },
-      });
+      );
 
       if (!response.ok) {
         const errorText = await response.text();

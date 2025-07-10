@@ -1,7 +1,7 @@
 import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
+import { anonymizeText, getAnonymizationMapping } from 'services/common/name-cache';
 import { getUserName, isBotUser } from 'services/slack';
-import { getAnonymizationMapping, anonymizeText } from 'services/common/name-cache';
 
 export interface ConversationHistoryOptions {
   timeLimit?: number; // minutes
@@ -57,7 +57,7 @@ export async function processMessageText(text: string, client: WebClient): Promi
 
   // Apply general text anonymization for any remaining real names
   const anonymizedText = anonymizeText(processedText);
-  
+
   return anonymizedText.trim();
 }
 
@@ -71,7 +71,7 @@ export const processMessageHistory = async (messages: any[], client?: WebClient)
     if (msg.bot_id) {
       const loadingPatterns = [
         'Searching relevant documents',
-        'Preparing document update suggestions', 
+        'Preparing document update suggestions',
         'Processing knowledge and generating',
         ':mag:',
         ':brain:',
@@ -104,9 +104,9 @@ export const processMessageHistory = async (messages: any[], client?: WebClient)
 
   return await Promise.all(
     processedMessages.reverse().map(async (msg) => {
-      let role = msg.bot_id ? 'CHOIR' : 'user';
+      const role = msg.bot_id ? 'CHOIR' : 'user';
       let content = msg.text;
-      
+
       if (msg.bot_id) {
         // For bot messages, add CHOIR: prefix
         content = `CHOIR: ${msg.text}`;
@@ -116,12 +116,12 @@ export const processMessageHistory = async (messages: any[], client?: WebClient)
         const anonymizationMapping = getAnonymizationMapping(msg.user, userName);
         content = `${anonymizationMapping.fakeNickname}: ${msg.text}`;
       }
-      
+
       return {
         role,
         content,
       };
-    })
+    }),
   );
 };
 
@@ -174,7 +174,6 @@ export async function getFilteredConversationHistory(
           // If no previous message, use parent message timestamp
           referenceTimestamp = Number.parseFloat(event.thread_ts) * 1000;
         }
-
       } catch (error) {
         Logger.warn('Failed to get thread reference timestamp, using current time', error as Error);
         referenceTimestamp = Date.now();
@@ -183,7 +182,6 @@ export async function getFilteredConversationHistory(
 
     const timeLimitAgo = Math.floor((referenceTimestamp - timeLimit * 60 * 1000) / 1000);
     const now = Math.floor(Date.now() / 1000);
-
 
     // Get conversation history or replies
     // For longer time limits, get more messages without oldest filter to ensure we get recent messages
@@ -205,7 +203,6 @@ export async function getFilteredConversationHistory(
 
       const threadMessages = threadResult.messages || [];
 
-
       // 2. Get conversation history before the parent message (thread_ts)
       const parentTimestamp = Number.parseFloat(event.thread_ts);
       const preThreadResult = await client.conversations.history({
@@ -215,17 +212,14 @@ export async function getFilteredConversationHistory(
         ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
       });
 
-
       const preThreadMessages = (preThreadResult.messages || []).filter((msg: SlackMessage) => {
         if (!msg.ts) return false;
         const msgTimestamp = Number.parseFloat(msg.ts);
         return msgTimestamp < parentTimestamp; // Exclude the parent message to avoid duplication
       });
 
-
       // 3. Combine pre-thread conversation + thread messages (chronological order)
       messages = [...preThreadMessages.reverse(), ...threadMessages];
-
     } else {
       // Non-thread mentions: use regular channel history
       const historyResult = await client.conversations.history({
@@ -236,7 +230,6 @@ export async function getFilteredConversationHistory(
 
       messages = historyResult.messages || [];
     }
-
 
     if (messages.length === 0) {
       return [];
@@ -272,7 +265,6 @@ export async function getFilteredConversationHistory(
       return isWithinTimeLimit;
     });
 
-
     // Filter out Non-CHOIR users (exclude messages from users not in choirUsers list)
     // Keep messages from bots and CHOIR users only
     const beforeChoirFilter = messages.length;
@@ -300,7 +292,6 @@ export async function getFilteredConversationHistory(
       return false;
     });
 
-
     // Sort by timestamp and limit results
     const beforeSortAndLimit = messages.length;
     const sortedMessages = [...messages].sort((a, b) => {
@@ -312,7 +303,6 @@ export async function getFilteredConversationHistory(
     const finalMessages = sortedMessages.slice(-maxResults);
     const droppedByLimit = sortedMessages.slice(0, -maxResults);
 
-
     // Process mentions in message text to replace user IDs with names
     const processedMessages = await Promise.all(
       finalMessages.map(async (msg) => {
@@ -323,8 +313,6 @@ export async function getFilteredConversationHistory(
         return msg;
       }),
     );
-
-
 
     return processedMessages;
   } catch (error) {

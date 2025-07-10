@@ -67,7 +67,7 @@ export function isAzureOpenAIEnabled(): boolean {
   if (process.env.AI_PROVIDER === 'openai') {
     return false;
   }
-  
+
   // Default behavior: prefer Azure if available, otherwise OpenAI
   return !!(process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT);
 }
@@ -80,7 +80,7 @@ export function isOpenAIEnabled(): boolean {
   if (process.env.AI_PROVIDER === 'azure') {
     return false;
   }
-  
+
   // Default behavior: use OpenAI if available and Azure is not available
   return !!process.env.OPENAI_API_KEY && !(process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT);
 }

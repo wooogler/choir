@@ -23,7 +23,8 @@ export const registerLogDownloadHandlers = (app: App) => {
         return;
       }
 
-      const logFiles = fs.readdirSync(logsDir)
+      const logFiles = fs
+        .readdirSync(logsDir)
         .filter((file: string) => file.endsWith('.jsonl') && file.includes(today));
 
       if (logFiles.length === 0) {

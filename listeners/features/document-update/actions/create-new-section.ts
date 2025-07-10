@@ -69,9 +69,9 @@ export const createNewSectionAction = async ({
       // If no cache, load from GitHub and cache the result
       const { owner, repo, path } = config.githubRepo;
       const githubService = GithubService.getInstance();
-      const markdownFiles = await githubService.getAllMarkdownFiles({ 
-        owner, 
-        repo, 
+      const markdownFiles = await githubService.getAllMarkdownFiles({
+        owner,
+        repo,
         path,
         workspaceId: workspaceId,
         userId: userId,

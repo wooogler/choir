@@ -408,7 +408,10 @@ export class WorkspaceStore {
   /**
    * 사용자의 GitHub 정보 가져오기
    */
-  public async getUserGithubInfo(workspaceId: string, userId: string): Promise<{
+  public async getUserGithubInfo(
+    workspaceId: string,
+    userId: string,
+  ): Promise<{
     accessToken: string;
     user: {
       id: number;

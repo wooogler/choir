@@ -1,10 +1,10 @@
 import type { App } from '@slack/bolt';
+import { GithubService } from 'services/github';
+import { GitHubOAuthDeviceFlow } from 'services/github/oauth-device-flow';
 import { getWorkspaceId, storeGithubRepo } from 'services/slack';
+import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
-import { GitHubOAuthDeviceFlow } from 'services/github/oauth-device-flow';
-import { VectorStoreService } from 'services/vector/main-service';
-import { GithubService } from 'services/github';
 
 export const registerGitHubHandlers = (app: App) => {
   app.action('connect_personal_github', async ({ ack, body, client, logger }) => {
@@ -190,7 +190,7 @@ export const registerGitHubHandlers = (app: App) => {
       const githubOAuth = GitHubOAuthDeviceFlow.getInstance();
       const repositories = await githubOAuth.getRepositoriesWithMarkdown(userGithubInfo.accessToken);
 
-      const repoOptions = repositories.slice(0, 10).map(repo => ({
+      const repoOptions = repositories.slice(0, 10).map((repo) => ({
         text: {
           type: 'plain_text' as const,
           text: `${repo.full_name}${repo.private ? ' 🔒' : ''}`,
@@ -309,7 +309,7 @@ export const registerGitHubHandlers = (app: App) => {
       const { userId, workspaceId } = metadata;
 
       const repoInfo = JSON.parse(selectedRepo);
-      
+
       await storeGithubRepo(workspaceId, {
         owner: repoInfo.owner,
         repo: repoInfo.repo,
@@ -342,7 +342,7 @@ export const registerGitHubHandlers = (app: App) => {
         });
       } else {
         const success = await vectorStore.initialize(markdownFiles, false, true);
-        
+
         if (success) {
           await client.chat.postEphemeral({
             user: userId,
@@ -381,7 +381,6 @@ export const registerGitHubHandlers = (app: App) => {
           logger.error('Error refreshing home view after repository connection:', error);
         }
       }, 1000);
-
     } catch (error) {
       logger.error('Error processing repository selection:', error);
       await ack({

@@ -1,16 +1,16 @@
 import type { WebClient } from '@slack/web-api';
+import { anonymizeText, getAnonymizationMapping } from 'services/common/name-cache';
 import type { SlackMessage } from 'services/slack';
-import { createChatCompletion } from './completions';
-import { processMessageText, processMessageHistory } from 'services/slack/conversation-history';
-import { getAnonymizationMapping, anonymizeText } from 'services/common/name-cache';
 import { getUserName } from 'services/slack';
+import { processMessageHistory, processMessageText } from 'services/slack/conversation-history';
+import { createChatCompletion } from './completions';
 
 export async function editMarkdownWithUserMessages(markdown: string, userMessages: SlackMessage[], client: WebClient) {
   // Process message texts to handle mentions and anonymize content
   const processedMessages = await Promise.all(
     userMessages.map(async (message) => {
       const processedText = await processMessageText(message.text, client);
-      
+
       // Get anonymized username using consistent name-cache system
       let anonUser = 'Unknown';
       if (message.userId) {
@@ -65,7 +65,7 @@ ${processedMessages.map((message) => `${message.anonUser}: ${message.text}`).joi
 export async function editMarkdownWithKnowledge(markdown: string, knowledgeContent: string) {
   // Anonymize the knowledge content before sending to LLM
   const anonymizedKnowledge = anonymizeText(knowledgeContent);
-  
+
   const responseContent = await createChatCompletion(
     [
       {
@@ -110,16 +110,14 @@ export async function classifyMessageIntent(
 ): Promise<'question' | 'update_request' | 'general_conversation'> {
   // Anonymize the input message
   const anonymizedMessage = anonymizeText(message);
-  
+
   // Build context from message history if available using centralized processMessageHistory
   let contextSection = '';
   if (messageHistory && messageHistory.length > 0 && client) {
     const processedMessages = await processMessageHistory(messageHistory, client);
-    
+
     if (processedMessages.length > 0) {
-      const contextMessages = processedMessages
-        .map((msg: any) => msg.content)
-        .join('\n');
+      const contextMessages = processedMessages.map((msg: any) => msg.content).join('\n');
       contextSection = `\n\nRecent conversation context:\n${contextMessages}\n\nUse this context to better understand the intent of the current message.`;
     }
   }

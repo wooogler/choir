@@ -259,25 +259,25 @@ export class VectorStoreService {
   public async initializeFromCacheOnly(owner: string, repo: string): Promise<boolean> {
     try {
       Logger.info(`Attempting to initialize vector store from cache only: ${owner}/${repo}`);
-      
+
       const cacheFilePath = this.cacheManager.getCacheFilePath(owner, repo);
-      
+
       // 캐시 파일이 존재하는지 확인
       if (!require('fs').existsSync(cacheFilePath)) {
         Logger.info(`No cache file found at ${cacheFilePath}`);
         return false;
       }
-      
+
       // 캐시 로드 시도 (파일 검증 없이)
       const cacheData = await this.cacheManager.loadEmbeddingsCache(cacheFilePath, []);
-      
+
       if (!cacheData) {
         Logger.info('Cache data is invalid or corrupted');
         return false;
       }
-      
+
       Logger.info(`Found cached data with ${cacheData.documents.length} documents`);
-      
+
       // 캐시된 문서 트리 복원
       const markdownFiles: MarkdownFile[] = [];
       if (cacheData.documentTrees) {
@@ -287,16 +287,16 @@ export class VectorStoreService {
             path: fileName,
             content: '', // 캐시에서 로드할 때는 전체 내용 불필요
             githubUrl: `https://github.com/${owner}/${repo}/blob/main/${fileName}`,
-            tree: tree
+            tree: tree,
           });
         }
       }
-      
+
       this.markdownFiles = markdownFiles;
-      
+
       // 벡터 스토어 초기화
       const success = await this.storeManager.initializeStore(cacheData.documents, cacheData.embeddings);
-      
+
       if (success) {
         Logger.info(`Successfully initialized vector store from cache with ${cacheData.documents.length} documents`);
         return true;
