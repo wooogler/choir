@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getWorkspaceId } from 'services/slack';
 import { handleQuestionMessage } from '../qa/question-handler';
@@ -35,6 +36,16 @@ export const handleAsQuestionCallback = async ({
     await client.chat.postMessage({
       channel: messageData.channelId,
       text: `🤔 <@${messageData.userId}> let me know this was actually a question - I'll handle it properly now!`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `🤔 <@${messageData.userId}> let me know this was actually a question - I'll handle it properly now!`,
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+        },
+      ],
       unfurl_links: false,
       unfurl_media: false,
     });
@@ -55,6 +66,7 @@ export const handleAsQuestionCallback = async ({
               type: 'mrkdwn',
               text: "✅ Got it! I've processed your message as a question.",
             },
+            block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
           },
         ],
       });
@@ -92,6 +104,16 @@ export const handleAsQuestionCallback = async ({
     await client.chat.postMessage({
       channel: body.user.id,
       text: `❌ Failed to process your message as a question: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `❌ Failed to process your message as a question: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
     });
 
     // 로그: 실패

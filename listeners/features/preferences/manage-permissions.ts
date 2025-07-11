@@ -5,6 +5,7 @@ import type {
   SlackActionMiddlewareArgs,
   UsersSelectAction,
 } from '@slack/bolt';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { addManager, getWorkspaceId, isWorkspaceOwner, removeManager, setupInitialManager } from 'services/slack';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
@@ -72,6 +73,16 @@ const addManagerCallback = async ({
         channel: body.channel?.id || body.user.id,
         user: userId,
         text: 'Please select a user to grant permission first.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: 'Please select a user to grant permission first.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.EPHEMERAL_HELPER),
+          },
+        ],
       });
       return;
     }
@@ -85,6 +96,16 @@ const addManagerCallback = async ({
         channel: body.channel?.id || body.user.id,
         user: userId,
         text: `✅ Manager permission has been granted to <@${selectedUser}>.`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `✅ Manager permission has been granted to <@${selectedUser}>.`,
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.EPHEMERAL_HELPER),
+          },
+        ],
       });
 
       // Auto-refresh home screen
@@ -117,6 +138,16 @@ const addManagerCallback = async ({
         await client.chat.postMessage({
           channel: selectedUser,
           text: `<@${userId}> has granted you CHOIR manager permission.`,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `<@${userId}> has granted you CHOIR manager permission.`,
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+            },
+          ],
         });
       } catch (error) {
         logger.error(`Failed to send notification to user ${selectedUser}:`, error);
@@ -127,6 +158,16 @@ const addManagerCallback = async ({
         channel: body.channel?.id || body.user.id,
         user: userId,
         text: 'Failed to grant permission. Please check if you have manager permission.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: 'Failed to grant permission. Please check if you have manager permission.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
     }
   } catch (error) {
@@ -165,6 +206,16 @@ const removeManagerCallback = async ({
         channel: body.channel?.id || body.user.id,
         user: userId,
         text: 'Unable to identify target user. Please try again.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: 'Unable to identify target user. Please try again.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
       return;
     }
@@ -175,6 +226,16 @@ const removeManagerCallback = async ({
         channel: body.channel?.id || body.user.id,
         user: userId,
         text: 'You cannot remove your own manager permission.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: 'You cannot remove your own manager permission.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
       return;
     }
@@ -188,6 +249,16 @@ const removeManagerCallback = async ({
         channel: body.channel?.id || body.user.id,
         user: userId,
         text: `✅ Manager permission has been removed from <@${targetUserId}>.`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `✅ Manager permission has been removed from <@${targetUserId}>.`,
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.EPHEMERAL_HELPER),
+          },
+        ],
       });
 
       // Auto-refresh home screen
@@ -220,6 +291,16 @@ const removeManagerCallback = async ({
         await client.chat.postMessage({
           channel: targetUserId,
           text: `<@${userId}> has removed your CHOIR manager permission.`,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `<@${userId}> has removed your CHOIR manager permission.`,
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+            },
+          ],
         });
       } catch (error) {
         logger.error(`Failed to send notification to user ${targetUserId}:`, error);
@@ -230,6 +311,16 @@ const removeManagerCallback = async ({
         channel: body.channel?.id || body.user.id,
         user: userId,
         text: 'Failed to remove permission. Please check if you have manager permission.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: 'Failed to remove permission. Please check if you have manager permission.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
     }
   } catch (error) {

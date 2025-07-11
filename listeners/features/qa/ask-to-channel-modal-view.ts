@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { SessionType, getSessionData } from 'services/common';
 import { createQAChannelMessage, createQAChannelPreview, getUserName, getWorkspaceId } from 'services/slack';
 import { logModalSubmit } from '../../../services/common/user-interaction-logger';
@@ -111,6 +112,16 @@ export const askToChannelSubmitCallback = async ({
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,
         text: `✅ Your Q&A has been posted to <#${qaChannelId}>`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `✅ Your Q&A has been posted to <#${qaChannelId}>`,
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+          },
+        ],
       });
     }
 

@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getWorkspaceId } from 'services/slack';
 import { handleUpdateRequestMessage } from '../document-update/extract-knowledge/update-request-handler';
@@ -35,6 +36,16 @@ export const handleAsUpdateRequestCallback = async ({
     await client.chat.postMessage({
       channel: messageData.channelId,
       text: `📝 <@${messageData.userId}> clarified this was a suggestion for updating our docs - I'll work on that now!`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `📝 <@${messageData.userId}> clarified this was a suggestion for updating our docs - I'll work on that now!`,
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+        },
+      ],
       unfurl_links: false,
       unfurl_media: false,
     });
@@ -55,6 +66,7 @@ export const handleAsUpdateRequestCallback = async ({
               type: 'mrkdwn',
               text: "✅ Got it! I've processed your message as an update request.",
             },
+            block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
           },
         ],
       });
@@ -91,6 +103,16 @@ export const handleAsUpdateRequestCallback = async ({
     await client.chat.postMessage({
       channel: body.user.id,
       text: `❌ Failed to process your message as an update request: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `❌ Failed to process your message as an update request: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
     });
 
     // 로그: 실패

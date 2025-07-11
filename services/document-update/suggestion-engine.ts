@@ -3,6 +3,7 @@ import { type ProcessedDocument, processDocument } from 'services/document/updat
 import type { SlackMessage } from 'services/slack';
 import { checkVectorStoreHealth } from 'services/vector/health-check';
 import { VectorStoreService } from 'services/vector/main-service';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 export class SuggestionEngine {
   async processDocumentSuggestion(
@@ -26,6 +27,16 @@ export class SuggestionEngine {
           await client.chat.postMessage({
             channel: currentDmChannelId,
             text: healthCheckResult.message,
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: healthCheckResult.message,
+                },
+                block_id: createCHOIRBlockId(CHOIRMessageType.HEALTH_CHECK),
+              },
+            ],
           });
         }
         return { processedDoc: null, shouldStop: true };
@@ -36,6 +47,16 @@ export class SuggestionEngine {
         await client.chat.postMessage({
           channel: currentDmChannelId,
           text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+            },
+          ],
           unfurl_links: false,
           unfurl_media: false,
         });
@@ -56,6 +77,16 @@ export class SuggestionEngine {
         await client.chat.postMessage({
           channel: currentDmChannelId,
           text: '❌ Error processing document. Skipping to next.',
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '❌ Error processing document. Skipping to next.',
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            },
+          ],
         });
         return { processedDoc: null, shouldStop: true };
       }
@@ -82,6 +113,16 @@ export class SuggestionEngine {
         await client.chat.postMessage({
           channel: currentDmChannelId,
           text: 'No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.',
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: 'No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.',
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            },
+          ],
         });
         return [];
       }

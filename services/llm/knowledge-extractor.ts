@@ -13,6 +13,7 @@ interface KnowledgeExtractionResult {
   cleanContent: string;
   detailedContent: string;
   knowledgeItem: ExtractedKnowledge | null;
+  processedMessages: Array<{ role: string; content: string; }>; // Add processed messages for View Messages
 }
 
 interface OrganizationalContext {
@@ -164,6 +165,7 @@ Extract the most important organizational knowledge as JSON:`;
         cleanContent,
         detailedContent,
         knowledgeItem,
+        processedMessages,
       };
     } catch (parseError) {
       console.warn('Failed to parse JSON response, returning raw text:', parseError);
@@ -175,6 +177,7 @@ Extract the most important organizational knowledge as JSON:`;
         cleanContent: fallbackContent,
         detailedContent: fallbackContent,
         knowledgeItem: null,
+        processedMessages,
       };
     }
   } catch (error) {

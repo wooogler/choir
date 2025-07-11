@@ -3,6 +3,7 @@ import { logQuestionProcessing } from 'services/common/user-interaction-logger';
 import { convertMarkdownToSlackText } from 'services/document/markdown';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { QuestionProcessor } from 'services/qa/question-processor';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import {
   createGitbookSectionLink,
   getCHOIRUsers,
@@ -36,6 +37,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
             type: 'mrkdwn',
             text: ':mag: Searching relevant documents and analyzing context...',
           },
+          block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
         },
       ],
     });
@@ -191,6 +193,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           type: 'mrkdwn',
           text: displayResponse,
         },
+        block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
       },
     ];
 
@@ -454,6 +457,16 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       channel: event.channel,
       ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
       text: 'Sorry, I encountered an error while processing your question. Please try again later.',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: 'Sorry, I encountered an error while processing your question. Please try again later.',
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
     });
 
     return false;

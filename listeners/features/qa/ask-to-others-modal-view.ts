@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { SessionType, getSessionData } from 'services/common';
 import { createPrivateMessage, createPrivateMessagePreview, getUserName, getWorkspaceId } from 'services/slack';
 import { logModalSubmit } from '../../../services/common/user-interaction-logger';
@@ -157,6 +158,7 @@ export const askToOthersSubmitCallback = async ({
               type: 'mrkdwn',
               text: `✅ *Private DM created*\n📋 Participants: ${participantsList}`,
             },
+            block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
           },
         ],
       });
@@ -178,6 +180,7 @@ export const askToOthersSubmitCallback = async ({
                 type: 'mrkdwn',
                 text: '💬 *Your private DM is ready*\nClick the button below to open the conversation.',
               },
+              block_id: createCHOIRBlockId(CHOIRMessageType.EPHEMERAL_HELPER),
             },
             {
               type: 'actions',

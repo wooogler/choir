@@ -9,6 +9,7 @@ import {
   getUserName,
   getWorkspaceId,
 } from 'services/slack'; // Added organization and github functions
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * Handles general conversation messages.
@@ -76,6 +77,7 @@ export async function handleGeneralConversationMessage(
             type: 'mrkdwn',
             text: fullReplyText,
           },
+          block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
         },
       ],
       unfurl_links: false,
@@ -97,6 +99,7 @@ export async function handleGeneralConversationMessage(
             type: 'mrkdwn',
             text: '💡 *If I misunderstood your message, please click one of the buttons below:*',
           },
+          block_id: createCHOIRBlockId(CHOIRMessageType.EPHEMERAL_HELPER),
         },
         {
           type: 'actions',

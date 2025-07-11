@@ -11,6 +11,7 @@ import { logMessageProcessing } from '../../services/common/user-interaction-log
 import { handleGeneralConversationMessage } from '../features/conversation/general-conversation-handler';
 import { handleUpdateRequestMessage } from '../features/document-update/extract-knowledge/update-request-handler';
 import { handleQuestionMessage } from '../features/qa/question-handler';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * 메시지 처리를 위한 공통 함수
@@ -27,6 +28,16 @@ export async function handleIncomingMessage(client: any, event: any, message: st
       channel: event.channel,
       ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
       text: '🤔 Let me think about how I can best help you with that...',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '🤔 Let me think about how I can best help you with that...',
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
+        },
+      ],
     });
 
     // Get organization information
@@ -38,8 +49,10 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     const choirUsers = await getCHOIRUsers(workspaceId);
 
     // Get filtered conversation history (excludes Non-CHOIR users)
+    // Use shorter time limit for DMs since they are more immediate conversations
+    const isDM = event.channel_type === 'im';
     const messages = await getFilteredConversationHistory(client, event, choirUsers, {
-      timeLimit: 1440, // 1 day
+      timeLimit: isDM ? 30 : 1440, // 30 minutes for DMs, 1 day for channels
       messageLimit: 10,  // fetch up to 10 messages
       maxResults: 5, // return up to 5 messages
     });
@@ -127,6 +140,16 @@ export async function handleIncomingMessage(client: any, event: any, message: st
       channel: event.channel,
       ...(event.channel_type !== 'im' ? { thread_ts: event.ts } : {}), // DM이 아닌 경우에만 스레드로 응답
       text: 'Sorry, an error occurred. Please try again.',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: 'Sorry, an error occurred. Please try again.',
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
     });
     return false;
   }

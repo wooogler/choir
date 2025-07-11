@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * Vector store diagnosis action handler
@@ -18,6 +19,16 @@ export const diagnoseVectorStoreAction = async ({
     await client.chat.postMessage({
       channel: userId,
       text: 'Performing vector store diagnosis...',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: 'Performing vector store diagnosis...',
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
+        },
+      ],
     });
 
     // Load vector store service
@@ -66,6 +77,7 @@ export const diagnoseVectorStoreAction = async ({
             type: 'mrkdwn',
             text: `*Status:* ${diagnosis.status}\n*Healthy:* ${diagnosis.status === 'healthy' ? '✅ Yes' : '❌ No'}`,
           },
+          block_id: createCHOIRBlockId(CHOIRMessageType.HEALTH_CHECK),
         },
         {
           type: 'section',
@@ -132,6 +144,16 @@ export const diagnoseVectorStoreAction = async ({
     await client.chat.postMessage({
       channel: body.user.id,
       text: `An error occurred during vector store diagnosis: ${error}`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `An error occurred during vector store diagnosis: ${error}`,
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
     });
   }
 };

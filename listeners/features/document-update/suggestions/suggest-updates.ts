@@ -1,6 +1,7 @@
 import type { Document } from '@langchain/core/documents';
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import type { Block, KnownBlock } from '@slack/web-api';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import {
   deleteProgressMessageTimestamp,
   getLastMessageTimestamp,
@@ -89,7 +90,14 @@ export const suggestUpdatesCallback = async ({
               await client.chat.update({
                 channel: currentDmChannelId,
                 ts: messageTsOfButtonClicked,
-                blocks: updatedBlocks as (KnownBlock | Block)[],
+                blocks: [
+                  {
+                    type: 'section',
+                    block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
+                    text: { type: 'mrkdwn', text: textForUpdate }
+                  },
+                  ...updatedBlocks.slice(1)
+                ] as (KnownBlock | Block)[],
                 text: textForUpdate,
               });
               logger.info(`Removed buttons from message ${messageTsOfButtonClicked} in channel ${currentDmChannelId}`);
@@ -131,7 +139,14 @@ export const suggestUpdatesCallback = async ({
               await client.chat.update({
                 channel: currentDmChannelId,
                 ts: lastMessageTs,
-                blocks: updatedBlocks as (KnownBlock | Block)[],
+                blocks: [
+                  {
+                    type: 'section',
+                    block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
+                    text: { type: 'mrkdwn', text: previousMessage.text || 'Previous suggestion (buttons removed)' }
+                  },
+                  ...updatedBlocks.slice(1)
+                ] as (KnownBlock | Block)[],
                 text: previousMessage.text || 'Previous suggestion (buttons removed)',
               });
             }
@@ -260,6 +275,11 @@ export const suggestUpdatesCallback = async ({
           await client.chat.postMessage({
             channel: currentDmChannelId!,
             text: '❌ Error: Could not retrieve the details for this update. Please try again or skip.',
+            blocks: [{
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+              text: { type: 'mrkdwn', text: '❌ Error: Could not retrieve the details for this update. Please try again or skip.' }
+            }]
           });
           return;
         }
@@ -339,7 +359,14 @@ export const suggestUpdatesCallback = async ({
                 channel: currentUpdate.originalChannelId!,
                 ...(currentUpdate.originalThreadTs ? { thread_ts: currentUpdate.originalThreadTs } : {}),
                 text: notificationText,
-                blocks: blocks,
+                blocks: [
+                  {
+                    type: 'section',
+                    block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+                    text: { type: 'mrkdwn', text: notificationText }
+                  },
+                  ...blocks.slice(1)
+                ],
                 unfurl_links: false,
                 unfurl_media: false,
               });
@@ -362,6 +389,11 @@ export const suggestUpdatesCallback = async ({
       await client.chat.postMessage({
         channel: currentDmChannelId,
         text: 'No knowledge content found. Please try again.',
+        blocks: [{
+          type: 'section',
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          text: { type: 'mrkdwn', text: 'No knowledge content found. Please try again.' }
+        }]
       });
       return;
     }
@@ -370,6 +402,11 @@ export const suggestUpdatesCallback = async ({
       const progressMessage = await client.chat.postMessage({
         channel: currentDmChannelId,
         text: 'Preparing document update suggestions...',
+        blocks: [{
+          type: 'section',
+          block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
+          text: { type: 'mrkdwn', text: 'Preparing document update suggestions...' }
+        }]
       });
       if (progressMessage.ts) {
         setProgressMessageTimestamp(userId, progressMessage.ts);
@@ -389,6 +426,11 @@ export const suggestUpdatesCallback = async ({
           await client.chat.postMessage({
             channel: currentDmChannelId,
             text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.',
+            blocks: [{
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+              text: { type: 'mrkdwn', text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.' }
+            }]
           });
           return;
         }
@@ -434,6 +476,7 @@ export const suggestUpdatesCallback = async ({
               blocks: [
                 {
                   type: 'section',
+                  block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
                   text: {
                     type: 'mrkdwn',
                     text: `💡 *No existing content found - Let's create something new!*\n\nI've prepared a new section for your knowledge. Click below to review and add it to your documentation.`,
@@ -480,12 +523,24 @@ export const suggestUpdatesCallback = async ({
       if (healthCheckResult.blocks) {
         await client.chat.postMessage({
           channel: currentDmChannelId,
-          blocks: healthCheckResult.blocks,
+          blocks: [
+            {
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.HEALTH_CHECK),
+              text: { type: 'mrkdwn', text: healthCheckResult.message || 'Health check failed' }
+            },
+            ...healthCheckResult.blocks.slice(1)
+          ],
         });
       } else if (healthCheckResult.message) {
         await client.chat.postMessage({
           channel: currentDmChannelId,
           text: healthCheckResult.message,
+          blocks: [{
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.HEALTH_CHECK),
+            text: { type: 'mrkdwn', text: healthCheckResult.message || 'Health check failed' }
+          }]
         });
       }
       return;
@@ -500,6 +555,11 @@ export const suggestUpdatesCallback = async ({
           await client.chat.postMessage({
             channel: currentDmChannelId,
             text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.',
+            blocks: [{
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+              text: { type: 'mrkdwn', text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.' }
+            }]
           });
           return;
         }
@@ -545,6 +605,7 @@ export const suggestUpdatesCallback = async ({
               blocks: [
                 {
                   type: 'section',
+                  block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
                   text: {
                     type: 'mrkdwn',
                     text: `💡 *No existing content found - Let's create something new!*\n\nI've prepared a new section for your knowledge. Click below to review and add it to your documentation.`,
@@ -580,6 +641,11 @@ export const suggestUpdatesCallback = async ({
         await client.chat.postMessage({
           channel: currentDmChannelId,
           text: 'No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.',
+          blocks: [{
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: { type: 'mrkdwn', text: 'No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.' }
+          }]
         });
         return;
       }
@@ -590,6 +656,11 @@ export const suggestUpdatesCallback = async ({
       await client.chat.postMessage({
         channel: currentDmChannelId,
         text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
+        blocks: [{
+          type: 'section',
+          block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+          text: { type: 'mrkdwn', text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋" }
+        }],
         unfurl_links: false,
         unfurl_media: false,
       });
@@ -624,6 +695,11 @@ export const suggestUpdatesCallback = async ({
       await client.chat.postMessage({
         channel: currentDmChannelId,
         text: '❌ Error processing document. Skipping to next.',
+        blocks: [{
+          type: 'section',
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          text: { type: 'mrkdwn', text: '❌ Error processing document. Skipping to next.' }
+        }]
       });
       return;
     }
@@ -673,6 +749,11 @@ export const suggestUpdatesCallback = async ({
       await client.chat.postMessage({
         channel: currentDmChannelId,
         text: `👋 Hi *${userName}*! I\'m CHOIR, your documentation assistant. I\'ve analyzed the knowledge you shared and found ${searchResults.length} relevant document${searchResults.length > 1 ? 's' : ''} that might need updates.\n\nI\'ll walk you through each document one by one, showing you exactly what changes I\'m suggesting and why. You can review, edit, or approve each suggestion - you\'re in full control of the process!`,
+        blocks: [{
+          type: 'section',
+          block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
+          text: { type: 'mrkdwn', text: `👋 Hi *${userName}*! I\'m CHOIR, your documentation assistant. I\'ve analyzed the knowledge you shared and found ${searchResults.length} relevant document${searchResults.length > 1 ? 's' : ''} that might need updates.\n\nI\'ll walk you through each document one by one, showing you exactly what changes I\'m suggesting and why. You can review, edit, or approve each suggestion - you\'re in full control of the process!` }
+        }],
         unfurl_links: false,
         unfurl_media: false,
       });
@@ -888,7 +969,14 @@ export const suggestUpdatesCallback = async ({
 
     const result = await client.chat.postMessage({
       channel: currentDmChannelId!,
-      blocks: blocks,
+      blocks: [
+        {
+          type: 'section',
+          block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
+          text: { type: 'mrkdwn', text: 'Document Update Suggestions' }
+        },
+        ...blocks.slice(1)
+      ],
       unfurl_links: false,
       unfurl_media: false,
       text: 'Document Update Suggestions',
@@ -970,6 +1058,11 @@ export const suggestUpdatesCallback = async ({
         await client.chat.postMessage({
           channel: currentDmChannelId,
           text: `문서 업데이트 제안 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
+          blocks: [{
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: { type: 'mrkdwn', text: `문서 업데이트 제안 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}` }
+          }]
         });
       } catch (dmError) {
         console.error('DM 전송 오류:', dmError);

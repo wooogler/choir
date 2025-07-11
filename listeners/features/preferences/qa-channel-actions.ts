@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, App, BlockAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { getChannelName, getWorkspaceId, isManager, isWorkspaceOwner, setQAChannel } from 'services/slack';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
@@ -66,6 +67,16 @@ const setQAChannelCallback = async ({
         channel: body.channel?.id || '',
         user: userId,
         text: "❌ You don't have permission to set Q&A channel.",
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: "❌ You don't have permission to set Q&A channel.",
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.AUTHORIZATION),
+          },
+        ],
       });
       return;
     }
@@ -78,6 +89,16 @@ const setQAChannelCallback = async ({
         channel: body.channel?.id || '',
         user: userId,
         text: '❌ Please select a channel first.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '❌ Please select a channel first.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
       return;
     }
@@ -99,6 +120,16 @@ const setQAChannelCallback = async ({
       await client.chat.postMessage({
         channel: userId, // 사용자 ID를 채널로 지정하여 DM 발송
         text: `❌ Cannot access the selected channel. Please make sure CHOIR is invited to the channel or select a public channel.`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `❌ Cannot access the selected channel. Please make sure CHOIR is invited to the channel or select a public channel.`,
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
       return;
     }
@@ -113,6 +144,16 @@ const setQAChannelCallback = async ({
     await client.chat.postMessage({
       channel: userId, // 사용자 ID를 채널로 지정하여 DM 발송
       text: `✅ Q&A channel has been set to #${channelName}.`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `✅ Q&A channel has been set to #${channelName}.`,
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+        },
+      ],
     });
 
     // Auto-refresh home screen
@@ -148,6 +189,16 @@ const setQAChannelCallback = async ({
     await client.chat.postMessage({
       channel: body.user.id, // body.user.id를 사용하여 사용자 ID 가져오기
       text: '❌ Failed to set Q&A channel. Please try again.',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '❌ Failed to set Q&A channel. Please try again.',
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
     });
   }
 };

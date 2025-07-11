@@ -5,6 +5,7 @@ import { handleIncomingMessage } from './message-router';
 // import { rejectUpdateCallback } from "../features/document-update/reject-update"; // 삭제: document-update feature에서 중앙 관리
 // import suggestUpdatesCallback from "../features/document-update/suggest-updates"; // 삭제: document-update feature에서 중앙 관리
 // import { applySelectedToGithubAction } from "../features/document-update/update-documents"; // 삭제: document-update feature에서 중앙 관리
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * 앱 멘션 처리 콜백
@@ -31,6 +32,16 @@ const appMentionCallback = async ({
       await client.chat.postMessage({
         channel: event.channel,
         text: nonUserMessage,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: nonUserMessage,
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.AUTHORIZATION),
+          },
+        ],
       });
 
       logger.info('Non-CHOIR user attempted to use mention', {
@@ -54,6 +65,16 @@ const appMentionCallback = async ({
       channel: event.channel,
       thread_ts: event.ts,
       text: 'Sorry, an error occurred. Please try again.',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: 'Sorry, an error occurred. Please try again.',
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
     });
   }
 };

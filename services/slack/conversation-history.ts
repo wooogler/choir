@@ -2,6 +2,7 @@ import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
 import { anonymizeText, getAnonymizationMapping } from 'services/common/name-cache';
 import { getUserName, isBotUser } from 'services/slack';
+import { CHOIRMessageType, EXCLUDE_FROM_HISTORY, SESSION_START_TYPES, type CHOIRMessageMetadata, getCHOIRMessageTypeFromBlocks } from 'types/message-types';
 
 export interface ConversationHistoryOptions {
   timeLimit?: number; // minutes
@@ -15,6 +16,7 @@ export interface SlackMessage {
   text?: string;
   bot_id?: string;
   thread_ts?: string;
+  metadata?: CHOIRMessageMetadata;
   [key: string]: any;
 }
 
@@ -63,28 +65,13 @@ export async function processMessageText(text: string, client: WebClient): Promi
 
 // Process message history with filtering and mention processing
 export const processMessageHistory = async (messages: any[], client?: WebClient) => {
-  // First, find session boundaries - messages that start new conversations
-  const sessionBoundaryPatterns = [
-    'Hi there!', // QA session start
-    'Sure! I\'ll suggest the following update to',
-    'I\'ll suggest the following update to',
-  ];
-
+  // First, find session boundaries using metadata
   let sessionStartIndex = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if (msg.bot_id && msg.text) {
-      const isSessionBoundary = sessionBoundaryPatterns.some((pattern) => msg.text.includes(pattern));
-      if (isSessionBoundary) {
-        // If it's a "Hi there!" message, start from that message
-        // If it's a "Sure! I'll suggest..." message, start after it
-        if (msg.text.includes('Hi there!')) {
-          sessionStartIndex = i;
-        } else {
-          sessionStartIndex = i + 1;
-        }
-        break;
-      }
+    if (msg.metadata?.messageType && SESSION_START_TYPES.includes(msg.metadata.messageType)) {
+      sessionStartIndex = i;
+      break;
     }
   }
 
@@ -95,7 +82,20 @@ export const processMessageHistory = async (messages: any[], client?: WebClient)
     // Basic filters
     if (!msg.text || msg.subtype) return false;
 
-    // Filter out loading messages and status messages from bots
+    // Filter out messages based on metadata message type
+    if (msg.metadata?.messageType) {
+      return !EXCLUDE_FROM_HISTORY.includes(msg.metadata.messageType);
+    }
+
+    // Filter out messages based on block_id message type
+    if (msg.blocks && msg.blocks.length > 0) {
+      const blockMessageType = getCHOIRMessageTypeFromBlocks(msg.blocks);
+      if (blockMessageType) {
+        return !EXCLUDE_FROM_HISTORY.includes(blockMessageType);
+      }
+    }
+
+    // Fallback: Filter out loading messages and status messages from bots (for backward compatibility)
     if (msg.bot_id) {
       const excludePatterns = [
         // Loading messages
@@ -190,7 +190,7 @@ export async function getFilteredConversationHistory(
           inclusive: true,
         });
 
-        const threadMessages = threadResult.messages || [];
+        const threadMessages = (threadResult.messages || []) as SlackMessage[];
         const currentMentionTs = event.ts;
 
         // Find the message just before the mention message
@@ -236,7 +236,7 @@ export async function getFilteredConversationHistory(
         ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
       });
 
-      const threadMessages = threadResult.messages || [];
+      const threadMessages = (threadResult.messages || []) as SlackMessage[];
 
       // 2. Get conversation history before the parent message (thread_ts)
       const parentTimestamp = Number.parseFloat(event.thread_ts);
@@ -247,11 +247,11 @@ export async function getFilteredConversationHistory(
         ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
       });
 
-      const preThreadMessages = (preThreadResult.messages || []).filter((msg: SlackMessage) => {
+      const preThreadMessages = (preThreadResult.messages || []).filter((msg: any) => {
         if (!msg.ts) return false;
         const msgTimestamp = Number.parseFloat(msg.ts);
         return msgTimestamp < parentTimestamp; // Exclude the parent message to avoid duplication
-      });
+      }) as SlackMessage[];
 
       // 3. Combine pre-thread conversation + thread messages (chronological order)
       messages = [...preThreadMessages.reverse(), ...threadMessages];
@@ -263,7 +263,7 @@ export async function getFilteredConversationHistory(
         ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
       });
 
-      messages = historyResult.messages || [];
+      messages = (historyResult.messages || []) as SlackMessage[];
 
     }
 

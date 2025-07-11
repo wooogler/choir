@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
 import { getManagers, getNonUserResponseMessage, getWorkspaceId, isCHOIRUser } from 'services/slack';
 import { handleIncomingMessage } from './message-router';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * DM 메시지 처리 콜백
@@ -30,6 +31,16 @@ const dmMessageCallback = async ({
       await client.chat.postMessage({
         channel: event.channel,
         text: nonUserMessage,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: nonUserMessage,
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.AUTHORIZATION),
+          },
+        ],
       });
 
       logger.info('Non-CHOIR user attempted to use DM', {
@@ -51,6 +62,16 @@ const dmMessageCallback = async ({
     await client.chat.postMessage({
       channel: event.channel,
       text: 'Sorry, an error occurred. Please try again.',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: 'Sorry, an error occurred. Please try again.',
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
     });
   }
 };

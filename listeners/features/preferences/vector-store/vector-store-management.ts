@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { parseMarkdownToTree } from 'services/document';
 import { treeToMarkdown } from 'services/document/markdown';
 import { GithubService } from 'services/github';
@@ -26,6 +27,16 @@ export const reloadFromGithubAction = async ({
       await client.chat.postMessage({
         channel: body.user.id,
         text: "❌ You don't have permission to reload from GitHub.",
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: "❌ You don't have permission to reload from GitHub.",
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.AUTHORIZATION),
+          },
+        ],
       });
       return;
     }
@@ -33,6 +44,16 @@ export const reloadFromGithubAction = async ({
     await client.chat.postMessage({
       channel: body.user.id,
       text: '🔄 Reloading files from GitHub...',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '🔄 Reloading files from GitHub...',
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
+        },
+      ],
     });
 
     const githubService = GithubService.getInstance();
@@ -53,6 +74,16 @@ export const reloadFromGithubAction = async ({
       await client.chat.postMessage({
         channel: body.user.id,
         text: '❌ No GitHub repository connected. Please connect a repository first.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '❌ No GitHub repository connected. Please connect a repository first.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
       return;
     }
@@ -70,6 +101,16 @@ export const reloadFromGithubAction = async ({
       await client.chat.postMessage({
         channel: body.user.id,
         text: '❌ No markdown files found in the repository.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '❌ No markdown files found in the repository.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
       return;
     }
@@ -81,6 +122,16 @@ export const reloadFromGithubAction = async ({
       await client.chat.postMessage({
         channel: body.user.id,
         text: `✅ Successfully reloaded ${markdownFiles.length} files from GitHub and updated vector store!`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `✅ Successfully reloaded ${markdownFiles.length} files from GitHub and updated vector store!`,
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+          },
+        ],
       });
 
       // Auto-refresh home screen after a longer delay to avoid conflicts
@@ -111,6 +162,16 @@ export const reloadFromGithubAction = async ({
       await client.chat.postMessage({
         channel: body.user.id,
         text: '❌ Failed to update vector store with new files. Please check the logs.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '❌ Failed to update vector store with new files. Please check the logs.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
     }
   } catch (error) {
@@ -118,6 +179,16 @@ export const reloadFromGithubAction = async ({
     await client.chat.postMessage({
       channel: body.user.id,
       text: '❌ Error occurred while reloading from GitHub.',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '❌ Error occurred while reloading from GitHub.',
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
     });
   }
 };
@@ -144,6 +215,16 @@ export const normalizeMarkdownFilesAction = async ({
       await client.chat.postMessage({
         channel: body.user.id,
         text: "❌ You don't have permission to normalize markdown files.",
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: "❌ You don't have permission to normalize markdown files.",
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.AUTHORIZATION),
+          },
+        ],
       });
       return;
     }
@@ -151,6 +232,16 @@ export const normalizeMarkdownFilesAction = async ({
     await client.chat.postMessage({
       channel: body.user.id,
       text: '🔄 Starting markdown files normalization...\nThis may take a while depending on the number of files.',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '🔄 Starting markdown files normalization...\nThis may take a while depending on the number of files.',
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
+        },
+      ],
     });
 
     const githubService = GithubService.getInstance();
@@ -177,6 +268,16 @@ export const normalizeMarkdownFilesAction = async ({
       await client.chat.postMessage({
         channel: body.user.id,
         text: '❌ No GitHub repository connected. Please connect a repository first or ensure vector store has loaded files.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '❌ No GitHub repository connected. Please connect a repository first or ensure vector store has loaded files.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
       return;
     }
@@ -194,6 +295,16 @@ export const normalizeMarkdownFilesAction = async ({
       await client.chat.postMessage({
         channel: body.user.id,
         text: '❌ No markdown files found in the repository.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '❌ No markdown files found in the repository.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
       return;
     }
@@ -201,6 +312,16 @@ export const normalizeMarkdownFilesAction = async ({
     await client.chat.postMessage({
       channel: body.user.id,
       text: `📄 Found ${markdownFiles.length} markdown files. Starting normalization...`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `📄 Found ${markdownFiles.length} markdown files. Starting normalization...`,
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
+        },
+      ],
     });
 
     let successCount = 0;
@@ -244,6 +365,16 @@ export const normalizeMarkdownFilesAction = async ({
       await client.chat.postMessage({
         channel: body.user.id,
         text: `✅ Successfully normalized ${successCount} markdown files!\n\n🔄 Rebuilding vector store to reflect changes...`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `✅ Successfully normalized ${successCount} markdown files!\n\n🔄 Rebuilding vector store to reflect changes...`,
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+          },
+        ],
       });
 
       // 벡터 스토어 재구축
@@ -253,6 +384,16 @@ export const normalizeMarkdownFilesAction = async ({
           await client.chat.postMessage({
             channel: body.user.id,
             text: '✅ Vector store successfully rebuilt with normalized files!',
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: '✅ Vector store successfully rebuilt with normalized files!',
+                },
+                block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+              },
+            ],
           });
 
           // Auto-refresh home screen
@@ -283,6 +424,16 @@ export const normalizeMarkdownFilesAction = async ({
           await client.chat.postMessage({
             channel: body.user.id,
             text: '⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.',
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: '⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.',
+                },
+                block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+              },
+            ],
           });
         }
       } catch (vectorError) {
@@ -290,12 +441,32 @@ export const normalizeMarkdownFilesAction = async ({
         await client.chat.postMessage({
           channel: body.user.id,
           text: '⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.',
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.',
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            },
+          ],
         });
       }
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
         text: `⚠️ Normalization completed with issues:\n✅ ${successCount} files normalized\n❌ ${failCount} files failed\n\nPlease check the logs for details.`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `⚠️ Normalization completed with issues:\n✅ ${successCount} files normalized\n❌ ${failCount} files failed\n\nPlease check the logs for details.`,
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
     }
   } catch (error) {
@@ -304,6 +475,16 @@ export const normalizeMarkdownFilesAction = async ({
     await client.chat.postMessage({
       channel: body.user.id,
       text: '❌ Error occurred while normalizing markdown files. Please check the logs.',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '❌ Error occurred while normalizing markdown files. Please check the logs.',
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
     });
   }
 

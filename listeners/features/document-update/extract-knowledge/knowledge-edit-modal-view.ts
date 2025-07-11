@@ -1,7 +1,8 @@
-import type { AllMiddlewareArgs, SlackViewAction, SlackViewMiddlewareArgs } from '@slack/bolt';
+import type { AllMiddlewareArgs, SlackViewMiddlewareArgs, SlackViewAction } from '@slack/bolt';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/user-interaction-logger';
-import { getChannelName, getManagers, getUserName, getWorkspaceId } from 'services/slack';
+import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
 
 /**
  * Handle knowledge edit modal submission
@@ -30,6 +31,16 @@ export async function handleKnowledgeEditModal({
       await client.chat.postMessage({
         channel: body.user.id,
         text: '❌ Session data not found. Please try the knowledge extraction again.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '❌ Session data not found. Please try the knowledge extraction again.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
 
       // 로그: 세션 데이터 없음
@@ -58,6 +69,16 @@ export async function handleKnowledgeEditModal({
       await client.chat.postMessage({
         channel: body.user.id,
         text: '❌ Please provide some knowledge content before proceeding.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '❌ Please provide some knowledge content before proceeding.',
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
       });
 
       // 로그: 빈 지식 내용
@@ -111,6 +132,7 @@ export async function handleKnowledgeEditModal({
                 type: 'mrkdwn',
                 text: `Sure! I'll suggest the following update to ${managerText}. *(Edited)*`,
               },
+              block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
             },
             {
               type: 'section',
@@ -172,6 +194,16 @@ export async function handleKnowledgeEditModal({
     await client.chat.postMessage({
       channel: body.user.id,
       text: `❌ Error processing knowledge edit: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `❌ Error processing knowledge edit: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
     });
 
     // 로그: 실패

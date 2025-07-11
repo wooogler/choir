@@ -2,6 +2,7 @@ import type { WebClient } from '@slack/web-api';
 import { SessionType, generateSessionId, storeSessionData } from 'services/common';
 import { logKnowledgeExtraction, logUpdateRequestProcessing } from 'services/common/user-interaction-logger';
 import { extractKnowledgeFromMessages } from 'services/llm/knowledge-extractor';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import {
   type SlackMessage,
   getCHOIRUsers,
@@ -39,6 +40,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
             type: 'mrkdwn',
             text: '🔍 Analyzing recent messages to extract knowledge...',
           },
+          block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
         },
       ],
     });
@@ -85,6 +87,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
               type: 'mrkdwn',
               text: '❌ No messages found to analyze.',
             },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
         ],
       });
@@ -130,6 +133,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
               type: 'mrkdwn',
               text: '❌ No messages found to analyze.',
             },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
         ],
       });
@@ -215,6 +219,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
               type: 'mrkdwn',
               text: `✅ *Analysis Complete* • 📊 ${last10Messages.length} message${last10Messages.length > 1 ? 's' : ''} analyzed`,
             },
+            block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
             accessory: {
               type: 'button',
               text: {
@@ -225,11 +230,11 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
               action_id: 'view_analyzed_messages',
               value: JSON.stringify({
                 sessionId,
-                messageCount: last10Messages.length,
-                messages: last10Messages.map((msg) => ({
-                  username: msg.username,
-                  text: msg.text?.substring(0, 200) || '', // Limit text length for storage
-                  ts: msg.ts,
+                messageCount: extractionResult.processedMessages.length,
+                messages: extractionResult.processedMessages.map((msg, index) => ({
+                  username: msg.role === 'CHOIR' ? 'CHOIR' : msg.content.split(':')[0], // Extract username from "Username: message" format
+                  text: msg.content.includes(':') ? msg.content.split(':').slice(1).join(':').trim() : msg.content,
+                  ts: `${Date.now()}_${index}`, // Generate unique timestamp for ordering
                 })),
               }),
             },
