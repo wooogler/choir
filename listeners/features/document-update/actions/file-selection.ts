@@ -1,0 +1,232 @@
+import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from '@slack/bolt';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { getWorkspaceId } from 'services/slack';
+import { logButtonClick } from 'services/common/user-interaction-logger';
+
+/**
+ * Handle file selection dropdown change
+ */
+export const fileSelectionForUpdateAction = async ({
+  ack,
+  body,
+  client,
+  logger,
+}: AllMiddlewareArgs & SlackActionMiddlewareArgs) => {
+  await ack();
+
+  try {
+    const selectedFile = (body as any).actions[0].selected_option?.value;
+    const userId = (body as any).user.id;
+    const channelId = (body as any).channel?.id;
+    const messageTs = (body as any).container?.message_ts;
+
+    if (!selectedFile || !channelId || !messageTs) {
+      return;
+    }
+
+    // Update the button value with selected file
+    const history = await client.conversations.history({
+      channel: channelId,
+      latest: messageTs,
+      inclusive: true,
+      limit: 1,
+    });
+
+    if (history.messages && history.messages.length > 0) {
+      const originalMessage = history.messages[0];
+      if (originalMessage.blocks) {
+        // Find the action block and update the button value
+        const updatedBlocks = originalMessage.blocks.map((block: any) => {
+          if (block.type === 'actions') {
+            return {
+              ...block,
+              elements: block.elements.map((element: any) => {
+                if (element.action_id === 'start_file_based_review') {
+                  const currentValue = JSON.parse(element.value);
+                  return {
+                    ...element,
+                    value: JSON.stringify({
+                      ...currentValue,
+                      selectedFile
+                    })
+                  };
+                }
+                return element;
+              })
+            };
+          }
+          return block;
+        });
+
+        await client.chat.update({
+          channel: channelId,
+          ts: messageTs,
+          blocks: updatedBlocks,
+          text: originalMessage.text
+        });
+      }
+    }
+
+    logger.info(`User ${userId} selected file: ${selectedFile}`);
+  } catch (error) {
+    logger.error('Error handling file selection:', error);
+  }
+};
+
+/**
+ * Handle "Start Review" button click
+ */
+export const startFileBasedReviewAction = async ({
+  ack,
+  body,
+  client,
+  logger,
+}: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
+  await ack();
+
+  const userId = body.user.id;
+  const channelId = body.channel?.id;
+  
+  try {
+    const value = body.actions?.[0]?.value;
+    if (!value) {
+      throw new Error('Button value not found');
+    }
+
+    const parsedValue = JSON.parse(value);
+    const {
+      sessionId,
+      knowledgeContent,
+      knowledgeSourceChannelId,
+      knowledgeSourceThreadTs,
+      selectedFile,
+      defaultFilePath // 기본 파일 정보
+    } = parsedValue;
+
+    logger.info(`Starting file-based review with selectedFile: ${selectedFile}, sessionId: ${sessionId}`);
+
+    // Remove buttons from current message
+    const messageTs = body.container?.message_ts;
+    if (messageTs && channelId) {
+      try {
+        const history = await client.conversations.history({
+          channel: channelId,
+          latest: messageTs,
+          inclusive: true,
+          limit: 1,
+        });
+
+        if (history.messages && history.messages.length > 0) {
+          const originalMessage = history.messages[0];
+          if (originalMessage.blocks) {
+            const updatedBlocks = originalMessage.blocks.filter((block: any) => {
+              return block.type !== 'actions';
+            });
+
+            await client.chat.update({
+              channel: channelId,
+              ts: messageTs,
+              blocks: [
+                {
+                  type: 'section',
+                  block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
+                  text: { type: 'mrkdwn', text: 'Starting document review...' }
+                },
+                ...updatedBlocks.slice(1)
+              ] as any,
+              text: 'Starting document review...',
+            });
+          }
+        }
+      } catch (error) {
+        logger.error('Failed to update file selection message:', error);
+      }
+    }
+
+    // Now trigger the actual suggestion flow with the selected file
+    const { suggestUpdatesCallback } = await import('../suggestions/suggest-updates');
+    
+    // Create a modified body for the suggest updates callback
+    const isDefaultFile = selectedFile === defaultFilePath;
+    const modifiedBody = {
+      ...body,
+      actions: [{
+        value: JSON.stringify({
+          index: 0,
+          sessionId,
+          knowledgeContent,
+          originalChannelId: knowledgeSourceChannelId,
+          originalThreadTs: knowledgeSourceThreadTs,
+          selectedFile, // Pass the selected file
+          defaultFilePath, // Pass default file path
+          isFileBasedReview: true, // Flag to indicate this is file-based review
+          isDefaultFile // Flag to indicate if selected file is the default file
+        })
+      }]
+    };
+
+    await suggestUpdatesCallback({
+      ack: async () => {}, // Already acked
+      body: modifiedBody,
+      client,
+      logger,
+    } as any);
+
+    // Log the action
+    const workspaceId = await getWorkspaceId(client);
+    await logButtonClick(
+      userId,
+      workspaceId,
+      channelId || 'dm',
+      'dm',
+      'start_file_based_review',
+      Date.now() - startTime,
+      true,
+      {
+        sessionId,
+        selectedFile,
+        knowledgeContentLength: knowledgeContent?.length || 0,
+        originalChannelId: knowledgeSourceChannelId,
+        originalThreadTs: knowledgeSourceThreadTs,
+      },
+      client,
+    );
+
+  } catch (error) {
+    logger.error('Error starting file-based review:', error);
+
+    if (channelId) {
+      await client.chat.postMessage({
+        channel: channelId,
+        text: `❌ Error starting review: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        blocks: [{
+          type: 'section',
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          text: { type: 'mrkdwn', text: `❌ Error starting review: ${error instanceof Error ? error.message : 'Unknown error'}` }
+        }]
+      });
+    }
+
+    // Log the error
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      await logButtonClick(
+        userId,
+        workspaceId,
+        channelId || 'dm',
+        'dm',
+        'start_file_based_review',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Failed to log error:', logError);
+    }
+  }
+};

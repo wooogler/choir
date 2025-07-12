@@ -22,10 +22,11 @@ import {
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { type ProcessedDocument, processDocument } from 'services/document/update-processor';
 import { type SlackMessage, getManagers, getUserName, getWorkspaceId } from 'services/slack';
-import { checkVectorStoreHealth } from 'services/vector/health-check';
 import { VectorStoreService } from 'services/vector/main-service';
 import type { DocumentMetadata } from 'services/vector/types';
 import { applySelectedToGithubAction } from '../apply-document/update-documents';
+import { GithubService } from 'services/github';
+import { WorkspaceStore } from 'services/workspace/workspace-store';
 
 /**
  * Create a link to the original message using Slack permalink format
@@ -41,6 +42,143 @@ export function createMessageLink(workspaceUrl: string, channelId: string, messa
   } else {
     return `${baseUrl}/archives/${channelId}`;
   }
+}
+
+/**
+ * Show file selection dropdown before first suggestion
+ */
+async function showFileSelectionDropdown(
+  client: any,
+  userId: string,
+  currentDmChannelId: string,
+  searchResults: Document<DocumentMetadata>[],
+  knowledgeContent: string,
+  sessionId: string,
+  knowledgeSourceChannelId?: string,
+  knowledgeSourceThreadTs?: string,
+) {
+  const workspaceId = await getWorkspaceId(client);
+  const workspaceStore = new WorkspaceStore();
+  const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+  
+  if (!config || !config.githubRepo) {
+    throw new Error('Workspace configuration or GitHub repository not found');
+  }
+
+  // Get available markdown files for file selection dropdown
+  let fileList = await workspaceStore.getCachedMarkdownFiles(workspaceId);
+
+  if (!fileList) {
+    // If no cache, load from GitHub and cache the result
+    const { owner, repo, path } = config.githubRepo;
+    const githubService = GithubService.getInstance();
+    const markdownFiles = await githubService.getAllMarkdownFiles({
+      owner,
+      repo,
+      path,
+      workspaceId: workspaceId,
+      userId: userId,
+    });
+
+    fileList = markdownFiles.map((file) => ({
+      name: file.name,
+      path: file.path,
+    }));
+
+    // Cache the file list
+    await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
+  }
+
+  // Create file options for dropdown
+  const fileOptions = fileList.map((file) => ({
+    text: {
+      type: 'plain_text' as const,
+      text: file.name,
+    },
+    value: file.path,
+  }));
+
+  // Find the default file option (from first search result)
+  const defaultFilePath = searchResults[0]?.metadata?.fileName || fileOptions[0]?.value;
+  const defaultFileOption = fileOptions.find((option) => 
+    option.value === defaultFilePath || option.text.text === defaultFilePath
+  ) || fileOptions[0];
+
+  const userName = await getUserName(userId, client);
+  const message = await client.chat.postMessage({
+    channel: currentDmChannelId,
+    text: `👋 Hi *${userName}*! I'm CHOIR, your documentation assistant. I've analyzed your knowledge and found ${searchResults.length} relevant document${searchResults.length > 1 ? 's' : ''} that might need updates.`,
+    blocks: [
+      {
+        type: 'section',
+        block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
+        text: {
+          type: 'mrkdwn',
+          text: `👋 Hi *${userName}*! I'm CHOIR, your documentation assistant. I've analyzed your knowledge and found ${searchResults.length} relevant document${searchResults.length > 1 ? 's' : ''} that might need updates.`
+        }
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `📁 *Which file would you like to focus on first?*\n\nI can either:\n• Review documents across all files (recommended)\n• Focus on a specific file of your choice`
+        },
+        accessory: {
+          type: 'static_select',
+          action_id: 'file_selection_for_update',
+          placeholder: {
+            type: 'plain_text',
+            text: 'Choose a file...'
+          },
+          initial_option: defaultFileOption,
+          options: [
+            {
+              text: {
+                type: 'plain_text',
+                text: '🔍 All Files (Recommended)'
+              },
+              value: 'ALL_FILES'
+            },
+            ...fileOptions
+          ]
+        }
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Your Knowledge:*\n\`\`\`${knowledgeContent}\`\`\``
+        }
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '▶️ Start Review',
+              emoji: true
+            },
+            style: 'primary',
+            action_id: 'start_file_based_review',
+            value: JSON.stringify({
+              sessionId,
+              knowledgeContent,
+              knowledgeSourceChannelId,
+              knowledgeSourceThreadTs,
+              selectedFile: 'ALL_FILES', // default selection
+              defaultFilePath: defaultFilePath // 기본 파일 정보 추가
+            })
+          }
+        ]
+      }
+    ],
+    unfurl_links: false,
+    unfurl_media: false,
+  });
+
+  return message.ts;
 }
 
 export const suggestUpdatesCallback = async ({
@@ -169,8 +307,16 @@ export const suggestUpdatesCallback = async ({
     let knowledgeContent = parsedValue.knowledgeContent;
     let sourceMessages: SlackMessage[] = [];
     const sessionId = parsedValue.sessionId;
+    let isFileBasedReview = false;
 
     if (parsedValue.action === 'keep') {
+      // Apply Changes 후 특정 파일에서 전체 검토로 전환
+      if (parsedValue.shouldSwitchToAllFiles) {
+        logger.info('Switching from specific file review to all files review');
+        isFileBasedReview = false; // 파일 기반 검토 종료
+        // 저장된 5개 문서를 사용하도록 설정 (나중에 getSearchResults로 가져옴)
+      }
+      
       if (sessionId) {
         const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
         if (sessionData?.extractedKnowledge) {
@@ -259,8 +405,61 @@ export const suggestUpdatesCallback = async ({
 
     if (typeof parsedValue.index === 'number') {
       currentIndex = parsedValue.index;
-      searchResults = getSearchResults(userId);
-      isFirstSuggestion = false;
+      
+      // Check if this is a file-based review
+      if (parsedValue.isFileBasedReview && parsedValue.selectedFile) {
+        logger.info(`Performing file-based search for file: ${parsedValue.selectedFile}, isFileBasedReview: ${parsedValue.isFileBasedReview}, isDefaultFile: ${parsedValue.isDefaultFile}`);
+        isFileBasedReview = true;
+        
+        // Perform search based on file selection - 3 cases
+        if (parsedValue.selectedFile === 'ALL_FILES' || parsedValue.isDefaultFile) {
+          // Case 1: ALL_FILES or default file - use stored 5 documents
+          logger.info('Using stored search results (ALL_FILES or default file selected)');
+          searchResults = getSearchResults(userId);
+          
+          // If no stored results, search for 5 documents
+          if (!searchResults || searchResults.length === 0) {
+            const allFilesResults = await vectorStore.similaritySearch(knowledgeContent, 5);
+            searchResults = allFilesResults;
+            storeSearchResults(userId, searchResults);
+          }
+        } else {
+          // Case 2: Different specific file - search 1 document in that file
+          logger.info(`Searching in specific file: ${parsedValue.selectedFile}`);
+          const fileSpecificResults = await vectorStore.similaritySearchByFile(knowledgeContent, parsedValue.selectedFile, 1);
+          searchResults = fileSpecificResults;
+          // Don't store these results as they're file-specific
+        }
+        
+        // Check if we found any results
+        if (searchResults.length === 0) {
+          await client.chat.postMessage({
+            channel: currentDmChannelId,
+            text: `No relevant content found in the selected file: ${parsedValue.selectedFile}. Please try selecting a different file or choose "All Files" option.`,
+            blocks: [{
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+              text: { type: 'mrkdwn', text: `No relevant content found in the selected file: ${parsedValue.selectedFile}. Please try selecting a different file or choose "All Files" option.` }
+            }]
+          });
+          return;
+        }
+        
+        // For file-based review, we want to treat this as first suggestion UI-wise
+        isFirstSuggestion = true;
+      } else {
+        logger.info(`Using cached search results, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}, shouldSwitchToAllFiles: ${parsedValue.shouldSwitchToAllFiles}`);
+        searchResults = getSearchResults(userId);
+        isFirstSuggestion = false;
+      }
+      
+      // Apply Changes 후 특정 파일에서 전체 검토로 전환된 경우 처리
+      if (parsedValue.shouldSwitchToAllFiles && (!searchResults || searchResults.length === 0)) {
+        logger.info('No cached results found after switching to all files, performing new search');
+        const allFilesResults = await vectorStore.similaritySearch(knowledgeContent, 5);
+        searchResults = allFilesResults;
+        storeSearchResults(userId, searchResults);
+      }
 
       if (parsedValue.action === 'keep' && parsedValue.currentNodeId) {
         const storedUpdates = getStoredDocumentUpdates(userId);
@@ -413,140 +612,8 @@ export const suggestUpdatesCallback = async ({
       }
     }
 
-    const healthCheckResult = await checkVectorStoreHealth(client, currentDmChannelId);
-    if (!healthCheckResult.isHealthy) {
-      // If vector store is empty (0 vectors), skip to new section creation instead of showing error
-      const diagnosis = vectorStore.diagnoseVectorStore();
-      if (diagnosis.details.vectorsCount === 0) {
-        console.log('Vector store is empty, skipping to new section creation');
 
-        // Create new section directly since there are no existing documents to update
-        const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
-        if (allMarkdownFiles.length === 0) {
-          await client.chat.postMessage({
-            channel: currentDmChannelId,
-            text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.',
-            blocks: [{
-              type: 'section',
-              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-              text: { type: 'mrkdwn', text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.' }
-            }]
-          });
-          return;
-        }
-
-        const availableFiles = allMarkdownFiles.map((file) => ({
-          fileName: file.name,
-          githubUrl: file.githubUrl,
-          description: `${file.name} - Documentation file`,
-        }));
-
-        try {
-          const { createNewSectionFromKnowledge } = await import('services/llm/content-generator');
-          const newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
-
-          if (newSectionSuggestion) {
-            // Find the GitHub URL for the recommended file
-            const recommendedFileInfo = availableFiles.find(
-              (file) => file.fileName === newSectionSuggestion.recommendedFile,
-            );
-            const githubUrl = recommendedFileInfo?.githubUrl || availableFiles[0]?.githubUrl || '';
-
-            // Store the new section data in session
-            const newSectionSessionId = `new_section_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-            storeSessionData(
-              newSectionSessionId,
-              {
-                sectionTitle: newSectionSuggestion.sectionTitle,
-                sectionContent: newSectionSuggestion.sectionContent,
-                recommendedFile: newSectionSuggestion.recommendedFile,
-                reasoning: newSectionSuggestion.reasoning,
-                githubUrl: githubUrl,
-                originalChannelId: knowledgeSourceChannelId,
-                originalThreadTs: knowledgeSourceThreadTs,
-                sessionId: sessionId,
-              },
-              SessionType.NEW_SECTION,
-            );
-
-            // Show new section creation modal directly
-            const emptyVectorStoreMessage = await client.chat.postMessage({
-              channel: currentDmChannelId,
-              text: `💡 Since you don't have any existing content in your vector store, I'll help you create a new section for this knowledge!`,
-              blocks: [
-                {
-                  type: 'section',
-                  block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
-                  text: {
-                    type: 'mrkdwn',
-                    text: `💡 *No existing content found - Let's create something new!*\n\nI've prepared a new section for your knowledge. Click below to review and add it to your documentation.`,
-                  },
-                },
-                {
-                  type: 'actions',
-                  elements: [
-                    {
-                      type: 'button',
-                      text: {
-                        type: 'plain_text',
-                        text: '📝 Create New Section',
-                        emoji: true,
-                      },
-                      action_id: 'create_new_section',
-                      value: JSON.stringify({
-                        newSectionSessionId,
-                        userId,
-                      }),
-                    },
-                  ],
-                },
-              ],
-            });
-
-            // Store message timestamp for later update
-            if (emptyVectorStoreMessage.ts && sessionId) {
-              const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
-              if (sessionData) {
-                sessionData.emptyVectorStoreMessageTs = emptyVectorStoreMessage.ts;
-                sessionData.emptyVectorStoreChannelId = currentDmChannelId;
-                storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
-              }
-            }
-            return;
-          }
-        } catch (error) {
-          console.error('Error creating new section from empty vector store:', error);
-        }
-      }
-
-      // For other health check failures, show the original error
-      if (healthCheckResult.blocks) {
-        await client.chat.postMessage({
-          channel: currentDmChannelId,
-          blocks: [
-            {
-              type: 'section',
-              block_id: createCHOIRBlockId(CHOIRMessageType.HEALTH_CHECK),
-              text: { type: 'mrkdwn', text: healthCheckResult.message || 'Health check failed' }
-            },
-            ...healthCheckResult.blocks.slice(1)
-          ],
-        });
-      } else if (healthCheckResult.message) {
-        await client.chat.postMessage({
-          channel: currentDmChannelId,
-          text: healthCheckResult.message,
-          blocks: [{
-            type: 'section',
-            block_id: createCHOIRBlockId(CHOIRMessageType.HEALTH_CHECK),
-            text: { type: 'mrkdwn', text: healthCheckResult.message || 'Health check failed' }
-          }]
-        });
-      }
-      return;
-    }
-
-    if (currentIndex === 0) {
+    if (currentIndex === 0 && !isFileBasedReview) {
       searchResults = await vectorStore.similaritySearch(knowledgeContent, 5);
       if (!searchResults || searchResults.length === 0) {
         // No search results, redirect to new section creation
@@ -649,7 +716,23 @@ export const suggestUpdatesCallback = async ({
         });
         return;
       }
+      
+      // Show file selection dropdown before first suggestion
       storeSearchResults(userId, searchResults);
+      const fileSelectionMessageTs = await showFileSelectionDropdown(
+        client,
+        userId,
+        currentDmChannelId,
+        searchResults,
+        knowledgeContent,
+        sessionId,
+        knowledgeSourceChannelId,
+        knowledgeSourceThreadTs
+      );
+      if (fileSelectionMessageTs) {
+        setLastMessageTimestamp(userId, fileSelectionMessageTs);
+      }
+      return; // Exit here, wait for user to select file and click "Start Review"
     }
 
     if (currentIndex >= searchResults.length) {
@@ -744,19 +827,7 @@ export const suggestUpdatesCallback = async ({
     const blocks: (KnownBlock | Block)[] = [];
 
     if (isFirstSuggestion) {
-      // CHOIR 소개 및 과정 설명
-      const userName = await getUserName(userId, client);
-      await client.chat.postMessage({
-        channel: currentDmChannelId,
-        text: `👋 Hi *${userName}*! I\'m CHOIR, your documentation assistant. I\'ve analyzed the knowledge you shared and found ${searchResults.length} relevant document${searchResults.length > 1 ? 's' : ''} that might need updates.\n\nI\'ll walk you through each document one by one, showing you exactly what changes I\'m suggesting and why. You can review, edit, or approve each suggestion - you\'re in full control of the process!`,
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
-          text: { type: 'mrkdwn', text: `👋 Hi *${userName}*! I\'m CHOIR, your documentation assistant. I\'ve analyzed the knowledge you shared and found ${searchResults.length} relevant document${searchResults.length > 1 ? 's' : ''} that might need updates.\n\nI\'ll walk you through each document one by one, showing you exactly what changes I\'m suggesting and why. You can review, edit, or approve each suggestion - you\'re in full control of the process!` }
-        }],
-        unfurl_links: false,
-        unfurl_media: false,
-      });
+      // Skip introduction message since it was already shown in file selection dropdown
 
       const headerText = 'Document Update';
       blocks.push({
@@ -848,6 +919,8 @@ export const suggestUpdatesCallback = async ({
       action: 'keep',
       sessionId: sessionId,
       currentNodeId: processedDoc.nodeId,
+      // Apply Changes 후 특정 파일에서 전체 검토로 전환하는 로직
+      shouldSwitchToAllFiles: isFileBasedReview && parsedValue.selectedFile !== 'ALL_FILES' && !parsedValue.isDefaultFile,
     };
 
     const cancelButtonValue = {

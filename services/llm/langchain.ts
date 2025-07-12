@@ -95,7 +95,6 @@ export function createDocumentsFromTree(
     if (is(node, 'paragraph')) {
       const paraNode = node as Paragraph & ExtendedNode;
       const text = toString(paraNode);
-      if (!text.trim()) return; // 빈 단락은 건너뜀
 
       // 계층적 문맥 구성
       const contextPrefix = formatHeadingContext(headingPath, fileName);
@@ -143,7 +142,6 @@ export function createDocumentsFromTree(
     if (is(node, 'listItem')) {
       const listItemNode = node as ListItem & ExtendedNode;
       const text = toString(listItemNode);
-      if (!text.trim()) return; // 빈 리스트 아이템은 건너뜀
 
       // 계층적 문맥 구성
       const contextPrefix = formatHeadingContext(headingPath, fileName);
@@ -184,7 +182,6 @@ export function createDocumentsFromTree(
     if (is(node, 'code')) {
       const codeNode = node as Code & ExtendedNode;
       const text = codeNode.value;
-      if (!text.trim()) return; // 빈 코드 블록은 건너뜀
 
       // 계층적 문맥 구성
       const contextPrefix = formatHeadingContext(headingPath, fileName);
@@ -235,7 +232,6 @@ export function createDocumentsFromTree(
     if (is(node, 'blockquote')) {
       const blockNode = node as BlockContent & ExtendedNode;
       const text = toString(blockNode);
-      if (!text.trim()) return; // 빈 블록쿼트는 건너뜀
 
       // 계층적 문맥 구성
       const contextPrefix = formatHeadingContext(headingPath, fileName);
@@ -274,6 +270,52 @@ export function createDocumentsFromTree(
       return;
     }
   });
+
+  // 빈 섹션들을 위한 placeholder Document 생성
+  const sectionsWithContent = new Set<string>();
+  
+  // 생성된 Document들에서 사용된 섹션ID들 수집
+  documents.forEach(doc => {
+    if (doc.metadata.sectionId) {
+      sectionsWithContent.add(doc.metadata.sectionId);
+    }
+  });
+
+  // 모든 섹션 중 콘텐츠가 없는 섹션들을 찾아 placeholder Document 생성
+  for (const [sectionId, headingNode] of docTree.sectionMap.entries()) {
+    if (!sectionsWithContent.has(sectionId)) {
+      // 빈 섹션 발견 - placeholder Document 생성
+      const headingText = toString(headingNode);
+      
+      // 헤딩 경로 구성
+      const ancestors = getAncestorNodes(headingNode, nodeParentMap);
+      const headingPath = getHeadingPathForNode(headingNode, ancestors, headingMap, sectionToHeadings);
+      
+      // 계층적 문맥 구성
+      const contextPrefix = formatHeadingContext(headingPath, fileName);
+      
+      // 빈 섹션용 placeholder Document 생성
+      const placeholderDocument = new Document({
+        pageContent: `${contextPrefix}`, // 빈 내용이지만 컨텍스트는 포함
+        metadata: {
+          fileName,
+          nodeId: headingNode.id as string,
+          sectionId,
+          sectionName: headingText,
+          nodeType: 'paragraph',
+          githubUrl,
+          headingPath,
+          ancestors: ancestors.map((a) => a.id as string),
+          depth: ancestors.length,
+          importance: 0.3, // placeholder는 낮은 중요도
+          entityMentions: [],
+          originalContent: '', // 원본 내용은 빈 문자열
+        },
+      });
+      
+      documents.push(placeholderDocument);
+    }
+  }
 
   return documents;
 }

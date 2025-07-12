@@ -138,8 +138,6 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
   let currentSection: ExtendedNode | null = null;
   const sectionStack: ExtendedNode[] = [];
 
-  // 첫 번째 h1을 문서 제목으로 설정
-  let titleFound = false;
 
   visit(root, (node, index, parent) => {
     // 노드를 확장 노드로 변환
@@ -162,14 +160,7 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
     if (is(node, 'heading')) {
       const heading = node as Heading & ExtendedNode;
 
-      // 첫 번째 h1은 문서 제목으로
-      if (heading.depth === 1 && !titleFound) {
-        docTree.title = toString(heading);
-        titleFound = true;
-        return;
-      }
-
-      // h2-h6은 섹션으로 처리
+      // 모든 헤딩(h1-h6)을 섹션으로 처리
       sectionCount++;
       heading.sectionId = `section-${sectionCount}`;
       heading.sectionLevel = heading.depth;
@@ -702,6 +693,23 @@ export function appendNodeContent(docTree: DocumentTree, referenceNodeId: string
       isListItem: true,
       listItemIndex: (refExtNode.listItemIndex || 0) + 1, // 다음 인덱스
     } as ListItem & ExtendedNode;
+  } else if (is(referenceNode, 'heading')) {
+    // 헤딩 노드에는 직접 append할 수 없으므로, 헤딩 다음에 새로운 paragraph 추가
+    const refExtNode = referenceNode as Heading & ExtendedNode;
+    newNode = {
+      type: 'paragraph',
+      children: [
+        {
+          type: 'text',
+          value: newContent,
+        },
+      ],
+      id: newNodeId,
+      fileName: refExtNode.fileName,
+      parentId: refExtNode.parentId,
+      sectionId: refExtNode.sectionId,
+    } as Paragraph & ExtendedNode;
+    console.log(`Heading 노드 다음에 새로운 paragraph 노드 추가: ${newNodeId}`);
   } else {
     // 지원하지 않는 노드 타입
     console.warn(`Unsupported node type for append: ${referenceNode.type}`);
@@ -905,4 +913,219 @@ function appendSectionToEnd(tree: DocumentTree, headingNode: ExtendedNode, bodyN
   } else {
     console.error('루트 노드의 children이 배열이 아닙니다.');
   }
+}
+
+/**
+ * LLM이 생성한 content를 파싱하여 개별 listItem/paragraph로 분할
+ * @param content LLM이 생성한 마크다운 content
+ * @returns 분할된 content 항목들의 배열
+ */
+export function parseAndSplitContent(content: string): Array<{type: 'listItem' | 'paragraph', content: string}> {
+  const result: Array<{type: 'listItem' | 'paragraph', content: string}> = [];
+  
+  try {
+    // content를 마크다운으로 파싱
+    const tree = unified().use(remarkParse).parse(content);
+    
+    // root children만 순회하여 중복 방지
+    if (tree.children && Array.isArray(tree.children)) {
+      for (const child of tree.children) {
+        if (is(child, 'paragraph')) {
+          // 직접 paragraph인 경우
+          const textContent = toString(child).trim();
+          if (textContent) {
+            result.push({
+              type: 'paragraph',
+              content: textContent
+            });
+          }
+        } else if (is(child, 'list')) {
+          // list인 경우 내부의 listItem들을 추출
+          if (child.children && Array.isArray(child.children)) {
+            for (const listItem of child.children) {
+              if (is(listItem, 'listItem')) {
+                const textContent = toString(listItem).trim();
+                if (textContent) {
+                  result.push({
+                    type: 'listItem',
+                    content: textContent
+                  });
+                }
+              }
+            }
+          }
+        } else if (is(child, 'listItem')) {
+          // 직접 listItem인 경우 (nested가 아닌)
+          const textContent = toString(child).trim();
+          if (textContent) {
+            result.push({
+              type: 'listItem',
+              content: textContent
+            });
+          }
+        }
+      }
+    }
+    
+    // 만약 파싱된 결과가 없다면 원본 content를 paragraph로 처리
+    if (result.length === 0 && content.trim()) {
+      result.push({
+        type: 'paragraph',
+        content: content.trim()
+      });
+    }
+    
+  } catch (error) {
+    console.warn('Content 파싱 실패, 원본을 paragraph로 처리:', error);
+    // 파싱 실패 시 원본 content를 paragraph로 처리
+    if (content.trim()) {
+      result.push({
+        type: 'paragraph',
+        content: content.trim()
+      });
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * 여러 개의 content 항목을 순차적으로 append하는 함수
+ * @param docTree 문서 트리
+ * @param referenceNodeId 참조 노드 ID
+ * @param contentItems 분할된 content 항목들
+ * @returns 업데이트된 문서 트리
+ */
+export function appendMultipleContents(
+  docTree: DocumentTree, 
+  referenceNodeId: string, 
+  contentItems: Array<{type: 'listItem' | 'paragraph', content: string}>
+): DocumentTree {
+  let currentTree = docTree;
+  let lastInsertedNodeId = referenceNodeId;
+  
+  // 연속된 listItem들을 그룹화하여 처리
+  let i = 0;
+  while (i < contentItems.length) {
+    const item = contentItems[i];
+    
+    if (item.type === 'listItem') {
+      // 연속된 listItem들을 수집
+      const listItems = [];
+      while (i < contentItems.length && contentItems[i].type === 'listItem') {
+        listItems.push(contentItems[i]);
+        i++;
+      }
+      
+      // 연속된 listItem들을 하나의 list로 만들어서 추가
+      try {
+        currentTree = appendListToTree(currentTree, lastInsertedNodeId, listItems as Array<{type: 'listItem', content: string}>);
+        
+        // list 노드의 ID를 찾기
+        const beforeAppend = Date.now();
+        const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(id => 
+          id.startsWith(`${lastInsertedNodeId}_append_`) && 
+          parseInt(id.split('_append_')[1] || '0') >= beforeAppend - 1000 // 1초 여유
+        );
+        
+        if (candidateIds.length > 0) {
+          const latestNodeId = candidateIds.reduce((latest, current) => {
+            const latestTimestamp = parseInt(latest.split('_append_')[1] || '0');
+            const currentTimestamp = parseInt(current.split('_append_')[1] || '0');
+            return currentTimestamp > latestTimestamp ? current : latest;
+          });
+          lastInsertedNodeId = latestNodeId;
+          console.log(`List 항목들 추가 완료: ${listItems.length}개 listItem -> 새 노드 ID: ${latestNodeId}`);
+        }
+      } catch (error) {
+        console.error(`List 항목들 추가 실패:`, listItems.map(item => item.content.substring(0, 20)), error);
+      }
+    } else {
+      // paragraph인 경우 개별 처리
+      try {
+        const beforeAppend = Date.now();
+        currentTree = appendNodeContent(currentTree, lastInsertedNodeId, item.content);
+        
+        const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(id => 
+          id.startsWith(`${lastInsertedNodeId}_append_`) && 
+          parseInt(id.split('_append_')[1] || '0') >= beforeAppend
+        );
+        
+        if (candidateIds.length > 0) {
+          const latestNodeId = candidateIds.reduce((latest, current) => {
+            const latestTimestamp = parseInt(latest.split('_append_')[1] || '0');
+            const currentTimestamp = parseInt(current.split('_append_')[1] || '0');
+            return currentTimestamp > latestTimestamp ? current : latest;
+          });
+          lastInsertedNodeId = latestNodeId;
+          console.log(`Paragraph 항목 추가 완료: "${item.content.substring(0, 50)}..." -> 새 노드 ID: ${latestNodeId}`);
+        }
+      } catch (error) {
+        console.error(`Paragraph 항목 추가 실패: "${item.content}"`, error);
+      }
+      i++;
+    }
+  }
+  
+  return currentTree;
+}
+
+/**
+ * 연속된 listItem들을 하나의 list로 만들어서 트리에 추가
+ */
+function appendListToTree(
+  docTree: DocumentTree, 
+  referenceNodeId: string, 
+  listItems: Array<{type: 'listItem', content: string}>
+): DocumentTree {
+  // 원본 트리의 깊은 복사본 생성
+  const newTree: DocumentTree = {
+    title: docTree.title,
+    nodeMap: new Map(docTree.nodeMap),
+    sectionMap: new Map(docTree.sectionMap),
+    root: JSON.parse(JSON.stringify(docTree.root)),
+  };
+
+  const referenceNode = newTree.nodeMap.get(referenceNodeId);
+  if (!referenceNode) return newTree;
+
+  // list 노드 생성
+  const listNodeId = `${referenceNodeId}_append_${Date.now()}`;
+  const listNode = {
+    type: 'list' as const,
+    ordered: false,
+    children: listItems.map((item, index) => ({
+      type: 'listItem' as const,
+      children: [{
+        type: 'paragraph' as const,
+        children: [{
+          type: 'text' as const,
+          value: item.content,
+        }],
+      }],
+      id: `${listNodeId}_item_${index}`,
+      fileName: (referenceNode as ExtendedNode).fileName,
+      parentId: listNodeId,
+      sectionId: (referenceNode as ExtendedNode).sectionId,
+      isListItem: true,
+      listItemIndex: index,
+    })),
+    id: listNodeId,
+    fileName: (referenceNode as ExtendedNode).fileName,
+    parentId: (referenceNode as ExtendedNode).parentId,
+    sectionId: (referenceNode as ExtendedNode).sectionId,
+  };
+
+  // 노드맵에 list와 listItem들 추가
+  newTree.nodeMap.set(listNodeId, listNode as any);
+  listNode.children.forEach((listItem: any) => {
+    newTree.nodeMap.set(listItem.id, listItem);
+  });
+
+  // 부모 노드에서 참조 노드 바로 뒤에 list 노드 삽입
+  insertNodeAfterReference(newTree, referenceNodeId, listNode as any);
+
+  console.log(`새로운 list 노드 (ID: ${listNodeId})가 ${listItems.length}개 listItem과 함께 추가되었습니다`);
+
+  return newTree;
 }

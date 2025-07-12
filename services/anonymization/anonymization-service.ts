@@ -77,16 +77,27 @@ export class AnonymizationService {
     let mapping = this.anonymizationData.anonymization[userId];
 
     if (!mapping) {
-      const usedNames = new Set(Object.values(this.anonymizationData.anonymization).map((entry) => entry.fakeName));
-      const { fakeName, fakeNickname } = generateFakeName(usedNames);
-      
-      mapping = {
-        realName,
-        fakeName,
-        nickname,
-        fakeNickname,
-        lastUsed: new Date().toISOString(),
-      };
+      // Special case: Keep CHOIR as CHOIR (don't anonymize the bot)
+      if (realName === 'CHOIR') {
+        mapping = {
+          realName,
+          fakeName: 'CHOIR',
+          nickname,
+          fakeNickname: 'CHOIR',
+          lastUsed: new Date().toISOString(),
+        };
+      } else {
+        const usedNames = new Set(Object.values(this.anonymizationData.anonymization).map((entry) => entry.fakeName));
+        const { fakeName, fakeNickname } = generateFakeName(usedNames);
+        
+        mapping = {
+          realName,
+          fakeName,
+          nickname,
+          fakeNickname,
+          lastUsed: new Date().toISOString(),
+        };
+      }
       this.anonymizationData.anonymization[userId] = mapping;
       this.saveData();
     } else {

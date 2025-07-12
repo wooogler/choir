@@ -2,7 +2,7 @@ import { Document } from '@langchain/core/documents';
 import { ErrorCodes } from 'services/common/error-handler';
 import { Logger } from 'services/common/logger';
 import { DocumentTree } from 'services/document';
-import { appendNodeContent, createNewSectionNode, updateNodeContent } from 'services/document/markdown';
+import { createNewSectionNode, updateNodeContent } from 'services/document/markdown';
 import type { SlackMessage } from 'services/slack';
 import type { MarkdownFile } from '../github';
 import { formatHeadingContext } from '../llm/langchain';
@@ -240,6 +240,18 @@ export class VectorStoreService {
       const results = await searchService.similaritySearch(cleanedQuery, k);
       Logger.info(`Search found ${results.length} results`);
 
+      // Debug: Log top results
+      // console.log('=== SIMILARITY SEARCH RESULTS ===');
+      // results.forEach((doc, index) => {
+      //   console.log(`[${index + 1}] File: ${doc.metadata?.fileName || 'Unknown'}`);
+      //   console.log(`    Section: ${doc.metadata?.sectionName || 'Unknown'}`);
+      //   console.log(`    Full Content:`);
+      //   console.log(doc.pageContent);
+      //   console.log(`    Metadata:`, JSON.stringify(doc.metadata, null, 2));
+      //   console.log('---');
+      // });
+      // console.log('=== END RESULTS ===');
+
       if (results.length === 0) {
         Logger.warn(
           `No results found for query: "${cleanedQuery.substring(0, 50)}${cleanedQuery.length > 50 ? '...' : ''}"`,
@@ -249,6 +261,85 @@ export class VectorStoreService {
       return results;
     } catch (error) {
       Logger.error('Error performing similarity search', error as Error);
+      return [];
+    }
+  }
+
+  /**
+   * 특정 파일에 제한된 유사도 검색 수행
+   * 메타데이터 사전 필터링 → 해당 파일 문서들에 대해서만 유사도 검색
+   */
+  public async similaritySearchByFile(query: string, filePath: string, k = 1): Promise<Document<DocumentMetadata>[]> {
+    try {
+      this.storeManager.checkInitialized();
+
+      const cleanedQuery = query.replace(/<@[A-Z0-9]+>/g, '').trim();
+
+      if (!cleanedQuery) {
+        Logger.warn('Empty query after cleaning');
+        return [];
+      }
+
+      Logger.info(
+        `Performing file-specific similarity search for query: "${cleanedQuery.substring(0, 50)}${cleanedQuery.length > 50 ? '...' : ''}" in file: ${filePath} with k=${k}`,
+      );
+
+      // 1. 메타데이터로 해당 파일의 문서들만 사전 필터링
+      const allDocuments = this.storeManager.getDocuments();
+      const fileDocuments = allDocuments.filter(doc => {
+        const fileName = doc.metadata?.fileName;
+        return fileName === filePath || fileName === filePath.split('/').pop();
+      });
+
+      if (fileDocuments.length === 0) {
+        Logger.warn(`No documents found for file: ${filePath}`);
+        return [];
+      }
+
+      Logger.info(`Found ${fileDocuments.length} documents in file: ${filePath}, performing similarity search only on these documents`);
+
+      // 2. 전체 검색을 수행하되, 더 많은 결과를 가져온 후 해당 파일만 필터링
+      // 이는 벡터 스토어 내부의 최적화된 검색을 활용하면서도 파일별 제한을 적용
+      const searchService = this.storeManager.getSearchService();
+      if (!searchService) {
+        Logger.error('Search service is not initialized');
+        return [];
+      }
+
+      // 해당 파일 문서 수를 고려하여 적절한 검색 범위 설정
+      const searchK = Math.min(Math.max(fileDocuments.length, k * 5), 100);
+      const allResults = await searchService.similaritySearch(cleanedQuery, searchK);
+      
+      // 3. 해당 파일의 문서들만 필터링
+      const fileResults = allResults.filter(doc => {
+        const fileName = doc.metadata?.fileName;
+        return fileName === filePath || fileName === filePath.split('/').pop();
+      });
+
+      // 4. k개로 제한
+      const limitedResults = fileResults.slice(0, k);
+      
+      Logger.info(`File-specific search: ${searchK} searched → ${fileResults.length} file matches → ${limitedResults.length} final results`);
+
+      // Debug: Log file-specific results
+      console.log('=== FILE-SPECIFIC SEARCH RESULTS ===');
+      console.log(`Target file: ${filePath}`);
+      console.log(`All search results: ${allResults.length}`);
+      console.log(`Filtered file results: ${fileResults.length}`);
+      console.log(`Final limited results: ${limitedResults.length}`);
+      limitedResults.forEach((doc, index) => {
+        console.log(`[${index + 1}] File: ${doc.metadata?.fileName || 'Unknown'}`);
+        console.log(`    Section: ${doc.metadata?.sectionName || 'Unknown'}`);
+        console.log(`    Full Content:`);
+        console.log(doc.pageContent);
+        console.log(`    Metadata:`, JSON.stringify(doc.metadata, null, 2));
+        console.log('---');
+      });
+      console.log('=== END FILE-SPECIFIC RESULTS ===');
+
+      return limitedResults;
+    } catch (error) {
+      Logger.error('Error performing file-specific similarity search', error as Error);
       return [];
     }
   }
@@ -453,7 +544,7 @@ export class VectorStoreService {
   }
 
   /**
-   * 특정 노드에 내용 추가 (증분 업데이트)
+   * 특정 노드에 내용 추가 (증분 업데이트) - 여러 listItem/paragraph 지원
    */
   public async appendSpecificNode(fileName: string, nodeId: string, content: string): Promise<boolean> {
     try {
@@ -463,11 +554,30 @@ export class VectorStoreService {
         return false;
       }
 
-      // 1. 트리에 내용 추가
-      file.tree = appendNodeContent(file.tree, nodeId, content);
-      Logger.info(`Appended content to node ${nodeId} in ${fileName}`);
+      // Import 함수들
+      const { parseAndSplitContent, appendMultipleContents } = await import('../document/markdown');
 
-      // 2. 벡터 스토어 증분 업데이트
+      // 1. content를 파싱하여 개별 항목들로 분할
+      const contentItems = parseAndSplitContent(content);
+      Logger.info(`Parsed content into ${contentItems.length} items:`, 
+        contentItems.map(item => `${item.type}: "${item.content.substring(0, 30)}..."`));
+
+      // 2. 분할된 content가 여러 개인 경우 각각을 별도 노드로 추가
+      if (contentItems.length > 1) {
+        Logger.info(`Adding ${contentItems.length} separate nodes for multi-item content`);
+        file.tree = appendMultipleContents(file.tree, nodeId, contentItems);
+        Logger.info(`Appended ${contentItems.length} separate nodes to ${nodeId} in ${fileName}`);
+      } else if (contentItems.length === 1) {
+        // 단일 항목인 경우 기존 방식으로 처리
+        const { appendNodeContent } = await import('../document/markdown');
+        file.tree = appendNodeContent(file.tree, nodeId, contentItems[0].content);
+        Logger.info(`Appended single content item to node ${nodeId} in ${fileName}`);
+      } else {
+        Logger.warn(`No valid content items found in: "${content}"`);
+        return false;
+      }
+
+      // 3. 벡터 스토어 증분 업데이트
       Logger.info('Performing incremental vector store update for appended content');
       const success = await this.updateSingleFileInVectorStore(file);
       if (!success) {

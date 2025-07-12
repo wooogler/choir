@@ -177,8 +177,10 @@ export const registerGitHubHandlers = (app: App) => {
 
       const workspaceStore = new WorkspaceStore();
       const userGithubInfo = await workspaceStore.getUserGithubInfo(workspaceId, userId);
+      const hasEnvToken = !!process.env.GITHUB_TOKEN;
 
-      if (!userGithubInfo) {
+      // Check if we have either user GitHub info or environment token
+      if (!userGithubInfo && !hasEnvToken) {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
@@ -187,8 +189,11 @@ export const registerGitHubHandlers = (app: App) => {
         return;
       }
 
+      // Use user token if available, otherwise use environment token
+      const accessToken = userGithubInfo?.accessToken || process.env.GITHUB_TOKEN!;
+
       const githubOAuth = GitHubOAuthDeviceFlow.getInstance();
-      const repositories = await githubOAuth.getRepositoriesWithMarkdown(userGithubInfo.accessToken);
+      const repositories = await githubOAuth.getRepositoriesWithMarkdown(accessToken);
 
       const repoOptions = repositories.slice(0, 10).map((repo) => ({
         text: {

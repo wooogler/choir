@@ -45,7 +45,7 @@ export async function applyDocumentUpdatesToGithub({
       // 1. APPEND 작업 먼저 처리 (벡터 스토어 내의 트리 업데이트)
       if (appendOperations.length > 0) {
         for (const appendUpdate of appendOperations) {
-          if (appendUpdate.appendedNodeContent) {
+          if (appendUpdate.appendedNodeContent !== undefined && appendUpdate.appendedNodeContent !== null) {
             const success = await vectorStore.appendSpecificNode(
               fileName,
               appendUpdate.nodeId,
@@ -54,6 +54,8 @@ export async function applyDocumentUpdatesToGithub({
             if (!success) {
               throw new Error(`Failed to append node ${appendUpdate.nodeId} in ${fileName}`);
             }
+          } else {
+            console.warn(`Skipping append operation for empty content: nodeId=${appendUpdate.nodeId}, fileName=${fileName}`);
           }
         }
         // APPEND 작업 후 최신 MarkdownFile 객체를 다시 가져옴

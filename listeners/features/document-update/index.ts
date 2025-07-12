@@ -1,6 +1,7 @@
 import type { App } from '@slack/bolt';
 
 import { createNewSectionAction } from './actions/create-new-section';
+import { fileSelectionForUpdateAction, startFileBasedReviewAction } from './actions/file-selection';
 import { viewAnalyzedMessagesAction } from './actions/view-analyzed-messages';
 import { cancelDocumentUpdatesCallback } from './apply-document/cancel-document-updates-action';
 import { rejectUpdateCallback } from './apply-document/reject-update'; // Named export from reject-update.ts
@@ -35,6 +36,8 @@ export const registerDocumentUpdateFeature = (app: App) => {
   app.action('open_knowledge_edit_manager_modal', openKnowledgeEditManagerModalCallback);
   app.action('create_new_section', createNewSectionAction);
   app.action('view_analyzed_messages', viewAnalyzedMessagesAction);
+  app.action('file_selection_for_update', fileSelectionForUpdateAction);
+  app.action('start_file_based_review', startFileBasedReviewAction);
 
   // Views
   app.view('update_editor_submission', handleSuggestionEditorSubmission);
