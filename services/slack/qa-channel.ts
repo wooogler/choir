@@ -1,6 +1,7 @@
 import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
 import { WorkspaceStore } from '../workspace/workspace-store';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 const workspaceStore = new WorkspaceStore();
 
@@ -183,17 +184,21 @@ export function createPrivateMessage(
   canAnswer: boolean,
   isAnonymous?: boolean,
   questionerName?: string,
+  sessionId?: string,
 ) {
   const senderIdentity = isAnonymous ? 'A team member' : questionerName || 'A team member';
 
+  const blocks: any[] = [];
+
   if (!canAnswer) {
-    return [
+    blocks.push(
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
           text: `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.`,
         },
+        ...(isAnonymous && { block_id: createCHOIRBlockId(CHOIRMessageType.ANONYMOUS_QUESTION) }),
       },
       {
         type: 'section',
@@ -209,15 +214,16 @@ export function createPrivateMessage(
           text: `However, I was not able to answer the question. The team member would like your help with this question.`,
         },
       },
-    ];
+    );
   } else {
-    return [
+    blocks.push(
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
           text: `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.`,
         },
+        ...(isAnonymous && { block_id: createCHOIRBlockId(CHOIRMessageType.ANONYMOUS_QUESTION) }),
       },
       {
         type: 'section',
@@ -240,8 +246,45 @@ export function createPrivateMessage(
           text: `The team member would like to discuss this with you. Could you help them?`,
         },
       },
-    ];
+    );
   }
+
+  // Anonymous 질문인 경우 "Send Reply to Questioner" 버튼 추가
+  if (isAnonymous && sessionId) {
+    blocks.push(
+      {
+        type: 'divider',
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '💬 *Want to reply to the questioner?*\nPlease respond in this thread, then click the button below to send your replies to the anonymous questioner.',
+        },
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: 'Send Reply to Questioner',
+              emoji: true,
+            },
+            style: 'primary',
+            action_id: 'send_reply_to_questioner',
+            value: JSON.stringify({
+              sessionId,
+              originalQuestionerId: questionerId,
+            }),
+          },
+        ],
+      },
+    );
+  }
+
+  return blocks;
 }
 
 /**

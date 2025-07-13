@@ -31,9 +31,18 @@ export class DocumentEnhancer {
 
     const enhancedDocuments: Document<DocumentMetadata>[] = [];
     let webContentCount = 0;
+    let cachedWebContentCount = 0;
 
     for (const doc of documents) {
       try {
+        // 이미 webContent가 있는 문서는 스킵 (캐시된 상태)
+        if (doc.metadata.webContent && doc.metadata.webContent.length > 0) {
+          console.info(`Document ${doc.metadata.nodeId} already has cached web content, skipping enhancement`);
+          enhancedDocuments.push(doc);
+          cachedWebContentCount++;
+          continue;
+        }
+
         // 문서에서 URL 추출
         const urls = this.webLoader.extractUrls(doc.pageContent);
 
@@ -93,12 +102,7 @@ export class DocumentEnhancer {
               pageContent: enhancedPageContent, // 원본 콘텐츠만 유지 (링크 형식만 개선)
               metadata: {
                 ...doc.metadata,
-                importance: (doc.metadata.importance || 0.5) + 0.1,
                 webContent: webContent, // 웹 콘텐츠는 metadata에 저장
-                entityMentions: [
-                  ...(doc.metadata.entityMentions || []),
-                  ...this.extractSimpleEntitiesFromUrls(webContent.map((w) => w.url)),
-                ].slice(0, 10),
               },
             });
 
@@ -115,7 +119,7 @@ export class DocumentEnhancer {
       }
     }
 
-    console.info(`Enhanced documents: ${enhancedDocuments.length} total (${webContentCount} web contents added)`);
+    console.info(`Enhanced documents: ${enhancedDocuments.length} total (${webContentCount} web contents added, ${cachedWebContentCount} cached web contents reused)`);
     return enhancedDocuments;
   }
 

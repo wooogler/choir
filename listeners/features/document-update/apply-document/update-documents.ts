@@ -13,6 +13,7 @@ import { logButtonClick, logModalSubmit } from 'services/common/user-interaction
 import { DocumentUpdate, getStoredDocumentUpdates } from 'services/document';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { GithubService, applyDocumentUpdatesToGithub } from 'services/github';
+import { createDocumentUpdateText } from 'services/slack/message-text-utils';
 import { getUserName, parseGithubUrl } from 'services/slack';
 import { getWorkspaceId } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
@@ -162,10 +163,26 @@ const applySelectedToGithubAction = async ({
             diffBlock, // 기존 diffBlock 사용
           ];
 
+          // Extract diff content for comprehensive text - pass the actual diffBlock object
+          const diffContent = diffBlock || null;
+          
+          // Create comprehensive text using helper function
+          const comprehensiveText = createDocumentUpdateText(
+            updatedFileName,
+            userName,
+            sectionInfo,
+            githubUrl,
+            diffContent,
+            [
+              { text: 'View Changes', style: 'primary' },
+              { text: 'View File', url: githubUrl }
+            ]
+          );
+
           await client.chat.postMessage({
             channel: originalChannelId,
             ...(originalThreadTs ? { thread_ts: originalThreadTs } : {}),
-            text: `✅ Document Updated: ${updatedFileName} by *${userName}* (with CHOIR)`, // 볼드체 적용
+            text: comprehensiveText,
             blocks: [
               {
                 type: 'section',

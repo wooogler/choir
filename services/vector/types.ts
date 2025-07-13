@@ -21,23 +21,18 @@ export interface SearchParams {
  */
 export interface DocumentMetadata {
   fileName: string;
-  githubUrl?: string;
-  nodeId?: string;
+  nodeId: string;
   sectionId?: string;
   sectionName?: string;
-  nodeType?: string;
-  importance?: number;
-  chunkIndex?: number;
-  totalChunks?: number;
-  entityMentions?: string[];
-  headingPath?: string[]; // 섹션 계층 경로 (예: ["section 1", "subsection 2", "subsubsection 3"])
-  originalContent?: string; // 컨텍스트 정보가 제외된 원본 내용 (LLM 업데이트용)
+  nodeType: string;
+  githubUrl: string;
+  headingPath?: string; // UI 표시용 (배열을 "heading1 > heading2" 형태로 변환)
+  originalContent: string; // document update용 원본 내용
   webContent?: Array<{
     url: string;
     title: string;
     content: string;
-  }>;
-  [key: string]: any;
+  }>; // 웹 콘텐츠 향상 기능용
 }
 
 /**

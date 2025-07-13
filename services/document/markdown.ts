@@ -1,4 +1,3 @@
-import * as crypto from 'crypto';
 import * as fs from 'fs';
 import { Renderer, marked } from 'marked';
 import type { Tokens as MarkedTokens } from 'marked';
@@ -10,6 +9,7 @@ import { unified } from 'unified';
 import type { Node, Parent } from 'unist';
 import { is } from 'unist-util-is';
 import { visit } from 'unist-util-visit';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * 확장된 MDAST 노드 인터페이스 - 커스텀 속성 추가
@@ -36,14 +36,13 @@ export interface DocumentTree {
 }
 
 /**
- * 노드에 고유 ID 부여하는 함수
+ * 노드에 고유 ID 부여하는 함수 - UUID 사용으로 100% 유니크 보장
  */
 function generateNodeId(node: Node, prefix = ''): string {
   const type = node.type;
-  const content = toString(node as any).slice(0, 20);
-  const hash = crypto.createHash('md5').update(`${type}-${content}-${Math.random()}`).digest('hex').slice(0, 8);
+  const uuid = uuidv4().replace(/-/g, '').substring(0, 8); // 짧은 UUID
 
-  return `${prefix}${type}-${hash}`;
+  return `${prefix}${type}-${uuid}`;
 }
 
 /**

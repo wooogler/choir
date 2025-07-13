@@ -258,7 +258,7 @@ export interface DocumentDiff {
   nodeId: string;
   fileName: string;
   markdownSection: string;
-  headingPath?: string[];
+  headingPath?: string;
   githubUrl?: string;
   diffBlock: any;
   hasChanges: boolean;

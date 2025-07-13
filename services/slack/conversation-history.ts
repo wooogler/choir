@@ -147,9 +147,14 @@ export const processMessageHistory = async (messages: any[], client?: WebClient)
         content = `CHOIR: ${msg.text}`;
       } else if (msg.user && client) {
         // For user messages, format as "Username: message"
-        const userName = await getUserName(msg.user, client);
-        const anonymizationMapping = getAnonymizationMapping(msg.user, userName);
-        content = `${anonymizationMapping.fakeNickname}: ${msg.text}`;
+        // Handle case where msg.user might be the string "undefined"
+        if (msg.user === 'undefined') {
+          content = `Unknown User: ${msg.text}`;
+        } else {
+          const userName = await getUserName(msg.user, client);
+          const anonymizationMapping = getAnonymizationMapping(msg.user, userName);
+          content = `${anonymizationMapping.fakeNickname}: ${msg.text}`;
+        }
       }
 
       return {

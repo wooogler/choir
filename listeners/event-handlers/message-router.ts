@@ -7,11 +7,11 @@ import {
   getWorkspaceId,
   isManager,
 } from 'services/slack';
+import { getCHOIRMessageTypeFromBlocks, CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { logMessageProcessing } from '../../services/common/user-interaction-logger';
 import { handleGeneralConversationMessage } from '../features/conversation/general-conversation-handler';
 import { handleUpdateRequestMessage } from '../features/document-update/extract-knowledge/update-request-handler';
 import { handleQuestionMessage } from '../features/qa/question-handler';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * 메시지 처리를 위한 공통 함수
@@ -23,6 +23,35 @@ export async function handleIncomingMessage(client: any, event: any, message: st
   let routingResult: boolean;
 
   try {
+    // Thread message인 경우 원본 메시지가 Anonymous 질문인지 확인
+    if (event.thread_ts) {
+      try {
+        const threadResponse = await client.conversations.history({
+          channel: event.channel,
+          latest: event.thread_ts,
+          inclusive: true,
+          limit: 1,
+        });
+        
+        if (threadResponse.messages && threadResponse.messages.length > 0) {
+          const originalMessage = threadResponse.messages[0];
+          if (originalMessage.blocks) {
+            const messageType = getCHOIRMessageTypeFromBlocks(originalMessage.blocks);
+            if (messageType === CHOIRMessageType.ANONYMOUS_QUESTION) {
+              logger.info('Skipping thread reply for anonymous question', {
+                channel: event.channel,
+                threadTs: event.thread_ts,
+                messageType,
+              });
+              return true;
+            }
+          }
+        }
+      } catch (historyError) {
+        logger.warn('Failed to check thread original message type:', historyError);
+      }
+    }
+
     // CHOIR 페르소나를 반영한 로딩 메시지 전송 (채널에 표시)
     const loadingMessage = await client.chat.postMessage({
       channel: event.channel,
@@ -99,13 +128,19 @@ export async function handleIncomingMessage(client: any, event: any, message: st
 
     if (messageIntent === 'question') {
       // 질문으로 처리
+      logger.info('MessageRouter: Routing to handleQuestionMessage');
       routingResult = await handleQuestionMessage(client, event, message, logger);
+      logger.info('MessageRouter: handleQuestionMessage completed');
     } else if (messageIntent === 'update_request') {
       // 업데이트 요청으로 처리
+      logger.info('MessageRouter: Routing to handleUpdateRequestMessage');
       routingResult = await handleUpdateRequestMessage(client, event, logger);
+      logger.info('MessageRouter: handleUpdateRequestMessage completed');
     } else {
       // 일반 대화로 처리
+      logger.info(`MessageRouter: Routing to handleGeneralConversationMessage (intent: ${messageIntent})`);
       routingResult = await handleGeneralConversationMessage(client, event, message, logger);
+      logger.info('MessageRouter: handleGeneralConversationMessage completed');
     }
 
     return routingResult;

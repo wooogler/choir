@@ -75,7 +75,7 @@ export class DocumentProcessor {
         Logger.info(`Documents enhanced with web content: ${enhancedDocuments.length} total`);
 
         const enhancedDocsWithWebContent = enhancedDocuments.filter(
-          (doc) => doc.metadata.webSources && doc.metadata.webSources.length > 0,
+          (doc) => doc.metadata.webContent && doc.metadata.webContent.length > 0,
         );
         Logger.info(`Documents with web content added: ${enhancedDocsWithWebContent.length}`);
 

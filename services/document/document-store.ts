@@ -7,7 +7,7 @@ export interface DocumentUpdate {
   fileName: string;
   githubUrl: string;
   markdownSection: string;
-  headingPath?: string[]; // 섹션 계층 경로
+  headingPath?: string; // 섹션 계층 경로 (UI 표시용)
   hasChanges: boolean;
   nodeContent: string; // 원본 노드 내용 (APPEND의 경우 마지막 노드 내용으로 간주될 수 있음)
   updatedNodeContent: string; // UPDATE 시 LLM이 변경한 전체 내용, APPEND 시에는 추가된 내용이 여기에 포함될 수도, 혹은 별도 필드.

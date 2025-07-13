@@ -16,6 +16,7 @@ import {
   isManager,
 } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
+import { createEnhancedMessage } from 'services/slack/message-text-utils';
 
 
 /**
@@ -208,9 +209,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       const extractionResult = await extractKnowledgeFromMessages(last10Messages, organizationalContext, client);
 
       // Update loading message with compact analysis summary
-      await client.chat.update({
-        channel: originalChannelId,
-        ts: loadingMessage.ts,
+      const statusUpdateData = createEnhancedMessage({
         text: `✅ Analyzed ${last10Messages.length} message${last10Messages.length > 1 ? 's' : ''} to extract knowledge`,
         blocks: [
           {
@@ -240,6 +239,14 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
             },
           },
         ],
+      }, {
+        buttons: [{ text: 'View Messages', style: 'primary' }]
+      });
+
+      await client.chat.update({
+        channel: originalChannelId,
+        ts: loadingMessage.ts,
+        ...statusUpdateData,
       });
 
       // First: Send public message with the suggested update content

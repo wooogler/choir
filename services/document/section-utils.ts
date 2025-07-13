@@ -18,7 +18,7 @@ function createGitHubAnchor(headingText: string): string {
  */
 export function formatSectionPath(metadata: DocumentMetadata): string {
   if (metadata.headingPath && metadata.headingPath.length > 0) {
-    return metadata.headingPath.join(' > ');
+    return metadata.headingPath;
   }
   return metadata.sectionName || 'Main Content';
 }
@@ -34,11 +34,12 @@ export function formatSectionPathWithLinks(metadata: DocumentMetadata): string {
   const githubUrl = metadata.githubUrl;
   if (!githubUrl) {
     // GitHub URL이 없으면 일반 텍스트로 반환
-    return metadata.headingPath.join(' > ');
+    return metadata.headingPath;
   }
 
-  // 각 헤딩을 GitHub 링크로 변환
-  const linkedHeadings = metadata.headingPath.map((heading) => {
+  // headingPath가 문자열이므로 ' > '로 분할해서 각 헤딩을 GitHub 링크로 변환
+  const headings = metadata.headingPath.split(' > ');
+  const linkedHeadings = headings.map((heading) => {
     const anchor = createGitHubAnchor(heading);
     return `<${githubUrl}#${anchor}|${heading}>`;
   });

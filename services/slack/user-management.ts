@@ -86,13 +86,9 @@ export async function setupInitialManager(
  */
 export async function getUserName(userId: string, client: WebClient): Promise<string> {
   try {
-    const userInfo = await client.users.info({ user: userId });
-
-    if (userInfo.user?.is_bot) {
-      return userInfo.user?.real_name || userInfo.user?.name || 'Bot';
-    }
-
-    return userInfo.user?.real_name ?? userInfo.user?.name ?? 'Unknown';
+    // Use name cache service which handles bot ID detection
+    const { getCachedUserName } = await import('services/common/name-cache');
+    return await getCachedUserName(userId, client);
   } catch (error) {
     Logger.error('Error getting user name', error as Error, { userId });
     return 'Unknown';

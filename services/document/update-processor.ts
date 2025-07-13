@@ -16,7 +16,7 @@ export interface ProcessedDocument {
   fileName: string;
   githubUrl: string;
   sectionName: string;
-  headingPath?: string[]; // 섹션 계층 경로
+  headingPath?: string; // 섹션 계층 경로 (UI 표시용)
   nodeId: string;
   nodeContent: string; // UPDATE 시 원본, APPEND 시 마지막 노드 내용
   updatedNodeContent: string; // UPDATE 시 변경된 전체 내용

@@ -113,6 +113,7 @@ export const askToOthersSubmitCallback = async ({
           true, // canAnswer - assume true for private sharing
           isAnonymous,
           userName,
+          sessionId, // sessionId 전달
         );
 
         // Create comprehensive text that matches the blocks content for conversation history
@@ -125,11 +126,13 @@ export const askToOthersSubmitCallback = async ({
           isAnonymous
         );
 
-        await client.chat.postMessage({
+        const postedMessage = await client.chat.postMessage({
           channel: conversationId,
           text: messageText,
           blocks: messageBlocks,
         });
+        
+        // Anonymous 질문인 경우 메시지에 ANONYMOUS_QUESTION 타입이 이미 설정됨
         
         successCount = 1;
         failCount = 0;

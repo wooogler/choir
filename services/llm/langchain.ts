@@ -8,7 +8,7 @@ import { visit } from 'unist-util-visit';
 // 청크 크기 설정
 const OPTIMAL_CHUNK_SIZE = 1000;
 
-// 확장된 메타데이터 인터페이스
+// 간소화된 메타데이터 인터페이스
 export interface DocumentMetadata {
   fileName: string;
   nodeId: string;
@@ -16,15 +16,9 @@ export interface DocumentMetadata {
   sectionName?: string;
   nodeType: string;
   githubUrl: string;
-  listItemIndex?: number;
-  headingPath?: string[]; // 계층적 헤딩 경로
-  ancestors?: string[]; // 상위 노드 IDs
-  depth?: number; // 문서 구조 깊이
-  chunkIndex?: number; // 청크 인덱스
-  totalChunks?: number; // 총 청크 수
-  importance?: number; // 중요도 점수 (0-1)
-  entityMentions?: string[]; // 추출된 주요 엔티티
-  codeLanguage?: string; // 코드 블록 언어
+  headingPath?: string; // UI 표시용 (배열을 "heading1 > heading2" 형태로 변환)
+  originalContent: string; // document update용 원본 내용
+  webContent?: Array<{ url: string; title: string; content: string }>; // 웹 콘텐츠 향상 기능용
 }
 
 /**
@@ -108,33 +102,22 @@ export function createDocumentsFromTree(
       // 콘텐츠 구성
       const fullContent = `${contextPrefix}${text}`;
 
-      // 적응형 청킹 적용
-      const chunks = adaptiveChunking(fullContent, node.type, OPTIMAL_CHUNK_SIZE);
-
-      // 각 청크마다 Document 생성
-      chunks.forEach((chunk, index) => {
-        documents.push(
-          new Document({
-            pageContent: chunk,
-            metadata: {
-              fileName,
-              nodeId,
-              sectionId: paraNode.sectionId,
-              sectionName,
-              nodeType: 'paragraph',
-              githubUrl,
-              headingPath,
-              ancestors: ancestors.map((a) => a.id as string),
-              depth: ancestors.length,
-              chunkIndex: chunks.length > 1 ? index : undefined,
-              totalChunks: chunks.length > 1 ? chunks.length : undefined,
-              importance,
-              entityMentions: entities,
-              originalContent: text, // 컨텍스트 제외한 원본 내용 저장
-            },
-          }),
-        );
-      });
+      // 단일 Document 생성 (청킹 제거)
+      documents.push(
+        new Document({
+          pageContent: fullContent,
+          metadata: {
+            fileName,
+            nodeId,
+            sectionId: paraNode.sectionId,
+            sectionName,
+            nodeType: 'paragraph',
+            githubUrl,
+            headingPath: headingPath.join(' > '), // 배열을 문자열로 변환
+            originalContent: text, // 컨텍스트 제외한 원본 내용 저장
+          },
+        }),
+      );
       return;
     }
 
@@ -164,13 +147,8 @@ export function createDocumentsFromTree(
             sectionId: listItemNode.sectionId,
             sectionName,
             nodeType: 'listItem',
-            listItemIndex: listItemNode.listItemIndex,
             githubUrl,
-            headingPath,
-            ancestors: ancestors.map((a) => a.id as string),
-            depth: ancestors.length,
-            importance: importance + 0.05, // 리스트 아이템은 약간 중요도 증가
-            entityMentions: entities,
+            headingPath: headingPath.join(' > '), // 배열을 문자열로 변환
             originalContent: text, // 컨텍스트 제외한 원본 내용 저장
           },
         }),
@@ -196,35 +174,22 @@ export function createDocumentsFromTree(
       // 콘텐츠 구성
       const fullContent = `${contextPrefix}${lang}${text}`;
 
-      // 코드 블록 청킹 (함수 단위로 분리하는 것이 이상적이지만, 단순화)
-      const chunks = codeNode.lang
-        ? splitCodeByLogicalBlocks(fullContent, codeNode.lang, OPTIMAL_CHUNK_SIZE)
-        : [fullContent];
-
-      chunks.forEach((chunk, index) => {
-        documents.push(
-          new Document({
-            pageContent: chunk,
-            metadata: {
-              fileName,
-              nodeId,
-              sectionId: codeNode.sectionId,
-              sectionName,
-              nodeType: 'code',
-              githubUrl,
-              headingPath,
-              ancestors: ancestors.map((a) => a.id as string),
-              depth: ancestors.length,
-              chunkIndex: chunks.length > 1 ? index : undefined,
-              totalChunks: chunks.length > 1 ? chunks.length : undefined,
-              importance: importance + 0.1, // 코드 블록은 중요도 증가
-              entityMentions: entities,
-              codeLanguage: codeNode.lang || undefined,
-              originalContent: text, // 컨텍스트 제외한 원본 내용 저장
-            },
-          }),
-        );
-      });
+      // 단일 Document 생성 (청킹 제거)
+      documents.push(
+        new Document({
+          pageContent: fullContent,
+          metadata: {
+            fileName,
+            nodeId,
+            sectionId: codeNode.sectionId,
+            sectionName,
+            nodeType: 'code',
+            githubUrl,
+            headingPath: headingPath.join(' > '), // 배열을 문자열로 변환
+            originalContent: text, // 컨텍스트 제외한 원본 내용 저장
+          },
+        }),
+      );
       return;
     }
 
@@ -242,31 +207,21 @@ export function createDocumentsFromTree(
       // 콘텐츠 구성
       const fullContent = `${contextPrefix}${text}`;
 
-      // 블록쿼트도 적응형 청킹 적용
-      const chunks = adaptiveChunking(fullContent, node.type, OPTIMAL_CHUNK_SIZE);
-
-      chunks.forEach((chunk, index) => {
-        documents.push(
-          new Document({
-            pageContent: chunk,
-            metadata: {
-              fileName,
-              nodeId,
-              sectionId: blockNode.sectionId,
-              nodeType: 'blockquote',
-              githubUrl,
-              headingPath,
-              ancestors: ancestors.map((a) => a.id as string),
-              depth: ancestors.length,
-              chunkIndex: chunks.length > 1 ? index : undefined,
-              totalChunks: chunks.length > 1 ? chunks.length : undefined,
-              importance: importance + 0.05, // 인용구는 약간 중요도 증가
-              entityMentions: entities,
-              originalContent: text, // 컨텍스트 제외한 원본 내용 저장
-            },
-          }),
-        );
-      });
+      // 단일 Document 생성 (청킹 제거)
+      documents.push(
+        new Document({
+          pageContent: fullContent,
+          metadata: {
+            fileName,
+            nodeId,
+            sectionId: blockNode.sectionId,
+            nodeType: 'blockquote',
+            githubUrl,
+            headingPath: headingPath.join(' > '), // 배열을 문자열로 변환
+            originalContent: text, // 컨텍스트 제외한 원본 내용 저장
+          },
+        }),
+      );
       return;
     }
   });
@@ -304,11 +259,7 @@ export function createDocumentsFromTree(
           sectionName: headingText,
           nodeType: 'paragraph',
           githubUrl,
-          headingPath,
-          ancestors: ancestors.map((a) => a.id as string),
-          depth: ancestors.length,
-          importance: 0.3, // placeholder는 낮은 중요도
-          entityMentions: [],
+          headingPath: headingPath.join(' > '), // 배열을 문자열로 변환
           originalContent: '', // 원본 내용은 빈 문자열
         },
       });

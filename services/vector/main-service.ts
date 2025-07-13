@@ -1,46 +1,49 @@
 import { Document } from '@langchain/core/documents';
-import { ErrorCodes } from 'services/common/error-handler';
-import { Logger } from 'services/common/logger';
-import { DocumentTree } from 'services/document';
-import { createNewSectionNode, updateNodeContent } from 'services/document/markdown';
-import type { SlackMessage } from 'services/slack';
-import type { MarkdownFile } from '../github';
-import { formatHeadingContext } from '../llm/langchain';
+import { Logger } from '../common/logger';
+import { MarkdownFile } from '../github';
+import { SlackMessage } from '../slack';
+import { createNewSectionNode, updateNodeContent } from '../document/markdown';
+import { DocumentTree } from '../document';
+import { VectorStoreError } from './types';
 import { VectorCacheManager } from './cache-manager';
+import { FAISSStoreManager } from './faiss-store-manager';
 import { DocumentProcessor } from './document-processor';
 import { EmbeddingService } from './embedding-service';
-import { VectorStoreManager } from './store-manager';
-import { type DocumentMetadata, VectorStoreError } from './types';
+import { type DocumentMetadata } from './types';
 
 /**
- * 벡터 스토어의 주요 기능을 담당하는 서비스 클래스
+ * 벡터 스토어 서비스 - FAISS 기반
+ * 문서 임베딩, 캐싱, 검색 기능을 제공하는 통합 서비스
  */
 export class VectorStoreService {
   private static instance: VectorStoreService;
 
   private embeddingService: EmbeddingService;
   private cacheManager: VectorCacheManager;
-  private storeManager: VectorStoreManager;
+  private storeManager: FAISSStoreManager;
   private documentProcessor: DocumentProcessor;
   private markdownFiles: MarkdownFile[] = [];
   private cacheId = '';
 
-  // 증분 업데이트를 위한 노드별 Document 추적
+  // 노드 ID와 문서 매핑 (증분 업데이트용)
   private nodeDocumentMap = new Map<string, Document<DocumentMetadata>[]>();
 
-  private constructor(apiKey?: string) {
-    this.embeddingService = new EmbeddingService(apiKey);
-    this.cacheManager = new VectorCacheManager();
-    this.storeManager = new VectorStoreManager(this.embeddingService);
+  constructor(embeddingService: EmbeddingService) {
+    this.embeddingService = embeddingService;
     this.documentProcessor = new DocumentProcessor();
-
-    const provider = this.embeddingService.getProvider();
-    Logger.info(`VectorStoreService instance created with ${provider} provider`);
+    this.cacheManager = new VectorCacheManager();
+    
+    // FAISS 사용 (안정적이고 빠른 벡터 검색)
+    this.storeManager = new FAISSStoreManager(this.embeddingService);
+    Logger.info('Using FAISS vector store (stable and fast)');
   }
 
-  public static getInstance(): VectorStoreService {
+  public static getInstance(embeddingService?: EmbeddingService): VectorStoreService {
     if (!VectorStoreService.instance) {
-      VectorStoreService.instance = new VectorStoreService();
+      if (!embeddingService) {
+        embeddingService = new EmbeddingService();
+      }
+      VectorStoreService.instance = new VectorStoreService(embeddingService);
     }
     return VectorStoreService.instance;
   }
@@ -58,7 +61,7 @@ export class VectorStoreService {
 
       if (!this.markdownFiles.length) {
         Logger.info('No documents loaded, starting with empty vector store');
-        return await this.storeManager.initializeStore([], []);
+        return await this.storeManager.initializeStore([], [], false);
       }
 
       this.cacheId = this.cacheManager.generateCacheId();
@@ -117,7 +120,7 @@ export class VectorStoreService {
       const documents = await this.documentProcessor.prepareDocuments(markdownFiles);
       if (documents.length === 0) {
         Logger.warn('No valid documents found, initializing empty vector store');
-        return await this.storeManager.initializeStore([], []);
+        return await this.storeManager.initializeStore([], [], false);
       }
 
       const texts = this.documentProcessor.prepareTextsForEmbedding(documents);
@@ -147,7 +150,7 @@ export class VectorStoreService {
         documentTrees,
       });
 
-      return await this.storeManager.initializeStore(documents, embeddings);
+      return await this.storeManager.initializeStore(documents, embeddings, false);
     } catch (error) {
       Logger.error('Error building vector store from files', error as Error);
       return false;
@@ -200,7 +203,7 @@ export class VectorStoreService {
         });
       }
 
-      const success = await this.storeManager.initializeStore(documents, embeddings);
+      const success = await this.storeManager.initializeStore(documents, embeddings, true);
 
       if (success) {
         Logger.info(`Successfully restored vector store from cache with ${documents.length} documents`);
@@ -231,26 +234,9 @@ export class VectorStoreService {
         `Performing similarity search for query: "${cleanedQuery.substring(0, 50)}${cleanedQuery.length > 50 ? '...' : ''}" with k=${k}`,
       );
 
-      const searchService = this.storeManager.getSearchService();
-      if (!searchService) {
-        Logger.error('Search service is not initialized');
-        return [];
-      }
-
-      const results = await searchService.similaritySearch(cleanedQuery, k);
-      Logger.info(`Search found ${results.length} results`);
-
-      // Debug: Log top results
-      // console.log('=== SIMILARITY SEARCH RESULTS ===');
-      // results.forEach((doc, index) => {
-      //   console.log(`[${index + 1}] File: ${doc.metadata?.fileName || 'Unknown'}`);
-      //   console.log(`    Section: ${doc.metadata?.sectionName || 'Unknown'}`);
-      //   console.log(`    Full Content:`);
-      //   console.log(doc.pageContent);
-      //   console.log(`    Metadata:`, JSON.stringify(doc.metadata, null, 2));
-      //   console.log('---');
-      // });
-      // console.log('=== END RESULTS ===');
+      // FAISS 검색 수행
+      const results = await this.storeManager.similaritySearch(cleanedQuery, k);
+      Logger.info(`FAISS search found ${results.length} results`);
 
       if (results.length === 0) {
         Logger.warn(
@@ -298,17 +284,10 @@ export class VectorStoreService {
 
       Logger.info(`Found ${fileDocuments.length} documents in file: ${filePath}, performing similarity search only on these documents`);
 
-      // 2. 전체 검색을 수행하되, 더 많은 결과를 가져온 후 해당 파일만 필터링
-      // 이는 벡터 스토어 내부의 최적화된 검색을 활용하면서도 파일별 제한을 적용
-      const searchService = this.storeManager.getSearchService();
-      if (!searchService) {
-        Logger.error('Search service is not initialized');
-        return [];
-      }
-
+      // 2. FAISS에서 더 많은 결과를 가져온 후 해당 파일만 필터링
       // 해당 파일 문서 수를 고려하여 적절한 검색 범위 설정
       const searchK = Math.min(Math.max(fileDocuments.length, k * 5), 100);
-      const allResults = await searchService.similaritySearch(cleanedQuery, searchK);
+      const allResults = await this.storeManager.similaritySearch(cleanedQuery, searchK);
       
       // 3. 해당 파일의 문서들만 필터링
       const fileResults = allResults.filter(doc => {
@@ -407,14 +386,10 @@ export class VectorStoreService {
   public async smartSearchForMessages(messages: SlackMessage[], k = 5): Promise<Document<DocumentMetadata>[]> {
     this.storeManager.checkInitialized();
 
-    const enhancedSearchService = this.storeManager.getEnhancedSearchService();
-    if (!enhancedSearchService) {
-      Logger.warn('Enhanced search service not initialized, falling back to basic search');
-      const query = messages.map((msg) => msg.text).join('\n');
-      return await this.similaritySearch(query, k);
-    }
-
-    return await enhancedSearchService.performEnhancedSearch(messages, k);
+    // Enhanced search 서비스가 제거되었으므로 기본 검색 사용
+    Logger.info('Using basic similarity search for messages');
+    const query = messages.map((msg) => msg.text).join('\n');
+    return await this.similaritySearch(query, k);
   }
 
   // Getter methods for compatibility
@@ -453,9 +428,7 @@ export class VectorStoreService {
 
     if (!success) {
       Logger.error('Failed to initialize vector store with markdown files');
-      throw new VectorStoreError('Failed to initialize vector store', {
-        code: ErrorCodes.VECTOR_STORE_INITIALIZATION_FAILED,
-      });
+      throw new Error('Failed to initialize vector store'); // Assuming a specific error type
     }
 
     Logger.info('Successfully set markdown files and initialized vector store');
@@ -524,16 +497,32 @@ export class VectorStoreService {
 
       // 2. 새로 추가된 노드들만 증분 업데이트
       if (afterNodeCount > beforeNodeCount) {
-        Logger.info('Performing incremental vector store update for new section');
+        Logger.info(`Performing incremental vector store update for new section: ${afterNodeCount - beforeNodeCount} new nodes`);
 
-        // 간단한 증분 업데이트: 전체 파일을 다시 처리하되 캐시된 웹 콘텐츠는 유지
-        const success = await this.updateSingleFileInVectorStore(file);
-        if (!success) {
-          Logger.warn('Failed to update vector store incrementally, but tree was updated');
-          return false;
+        // 새로 추가된 노드들을 찾아서 개별적으로 추가
+        const existingDocuments = this.storeManager.getDocuments().filter(doc => doc.metadata.fileName === fileName);
+        const existingNodeIds = new Set(existingDocuments.map(doc => doc.metadata.nodeId));
+        
+        // 트리에서 새로운 노드들 찾기
+        const newNodes = Array.from(file.tree.nodeMap.entries()).filter(([nodeId]) => !existingNodeIds.has(nodeId));
+        
+        Logger.info(`Found ${newNodes.length} new nodes to add to vector store`);
+        
+        let successCount = 0;
+        for (const [nodeId, node] of newNodes) {
+          // toString을 사용해서 노드 내용 추출
+          const { toString } = await import('mdast-util-to-string');
+          const nodeContent = toString(node);
+          if (nodeContent && nodeContent.trim()) {
+            const success = await this.addNodeIncremental(fileName, nodeId, nodeContent, node.type as any);
+            if (success) successCount++;
+          }
         }
-
-        Logger.info('Successfully updated vector store with new section');
+        
+        Logger.info(`Successfully added ${successCount}/${newNodes.length} new nodes to vector store`);
+        if (successCount < newNodes.length) {
+          Logger.warn('Some nodes failed to be added to vector store');
+        }
       }
 
       return true;
@@ -577,11 +566,23 @@ export class VectorStoreService {
         return false;
       }
 
-      // 3. 벡터 스토어 증분 업데이트
-      Logger.info('Performing incremental vector store update for appended content');
-      const success = await this.updateSingleFileInVectorStore(file);
-      if (!success) {
-        Logger.warn('Failed to update vector store incrementally, but tree was updated');
+      // 3. 벡터 스토어 노드 단위 증분 업데이트
+      Logger.info('Performing node-level incremental vector store update for appended content');
+      
+      // 업데이트된 노드의 새로운 내용을 가져와서 벡터 스토어를 업데이트
+      const updatedNode = file.tree.nodeMap.get(nodeId);
+      if (updatedNode) {
+        const { toString } = await import('mdast-util-to-string');
+        const updatedNodeContent = toString(updatedNode);
+        
+        const success = await this.updateNodeIncremental(fileName, nodeId, updatedNodeContent, updatedNode.type as any);
+        if (!success) {
+          Logger.warn('Failed to update vector store incrementally, but tree was updated');
+          return false;
+        }
+        Logger.info(`Successfully updated node ${nodeId} in vector store`);
+      } else {
+        Logger.error(`Could not find updated node ${nodeId} in tree`);
         return false;
       }
 
@@ -613,11 +614,30 @@ export class VectorStoreService {
 
       Logger.info(`Updated ${updates.length} nodes in ${fileName}`);
 
-      // 2. 벡터 스토어 증분 업데이트
-      Logger.info('Performing incremental vector store update for updated nodes');
-      const success = await this.updateSingleFileInVectorStore(file);
-      if (!success) {
-        Logger.warn('Failed to update vector store incrementally, but tree was updated');
+      // 2. 벡터 스토어 노드 단위 증분 업데이트
+      Logger.info('Performing node-level incremental vector store update for updated nodes');
+      
+      let successCount = 0;
+      for (const update of updates) {
+        const updatedNode = file.tree.nodeMap.get(update.nodeId);
+        if (updatedNode) {
+          const { toString } = await import('mdast-util-to-string');
+          const updatedNodeContent = toString(updatedNode);
+          
+          const success = await this.updateNodeIncremental(fileName, update.nodeId, updatedNodeContent, updatedNode.type as any);
+          if (success) {
+            successCount++;
+            Logger.info(`Successfully updated node ${update.nodeId} in vector store`);
+          } else {
+            Logger.error(`Failed to update node ${update.nodeId} in vector store`);
+          }
+        } else {
+          Logger.error(`Could not find updated node ${update.nodeId} in tree`);
+        }
+      }
+      
+      if (successCount < updates.length) {
+        Logger.warn(`Only ${successCount}/${updates.length} nodes were successfully updated in vector store`);
         return false;
       }
 
@@ -774,12 +794,9 @@ export class VectorStoreService {
           sectionId: `section_${nodeId}`,
           sectionName: undefined, // 실제 섹션 이름은 트리에서 가져와야 함
           nodeType: nodeType,
-          githubUrl: file.githubUrl,
-          headingPath: [], // 실제 경로는 트리에서 계산해야 함
-          ancestors: [],
-          depth: 0,
-          importance: 0.5, // 기본 중요도
-          entityMentions: this.extractSimpleEntities(nodeContent),
+          githubUrl: file.githubUrl || '',
+          headingPath: '', // 간단한 형태로 설정
+          originalContent: nodeContent, // 원본 내용 저장
         },
       });
 
@@ -791,21 +808,6 @@ export class VectorStoreService {
     }
   }
 
-  /**
-   * 간단한 엔티티 추출 (키워드 기반)
-   */
-  private extractSimpleEntities(text: string): string[] {
-    try {
-      // 간단한 키워드 추출
-      const words = text.match(/\b[A-Za-z0-9_]{3,}\b/g) || [];
-      const stopwords = new Set(['the', 'and', 'or', 'but', 'is', 'are', 'in', 'to', 'for', 'of', 'with', 'on', 'at']);
-
-      return [...new Set(words)].filter((word) => !stopwords.has(word.toLowerCase())).slice(0, 10); // 최대 10개
-    } catch (error) {
-      Logger.error('Error extracting entities', error as Error);
-      return [];
-    }
-  }
 
   /**
    * 새로운 Document들에만 웹 콘텐츠 향상 적용
@@ -863,19 +865,4 @@ export class VectorStoreService {
     }
   }
 
-  /**
-   * 단일 파일의 벡터 스토어 업데이트 (최적화된 방식)
-   */
-  private async updateSingleFileInVectorStore(file: MarkdownFile): Promise<boolean> {
-    try {
-      Logger.info(`Updating vector store for file: ${file.name}`);
-
-      // 현재는 전체 재빌드 사용, 향후 개선 가능
-      // TODO: 실제 증분 업데이트 구현
-      return await this.resetAndRebuildVectorStore();
-    } catch (error) {
-      Logger.error(`Error updating vector store for file ${file.name}`, error as Error);
-      return false;
-    }
-  }
 }

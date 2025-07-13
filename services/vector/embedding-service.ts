@@ -1,7 +1,6 @@
 import type { Document } from '@langchain/core/documents';
 import { AzureOpenAIEmbeddings } from '@langchain/openai';
 import { OpenAIEmbeddings } from '@langchain/openai';
-import type { MemoryVectorStore } from 'langchain/vectorstores/memory';
 import { getAIProvider, getAzureOpenAIConfig, getOpenAIConfig } from '../llm/llm-config';
 import type { DocumentMetadata } from './types';
 
@@ -87,7 +86,7 @@ export class EmbeddingService {
    */
   public createTemporaryVector(index: number): number[] {
     // 고유한 값을 가진 임시 벡터 생성
-    const tempVector = new Array(1536).fill(0);
+    const tempVector = new Array(3072).fill(0);
 
     // 인덱스에 따라 몇 개의 값을 다르게 설정하여 고유성 보장
     const uniquePosition = index % 500;
@@ -202,119 +201,7 @@ export class EmbeddingService {
     }
   }
 
-  /**
-   * 메모리 벡터 스토어에 임베딩 로드
-   */
-  public async loadEmbeddingsToVectorStore(
-    store: MemoryVectorStore,
-    documents: Document<DocumentMetadata>[],
-    embeddings: number[][],
-  ): Promise<boolean> {
-    try {
-      this.logger.info(`Loading ${embeddings.length} embeddings to vector store`);
 
-      if (!store) {
-        this.logger.error('Vector store is null or undefined');
-        return false;
-      }
-
-      if (embeddings.length !== documents.length) {
-        this.logger.error(`Mismatch between documents (${documents.length}) and embeddings (${embeddings.length})`);
-        return false;
-      }
-
-      // 각 임베딩 유효성 검사 및 필요시 대체
-      let validCount = 0;
-      let replacedCount = 0;
-
-      const validatedEmbeddings = embeddings.map((embedding, i) => {
-        if (this.isVectorValid(embedding)) {
-          validCount++;
-          return embedding;
-        } else {
-          replacedCount++;
-          // 유효하지 않은 임베딩 복구 시도
-          return this.createTemporaryVector(i);
-        }
-      });
-
-      if (replacedCount > 0) {
-        this.logger.warn(`Replaced ${replacedCount} invalid embeddings out of ${embeddings.length}`);
-      }
-
-      // 검증된 임베딩으로 스토어 초기화
-      const numDimensions = validatedEmbeddings[0].length;
-      await (store as any).addVectors(validatedEmbeddings, documents);
-
-      this.logger.info(
-        `Successfully loaded ${documents.length} documents with ${numDimensions}-dimensional embeddings to vector store`,
-      );
-      return true;
-    } catch (error) {
-      this.logger.error('Error loading embeddings to vector store', error);
-      return false;
-    }
-  }
-
-  /**
-   * 캐시된 임베딩에서 벡터 스토어 복원
-   */
-  public async restoreVectorStore(
-    store: MemoryVectorStore,
-    documents: Document<DocumentMetadata>[],
-    embeddings: number[][],
-  ): Promise<boolean> {
-    try {
-      this.logger.info(`Restoring vector store from ${embeddings.length} cached embeddings`);
-
-      // 임베딩 데이터 유효성 검사
-      if (embeddings.length !== documents.length) {
-        this.logger.error(`Mismatch between documents (${documents.length}) and embeddings (${embeddings.length})`);
-        return false;
-      }
-
-      // 임베딩 유효성 검사
-      let validCount = 0;
-      let invalidCount = 0;
-      const validatedEmbeddings = embeddings.map((embedding, i) => {
-        if (this.isVectorValid(embedding)) {
-          validCount++;
-          return embedding;
-        } else {
-          invalidCount++;
-          return this.createTemporaryVector(i);
-        }
-      });
-
-      // 유효하지 않은 임베딩이 너무 많은 경우 경고
-      const validRatio = validCount / embeddings.length;
-      if (validRatio < 0.5) {
-        this.logger.error(
-          `Too many invalid embeddings (${invalidCount} of ${
-            embeddings.length
-          }, ratio: ${validRatio.toFixed(2)}). Cache might be corrupted.`,
-        );
-        return false;
-      } else if (invalidCount > 0) {
-        this.logger.warn(
-          `Found ${invalidCount} invalid embeddings (ratio: ${validRatio.toFixed(
-            2,
-          )}). Replaced with temporary vectors.`,
-        );
-      } else {
-        this.logger.info(`All ${validCount} embeddings are valid`);
-      }
-
-      // 검증된 임베딩으로 스토어 초기화
-      await (store as any).addVectors(validatedEmbeddings, documents);
-
-      this.logger.info(`Successfully restored vector store with ${documents.length} documents`);
-      return true;
-    } catch (error) {
-      this.logger.error('Error restoring vector store from cached embeddings', error);
-      return false;
-    }
-  }
 
   /**
    * 코사인 유사도를 안전하게 계산

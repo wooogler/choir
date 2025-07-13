@@ -9,12 +9,14 @@
 export enum SessionType {
   DOCUMENT_UPDATE = 'document_update', // 문서 업데이트/지식 추출 세션
   NEW_SECTION = 'new_section', // 새 섹션 생성 세션
+  ANONYMOUS_MESSAGE = 'anonymous_message', // Anonymous 질문 메시지 추적
 }
 
 // 세션 타입별 데이터를 저장할 Map (메모리 기반 저장소)
 const sessionStores = {
   [SessionType.DOCUMENT_UPDATE]: new Map<string, any>(),
   [SessionType.NEW_SECTION]: new Map<string, any>(),
+  [SessionType.ANONYMOUS_MESSAGE]: new Map<string, any>(),
 };
 
 /**
@@ -100,4 +102,109 @@ export function generateSessionId(prefix = 'session'): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 10);
   return `${prefix}_${timestamp}_${random}`;
+}
+
+/**
+ * Anonymous 메시지를 추적합니다.
+ * @param channelId DM 채널 ID
+ * @param messageTs 메시지 timestamp
+ * @param originalQuestionerId 원래 질문자 ID
+ * @param sessionId 세션 ID
+ */
+export function trackAnonymousMessage(
+  channelId: string,
+  messageTs: string,
+  originalQuestionerId: string,
+  sessionId: string,
+): void {
+  const key = `${channelId}_${messageTs}`;
+  console.log(`[DEBUG] trackAnonymousMessage - channelId: ${channelId}, messageTs: ${messageTs}, key: ${key}`);
+  storeSessionData(
+    key,
+    {
+      channelId,
+      messageTs,
+      originalQuestionerId,
+      sessionId,
+      isProcessed: false, // "Send Reply to Questioner" 버튼이 클릭되었는지 여부
+    },
+    SessionType.ANONYMOUS_MESSAGE,
+    60 * 60 * 1000, // 1시간 후 만료
+  );
+}
+
+/**
+ * 채널이 Anonymous 메시지 DM인지 확인합니다.
+ * @param channelId 채널 ID
+ * @returns Anonymous 메시지 정보 또는 null
+ */
+export function getAnonymousMessageInfo(channelId: string): any {
+  const store = sessionStores[SessionType.ANONYMOUS_MESSAGE];
+  
+  console.log(`[DEBUG] getAnonymousMessageInfo - channelId: ${channelId}`);
+  console.log(`[DEBUG] Available keys in store:`, Array.from(store.keys()));
+  
+  // 해당 채널의 Anonymous 메시지 찾기
+  for (const [key, session] of store.entries()) {
+    // 내부 프로퍼티 제외하고 데이터 추출
+    const { _timerId, _createdAt, ...data } = session;
+    console.log(`[DEBUG] Checking key: ${key}, data.channelId: ${data.channelId}, isProcessed: ${data.isProcessed}`);
+    if (data.channelId === channelId && !data.isProcessed) {
+      console.log(`[DEBUG] Found matching anonymous message for channelId: ${channelId}`);
+      return {
+        messageTs: data.messageTs,
+        originalQuestionerId: data.originalQuestionerId,
+        sessionId: data.sessionId,
+        isProcessed: data.isProcessed,
+        key,
+      };
+    }
+  }
+  
+  console.log(`[DEBUG] No matching anonymous message found for channelId: ${channelId}`);
+  return null;
+}
+
+/**
+ * Anonymous 메시지를 처리됨으로 표시합니다.
+ * @param key Anonymous 메시지 키
+ */
+export function markAnonymousMessageProcessed(key: string): void {
+  const store = sessionStores[SessionType.ANONYMOUS_MESSAGE];
+  const session = store.get(key);
+  
+  if (session) {
+    session.isProcessed = true;
+    console.log(`Anonymous message marked as processed: ${key}`);
+  } else {
+    console.log(`Anonymous message not found for key: ${key}`);
+  }
+}
+
+/**
+ * Thread message가 Anonymous 메시지의 thread인지 확인합니다.
+ * @param channelId 채널 ID
+ * @param threadTs Thread timestamp (root message timestamp)
+ * @returns Anonymous 메시지 정보 또는 null
+ */
+export function getAnonymousThreadInfo(channelId: string, threadTs: string): any {
+  const store = sessionStores[SessionType.ANONYMOUS_MESSAGE];
+  const key = `${channelId}_${threadTs}`;
+  
+  const session = store.get(key);
+  if (session) {
+    // 내부 프로퍼티 제외하고 데이터 추출
+    const { _timerId, _createdAt, ...data } = session;
+    if (!data.isProcessed) {
+      return {
+        messageTs: data.messageTs,
+        originalQuestionerId: data.originalQuestionerId,
+        sessionId: data.sessionId,
+        isProcessed: data.isProcessed,
+        key,
+      };
+    }
+  }
+  
+  return null;
 }

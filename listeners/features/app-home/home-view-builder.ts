@@ -451,8 +451,10 @@ const buildDocumentConnectionBlocks = async (
   }
 
   if ((isUserManager || isOwner) && (userGithubInfo || hasEnvToken)) {
-    const vectorStore = VectorStoreService.getInstance();
-    const diagnosis = vectorStore.diagnoseVectorStore();
+    const savedRepoInfo = await getGithubRepo(workspaceId);
+    if (savedRepoInfo) {
+      const vectorStore = VectorStoreService.getInstance();
+      const diagnosis = vectorStore.diagnoseVectorStore();
 
     blocks.push(
       {
@@ -524,6 +526,7 @@ const buildDocumentConnectionBlocks = async (
         ],
       },
     );
+    }
   }
 
   blocks.push({

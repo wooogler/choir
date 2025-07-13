@@ -75,6 +75,14 @@ export enum CHOIRMessageType {
    */
   NOTIFICATION = 'notification',
   
+  /** 
+   * 익명 질문 메시지
+   * "Ask in Private"에서 "Share anonymously" 옵션으로 생성된 메시지
+   * Manager들에게 익명으로 공유되는 Q&A 메시지
+   * 대화 히스토리에서 제외됨 (thread replies에 CHOIR가 반응하지 않음)
+   */
+  ANONYMOUS_QUESTION = 'anonymous_question',
+  
   // ===== 시스템 관리 메시지 =====
   
   /** 
@@ -122,6 +130,7 @@ export const EXCLUDE_FROM_HISTORY: CHOIRMessageType[] = [
   CHOIRMessageType.HEALTH_CHECK,
   CHOIRMessageType.MESSAGE_DELETE,
   CHOIRMessageType.NOTIFICATION, // 공유/알림 메시지도 제외
+  CHOIRMessageType.ANONYMOUS_QUESTION, // 익명 질문 메시지도 제외
 ];
 
 /**

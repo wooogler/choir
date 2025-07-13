@@ -33,8 +33,9 @@
   },
   "dependencies": {
     "@langchain/azure-openai": "^0.0.11",
-    "@langchain/core": "^0.3.36",
-    "@langchain/openai": "^0.4.9",
+    "@langchain/community": "^0.3.48",
+    "@langchain/core": "^0.3.62",
+    "@langchain/openai": "^0.5.18",
     "@slack/bolt": "^4.2.0",
     "@slack/web-api": "^7.8.0",
     "@types/archiver": "^6.0.3",
@@ -44,7 +45,8 @@
     "archiver": "^7.0.1",
     "diff": "^7.0.0",
     "dotenv": "~16.4.7",
-    "langchain": "^0.3.13",
+    "faiss-node": "^0.5.1",
+    "langchain": "^0.3.29",
     "marked": "^15.0.6",
     "mdast-util-to-string": "^4.0.0",
     "octokit": "^4.1.0",
@@ -54,11 +56,13 @@
     "remark-stringify": "^11.0.0",
     "unified": "^11.0.5",
     "unist-util-is": "^6.0.0",
-    "unist-util-visit": "^5.0.0"
+    "unist-util-visit": "^5.0.0",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/jest": "^30.0.0",
+    "@types/uuid": "^10.0.0",
     "jest": "^30.0.3",
     "nodemon": "^3.1.9",
     "ts-jest": "^29.4.0",

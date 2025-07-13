@@ -15,6 +15,7 @@ import {
   getWorkspaceId,
 } from 'services/slack';
 import type { SlackMessage } from 'services/slack';
+import { createEnhancedMessage } from 'services/slack/message-text-utils';
 
 /**
  * 질문 메시지 처리
@@ -26,9 +27,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
 
   try {
     // 로딩 메시지 게시
-    const loadingMessage = await client.chat.postMessage({
-      channel: event.channel,
-      ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
+    const loadingMessageData = createEnhancedMessage({
       text: 'Searching relevant documents and generating response... :mag: :brain:',
       blocks: [
         {
@@ -40,6 +39,12 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
         },
       ],
+    });
+
+    const loadingMessage = await client.chat.postMessage({
+      channel: event.channel,
+      ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
+      ...loadingMessageData,
     });
     loadingMessageTs = loadingMessage.ts;
 
@@ -247,10 +252,8 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         ? '💬 Not satisfied with my answer? Want to discuss this further or get more insights?'
         : "💬 I couldn't find this information in our documentation. Would you like to ask others directly?";
 
-      await client.chat.postEphemeral({
-        channel: event.channel,
-        ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
-        user: event.user,
+      // Create enhanced message with button information
+      const ephemeralMessageData = createEnhancedMessage({
         text: ephemeralText,
         blocks: [
           {
@@ -265,6 +268,18 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
             elements: actionElements,
           },
         ],
+      }, {
+        buttons: actionElements.map(element => ({
+          text: element.text.text,
+          style: element.style as any
+        }))
+      });
+
+      await client.chat.postEphemeral({
+        channel: event.channel,
+        ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
+        user: event.user,
+        ...ephemeralMessageData,
       });
     }
 

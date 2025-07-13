@@ -104,9 +104,41 @@ class NameCacheService {
   }
 
   /**
+   * Get bot user ID for current workspace
+   */
+  private botUserIdCache = new Map<string, string>(); // teamId -> botUserId
+
+  async getBotUserId(client: WebClient): Promise<string | null> {
+    try {
+      const authInfo = await client.auth.test();
+      const teamId = authInfo.team_id;
+      const botUserId = authInfo.user_id;
+      
+      if (teamId && botUserId) {
+        this.botUserIdCache.set(teamId, botUserId);
+        return botUserId;
+      }
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
    * Get user name with caching
    */
   async getUserName(userId: string, client: WebClient): Promise<string> {
+    // Handle invalid user IDs
+    if (!userId || userId === 'undefined' || userId === 'null') {
+      return 'Unknown User';
+    }
+
+    // Check if this is the bot user
+    const botUserId = await this.getBotUserId(client);
+    if (userId === botUserId) {
+      return 'CHOIR';
+    }
+
     // Check cache first
     const cached = this.cache.users[userId];
     if (cached && !this.isExpired(cached.lastUpdated)) {
