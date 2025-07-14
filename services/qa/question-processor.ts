@@ -13,7 +13,7 @@ export class QuestionProcessor {
       const vectorStore = VectorStoreService.getInstance();
       Logger.info('QuestionProcessor: Got VectorStoreService instance, calling similaritySearch...');
       
-      let relevantDocs = await vectorStore.similaritySearch(userMessage, 3);
+      let relevantDocs = await vectorStore.similaritySearch(userMessage, 5);
       Logger.info(`QuestionProcessor: similaritySearch returned ${relevantDocs.length} documents`);
 
       // 웹 콘텐츠가 있는 문서들의 pageContent를 확장

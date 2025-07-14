@@ -274,7 +274,7 @@ export function createDocumentsFromTree(
 /**
  * 부모-자식 관계 맵 구축 함수
  */
-function buildParentChildMap(docTree: DocumentTree): Map<string, ExtendedNode> {
+export function buildParentChildMap(docTree: DocumentTree): Map<string, ExtendedNode> {
   const parentMap = new Map<string, ExtendedNode>();
 
   visit(docTree.root, (node: ExtendedNode, _, parent) => {
@@ -292,7 +292,7 @@ function buildParentChildMap(docTree: DocumentTree): Map<string, ExtendedNode> {
 /**
  * 노드의 조상 노드들을 찾는 함수
  */
-function getAncestorNodes(node: ExtendedNode, parentMap: Map<string, ExtendedNode>): ExtendedNode[] {
+export function getAncestorNodes(node: ExtendedNode, parentMap: Map<string, ExtendedNode>): ExtendedNode[] {
   const ancestors: ExtendedNode[] = [];
   let current: ExtendedNode | undefined = node;
 
@@ -312,7 +312,7 @@ function getAncestorNodes(node: ExtendedNode, parentMap: Map<string, ExtendedNod
 /**
  * 노드의 헤딩 경로를 구성하는 함수
  */
-function getHeadingPathForNode(
+export function getHeadingPathForNode(
   node: ExtendedNode,
   ancestors: ExtendedNode[],
   headingMap: Map<string, string>,
@@ -695,7 +695,7 @@ function calculateImportance(node: ExtendedNode, ancestors: ExtendedNode[], head
 }
 
 // 섹션 이름 가져오기 함수 수정
-function getSectionName(node: ExtendedNode, headingMap: Map<string, string>): { sectionName: string | undefined } {
+export function getSectionName(node: ExtendedNode, headingMap: Map<string, string>): { sectionName: string | undefined } {
   let sectionName: string | undefined;
 
   if (node.sectionId && headingMap.has(node.sectionId)) {

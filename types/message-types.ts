@@ -134,9 +134,10 @@ export const EXCLUDE_FROM_HISTORY: CHOIRMessageType[] = [
 ];
 
 /**
- * 세션 시작을 나타내는 메시지 타입들
+ * 세션 종료를 나타내는 메시지 타입들
  */
-export const SESSION_START_TYPES: CHOIRMessageType[] = [
+export const SESSION_END_TYPES: CHOIRMessageType[] = [
+  CHOIRMessageType.DOCUMENT_SUGGESTION,
   CHOIRMessageType.RESPONSE,
   CHOIRMessageType.SUCCESS
 ];
@@ -164,12 +165,20 @@ export function createCHOIRBlockId(messageType: CHOIRMessageType, suffix?: strin
  */
 export function extractCHOIRMessageType(blockId: string): CHOIRMessageType | null {
   const match = blockId.match(/^choir_([a-z_]+)(?:_.*)?_\d+$/);
-  if (!match) return null;
+  if (!match) {
+    console.log(`⚠️ [DEBUG] Invalid block_id format: ${blockId}`);
+    return null;
+  }
   
   const typeString = match[1];
-  return Object.values(CHOIRMessageType).includes(typeString as CHOIRMessageType) 
-    ? typeString as CHOIRMessageType 
-    : null;
+  const isValidType = Object.values(CHOIRMessageType).includes(typeString as CHOIRMessageType);
+  
+  if (!isValidType) {
+    console.log(`⚠️ [DEBUG] Invalid message type extracted: ${typeString} from ${blockId}`);
+    return null;
+  }
+  
+  return typeString as CHOIRMessageType;
 }
 
 /**
@@ -182,6 +191,10 @@ export function getCHOIRMessageTypeFromBlocks(blocks: any[]): CHOIRMessageType |
     if (block.block_id && block.block_id.startsWith('choir_')) {
       const messageType = extractCHOIRMessageType(block.block_id);
       if (messageType) return messageType;
+      // 디버깅: CHOIR block_id가 있는데 타입 추출 실패
+      else {
+        console.log(`⚠️ [DEBUG] Failed to extract type from block_id: ${block.block_id}`);
+      }
     }
   }
   

@@ -2,6 +2,7 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import { deleteProgressMessageTimestamp, getLastMessageTimestamp, getProgressMessageTimestamp } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getWorkspaceId } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * Handle "Cancel" button click in document update suggestions
@@ -75,6 +76,7 @@ export const cancelDocumentUpdatesCallback = async ({
                 type: 'mrkdwn',
                 text: `${cancelText} ${cancelMessage}`,
               },
+              block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
             },
           ],
         });
@@ -93,6 +95,7 @@ export const cancelDocumentUpdatesCallback = async ({
                   type: 'mrkdwn',
                   text: `${cancelText} ${cancelMessage}`,
                 },
+                block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
               },
             ],
           });
@@ -158,6 +161,7 @@ export const cancelDocumentUpdatesCallback = async ({
                 type: 'mrkdwn',
                 text: `📋 ${cancelMessage}`,
               },
+              block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
             },
           ],
         });
@@ -208,6 +212,7 @@ export const cancelDocumentUpdatesCallback = async ({
                 type: 'mrkdwn',
                 text: `❌ *Error occurred while cancelling*\n${error instanceof Error ? error.message : 'Unknown error'}`,
               },
+              block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
             },
           ],
         });

@@ -269,6 +269,28 @@ export function treeToMarkdown(docTree: DocumentTree): string {
       case 'text':
         return node.value || '';
 
+      case 'strong':
+        const strongText = node.children
+          ? node.children.map((child: any) => astToMarkdown(child, depth)).join('')
+          : '';
+        return `**${strongText}**`;
+
+      case 'emphasis':
+        const emphasisText = node.children
+          ? node.children.map((child: any) => astToMarkdown(child, depth)).join('')
+          : '';
+        return `*${emphasisText}*`;
+
+      case 'inlineCode':
+        return `\`${node.value || ''}\``;
+
+      case 'link':
+        const linkText = node.children
+          ? node.children.map((child: any) => astToMarkdown(child, depth)).join('')
+          : '';
+        const linkUrl = node.url || '';
+        return `[${linkText}](${linkUrl})`;
+
       case 'thematicBreak':
         return '---';
 
@@ -282,6 +304,12 @@ export function treeToMarkdown(docTree: DocumentTree): string {
   }
 
   const markdown = astToMarkdown(docTree.root);
+
+  // DEBUG: 마크다운 변환 결과 로그
+  console.log('[DEBUG] treeToMarkdown result:');
+  console.log('='.repeat(50));
+  console.log(markdown);
+  console.log('='.repeat(50));
 
   // 빈 줄 정리
   return markdown
@@ -930,12 +958,16 @@ export function parseAndSplitContent(content: string): Array<{type: 'listItem' |
     if (tree.children && Array.isArray(tree.children)) {
       for (const child of tree.children) {
         if (is(child, 'paragraph')) {
-          // 직접 paragraph인 경우
-          const textContent = toString(child).trim();
-          if (textContent) {
+          // 직접 paragraph인 경우 - 마크다운 문법 보존
+          const tempRoot = { type: 'root' as const, children: [child] };
+          const markdownContent = unified()
+            .use(remarkStringify)
+            .stringify(tempRoot)
+            .trim();
+          if (markdownContent) {
             result.push({
               type: 'paragraph',
-              content: textContent
+              content: markdownContent
             });
           }
         } else if (is(child, 'list')) {
@@ -943,23 +975,34 @@ export function parseAndSplitContent(content: string): Array<{type: 'listItem' |
           if (child.children && Array.isArray(child.children)) {
             for (const listItem of child.children) {
               if (is(listItem, 'listItem')) {
-                const textContent = toString(listItem).trim();
-                if (textContent) {
+                // listItem도 마크다운 문법 보존
+                const tempRoot = { type: 'root' as const, children: [listItem] };
+                const markdownContent = unified()
+                  .use(remarkStringify)
+                  .stringify(tempRoot)
+                  .trim()
+                  .replace(/^-\s*/, ''); // 리스트 마커 제거 (나중에 다시 추가됨)
+                if (markdownContent) {
                   result.push({
                     type: 'listItem',
-                    content: textContent
+                    content: markdownContent
                   });
                 }
               }
             }
           }
         } else if (is(child, 'listItem')) {
-          // 직접 listItem인 경우 (nested가 아닌)
-          const textContent = toString(child).trim();
-          if (textContent) {
+          // 직접 listItem인 경우 (nested가 아닌) - 마크다운 문법 보존
+          const tempRoot = { type: 'root' as const, children: [child] };
+          const markdownContent = unified()
+            .use(remarkStringify)
+            .stringify(tempRoot)
+            .trim()
+            .replace(/^-\s*/, ''); // 리스트 마커 제거 (나중에 다시 추가됨)
+          if (markdownContent) {
             result.push({
               type: 'listItem',
-              content: textContent
+              content: markdownContent
             });
           }
         }
@@ -1005,8 +1048,10 @@ export function appendMultipleContents(
   
   // 연속된 listItem들을 그룹화하여 처리
   let i = 0;
+  console.log(`[DEBUG] appendMultipleContents: Processing ${contentItems.length} items`);
   while (i < contentItems.length) {
     const item = contentItems[i];
+    console.log(`[DEBUG] Processing item ${i}: type=${item.type}, content="${item.content.substring(0, 30)}..."`);
     
     if (item.type === 'listItem') {
       // 연속된 listItem들을 수집

@@ -250,26 +250,26 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       });
 
       // First: Send public message with the suggested update content
+      const blocks = [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `Sure! I'll suggest the following update to ${managerText}.\n*Suggested Update*\n\`\`\`${extractionResult.cleanContent}\`\`\``,
+          },
+          block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
+        },
+      ];
+
       const publicMessage = await client.chat.postMessage({
         channel: originalChannelId,
         ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
-        text: `Sure! I'll suggest the following update to ${managerText}.`,
-        blocks: [
+        ...createEnhancedMessage(
           {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `Sure! I'll suggest the following update to ${managerText}.`,
-            },
-          },
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `*Suggested Update*\n\`\`\`${extractionResult.cleanContent}\`\`\``,
-            },
-          },
-        ],
+            text: `Sure! I'll suggest the following update to ${managerText}.`,
+            blocks: blocks
+          }
+        ),
       });
 
       // Wait 1 second to ensure the public message appears first

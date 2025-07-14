@@ -39,19 +39,22 @@ export class FAISSStoreManager {
     try {
       Logger.info(`Initializing FAISS vector store with ${documents.length} documents${isFromCache ? ' (from cache)' : ' (fresh build)'}`);
       
-      // 중복 제거: nodeId 기준으로 중복 문서 제거
-      const deduplicatedDocuments = this.deduplicateDocuments(documents);
-      const removedCount = documents.length - deduplicatedDocuments.length;
-      if (removedCount > 0) {
-        Logger.warn(`Removed ${removedCount} duplicate documents during initialization`);
+      // 강제 새로고침인 경우 모든 내부 상태 초기화
+      if (!isFromCache) {
+        Logger.info('Force refresh detected: clearing all internal state');
+        this.documents = [];
+        this.documentIdMap.clear();
+        this.store = null;
+        this.isInitialized = false;
       }
       
-      this.documents = deduplicatedDocuments;
+      // FAISS는 중복 처리가 내장되어 있어 별도 중복 제거 불필요
+      this.documents = documents;
       this.documentIdMap.clear();
 
       const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
       
-      if (deduplicatedDocuments.length === 0) {
+      if (documents.length === 0) {
         Logger.info('No documents to index, creating empty FAISS store');
         this.store = new FaissStore(openAIEmbeddings, {});
         this.isInitialized = true;
@@ -64,7 +67,7 @@ export class FAISSStoreManager {
       }
 
       // 메타데이터 직렬화
-      const serializedDocuments = this.serializeDocumentsMetadata(deduplicatedDocuments);
+      const serializedDocuments = this.serializeDocumentsMetadata(documents);
       
       // FAISS 인덱스 생성
       this.store = await FaissStore.fromDocuments(serializedDocuments, openAIEmbeddings);
@@ -82,7 +85,7 @@ export class FAISSStoreManager {
       
       this.isInitialized = true;
       
-      Logger.info(`Successfully initialized FAISS vector store with ${deduplicatedDocuments.length} documents`);
+      Logger.info(`Successfully initialized FAISS vector store with ${documents.length} documents`);
       return true;
     } catch (error) {
       Logger.error('Failed to initialize FAISS vector store', error as Error);
@@ -106,34 +109,20 @@ export class FAISSStoreManager {
         return true;
       }
 
-      // 중복 제거: 기존 문서와 새 문서 간 중복 확인
-      const existingNodeIds = new Set(this.documents.map(doc => doc.metadata.nodeId));
-      const newDocuments = documents.filter(doc => !existingNodeIds.has(doc.metadata.nodeId));
-      const duplicateCount = documents.length - newDocuments.length;
-      
-      if (duplicateCount > 0) {
-        Logger.warn(`Skipped ${duplicateCount} duplicate documents during incremental add`);
-      }
-      
-      if (newDocuments.length === 0) {
-        Logger.info('No new documents to add after deduplication');
-        return true;
-      }
-
-      Logger.info(`Adding ${newDocuments.length} new documents to FAISS`);
+      Logger.info(`Adding ${documents.length} documents to FAISS`);
 
       // 메타데이터 직렬화
-      const serializedDocuments = this.serializeDocumentsMetadata(newDocuments);
+      const serializedDocuments = this.serializeDocumentsMetadata(documents);
       
       // FAISS에 문서 추가
       await this.store.addDocuments(serializedDocuments);
       
       // 내부 문서 배열 업데이트
-      this.documents.push(...newDocuments);
+      this.documents.push(...documents);
       
       // ID 매핑 업데이트
-      const startIndex = this.documents.length - newDocuments.length;
-      newDocuments.forEach((doc, index) => {
+      const startIndex = this.documents.length - documents.length;
+      documents.forEach((doc, index) => {
         const nodeId = doc.metadata.nodeId;
         if (nodeId) {
           this.documentIdMap.set(nodeId, startIndex + index);
@@ -144,7 +133,7 @@ export class FAISSStoreManager {
       // 인덱스 저장
       await this.saveIndex();
       
-      Logger.info(`Successfully added ${newDocuments.length} documents to FAISS`);
+      Logger.info(`Successfully added ${documents.length} documents to FAISS`);
       return true;
     } catch (error) {
       Logger.error('Failed to add documents to FAISS store', error as Error);
@@ -446,21 +435,4 @@ export class FAISSStoreManager {
     });
   }
 
-  /**
-   * nodeId 기준으로 중복 문서 제거
-   */
-  private deduplicateDocuments(documents: Document<DocumentMetadata>[]): Document<DocumentMetadata>[] {
-    const seenNodeIds = new Set<string>();
-    const deduplicatedDocuments: Document<DocumentMetadata>[] = [];
-    
-    for (const doc of documents) {
-      const nodeId = doc.metadata.nodeId;
-      if (nodeId && !seenNodeIds.has(nodeId)) {
-        seenNodeIds.add(nodeId);
-        deduplicatedDocuments.push(doc);
-      }
-    }
-    
-    return deduplicatedDocuments;
-  }
 } 

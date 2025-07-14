@@ -2,6 +2,7 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import { Logger } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import suggestUpdatesCallback from '../suggestions/suggest-updates';
 
 /**
@@ -65,6 +66,7 @@ export const applyExtractedKnowledgeCallback = async ({
         text: '🔄 Processing knowledge and generating document updates...',
         blocks: [
           {
+            block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
             type: 'section',
             text: {
               type: 'mrkdwn',
@@ -81,6 +83,7 @@ export const applyExtractedKnowledgeCallback = async ({
         text: '🔄 Processing knowledge and generating document updates...',
         blocks: [
           {
+            block_id: createCHOIRBlockId(CHOIRMessageType.EPHEMERAL_HELPER),
             type: 'section',
             text: {
               type: 'mrkdwn',

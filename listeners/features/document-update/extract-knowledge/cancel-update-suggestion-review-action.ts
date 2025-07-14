@@ -4,6 +4,7 @@ import { WebClient } from '@slack/web-api';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getUserName, getWorkspaceId } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * Handle "Cancel" button click during suggestion related flows
@@ -110,6 +111,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
                       text:
                         managerCancellationText + ' No further action is needed from your side for this one. Thanks!',
                     },
+                    block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
                   },
                 ],
                 text: 'Suggestion review cancelled.',
