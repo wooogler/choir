@@ -1,2 +1,5 @@
 onlyBuiltDependencies:
   - faiss-node
+  - onnxruntime-node
+  - protobufjs
+  - sharp
