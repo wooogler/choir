@@ -259,10 +259,18 @@ const buildChoirManagementBlocks = async (
 };
 
 const buildBecomeManagerBlocks = (isUserManager: boolean, isOwner: boolean) => {
+  console.log('🔧 [DEBUG] buildBecomeManagerBlocks called', { 
+    isUserManager, 
+    isOwner,
+    shouldShowButton: !isUserManager && !isOwner 
+  });
+  
   if (isUserManager || isOwner) {
+    console.log('🔧 [DEBUG] User is already manager or owner, not showing Become Manager button');
     return [];
   }
 
+  console.log('🔧 [DEBUG] Creating Become Manager button with action_id: request_manager_permission');
   return [
     {
       type: 'header',
