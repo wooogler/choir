@@ -159,6 +159,25 @@ export async function promoteToManagerWithPassword(
       return false;
     }
 
+    // 워크스페이스가 초기화되지 않은 경우 초기화
+    let workspaceConfig = await workspaceStore.getWorkspaceConfig(workspaceId);
+    if (!workspaceConfig) {
+      Logger.info('Workspace not initialized, creating initial configuration', { workspaceId, userId });
+      
+      // 기본 워크스페이스 설정 생성 (setupInitialManager 함수 내용을 간단히 구현)
+      workspaceConfig = {
+        workspaceId,
+        managers: [userId],
+        choirUsers: [userId],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      
+      await workspaceStore.saveWorkspaceConfig(workspaceConfig);
+      Logger.info('Workspace initialized with user as initial manager', { workspaceId, userId });
+      return true;
+    }
+
     // 이미 관리자인지 확인
     const isAlreadyManager = await isManager(workspaceId, userId);
     if (isAlreadyManager) {
