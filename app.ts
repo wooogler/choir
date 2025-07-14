@@ -34,6 +34,13 @@ registerListeners(app);
 /** Start Bolt App */
 (async () => {
   try {
+    // 매니저 승격 설정 확인
+    const managerConfig = AppConfig.getManagerPromotionConfig();
+    console.log('🔐 [DEBUG] Manager promotion config:', {
+      passwordConfigured: !!managerConfig.password,
+      passwordLength: managerConfig.password?.length || 0
+    });
+    
     // AI Provider 설정 검증
     const aiProvider = getAIProvider();
     app.logger.info(`AI Provider: ${aiProvider}`);

@@ -11,7 +11,15 @@ import {
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 export const registerManagementHandlers = (app: App) => {
+  console.log('🔧 [DEBUG] Registering management handlers...');
+  
   app.action('request_manager_permission', async ({ ack, body, client, logger }) => {
+    console.log('🔧 [DEBUG] request_manager_permission action triggered!', {
+      userId: body.user?.id,
+      actionId: 'request_manager_permission'
+    });
+    logger.info('request_manager_permission action triggered', { userId: body.user?.id });
+    
     await ack();
 
     try {
