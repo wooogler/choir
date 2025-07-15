@@ -116,6 +116,7 @@ export function createQAChannelMessage(
           type: 'mrkdwn',
           text: `However, I was not able to answer the question. Could anyone help?`,
         },
+        block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
       },
     ];
   } else {
@@ -147,6 +148,7 @@ export function createQAChannelMessage(
           type: 'mrkdwn',
           text: `${senderIdentity} would like to discuss this response with others. Could anyone help?`,
         },
+        block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
       },
     ];
   }
