@@ -102,6 +102,7 @@ export function createQAChannelMessage(
           type: 'mrkdwn',
           text: `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.`,
         },
+        block_id: createCHOIRBlockId(CHOIRMessageType.SESSION_START),
       },
       {
         type: 'section',
@@ -116,7 +117,6 @@ export function createQAChannelMessage(
           type: 'mrkdwn',
           text: `However, I was not able to answer the question. Could anyone help?`,
         },
-        block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
       },
     ];
   } else {
@@ -127,6 +127,7 @@ export function createQAChannelMessage(
           type: 'mrkdwn',
           text: `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.`,
         },
+        block_id: createCHOIRBlockId(CHOIRMessageType.SESSION_START),
       },
       {
         type: 'section',

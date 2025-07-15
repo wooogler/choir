@@ -82,6 +82,14 @@ export enum CHOIRMessageType {
    * 대화 히스토리에서 제외됨 (thread replies에 CHOIR가 반응하지 않음)
    */
   ANONYMOUS_QUESTION = 'anonymous_question',
+
+  /** 
+   * 세션 시작 표시 메시지
+   * 새로운 Q&A 세션의 시작을 나타내는 메시지
+   * 이전 컨텍스트와 분리하여 새로운 대화 세션을 구분할 때 사용
+   * 대화 히스토리에서 세션 구분점 역할 (이후 메시지만 컨텍스트에 포함)
+   */
+  SESSION_START = 'session_start',
   
   // ===== 시스템 관리 메시지 =====
   
