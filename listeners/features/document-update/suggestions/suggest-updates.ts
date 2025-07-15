@@ -519,11 +519,18 @@ export const suggestUpdatesCallback = async ({
                 githubUrl: currentUpdate.githubUrl,
               } as any);
 
-              // 업데이트한 사람 정보
+              // 업데이트한 사람 정보 (실제 Keep 버튼을 누른 manager)
               let updatedBy = 'User';
-              if (currentUpdate.messages && currentUpdate.messages.length > 0) {
-                const lastMessage = currentUpdate.messages[currentUpdate.messages.length - 1];
-                updatedBy = lastMessage.username;
+              try {
+                const userInfo = await client.users.info({ user: userId });
+                updatedBy = userInfo.user?.real_name || userInfo.user?.name || 'User';
+              } catch (error) {
+                console.error('Failed to get manager user info:', error);
+                // fallback으로 messages에서 정보 확인
+                if (currentUpdate.messages && currentUpdate.messages.length > 0) {
+                  const lastMessage = currentUpdate.messages[currentUpdate.messages.length - 1];
+                  updatedBy = lastMessage.username || 'User';
+                }
               }
 
               if (currentUpdate.suggestionType === 'APPEND') {
@@ -539,10 +546,18 @@ export const suggestUpdatesCallback = async ({
                 notificationText = `✅ Document Updated by ${updatedBy}: <${currentUpdate.githubUrl}|${currentUpdate.fileName}> - ${sectionInfo}`;
                 blocks.push({ type: 'section', text: { type: 'mrkdwn', text: notificationText } });
 
-                // UPDATE의 경우 diffblock 사용
-                if (currentUpdate.diffBlock) {
-                  blocks.push(currentUpdate.diffBlock);
-                } else {
+                // UPDATE의 경우 manager가 수정한 최종 내용으로 새로운 diff 생성
+                try {
+                  const { convertMarkdownToSlackText } = await import('services/document');
+                  const { createDiffBlock } = await import('services/slack');
+                  
+                  const oldSlackText = await convertMarkdownToSlackText(currentUpdate.nodeContent);
+                  const newSlackText = await convertMarkdownToSlackText(currentUpdate.updatedNodeContent);
+                  const updatedDiffBlock = createDiffBlock(oldSlackText, newSlackText);
+                  
+                  blocks.push(updatedDiffBlock);
+                } catch (diffError) {
+                  console.error('Failed to create updated diff block:', diffError);
                   // fallback으로 업데이트된 내용만 표시
                   blocks.push({
                     type: 'section',
