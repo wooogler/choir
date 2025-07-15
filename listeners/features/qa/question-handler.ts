@@ -304,12 +304,9 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
 
             // 섹션명 (링크 포함)
             if (metadata.sectionName) {
-              if (metadata.githubUrl && metadata.headingPath) {
-                // GitHub 링크에 헤딩 앵커 추가 (headingPath가 배열인 경우 조인)
-                const headingString = Array.isArray(metadata.headingPath)
-                  ? metadata.headingPath.join('-')
-                  : metadata.headingPath;
-                const headingAnchor = headingString
+              if (metadata.githubUrl) {
+                // GitHub 링크에 헤딩 앵커 추가 (sectionName 기반)
+                const headingAnchor = metadata.sectionName
                   .toLowerCase()
                   .replace(/\s+/g, '-')
                   .replace(/[^\w-]/g, '');
