@@ -279,8 +279,10 @@ class GithubService {
               const { item, content } = result;
               const tree = parseMarkdownToTree(content, item.path.split('/').pop() || '');
 
-              // Construct GitHub URL
-              const githubUrl = `https://github.com/${params.owner}/${params.repo}/blob/${actualRef}/${item.path}`;
+              // Construct GitHub URL with proper encoding for file path
+              // Split path by '/' and encode each segment individually to preserve path structure
+              const encodedPath = item.path.split('/').map(segment => encodeURIComponent(segment)).join('/');
+              const githubUrl = `https://github.com/${params.owner}/${params.repo}/blob/${actualRef}/${encodedPath}`;
 
               allMarkdownFiles.push({
                 name: item.path.split('/').pop() || '',
