@@ -1,5 +1,6 @@
 import { Document } from '@langchain/core/documents';
 import puppeteer from 'puppeteer';
+import { WebContentCache } from './web-content-cache';
 
 /**
  * 웹 콘텐츠 로더 서비스
@@ -7,11 +8,11 @@ import puppeteer from 'puppeteer';
  */
 export class WebContentLoader {
   private static instance: WebContentLoader;
-  private cache: Map<string, Document[]> = new Map();
-  private readonly cacheExpirationTime = 24 * 60 * 60 * 1000; // 24시간
-  private readonly maxCacheSize = 1000;
+  private diskCache: WebContentCache;
 
-  private constructor() {}
+  private constructor() {
+    this.diskCache = WebContentCache.getInstance();
+  }
 
   public static getInstance(): WebContentLoader {
     if (!WebContentLoader.instance) {
@@ -27,11 +28,20 @@ export class WebContentLoader {
    */
   public async loadWebContent(url: string): Promise<Document[]> {
     try {
-      // 캐시 확인
-      const cached = this.getCachedContent(url);
-      if (cached) {
+      // 디스크 캐시 확인
+      const cachedItem = this.diskCache.getWebContent(url);
+      if (cachedItem) {
         console.info(`Using cached content for URL: ${url}`);
-        return cached;
+        const doc = new Document({
+          pageContent: cachedItem.content,
+          metadata: {
+            source: url,
+            title: cachedItem.title,
+            loadedAt: cachedItem.loadedAt,
+            type: 'web-content',
+          },
+        });
+        return [doc];
       }
 
       console.info(`Loading web content from URL: ${url}`);
@@ -173,9 +183,12 @@ export class WebContentLoader {
 
         const docs = [doc];
 
-        // 콘텐츠가 있는 경우에만 캐시에 저장
-        if (content.content.length > 50) {
-          this.setCachedContent(url, docs);
+        // 성공/실패 모두 디스크 캐시에 저장 (실패 캐시로 재시도 방지)
+        this.diskCache.setWebContent(url, content.title, content.content);
+        this.diskCache.flush(); // 즉시 디스크에 저장
+        
+        if (content.content.length <= 50) {
+          console.info(`Cached empty/short content for ${url} to prevent retries`);
         }
 
         console.info(`Successfully loaded web content from ${url}, ${docs.length} documents`);
@@ -189,6 +202,12 @@ export class WebContentLoader {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.warn(`Failed to load web content from ${url}:`, errorMessage);
+      
+      // 실패한 로딩도 캐시에 저장하여 재시도 방지
+      this.diskCache.setWebContent(url, 'Failed to load', '');
+      this.diskCache.flush();
+      console.info(`Cached failure for ${url} to prevent retries`);
+      
       return [];
     }
   }
@@ -243,50 +262,34 @@ export class WebContentLoader {
   }
 
   /**
-   * 캐시에서 콘텐츠를 가져옵니다.
+   * 웹 콘텐츠를 URL로 직접 가져옵니다 (캐시 우선).
    */
-  private getCachedContent(url: string): Document[] | null {
-    const cacheKey = this.generateCacheKey(url);
-    const cached = this.cache.get(cacheKey);
-
-    if (cached) {
-      // 캐시 만료 확인
-      const loadedAt = cached[0]?.metadata?.loadedAt;
-      if (loadedAt && typeof loadedAt === 'string') {
-        const age = Date.now() - new Date(loadedAt).getTime();
-        if (age > this.cacheExpirationTime) {
-          this.cache.delete(cacheKey);
-          return null;
-        }
-      }
-
-      return cached;
+  public getWebContentByUrl(url: string): { title: string; content: string } | null {
+    const cachedItem = this.diskCache.getWebContent(url);
+    if (cachedItem) {
+      return {
+        title: cachedItem.title,
+        content: cachedItem.content,
+      };
     }
-
     return null;
   }
 
   /**
-   * 콘텐츠를 캐시에 저장합니다.
+   * 여러 URL의 웹 콘텐츠를 가져옵니다.
    */
-  private setCachedContent(url: string, docs: Document[]): void {
-    // 캐시 크기 제한
-    if (this.cache.size >= this.maxCacheSize) {
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey) {
-        this.cache.delete(firstKey);
-      }
+  public getMultipleWebContentByUrls(urls: string[]): Record<string, { title: string; content: string }> {
+    const result: Record<string, { title: string; content: string }> = {};
+    const cachedItems = this.diskCache.getMultipleWebContent(urls);
+    
+    for (const [url, item] of Object.entries(cachedItems)) {
+      result[url] = {
+        title: item.title,
+        content: item.content,
+      };
     }
-
-    const cacheKey = this.generateCacheKey(url);
-    this.cache.set(cacheKey, docs);
-  }
-
-  /**
-   * 캐시 키를 생성합니다.
-   */
-  private generateCacheKey(url: string): string {
-    return btoa(url).replace(/[^a-zA-Z0-9]/g, '');
+    
+    return result;
   }
 
   /**
@@ -373,7 +376,7 @@ export class WebContentLoader {
    * 캐시를 클리어합니다.
    */
   public clearCache(): void {
-    this.cache.clear();
+    this.diskCache.clear();
     console.info('Web content cache cleared');
   }
 
@@ -381,10 +384,11 @@ export class WebContentLoader {
    * 캐시 통계를 반환합니다.
    */
   public getCacheStats(): { size: number; maxSize: number; urls: string[] } {
+    const stats = this.diskCache.getStats();
     return {
-      size: this.cache.size,
-      maxSize: this.maxCacheSize,
-      urls: Array.from(this.cache.keys()),
+      size: stats.totalItems,
+      maxSize: -1, // 디스크 캐시에는 제한 없음
+      urls: this.diskCache.getAllUrls(),
     };
   }
 }

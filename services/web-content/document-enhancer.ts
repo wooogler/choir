@@ -1,6 +1,7 @@
 import { Document } from '@langchain/core/documents';
 import type { DocumentMetadata } from 'services/vector/types';
 import { WebContentLoader } from './web-loader';
+import { WebContentCache } from './web-content-cache';
 
 /**
  * 문서 향상 서비스
@@ -9,9 +10,11 @@ import { WebContentLoader } from './web-loader';
 export class DocumentEnhancer {
   private static instance: DocumentEnhancer;
   private webLoader: WebContentLoader;
+  private webCache: WebContentCache;
 
   private constructor() {
     this.webLoader = WebContentLoader.getInstance();
+    this.webCache = WebContentCache.getInstance();
   }
 
   public static getInstance(): DocumentEnhancer {
@@ -29,15 +32,52 @@ export class DocumentEnhancer {
   public async enhanceDocuments(documents: Document<DocumentMetadata>[]): Promise<Document<DocumentMetadata>[]> {
     console.info(`Enhancing ${documents.length} documents with web content`);
 
+    // 전체 문서에서 URL들을 미리 추출하여 캐시 통계 확인
+    const allUrls: string[] = [];
+    for (const doc of documents) {
+      const urls = this.webLoader.extractUrls(doc.pageContent);
+      allUrls.push(...urls.slice(0, 3));
+    }
+    const uniqueUrls = Array.from(new Set(allUrls));
+    const cachedContent = this.webCache.getMultipleWebContent(uniqueUrls);
+    const totalCachedUrls = Object.keys(cachedContent).length;
+    
+    console.info(`Pre-scan: ${uniqueUrls.length} unique URLs found, ${totalCachedUrls} already cached (${Math.round(totalCachedUrls/uniqueUrls.length*100)}% cache hit rate)`);
+
     const enhancedDocuments: Document<DocumentMetadata>[] = [];
     let webContentCount = 0;
     let cachedWebContentCount = 0;
 
     for (const doc of documents) {
       try {
-        // 이미 webContent가 있는 문서는 스킵 (캐시된 상태)
+        // 하위 호환성: 이미 webContent가 있는 문서는 webContentUrls로 변환
         if (doc.metadata.webContent && doc.metadata.webContent.length > 0) {
-          console.info(`Document ${doc.metadata.nodeId} already has cached web content, skipping enhancement`);
+          console.info(`Document ${doc.metadata.nodeId} has old webContent format, converting to webContentUrls`);
+          
+          // 기존 webContent를 캐시에 저장
+          for (const webItem of doc.metadata.webContent) {
+            this.webCache.setWebContent(webItem.url, webItem.title, webItem.content);
+          }
+          this.webCache.flush();
+          
+          // webContentUrls로 변환
+          const enhancedDoc = new Document({
+            pageContent: doc.pageContent,
+            metadata: {
+              ...doc.metadata,
+              webContentUrls: doc.metadata.webContent.map(item => item.url),
+              webContent: undefined, // 기존 webContent 제거
+            },
+          });
+          
+          enhancedDocuments.push(enhancedDoc);
+          cachedWebContentCount++;
+          continue;
+        }
+
+        // 이미 webContentUrls가 있는 문서는 스킵 (캐시된 상태)
+        if (doc.metadata.webContentUrls && doc.metadata.webContentUrls.length > 0) {
+          console.info(`Document ${doc.metadata.nodeId} already has cached web content URLs, skipping enhancement`);
           enhancedDocuments.push(doc);
           cachedWebContentCount++;
           continue;
@@ -49,12 +89,42 @@ export class DocumentEnhancer {
         if (urls.length > 0) {
           console.info(`Found ${urls.length} URLs in document ${doc.metadata.nodeId}: ${urls.join(', ')}`);
 
-          let enhancedPageContent = doc.pageContent;
-          const webContent: Array<{ url: string; title: string; content: string }> = [];
+          // 먼저 캐시에서 이미 로드된 URL들 확인
+          const urlsToCheck = urls.slice(0, 3);
+          console.info(`URLs to check: ${JSON.stringify(urlsToCheck)}`);
+          
+          const cachedWebContent = this.webCache.getMultipleWebContent(urlsToCheck);
+          const cachedUrls = Object.keys(cachedWebContent);
+          const uncachedUrls = urlsToCheck.filter(url => !cachedUrls.includes(url));
 
-          // 각 URL에 대해 웹 콘텐츠 로드 및 추가
-          for (const url of urls.slice(0, 3)) {
-            // 최대 3개 URL만 처리
+          console.info(`Found ${cachedUrls.length} cached URLs: ${JSON.stringify(cachedUrls)}`);
+          console.info(`Found ${uncachedUrls.length} uncached URLs: ${JSON.stringify(uncachedUrls)}`);
+
+          let enhancedPageContent = doc.pageContent;
+          const validUrls: string[] = [];
+
+          // 캐시된 URL들 처리
+          for (const url of cachedUrls) {
+            const webItem = cachedWebContent[url];
+            const title = webItem.title;
+
+            // 이미 마크다운 링크 형식인지 확인
+            const alreadyMarkdownLink = doc.pageContent.includes(`](${url})`);
+
+            if (!alreadyMarkdownLink) {
+              // 기존 URL을 마크다운 링크로 변환
+              enhancedPageContent = enhancedPageContent.replace(
+                new RegExp(`(?<!\\()${this.escapeRegExp(url)}(?!\\))`, 'g'),
+                `[${title}](${url})`,
+              );
+            }
+
+            validUrls.push(url);
+            console.info(`Using cached web content for ${url}, content length: ${webItem.content.length}`);
+          }
+
+          // 캐시되지 않은 URL들만 새로 로드
+          for (const url of uncachedUrls) {
             try {
               console.info(`Loading web content from: ${url}`);
               const webDocs = await this.webLoader.loadWebContent(url);
@@ -66,7 +136,7 @@ export class DocumentEnhancer {
                 const domain = this.extractDomain(url);
                 const title = webDocs[0].metadata.title || domain;
 
-                // 이미 마크다운 링크 형식인지 확인 (더 정확한 방법)
+                // 이미 마크다운 링크 형식인지 확인
                 const alreadyMarkdownLink = doc.pageContent.includes(`](${url})`);
 
                 if (!alreadyMarkdownLink) {
@@ -77,12 +147,8 @@ export class DocumentEnhancer {
                   );
                 }
 
-                // 웹 콘텐츠를 metadata에 저장
-                webContent.push({
-                  url: url,
-                  title: title,
-                  content: webDocs[0].pageContent,
-                });
+                // 유효한 URL 목록에 추가
+                validUrls.push(url);
 
                 webContentCount++;
                 console.info(`Web content added for ${url}, content length: ${webDocs[0].pageContent.length}`);
@@ -97,16 +163,17 @@ export class DocumentEnhancer {
           }
 
           // 웹 콘텐츠가 추가된 경우 향상된 문서 생성
-          if (webContent.length > 0) {
+          if (validUrls.length > 0) {
             const enhancedDoc = new Document({
               pageContent: enhancedPageContent, // 원본 콘텐츠만 유지 (링크 형식만 개선)
               metadata: {
                 ...doc.metadata,
-                webContent: webContent, // 웹 콘텐츠는 metadata에 저장
+                webContentUrls: validUrls, // URL 목록만 저장
               },
             });
 
             enhancedDocuments.push(enhancedDoc);
+            cachedWebContentCount += cachedUrls.length;
           } else {
             enhancedDocuments.push(doc);
           }
@@ -129,10 +196,22 @@ export class DocumentEnhancer {
   public static getFullContentForSearch(document: Document<DocumentMetadata>): string {
     let fullContent = document.pageContent;
 
+    // 하위 호환성: 기존 webContent 지원
     const webContent = document.metadata.webContent;
     if (webContent && webContent.length > 0) {
       webContent.forEach((web) => {
         fullContent += `\n\n--- Web Content from ${web.title} ---\n${web.content}`;
+      });
+    }
+
+    // 새로운 방식: webContentUrls에서 동적으로 웹 콘텐츠 로드
+    const webContentUrls = document.metadata.webContentUrls;
+    if (webContentUrls && webContentUrls.length > 0) {
+      const webCache = WebContentCache.getInstance();
+      const cachedWebContent = webCache.getMultipleWebContent(webContentUrls);
+      
+      Object.values(cachedWebContent).forEach((webItem) => {
+        fullContent += `\n\n--- Web Content from ${webItem.title} ---\n${webItem.content}`;
       });
     }
 
@@ -151,44 +230,6 @@ export class DocumentEnhancer {
     }
   }
 
-  /**
-   * URL들에서 간단한 엔티티를 추출합니다.
-   */
-  private extractSimpleEntitiesFromUrls(urls: string[]): string[] {
-    const entities: string[] = [];
-
-    urls.forEach((url) => {
-      try {
-        const urlObj = new URL(url);
-        entities.push(urlObj.hostname);
-      } catch {
-        // 잘못된 URL은 무시
-      }
-    });
-
-    return Array.from(new Set(entities)); // 중복 제거
-  }
-
-  /**
-   * 텍스트에서 간단한 엔티티를 추출합니다.
-   */
-  private extractSimpleEntities(text: string): string[] {
-    const entities: string[] = [];
-
-    // 대문자로 시작하는 단어들 (고유명사 가능성)
-    const properNouns = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
-    entities.push(...properNouns.slice(0, 5));
-
-    // URL 패턴
-    const urls = text.match(/https?:\/\/[^\s<>"']+/g) || [];
-    entities.push(...urls.slice(0, 2));
-
-    // 이메일 패턴
-    const emails = text.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g) || [];
-    entities.push(...emails.slice(0, 2));
-
-    return Array.from(new Set(entities)); // 중복 제거
-  }
 
   /**
    * 향상 통계를 반환합니다.

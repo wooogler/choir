@@ -32,7 +32,8 @@ export interface DocumentMetadata {
     url: string;
     title: string;
     content: string;
-  }>; // 웹 콘텐츠 향상 기능용
+  }>; // 웹 콘텐츠 향상 기능용 (하위 호환성)
+  webContentUrls?: string[]; // 웹 콘텐츠 URL 목록 (새로운 방식)
 }
 
 /**
