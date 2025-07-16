@@ -844,17 +844,6 @@ export const suggestUpdatesCallback = async ({
     if (isFirstSuggestion) {
       // Skip introduction message since it was already shown in file selection dropdown
 
-      const headerText = 'Document Update';
-      blocks.push({
-        type: 'header',
-        text: { type: 'plain_text', text: headerText, emoji: true },
-      });
-
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: `*Content:*\n\`\`\`${knowledgeContent}\`\`\`` },
-      });
-
       // 원본 토론 링크 추가
       if (knowledgeSourceChannelId && sessionId) {
         const sessionDataForLink = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
@@ -1016,7 +1005,7 @@ export const suggestUpdatesCallback = async ({
     let explanationText = '';
     if (processedDoc.suggestionType === 'APPEND') {
       if (processedDoc.hasChanges) {
-        explanationText = `🔍 I found a section that could benefit from additional content based on your knowledge. I'm suggesting we *append new information* to the existing content rather than replacing it, since the current content is still valuable.`;
+        explanationText = `:mag: I found a section that could benefit from additional content based on your knowledge. I'm suggesting we append new information to the existing content rather than replacing it, since the current content is still valuable.`;
       } else {
         explanationText = `✅ I reviewed this section and it looks good! The existing content already covers what you mentioned, so no changes are needed here.`;
       }
@@ -1039,7 +1028,7 @@ export const suggestUpdatesCallback = async ({
     }
 
     blocks.push(
-      { type: 'section', text: { type: 'mrkdwn', text: suggestionTitleText } },
+      { type: 'section', block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION), text: { type: 'mrkdwn', text: suggestionTitleText } },
       { type: 'section', text: { type: 'mrkdwn', text: explanationText } },
       processedDoc.diffBlock,
       { type: 'actions', elements: mainActionButtons },
@@ -1057,14 +1046,7 @@ export const suggestUpdatesCallback = async ({
 
     const result = await client.chat.postMessage({
       channel: currentDmChannelId!,
-      blocks: [
-        {
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
-          text: { type: 'mrkdwn', text: 'Document Update Suggestions' }
-        },
-        ...blocks.slice(1)
-      ],
+      blocks: blocks,
       unfurl_links: false,
       unfurl_media: false,
       text: 'Document Update Suggestions',
@@ -1145,11 +1127,11 @@ export const suggestUpdatesCallback = async ({
       try {
         await client.chat.postMessage({
           channel: currentDmChannelId,
-          text: `문서 업데이트 제안 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
+          text: `An error occurred while suggesting document updates: ${error instanceof Error ? error.message : 'Unknown error'}`,
           blocks: [{
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-            text: { type: 'mrkdwn', text: `문서 업데이트 제안 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}` }
+            text: { type: 'mrkdwn', text: `An error occurred while suggesting document updates: ${error instanceof Error ? error.message : 'Unknown error'}` }
           }]
         });
       } catch (dmError) {

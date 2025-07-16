@@ -139,6 +139,7 @@ export const EXCLUDE_FROM_HISTORY: CHOIRMessageType[] = [
   CHOIRMessageType.MESSAGE_DELETE,
   CHOIRMessageType.NOTIFICATION, // 공유/알림 메시지도 제외
   CHOIRMessageType.ANONYMOUS_QUESTION, // 익명 질문 메시지도 제외
+  CHOIRMessageType.ERROR,
 ];
 
 /**

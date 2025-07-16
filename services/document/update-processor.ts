@@ -42,6 +42,34 @@ export interface ProcessedDocument {
  */
 export function createAppendSuggestionBlock(originalMarkdown: string, appendedMarkdown: string): any {
   // Create a diff-like display: original content followed by new content (bold)
+  
+  // Remove "File:" and "Path:" lines from original content since they're already shown in the title
+  const cleanedOriginalMarkdown = originalMarkdown
+    .split('\n')
+    .filter(line => !line.startsWith('File:') && !line.startsWith('Path:'))
+    .join('\n')
+    .trim();
+
+  // If content is empty, show section header instead
+  if (!cleanedOriginalMarkdown) {
+    // Extract section name from original markdown (Path: line)
+    const pathLine = originalMarkdown.split('\n').find(line => line.startsWith('Path:'));
+    const sectionName = pathLine ? pathLine.replace('Path:', '').trim() : 'Section';
+    
+    return {
+      type: 'rich_text',
+      elements: [
+        {
+          type: 'rich_text_quote',
+          elements: [
+            { type: 'text', text: `## ${sectionName}`, style: { bold: true } },
+            { type: 'text', text: '\n\n' },
+            { type: 'text', text: appendedMarkdown, style: { bold: true } },
+          ],
+        },
+      ],
+    };
+  }
 
   return {
     type: 'rich_text',
@@ -49,7 +77,7 @@ export function createAppendSuggestionBlock(originalMarkdown: string, appendedMa
       {
         type: 'rich_text_quote',
         elements: [
-          { type: 'text', text: originalMarkdown },
+          { type: 'text', text: cleanedOriginalMarkdown },
           { type: 'text', text: '\n\n' },
           { type: 'text', text: appendedMarkdown, style: { bold: true } },
         ],

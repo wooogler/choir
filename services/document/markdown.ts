@@ -224,7 +224,7 @@ export function treeToMarkdown(docTree: DocumentTree): string {
 
     switch (node.type) {
       case 'root':
-        return node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('\n') : '';
+        return node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('\n\n') : '';
 
       case 'heading':
         const headingLevel = '#'.repeat(node.depth || 1);
@@ -248,8 +248,14 @@ export function treeToMarkdown(docTree: DocumentTree): string {
       case 'listItem':
         const bullet = node.ordered ? '1.' : '-';
         const itemContent = node.children
-          ? node.children.map((child: any) => astToMarkdown(child, depth + 1)).join('\n')
+          ? node.children.map((child: any) => astToMarkdown(child, depth)).join('')
           : '';
+        
+        // If itemContent already starts with a list marker, use it as is
+        if (itemContent.match(/^-\s+/)) {
+          return `${indent}${itemContent}`;
+        }
+        
         return `${indent}${bullet} ${itemContent}`;
 
       case 'blockquote':
@@ -305,11 +311,6 @@ export function treeToMarkdown(docTree: DocumentTree): string {
 
   const markdown = astToMarkdown(docTree.root);
 
-  // DEBUG: 마크다운 변환 결과 로그
-  console.log('[DEBUG] treeToMarkdown result:');
-  console.log('='.repeat(50));
-  console.log(markdown);
-  console.log('='.repeat(50));
 
   // 빈 줄 정리
   return markdown
@@ -975,35 +976,43 @@ export function parseAndSplitContent(content: string): Array<{type: 'listItem' |
           if (child.children && Array.isArray(child.children)) {
             for (const listItem of child.children) {
               if (is(listItem, 'listItem')) {
-                // listItem도 마크다운 문법 보존
-                const tempRoot = { type: 'root' as const, children: [listItem] };
-                const markdownContent = unified()
-                  .use(remarkStringify)
-                  .stringify(tempRoot)
-                  .trim()
-                  .replace(/^-\s*/, ''); // 리스트 마커 제거 (나중에 다시 추가됨)
-                if (markdownContent) {
-                  result.push({
-                    type: 'listItem',
-                    content: markdownContent
-                  });
+                // listItem의 실제 content만 추출 (paragraph 내용)
+                if (listItem.children && listItem.children.length > 0) {
+                  const paragraph = listItem.children[0];
+                  if (is(paragraph, 'paragraph')) {
+                    const tempRoot = { type: 'root' as const, children: [paragraph] };
+                    const markdownContent = unified()
+                      .use(remarkStringify)
+                      .stringify(tempRoot)
+                      .trim();
+                    if (markdownContent) {
+                      result.push({
+                        type: 'listItem',
+                        content: markdownContent
+                      });
+                    }
+                  }
                 }
               }
             }
           }
         } else if (is(child, 'listItem')) {
-          // 직접 listItem인 경우 (nested가 아닌) - 마크다운 문법 보존
-          const tempRoot = { type: 'root' as const, children: [child] };
-          const markdownContent = unified()
-            .use(remarkStringify)
-            .stringify(tempRoot)
-            .trim()
-            .replace(/^-\s*/, ''); // 리스트 마커 제거 (나중에 다시 추가됨)
-          if (markdownContent) {
-            result.push({
-              type: 'listItem',
-              content: markdownContent
-            });
+          // 직접 listItem인 경우 - paragraph 내용만 추출
+          if (child.children && child.children.length > 0) {
+            const paragraph = child.children[0];
+            if (is(paragraph, 'paragraph')) {
+              const tempRoot = { type: 'root' as const, children: [paragraph] };
+              const markdownContent = unified()
+                .use(remarkStringify)
+                .stringify(tempRoot)
+                .trim();
+              if (markdownContent) {
+                result.push({
+                  type: 'listItem',
+                  content: markdownContent
+                });
+              }
+            }
           }
         }
       }
