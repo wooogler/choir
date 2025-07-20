@@ -73,7 +73,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     const filteredMessages = await getFilteredConversationHistory(client, event, choirUsers, {
       timeLimit, // Use classified timeLimit
       messageLimit: 10, // fetch up to 15 messages
-      maxResults: 10, // return up to 15 messages including bot responses
+      maxResults: 5, // return up to 15 messages including bot responses
     });
 
     if (!filteredMessages?.length) {
