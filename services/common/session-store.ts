@@ -24,13 +24,13 @@ const sessionStores = {
  * @param sessionId 세션 ID
  * @param data 저장할 데이터 객체
  * @param sessionType 세션 타입 (DISCUSSION 또는 CONSULTATION)
- * @param expirationMs 세션 만료 시간 (밀리초, 기본값 30분)
+ * @param expirationMs 세션 만료 시간 (밀리초, 기본값 1시간)
  */
 export function storeSessionData(
   sessionId: string,
   data: any,
   sessionType: SessionType = SessionType.DOCUMENT_UPDATE,
-  expirationMs: number = 30 * 60 * 1000,
+  expirationMs: number = 60 * 60 * 1000, // 1시간으로 연장
 ): void {
   const sessionStore = sessionStores[sessionType];
 
