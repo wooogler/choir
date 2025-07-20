@@ -87,7 +87,6 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
     ...choirManagementBlocks,
     ...becomeManagerBlocks,
     ...organizationDescriptionBlocks,
-    ...logDownloadBlocks,
   ];
 };
 
