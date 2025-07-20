@@ -8,7 +8,6 @@ import type {
   ViewSubmitAction,
 } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
-import { getAnonymousThreadInfo } from 'services/common/session-store';
 import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
 import { DocumentUpdate, getStoredDocumentUpdates } from 'services/document';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
@@ -204,47 +203,6 @@ const applySelectedToGithubAction = async ({
         } catch (channelError) {
           console.error('Failed to post update to original channel:', channelError);
           // 실패해도 DM은 전송되었으므로 계속 진행
-        }
-
-        // 익명 질문에서 시작된 경우 원래 질문자에게도 notification 전송
-        if (originalChannelId && originalThreadTs) {
-          try {
-            const anonymousInfo = getAnonymousThreadInfo(originalChannelId, originalThreadTs);
-            if (anonymousInfo) {
-              const updatedFileName = successfulUpdates[0];
-              const userName = await getUserName(userId, client);
-              const sectionInfo = formatSectionPathWithLinks({
-                headingPath,
-                sectionName, 
-                githubUrl,
-              } as any);
-
-              const questionerNotificationText = `📄 *Document Updated!*\n\nGreat news! The discussion in your anonymous question led to a valuable update in our documentation.\n\n*File:* <${githubUrl}|${updatedFileName}>\n*Section:* ${sectionInfo}\n\nThanks for asking the right questions! 🙌`;
-
-              await client.chat.postMessage({
-                channel: anonymousInfo.originalQuestionerId,
-                text: `Document updated based on your anonymous question!`,
-                blocks: [
-                  {
-                    type: 'section',
-                    text: {
-                      type: 'mrkdwn',
-                      text: questionerNotificationText,
-                    },
-                    block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
-                  },
-                ],
-              });
-
-              console.log('Successfully sent document update notification to anonymous questioner:', {
-                originalQuestionerId: anonymousInfo.originalQuestionerId,
-                fileName: updatedFileName,
-              });
-            }
-          } catch (anonymousError) {
-            console.error('Failed to notify anonymous questioner about document update:', anonymousError);
-            // 실패해도 메인 프로세스는 계속 진행
-          }
         }
       }
     }

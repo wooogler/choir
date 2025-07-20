@@ -244,8 +244,13 @@ export const suggestUpdatesCallback = async ({
             }
           }
         }
-      } catch (error) {
-        logger.error(`Failed to update (remove buttons from) message ${messageTsOfButtonClicked}:`, error);
+      } catch (error: any) {
+        // 익명 질문의 경우 channel_not_found 에러가 발생할 수 있음 - 무시하고 계속 진행
+        if (error?.data?.error === 'channel_not_found') {
+          logger.info(`Channel not found for message ${messageTsOfButtonClicked} - likely an anonymous question DM, continuing process`);
+        } else {
+          logger.error(`Failed to update (remove buttons from) message ${messageTsOfButtonClicked}:`, error);
+        }
       }
     }
 
@@ -290,8 +295,13 @@ export const suggestUpdatesCallback = async ({
             }
           }
         }
-      } catch (error) {
-        console.error('Error updating previous suggestion message (removing buttons):', error);
+      } catch (error: any) {
+        // 익명 질문의 경우 channel_not_found 에러가 발생할 수 있음 - 무시하고 계속 진행
+        if (error?.data?.error === 'channel_not_found') {
+          console.log('Channel not found for previous suggestion message - likely an anonymous question DM, continuing process');
+        } else {
+          console.error('Error updating previous suggestion message (removing buttons):', error);
+        }
       }
     }
 
