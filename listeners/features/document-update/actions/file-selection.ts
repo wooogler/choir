@@ -120,22 +120,9 @@ export const startFileBasedReviewAction = async ({
         if (history.messages && history.messages.length > 0) {
           const originalMessage = history.messages[0];
           if (originalMessage.blocks) {
-            const updatedBlocks = originalMessage.blocks.filter((block: any) => {
-              return block.type !== 'actions';
-            });
-
-            await client.chat.update({
+            await client.chat.delete({
               channel: channelId,
               ts: messageTs,
-              blocks: [
-                {
-                  type: 'section',
-                  block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
-                  text: { type: 'mrkdwn', text: 'Starting document review...' },
-                },
-                ...updatedBlocks.slice(1),
-              ] as any,
-              text: 'Starting document review...',
             });
           }
         }

@@ -248,58 +248,62 @@ function filterMessagesByType(messages: SlackMessage[]): SlackMessage[] {
 
 // Helper function to find session boundaries and get messages from current session
 function getMessagesAfterSessionBoundary(messages: SlackMessage[]): SlackMessage[] {
-  // Find the latest session start (searching from newest to oldest)
   let sessionStartIndex = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-
-    // Check metadata first
-    if (msg.metadata?.messageType && SESSION_START_TYPES.includes(msg.metadata.messageType)) {
-      sessionStartIndex = i;
-      break;
-    }
-
-    // Check blocks as fallback
-    if (msg.blocks && msg.blocks.length > 0) {
-      const blockMessageType = getCHOIRMessageTypeFromBlocks(msg.blocks);
-      if (blockMessageType && SESSION_START_TYPES.includes(blockMessageType)) {
-        sessionStartIndex = i;
-        break;
-      }
-    }
-  }
-
-  // If session start found, return messages from it (inclusive); otherwise check for session end
-  if (sessionStartIndex >= 0) {
-    return messages.slice(sessionStartIndex);
-  }
-
-  // Fallback: Find the last session end message (searching from newest to oldest)
   let sessionEndIndex = -1;
+
+  // Find both session start and session end indices (searching from newest to oldest)
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
+    let messageType = msg.metadata?.messageType;
 
-    // Check metadata first
-    if (msg.metadata?.messageType && SESSION_END_TYPES.includes(msg.metadata.messageType)) {
-      sessionEndIndex = i;
-      break;
+    // Check blocks as fallback if no metadata
+    if (!messageType && msg.blocks && msg.blocks.length > 0) {
+      messageType = getCHOIRMessageTypeFromBlocks(msg.blocks) || undefined;
     }
 
-    // Check blocks as fallback
-    if (msg.blocks && msg.blocks.length > 0) {
-      const blockMessageType = getCHOIRMessageTypeFromBlocks(msg.blocks);
-      if (blockMessageType && SESSION_END_TYPES.includes(blockMessageType)) {
+    if (messageType) {
+      // Find latest session start
+      if (sessionStartIndex === -1 && SESSION_START_TYPES.includes(messageType)) {
+        sessionStartIndex = i;
+      }
+      
+      // Find latest session end (only if we haven't found one yet)
+      if (sessionEndIndex === -1 && SESSION_END_TYPES.includes(messageType)) {
         sessionEndIndex = i;
-        break;
       }
     }
   }
 
-  // If session end found, return messages after it; otherwise return all messages
-  if (sessionEndIndex >= 0 && sessionEndIndex < messages.length - 1) {
-    return messages.slice(sessionEndIndex + 1);
+  // Priority logic:
+  // 1. If we have both, use the one that comes LATER (more recent)
+  // 2. Session start is inclusive, session end is exclusive (after the end message)
+  
+  if (sessionStartIndex >= 0 && sessionEndIndex >= 0) {
+    // Both found - use the more recent one
+    if (sessionStartIndex > sessionEndIndex) {
+      // Session start is more recent - return from session start (inclusive)
+      return messages.slice(sessionStartIndex);
+    } else {
+      // Session end is more recent - return after session end (exclusive)
+      if (sessionEndIndex < messages.length - 1) {
+        return messages.slice(sessionEndIndex + 1);
+      } else {
+        return []; // Session end is the last message, no messages after it
+      }
+    }
+  } else if (sessionStartIndex >= 0) {
+    // Only session start found
+    return messages.slice(sessionStartIndex);
+  } else if (sessionEndIndex >= 0) {
+    // Only session end found
+    if (sessionEndIndex < messages.length - 1) {
+      return messages.slice(sessionEndIndex + 1);
+    } else {
+      return []; // Session end is the last message, no messages after it
+    }
   }
 
+  // No session boundaries found
   return messages;
 }
 

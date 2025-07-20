@@ -219,26 +219,13 @@ export const suggestUpdatesCallback = async ({
               }
               return true;
             });
-            const textForUpdate =
-              updatedBlocks.length < originalMessage.blocks.length
-                ? `Processing... (Buttons removed)`
-                : originalMessage.text || 'Processing document updates...';
 
             if (updatedBlocks.length < originalMessage.blocks.length) {
-              await client.chat.update({
+              await client.chat.delete({
                 channel: currentDmChannelId,
                 ts: messageTsOfButtonClicked,
-                blocks: [
-                  {
-                    type: 'section',
-                    block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
-                    text: { type: 'mrkdwn', text: textForUpdate },
-                  },
-                  ...updatedBlocks.slice(1),
-                ] as (KnownBlock | Block)[],
-                text: textForUpdate,
               });
-              logger.info(`Removed buttons from message ${messageTsOfButtonClicked} in channel ${currentDmChannelId}`);
+              logger.info(`Deleted message with buttons ${messageTsOfButtonClicked} in channel ${currentDmChannelId}`);
             } else {
               logger.info(`Buttons already removed or not found in message ${messageTsOfButtonClicked}`);
             }
@@ -279,18 +266,9 @@ export const suggestUpdatesCallback = async ({
               return true;
             });
             if (updatedBlocks.length < previousMessage.blocks.length) {
-              await client.chat.update({
+              await client.chat.delete({
                 channel: currentDmChannelId,
                 ts: lastMessageTs,
-                blocks: [
-                  {
-                    type: 'section',
-                    block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
-                    text: { type: 'mrkdwn', text: previousMessage.text || 'Previous suggestion (buttons removed)' },
-                  },
-                  ...updatedBlocks.slice(1),
-                ] as (KnownBlock | Block)[],
-                text: previousMessage.text || 'Previous suggestion (buttons removed)',
               });
             }
           }
@@ -449,6 +427,20 @@ export const suggestUpdatesCallback = async ({
 
         // Check if we found any results
         if (searchResults.length === 0) {
+          // Delete progress message before showing error
+          const progressTimestamp = getProgressMessageTimestamp(userId);
+          if (progressTimestamp) {
+            try {
+              await client.chat.delete({
+                channel: currentDmChannelId,
+                ts: progressTimestamp,
+              });
+              deleteProgressMessageTimestamp(userId);
+            } catch (deleteError) {
+              console.error('진행 중 메시지 삭제 실패:', deleteError);
+            }
+          }
+          
           await client.chat.postMessage({
             channel: currentDmChannelId,
             text: `No relevant content found in the selected file: ${parsedValue.selectedFile}. Please try selecting a different file or choose "All Files" option.`,
@@ -494,6 +486,21 @@ export const suggestUpdatesCallback = async ({
           logger.error(
             `Could not find stored document update for index ${currentIndex - 1} and nodeId ${parsedValue.currentNodeId}`,
           );
+          
+          // Delete progress message before showing error
+          const progressTimestamp = getProgressMessageTimestamp(userId);
+          if (progressTimestamp) {
+            try {
+              await client.chat.delete({
+                channel: currentDmChannelId!,
+                ts: progressTimestamp,
+              });
+              deleteProgressMessageTimestamp(userId);
+            } catch (deleteError) {
+              console.error('진행 중 메시지 삭제 실패:', deleteError);
+            }
+          }
+          
           await client.chat.postMessage({
             channel: currentDmChannelId!,
             text: '❌ Error: Could not retrieve the details for this update. Please try again or skip.',
@@ -749,12 +756,41 @@ export const suggestUpdatesCallback = async ({
                 },
               ],
             });
+            
+            // Delete progress message before returning
+            const progressTimestamp = getProgressMessageTimestamp(userId);
+            if (progressTimestamp) {
+              try {
+                await client.chat.delete({
+                  channel: currentDmChannelId,
+                  ts: progressTimestamp,
+                });
+                deleteProgressMessageTimestamp(userId);
+              } catch (deleteError) {
+                console.error('진행 중 메시지 삭제 실패:', deleteError);
+              }
+            }
+            
             return;
           }
         } catch (error) {
           console.error('Error creating new section when no search results found:', error);
         }
 
+        // Delete progress message before showing fallback error
+        const progressTimestamp = getProgressMessageTimestamp(userId);
+        if (progressTimestamp) {
+          try {
+            await client.chat.delete({
+              channel: currentDmChannelId,
+              ts: progressTimestamp,
+            });
+            deleteProgressMessageTimestamp(userId);
+          } catch (deleteError) {
+            console.error('진행 중 메시지 삭제 실패:', deleteError);
+          }
+        }
+        
         // Fallback if new section creation fails
         await client.chat.postMessage({
           channel: currentDmChannelId,
@@ -788,6 +824,21 @@ export const suggestUpdatesCallback = async ({
       if (fileSelectionMessageTs) {
         setLastMessageTimestamp(userId, fileSelectionMessageTs);
       }
+      
+      // Delete progress message before returning
+      const progressTimestamp = getProgressMessageTimestamp(userId);
+      if (progressTimestamp) {
+        try {
+          await client.chat.delete({
+            channel: currentDmChannelId,
+            ts: progressTimestamp,
+          });
+          deleteProgressMessageTimestamp(userId);
+        } catch (deleteError) {
+          console.error('진행 중 메시지 삭제 실패:', deleteError);
+        }
+      }
+      
       return; // Exit here, wait for user to select file and click "Start Review"
     }
 
@@ -808,6 +859,21 @@ export const suggestUpdatesCallback = async ({
         unfurl_links: false,
         unfurl_media: false,
       });
+      
+      // Delete progress message before returning
+      const progressTimestamp = getProgressMessageTimestamp(userId);
+      if (progressTimestamp) {
+        try {
+          await client.chat.delete({
+            channel: currentDmChannelId,
+            ts: progressTimestamp,
+          });
+          deleteProgressMessageTimestamp(userId);
+        } catch (deleteError) {
+          console.error('진행 중 메시지 삭제 실패:', deleteError);
+        }
+      }
+      
       return;
     }
 
