@@ -2,9 +2,9 @@ import type { WebClient } from '@slack/web-api';
 
 export enum ChannelType {
   GENERAL_CHANNEL = 'general_channel',
-  QA_CHANNEL = 'qa_channel', 
+  QA_CHANNEL = 'qa_channel',
   ONE_ON_ONE_DM = 'one_on_one_dm',
-  GROUP_DM = 'group_dm'
+  GROUP_DM = 'group_dm',
 }
 
 export interface ChannelClassification {
@@ -38,22 +38,22 @@ async function getChannelInfo(channelId: string, client: WebClient) {
  * @returns Promise<ChannelClassification> - Channel classification with timeLimit
  */
 export async function classifyChannel(
-  channelId: string, 
+  channelId: string,
   client: WebClient,
-  qaChannelId?: string
+  qaChannelId?: string,
 ): Promise<ChannelClassification> {
   const channelInfo = await getChannelInfo(channelId, client);
-  
+
   // Check if it's the Q&A channel
   if (qaChannelId && channelId === qaChannelId) {
     return {
       type: ChannelType.QA_CHANNEL,
       displayName: 'Q&A Channel',
       timeLimit: 4320, // 3 days
-      description: 'Designated Q&A channel for team questions'
+      description: 'Designated Q&A channel for team questions',
     };
   }
-  
+
   // Check if it's a DM using API info
   if (channelInfo) {
     if (channelInfo.is_im === true) {
@@ -61,47 +61,47 @@ export async function classifyChannel(
         type: ChannelType.ONE_ON_ONE_DM,
         displayName: '1:1 Direct Message',
         timeLimit: 4320, // 3 days
-        description: 'One-on-one conversation with CHOIR'
+        description: 'One-on-one conversation with CHOIR',
       };
     }
-    
+
     if (channelInfo.is_mpim === true) {
       return {
         type: ChannelType.GROUP_DM,
-        displayName: 'Group Direct Message', 
+        displayName: 'Group Direct Message',
         timeLimit: 4320, // 3 days
-        description: 'Group conversation including CHOIR'
+        description: 'Group conversation including CHOIR',
       };
     }
   }
-  
+
   // Fallback: check by channel ID pattern for DMs
   if (channelId.startsWith('D')) {
     return {
       type: ChannelType.ONE_ON_ONE_DM,
       displayName: '1:1 Direct Message',
-      timeLimit: 4320, // 3 days  
-      description: 'One-on-one conversation with CHOIR (detected by ID pattern)'
+      timeLimit: 4320, // 3 days
+      description: 'One-on-one conversation with CHOIR (detected by ID pattern)',
     };
   }
-  
+
   // Some group DMs might start with G or even C
-  if (channelInfo && (channelInfo.is_group || channelInfo.is_private) && 
-      (channelInfo.num_members || 0) <= 10) { // Small group, likely a group DM
+  if (channelInfo && (channelInfo.is_group || channelInfo.is_private) && (channelInfo.num_members || 0) <= 10) {
+    // Small group, likely a group DM
     return {
       type: ChannelType.GROUP_DM,
       displayName: 'Group Direct Message',
       timeLimit: 4320, // 3 days
-      description: 'Small group conversation including CHOIR'
+      description: 'Small group conversation including CHOIR',
     };
   }
-  
+
   // Default: general channel
   return {
     type: ChannelType.GENERAL_CHANNEL,
     displayName: 'General Channel',
     timeLimit: 10, // 10 minutes
-    description: 'Regular team channel'
+    description: 'Regular team channel',
   };
 }
 
@@ -113,8 +113,7 @@ export async function classifyChannel(
  */
 export async function isDMByAPI(channelId: string, client: WebClient): Promise<boolean> {
   const classification = await classifyChannel(channelId, client);
-  return classification.type === ChannelType.ONE_ON_ONE_DM || 
-         classification.type === ChannelType.GROUP_DM;
+  return classification.type === ChannelType.ONE_ON_ONE_DM || classification.type === ChannelType.GROUP_DM;
 }
 
 /**
@@ -128,7 +127,7 @@ export function isDM(channelId: string, channelType?: string): boolean {
   if (channelType) {
     return channelType === 'im' || channelType === 'mpim';
   }
-  
+
   // Fallback to channel ID pattern
   // D* = 1:1 DM, G* can be group DM or private channel, C* can also be group DM in some cases
   return channelId.startsWith('D') || channelId.startsWith('G');
@@ -145,7 +144,7 @@ export function is1to1DM(channelId: string, channelType?: string): boolean {
   if (channelType) {
     return channelType === 'im';
   }
-  
+
   // Fallback to channel ID pattern
   return channelId.startsWith('D');
 }
@@ -161,7 +160,7 @@ export function isGroupDM(channelId: string, channelType?: string): boolean {
   if (channelType) {
     return channelType === 'mpim';
   }
-  
+
   // Fallback to channel ID pattern (less reliable as G* can also be private channels)
   return channelId.startsWith('G');
 }

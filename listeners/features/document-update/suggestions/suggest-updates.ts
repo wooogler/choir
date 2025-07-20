@@ -1,7 +1,6 @@
 import type { Document } from '@langchain/core/documents';
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import type { Block, KnownBlock } from '@slack/web-api';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import {
   deleteProgressMessageTimestamp,
   getLastMessageTimestamp,
@@ -21,12 +20,13 @@ import {
 } from 'services/document/document-store';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { type ProcessedDocument, processDocument } from 'services/document/update-processor';
+import { GithubService } from 'services/github';
 import { type SlackMessage, getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
 import type { DocumentMetadata } from 'services/vector/types';
-import { applySelectedToGithubAction } from '../apply-document/update-documents';
-import { GithubService } from 'services/github';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { applySelectedToGithubAction } from '../apply-document/update-documents';
 
 /**
  * Create a link to the original message using Slack permalink format
@@ -60,7 +60,7 @@ async function showFileSelectionDropdown(
   const workspaceId = await getWorkspaceId(client);
   const workspaceStore = new WorkspaceStore();
   const config = await workspaceStore.getWorkspaceConfig(workspaceId);
-  
+
   if (!config || !config.githubRepo) {
     throw new Error('Workspace configuration or GitHub repository not found');
   }
@@ -100,9 +100,9 @@ async function showFileSelectionDropdown(
 
   // Find the default file option (from first search result)
   const defaultFilePath = searchResults[0]?.metadata?.fileName || fileOptions[0]?.value;
-  const defaultFileOption = fileOptions.find((option) => 
-    option.value === defaultFilePath || option.text.text === defaultFilePath
-  ) || fileOptions[0];
+  const defaultFileOption =
+    fileOptions.find((option) => option.value === defaultFilePath || option.text.text === defaultFilePath) ||
+    fileOptions[0];
 
   const userName = await getUserName(userId, client);
   const message = await client.chat.postMessage({
@@ -114,41 +114,41 @@ async function showFileSelectionDropdown(
         block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
         text: {
           type: 'mrkdwn',
-          text: `👋 Hi *${userName}*! I'm CHOIR, your documentation assistant. I've analyzed your knowledge and found ${searchResults.length} relevant document${searchResults.length > 1 ? 's' : ''} that might need updates.`
-        }
+          text: `👋 Hi *${userName}*! I'm CHOIR, your documentation assistant. I've analyzed your knowledge and found ${searchResults.length} relevant document${searchResults.length > 1 ? 's' : ''} that might need updates.`,
+        },
       },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `📁 *Which file would you like to focus on first?*\n\nI can either:\n• Review documents across all files (recommended)\n• Focus on a specific file of your choice`
+          text: `📁 *Which file would you like to focus on first?*\n\nI can either:\n• Review documents across all files (recommended)\n• Focus on a specific file of your choice`,
         },
         accessory: {
           type: 'static_select',
           action_id: 'file_selection_for_update',
           placeholder: {
             type: 'plain_text',
-            text: 'Choose a file...'
+            text: 'Choose a file...',
           },
           initial_option: defaultFileOption,
           options: [
             {
               text: {
                 type: 'plain_text',
-                text: '🔍 All Files (Recommended)'
+                text: '🔍 All Files (Recommended)',
               },
-              value: 'ALL_FILES'
+              value: 'ALL_FILES',
             },
-            ...fileOptions
-          ]
-        }
+            ...fileOptions,
+          ],
+        },
       },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Your Knowledge:*\n\`\`\`${knowledgeContent}\`\`\``
-        }
+          text: `*Your Knowledge:*\n\`\`\`${knowledgeContent}\`\`\``,
+        },
       },
       {
         type: 'actions',
@@ -158,7 +158,7 @@ async function showFileSelectionDropdown(
             text: {
               type: 'plain_text',
               text: '▶️ Start Review',
-              emoji: true
+              emoji: true,
             },
             style: 'primary',
             action_id: 'start_file_based_review',
@@ -168,11 +168,11 @@ async function showFileSelectionDropdown(
               knowledgeSourceChannelId,
               knowledgeSourceThreadTs,
               selectedFile: 'ALL_FILES', // default selection
-              defaultFilePath: defaultFilePath // 기본 파일 정보 추가
-            })
-          }
-        ]
-      }
+              defaultFilePath: defaultFilePath, // 기본 파일 정보 추가
+            }),
+          },
+        ],
+      },
     ],
     unfurl_links: false,
     unfurl_media: false,
@@ -232,9 +232,9 @@ export const suggestUpdatesCallback = async ({
                   {
                     type: 'section',
                     block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
-                    text: { type: 'mrkdwn', text: textForUpdate }
+                    text: { type: 'mrkdwn', text: textForUpdate },
                   },
-                  ...updatedBlocks.slice(1)
+                  ...updatedBlocks.slice(1),
                 ] as (KnownBlock | Block)[],
                 text: textForUpdate,
               });
@@ -281,9 +281,9 @@ export const suggestUpdatesCallback = async ({
                   {
                     type: 'section',
                     block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
-                    text: { type: 'mrkdwn', text: previousMessage.text || 'Previous suggestion (buttons removed)' }
+                    text: { type: 'mrkdwn', text: previousMessage.text || 'Previous suggestion (buttons removed)' },
                   },
-                  ...updatedBlocks.slice(1)
+                  ...updatedBlocks.slice(1),
                 ] as (KnownBlock | Block)[],
                 text: previousMessage.text || 'Previous suggestion (buttons removed)',
               });
@@ -316,7 +316,7 @@ export const suggestUpdatesCallback = async ({
         isFileBasedReview = false; // 파일 기반 검토 종료
         // 저장된 5개 문서를 사용하도록 설정 (나중에 getSearchResults로 가져옴)
       }
-      
+
       if (sessionId) {
         const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
         if (sessionData?.extractedKnowledge) {
@@ -405,18 +405,20 @@ export const suggestUpdatesCallback = async ({
 
     if (typeof parsedValue.index === 'number') {
       currentIndex = parsedValue.index;
-      
+
       // Check if this is a file-based review
       if (parsedValue.isFileBasedReview && parsedValue.selectedFile) {
-        logger.info(`Performing file-based search for file: ${parsedValue.selectedFile}, isFileBasedReview: ${parsedValue.isFileBasedReview}, isDefaultFile: ${parsedValue.isDefaultFile}`);
+        logger.info(
+          `Performing file-based search for file: ${parsedValue.selectedFile}, isFileBasedReview: ${parsedValue.isFileBasedReview}, isDefaultFile: ${parsedValue.isDefaultFile}`,
+        );
         isFileBasedReview = true;
-        
+
         // Perform search based on file selection - 3 cases
         if (parsedValue.selectedFile === 'ALL_FILES' || parsedValue.isDefaultFile) {
           // Case 1: ALL_FILES or default file - use stored 5 documents
           logger.info('Using stored search results (ALL_FILES or default file selected)');
           searchResults = getSearchResults(userId);
-          
+
           // If no stored results, search for 5 documents
           if (!searchResults || searchResults.length === 0) {
             const allFilesResults = await vectorStore.similaritySearch(knowledgeContent, 5);
@@ -426,33 +428,44 @@ export const suggestUpdatesCallback = async ({
         } else {
           // Case 2: Different specific file - search 1 document in that file
           logger.info(`Searching in specific file: ${parsedValue.selectedFile}`);
-          const fileSpecificResults = await vectorStore.similaritySearchByFile(knowledgeContent, parsedValue.selectedFile, 1);
+          const fileSpecificResults = await vectorStore.similaritySearchByFile(
+            knowledgeContent,
+            parsedValue.selectedFile,
+            1,
+          );
           searchResults = fileSpecificResults;
           // Don't store these results as they're file-specific
         }
-        
+
         // Check if we found any results
         if (searchResults.length === 0) {
           await client.chat.postMessage({
             channel: currentDmChannelId,
             text: `No relevant content found in the selected file: ${parsedValue.selectedFile}. Please try selecting a different file or choose "All Files" option.`,
-            blocks: [{
-              type: 'section',
-              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-              text: { type: 'mrkdwn', text: `No relevant content found in the selected file: ${parsedValue.selectedFile}. Please try selecting a different file or choose "All Files" option.` }
-            }]
+            blocks: [
+              {
+                type: 'section',
+                block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+                text: {
+                  type: 'mrkdwn',
+                  text: `No relevant content found in the selected file: ${parsedValue.selectedFile}. Please try selecting a different file or choose "All Files" option.`,
+                },
+              },
+            ],
           });
           return;
         }
-        
+
         // For file-based review, we want to treat this as first suggestion UI-wise
         isFirstSuggestion = true;
       } else {
-        logger.info(`Using cached search results, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}, shouldSwitchToAllFiles: ${parsedValue.shouldSwitchToAllFiles}`);
+        logger.info(
+          `Using cached search results, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}, shouldSwitchToAllFiles: ${parsedValue.shouldSwitchToAllFiles}`,
+        );
         searchResults = getSearchResults(userId);
         isFirstSuggestion = false;
       }
-      
+
       // Apply Changes 후 특정 파일에서 전체 검토로 전환된 경우 처리
       if (parsedValue.shouldSwitchToAllFiles && (!searchResults || searchResults.length === 0)) {
         logger.info('No cached results found after switching to all files, performing new search');
@@ -474,11 +487,16 @@ export const suggestUpdatesCallback = async ({
           await client.chat.postMessage({
             channel: currentDmChannelId!,
             text: '❌ Error: Could not retrieve the details for this update. Please try again or skip.',
-            blocks: [{
-              type: 'section',
-              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-              text: { type: 'mrkdwn', text: '❌ Error: Could not retrieve the details for this update. Please try again or skip.' }
-            }]
+            blocks: [
+              {
+                type: 'section',
+                block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+                text: {
+                  type: 'mrkdwn',
+                  text: '❌ Error: Could not retrieve the details for this update. Please try again or skip.',
+                },
+              },
+            ],
           });
           return;
         }
@@ -550,11 +568,11 @@ export const suggestUpdatesCallback = async ({
                 try {
                   const { convertMarkdownToSlackText } = await import('services/document');
                   const { createDiffBlock } = await import('services/slack');
-                  
+
                   const oldSlackText = await convertMarkdownToSlackText(currentUpdate.nodeContent);
                   const newSlackText = await convertMarkdownToSlackText(currentUpdate.updatedNodeContent);
                   const updatedDiffBlock = createDiffBlock(oldSlackText, newSlackText);
-                  
+
                   blocks.push(updatedDiffBlock);
                 } catch (diffError) {
                   console.error('Failed to create updated diff block:', diffError);
@@ -577,9 +595,9 @@ export const suggestUpdatesCallback = async ({
                   {
                     type: 'section',
                     block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
-                    text: { type: 'mrkdwn', text: notificationText }
+                    text: { type: 'mrkdwn', text: notificationText },
                   },
-                  ...blocks.slice(1)
+                  ...blocks.slice(1),
                 ],
                 unfurl_links: false,
                 unfurl_media: false,
@@ -603,11 +621,13 @@ export const suggestUpdatesCallback = async ({
       await client.chat.postMessage({
         channel: currentDmChannelId,
         text: 'No knowledge content found. Please try again.',
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-          text: { type: 'mrkdwn', text: 'No knowledge content found. Please try again.' }
-        }]
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: { type: 'mrkdwn', text: 'No knowledge content found. Please try again.' },
+          },
+        ],
       });
       return;
     }
@@ -616,17 +636,18 @@ export const suggestUpdatesCallback = async ({
       const progressMessage = await client.chat.postMessage({
         channel: currentDmChannelId,
         text: 'Preparing document update suggestions...',
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
-          text: { type: 'mrkdwn', text: 'Preparing document update suggestions...' }
-        }]
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
+            text: { type: 'mrkdwn', text: 'Preparing document update suggestions...' },
+          },
+        ],
       });
       if (progressMessage.ts) {
         setProgressMessageTimestamp(userId, progressMessage.ts);
       }
     }
-
 
     if (currentIndex === 0 && !isFileBasedReview) {
       searchResults = await vectorStore.similaritySearch(knowledgeContent, 5);
@@ -637,11 +658,16 @@ export const suggestUpdatesCallback = async ({
           await client.chat.postMessage({
             channel: currentDmChannelId,
             text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.',
-            blocks: [{
-              type: 'section',
-              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-              text: { type: 'mrkdwn', text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.' }
-            }]
+            blocks: [
+              {
+                type: 'section',
+                block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+                text: {
+                  type: 'mrkdwn',
+                  text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.',
+                },
+              },
+            ],
           });
           return;
         }
@@ -723,15 +749,20 @@ export const suggestUpdatesCallback = async ({
         await client.chat.postMessage({
           channel: currentDmChannelId,
           text: 'No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.',
-          blocks: [{
-            type: 'section',
-            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-            text: { type: 'mrkdwn', text: 'No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.' }
-          }]
+          blocks: [
+            {
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+              text: {
+                type: 'mrkdwn',
+                text: 'No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.',
+              },
+            },
+          ],
         });
         return;
       }
-      
+
       // Show file selection dropdown before first suggestion
       storeSearchResults(userId, searchResults);
       const fileSelectionMessageTs = await showFileSelectionDropdown(
@@ -742,7 +773,7 @@ export const suggestUpdatesCallback = async ({
         knowledgeContent,
         sessionId,
         knowledgeSourceChannelId,
-        knowledgeSourceThreadTs
+        knowledgeSourceThreadTs,
       );
       if (fileSelectionMessageTs) {
         setLastMessageTimestamp(userId, fileSelectionMessageTs);
@@ -754,11 +785,16 @@ export const suggestUpdatesCallback = async ({
       await client.chat.postMessage({
         channel: currentDmChannelId,
         text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
-          text: { type: 'mrkdwn', text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋" }
-        }],
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+            text: {
+              type: 'mrkdwn',
+              text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
+            },
+          },
+        ],
         unfurl_links: false,
         unfurl_media: false,
       });
@@ -793,11 +829,13 @@ export const suggestUpdatesCallback = async ({
       await client.chat.postMessage({
         channel: currentDmChannelId,
         text: '❌ Error processing document. Skipping to next.',
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-          text: { type: 'mrkdwn', text: '❌ Error processing document. Skipping to next.' }
-        }]
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: { type: 'mrkdwn', text: '❌ Error processing document. Skipping to next.' },
+          },
+        ],
       });
       return;
     }
@@ -924,7 +962,8 @@ export const suggestUpdatesCallback = async ({
       sessionId: sessionId,
       currentNodeId: processedDoc.nodeId,
       // Apply Changes 후 특정 파일에서 전체 검토로 전환하는 로직
-      shouldSwitchToAllFiles: isFileBasedReview && parsedValue.selectedFile !== 'ALL_FILES' && !parsedValue.isDefaultFile,
+      shouldSwitchToAllFiles:
+        isFileBasedReview && parsedValue.selectedFile !== 'ALL_FILES' && !parsedValue.isDefaultFile,
     };
 
     const cancelButtonValue = {
@@ -1028,7 +1067,11 @@ export const suggestUpdatesCallback = async ({
     }
 
     blocks.push(
-      { type: 'section', block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION), text: { type: 'mrkdwn', text: suggestionTitleText } },
+      {
+        type: 'section',
+        block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
+        text: { type: 'mrkdwn', text: suggestionTitleText },
+      },
       { type: 'section', text: { type: 'mrkdwn', text: explanationText } },
       processedDoc.diffBlock,
       { type: 'actions', elements: mainActionButtons },
@@ -1128,11 +1171,16 @@ export const suggestUpdatesCallback = async ({
         await client.chat.postMessage({
           channel: currentDmChannelId,
           text: `An error occurred while suggesting document updates: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          blocks: [{
-            type: 'section',
-            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-            text: { type: 'mrkdwn', text: `An error occurred while suggesting document updates: ${error instanceof Error ? error.message : 'Unknown error'}` }
-          }]
+          blocks: [
+            {
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+              text: {
+                type: 'mrkdwn',
+                text: `An error occurred while suggesting document updates: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              },
+            },
+          ],
         });
       } catch (dmError) {
         console.error('DM 전송 오류:', dmError);

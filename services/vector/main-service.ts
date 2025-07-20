@@ -1,15 +1,15 @@
 import { Document } from '@langchain/core/documents';
 import { Logger } from '../common/logger';
-import { MarkdownFile } from '../github';
-import { SlackMessage } from '../slack';
-import { createNewSectionNode, updateNodeContent } from '../document/markdown';
 import { DocumentTree } from '../document';
-import { VectorStoreError } from './types';
+import { createNewSectionNode, updateNodeContent } from '../document/markdown';
+import type { MarkdownFile } from '../github';
+import type { SlackMessage } from '../slack';
 import { VectorCacheManager } from './cache-manager';
-import { FAISSStoreManager } from './faiss-store-manager';
 import { DocumentProcessor } from './document-processor';
 import { EmbeddingService } from './embedding-service';
-import { type DocumentMetadata } from './types';
+import { FAISSStoreManager } from './faiss-store-manager';
+import { VectorStoreError } from './types';
+import type { DocumentMetadata } from './types';
 
 /**
  * 벡터 스토어 서비스 - FAISS 기반
@@ -32,7 +32,7 @@ export class VectorStoreService {
     this.embeddingService = embeddingService;
     this.documentProcessor = new DocumentProcessor();
     this.cacheManager = new VectorCacheManager();
-    
+
     // FAISS 사용 (안정적이고 빠른 벡터 검색)
     this.storeManager = new FAISSStoreManager(this.embeddingService);
     Logger.info('Using FAISS vector store (stable and fast)');
@@ -276,7 +276,7 @@ export class VectorStoreService {
 
       // 1. 메타데이터로 해당 파일의 문서들만 사전 필터링
       const allDocuments = this.storeManager.getDocuments();
-      const fileDocuments = allDocuments.filter(doc => {
+      const fileDocuments = allDocuments.filter((doc) => {
         const fileName = doc.metadata?.fileName;
         return fileName === filePath || fileName === filePath.split('/').pop();
       });
@@ -286,23 +286,27 @@ export class VectorStoreService {
         return [];
       }
 
-      Logger.info(`Found ${fileDocuments.length} documents in file: ${filePath}, performing similarity search only on these documents`);
+      Logger.info(
+        `Found ${fileDocuments.length} documents in file: ${filePath}, performing similarity search only on these documents`,
+      );
 
       // 2. FAISS에서 더 많은 결과를 가져온 후 해당 파일만 필터링
       // 해당 파일 문서 수를 고려하여 적절한 검색 범위 설정
       const searchK = Math.min(Math.max(fileDocuments.length, k * 5), 100);
       const allResults = await this.storeManager.similaritySearch(cleanedQuery, searchK);
-      
+
       // 3. 해당 파일의 문서들만 필터링
-      const fileResults = allResults.filter(doc => {
+      const fileResults = allResults.filter((doc) => {
         const fileName = doc.metadata?.fileName;
         return fileName === filePath || fileName === filePath.split('/').pop();
       });
 
       // 4. k개로 제한
       const limitedResults = fileResults.slice(0, k);
-      
-      Logger.info(`File-specific search: ${searchK} searched → ${fileResults.length} file matches → ${limitedResults.length} final results`);
+
+      Logger.info(
+        `File-specific search: ${searchK} searched → ${fileResults.length} file matches → ${limitedResults.length} final results`,
+      );
 
       // Debug: Log file-specific results
       console.log('=== FILE-SPECIFIC SEARCH RESULTS ===');
@@ -501,17 +505,19 @@ export class VectorStoreService {
 
       // 2. 새로 추가된 노드들만 증분 업데이트
       if (afterNodeCount > beforeNodeCount) {
-        Logger.info(`Performing incremental vector store update for new section: ${afterNodeCount - beforeNodeCount} new nodes`);
+        Logger.info(
+          `Performing incremental vector store update for new section: ${afterNodeCount - beforeNodeCount} new nodes`,
+        );
 
         // 새로 추가된 노드들을 찾아서 개별적으로 추가
-        const existingDocuments = this.storeManager.getDocuments().filter(doc => doc.metadata.fileName === fileName);
-        const existingNodeIds = new Set(existingDocuments.map(doc => doc.metadata.nodeId));
-        
+        const existingDocuments = this.storeManager.getDocuments().filter((doc) => doc.metadata.fileName === fileName);
+        const existingNodeIds = new Set(existingDocuments.map((doc) => doc.metadata.nodeId));
+
         // 트리에서 새로운 노드들 찾기
         const newNodes = Array.from(file.tree.nodeMap.entries()).filter(([nodeId]) => !existingNodeIds.has(nodeId));
-        
+
         Logger.info(`Found ${newNodes.length} new nodes to add to vector store`);
-        
+
         let successCount = 0;
         for (const [nodeId, node] of newNodes) {
           // toString을 사용해서 노드 내용 추출
@@ -522,7 +528,7 @@ export class VectorStoreService {
             if (success) successCount++;
           }
         }
-        
+
         Logger.info(`Successfully added ${successCount}/${newNodes.length} new nodes to vector store`);
         if (successCount < newNodes.length) {
           Logger.warn('Some nodes failed to be added to vector store');
@@ -552,8 +558,10 @@ export class VectorStoreService {
 
       // 1. content를 파싱하여 개별 항목들로 분할
       const contentItems = parseAndSplitContent(content);
-      Logger.info(`Parsed content into ${contentItems.length} items:`, 
-        contentItems.map(item => `${item.type}: "${item.content.substring(0, 30)}..."`));
+      Logger.info(
+        `Parsed content into ${contentItems.length} items:`,
+        contentItems.map((item) => `${item.type}: "${item.content.substring(0, 30)}..."`),
+      );
 
       // 2. 분할된 content가 여러 개인 경우 각각을 별도 노드로 추가
       if (contentItems.length > 1) {
@@ -572,44 +580,47 @@ export class VectorStoreService {
 
       // 3. 벡터 스토어 노드 단위 증분 업데이트
       Logger.info('Performing node-level incremental vector store update for appended content');
-      
+
       // 기존 문서에서 nodeId 목록을 가져와서 새로 추가된 노드들 식별
-      const existingDocuments = this.storeManager.getDocuments().filter(doc => doc.metadata.fileName === fileName);
-      const existingNodeIds = new Set(existingDocuments.map(doc => doc.metadata.nodeId));
-      
+      const existingDocuments = this.storeManager.getDocuments().filter((doc) => doc.metadata.fileName === fileName);
+      const existingNodeIds = new Set(existingDocuments.map((doc) => doc.metadata.nodeId));
+
       // APPEND 작업 전에 해당 섹션의 기존 빈 document들 제거
       const referenceNode = file.tree.nodeMap.get(nodeId);
       if (referenceNode && referenceNode.sectionId) {
         const sectionId = referenceNode.sectionId;
-        const emptyDocumentsToRemove = existingDocuments.filter(doc => 
-          doc.metadata.sectionId === sectionId && 
-          (!doc.metadata.originalContent || doc.metadata.originalContent.trim().length === 0)
+        const emptyDocumentsToRemove = existingDocuments.filter(
+          (doc) =>
+            doc.metadata.sectionId === sectionId &&
+            (!doc.metadata.originalContent || doc.metadata.originalContent.trim().length === 0),
         );
-        
+
         if (emptyDocumentsToRemove.length > 0) {
-          Logger.info(`Removing ${emptyDocumentsToRemove.length} empty placeholder documents from section ${sectionId}`);
+          Logger.info(
+            `Removing ${emptyDocumentsToRemove.length} empty placeholder documents from section ${sectionId}`,
+          );
           await this.storeManager.removeDocuments(emptyDocumentsToRemove);
-          
+
           // nodeDocumentMap에서도 제거
-          emptyDocumentsToRemove.forEach(doc => {
+          emptyDocumentsToRemove.forEach((doc) => {
             if (doc.metadata.nodeId) {
               this.nodeDocumentMap.delete(doc.metadata.nodeId);
             }
           });
         }
       }
-      
+
       // 현재 트리의 모든 노드에서 새로 추가된 노드들 찾기
-      const newlyAddedNodes = Array.from(file.tree.nodeMap.entries()).filter(([newNodeId]) => 
-        !existingNodeIds.has(newNodeId) && newNodeId.includes(`${nodeId}_append_`)
+      const newlyAddedNodes = Array.from(file.tree.nodeMap.entries()).filter(
+        ([newNodeId]) => !existingNodeIds.has(newNodeId) && newNodeId.includes(`${nodeId}_append_`),
       );
-      
+
       Logger.info(`Found ${newlyAddedNodes.length} newly added nodes to add to vector store`);
-      
+
       // 새로 추가된 노드들을 벡터 스토어에 추가
       const { toString } = await import('mdast-util-to-string');
       let addedCount = 0;
-      
+
       for (const [newNodeId, newNode] of newlyAddedNodes) {
         try {
           const newNodeContent = toString(newNode);
@@ -626,17 +637,22 @@ export class VectorStoreService {
           Logger.error(`Error adding new node ${newNodeId} to vector store:`, error as Error);
         }
       }
-      
+
       // 참조 노드도 업데이트 (내용이 변경되었을 수 있음) - 단, 헤딩 노드는 제외
       const updatedNode = file.tree.nodeMap.get(nodeId);
       if (updatedNode) {
         const updatedNodeContent = toString(updatedNode);
-        
+
         // 헤딩 노드는 벡터 스토어에서 업데이트하지 않음
         if (updatedNode.type === 'heading') {
           Logger.info(`Skipping reference node update for heading ${nodeId} - headings are not in vector store`);
         } else {
-          const success = await this.updateNodeIncremental(fileName, nodeId, updatedNodeContent, updatedNode.type as any);
+          const success = await this.updateNodeIncremental(
+            fileName,
+            nodeId,
+            updatedNodeContent,
+            updatedNode.type as any,
+          );
           if (!success) {
             Logger.warn('Failed to update reference node in vector store, but tree was updated');
             return false;
@@ -647,9 +663,11 @@ export class VectorStoreService {
         Logger.error(`Could not find updated reference node ${nodeId} in tree`);
         return false;
       }
-      
+
       const referenceNodeAction = updatedNode?.type === 'heading' ? 'skipped (heading)' : 'updated';
-      Logger.info(`Vector store update completed: ${addedCount} new nodes added, 1 reference node ${referenceNodeAction}`);
+      Logger.info(
+        `Vector store update completed: ${addedCount} new nodes added, 1 reference node ${referenceNodeAction}`,
+      );
 
       return true;
     } catch (error) {
@@ -681,15 +699,20 @@ export class VectorStoreService {
 
       // 2. 벡터 스토어 노드 단위 증분 업데이트
       Logger.info('Performing node-level incremental vector store update for updated nodes');
-      
+
       let successCount = 0;
       for (const update of updates) {
         const updatedNode = file.tree.nodeMap.get(update.nodeId);
         if (updatedNode) {
           const { toString } = await import('mdast-util-to-string');
           const updatedNodeContent = toString(updatedNode);
-          
-          const success = await this.updateNodeIncremental(fileName, update.nodeId, updatedNodeContent, updatedNode.type as any);
+
+          const success = await this.updateNodeIncremental(
+            fileName,
+            update.nodeId,
+            updatedNodeContent,
+            updatedNode.type as any,
+          );
           if (success) {
             successCount++;
             Logger.info(`Successfully updated node ${update.nodeId} in vector store`);
@@ -700,7 +723,7 @@ export class VectorStoreService {
           Logger.error(`Could not find updated node ${update.nodeId} in tree`);
         }
       }
-      
+
       if (successCount < updates.length) {
         Logger.warn(`Only ${successCount}/${updates.length} nodes were successfully updated in vector store`);
         return false;
@@ -864,16 +887,17 @@ export class VectorStoreService {
       }
 
       // 헤딩 경로와 섹션 정보 구하기
-      const { formatHeadingContext, getHeadingPathForNode, getSectionName, buildParentChildMap, getAncestorNodes } = await import('../llm/langchain');
-      
+      const { formatHeadingContext, getHeadingPathForNode, getSectionName, buildParentChildMap, getAncestorNodes } =
+        await import('../llm/langchain');
+
       // 부모-자식 관계 맵 구축
       const nodeParentMap = buildParentChildMap(file.tree);
-      
+
       // 헤딩 맵 구축
       const headingMap = new Map<string, string>();
       const { visit } = await import('unist-util-visit');
       const { toString } = await import('mdast-util-to-string');
-      
+
       visit(file.tree.root, 'heading', (headingNode: any) => {
         if (headingNode.sectionId && headingNode.id) {
           const headingText = toString(headingNode);
@@ -894,16 +918,16 @@ export class VectorStoreService {
 
       // 노드의 조상 노드들 찾기
       const ancestors = getAncestorNodes(node, nodeParentMap);
-      
+
       // 헤딩 경로 구성
       const headingPath = getHeadingPathForNode(node, ancestors, headingMap, sectionToHeadings);
-      
+
       // 계층적 문맥 구성 (File: ... Path: ... 형태)
       const contextPrefix = formatHeadingContext(headingPath, file.name);
-      
+
       // 섹션 이름 가져오기
       const { sectionName } = getSectionName(node, headingMap);
-      
+
       // 올바른 형태의 pageContent 구성
       const fullContent = `${contextPrefix}${nodeContent}`;
 
@@ -938,7 +962,6 @@ export class VectorStoreService {
       return [];
     }
   }
-
 
   /**
    * 새로운 Document들에만 웹 콘텐츠 향상 적용
@@ -995,5 +1018,4 @@ export class VectorStoreService {
       return false;
     }
   }
-
 }

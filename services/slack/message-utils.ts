@@ -33,7 +33,7 @@ export async function createSlackMessageWithName(
   client: WebClient,
 ): Promise<SlackMessage | null> {
   if (!message.text || !message.ts) return null;
-  
+
   // Handle bot messages
   if (message.bot_id && !message.user) {
     return {
@@ -43,7 +43,7 @@ export async function createSlackMessageWithName(
       ts: message.ts,
     };
   }
-  
+
   // Handle user messages
   if (!message.user) return null;
 
@@ -152,7 +152,9 @@ export const removeDuplicateMessages = (messages: SlackMessage[]): SlackMessage[
     }
   });
 
-  return Array.from(uniqueMessages.values()).sort((a, b) => Number.parseInt(a.ts || '0') - Number.parseInt(b.ts || '0'));
+  return Array.from(uniqueMessages.values()).sort(
+    (a, b) => Number.parseInt(a.ts || '0') - Number.parseInt(b.ts || '0'),
+  );
 };
 
 export function formatTimestampToDateString(timestamp: string): string {

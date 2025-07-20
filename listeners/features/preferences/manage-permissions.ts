@@ -5,8 +5,8 @@ import type {
   SlackActionMiddlewareArgs,
   UsersSelectAction,
 } from '@slack/bolt';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { addManager, getWorkspaceId, isWorkspaceOwner, removeManager, setupInitialManager } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 // Store user selection state

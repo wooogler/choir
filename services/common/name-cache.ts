@@ -25,7 +25,6 @@ interface ChannelCache {
   };
 }
 
-
 interface NameCacheData {
   users: UserCache;
   workspaces: WorkspaceCache;
@@ -113,7 +112,7 @@ class NameCacheService {
       const authInfo = await client.auth.test();
       const teamId = authInfo.team_id;
       const botUserId = authInfo.user_id;
-      
+
       if (teamId && botUserId) {
         this.botUserIdCache.set(teamId, botUserId);
         return botUserId;
@@ -330,7 +329,6 @@ class NameCacheService {
 
     this.saveCache();
   }
-
 
   /**
    * Get cache statistics

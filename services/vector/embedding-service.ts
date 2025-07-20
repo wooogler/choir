@@ -201,8 +201,6 @@ export class EmbeddingService {
     }
   }
 
-
-
   /**
    * 코사인 유사도를 안전하게 계산
    */

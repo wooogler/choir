@@ -1,8 +1,8 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
-import { getUserName, getWorkspaceId, getManagers } from 'services/slack';
+import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { suggestUpdatesCallback } from '../document-update/suggestions/suggest-updates';
 
 /**
@@ -36,11 +36,16 @@ export const suggestUpdatesFromAnonymousReplyCallback = async ({
       await client.chat.postMessage({
         channel: body.user.id, // DM으로 전송
         text: "😅 I can't find the original conversation details. The session may have expired.",
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-          text: { type: 'mrkdwn', text: "😅 I can't find the original conversation details. The session may have expired." }
-        }]
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: {
+              type: 'mrkdwn',
+              text: "😅 I can't find the original conversation details. The session may have expired.",
+            },
+          },
+        ],
       });
       return;
     }
@@ -57,7 +62,7 @@ ${replies.map((reply: string, index: number) => `- ${replyAuthors[index]}: ${rep
 
     // 새로운 세션 생성 (document update용)
     const newSessionId = `anon_update_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    
+
     // 새 세션 데이터 저장 (원본 데이터 기반으로)
     const newSessionData = {
       ...originalSessionData,
@@ -101,15 +106,17 @@ ${replies.map((reply: string, index: number) => `- ${replyAuthors[index]}: ${rep
     // suggestUpdatesCallback 호출하여 문서 업데이트 프로세스 시작
     const modifiedBody = {
       ...body,
-      actions: [{
-        ...body.actions[0],
-        value: JSON.stringify({
-          sessionId: newSessionId,
-          knowledgeContent: combinedKnowledge,
-          originalChannelId: originalSessionData.originalChannelId,
-          originalThreadTs: originalSessionData.originalThreadTs,
-        })
-      }]
+      actions: [
+        {
+          ...body.actions[0],
+          value: JSON.stringify({
+            sessionId: newSessionId,
+            knowledgeContent: combinedKnowledge,
+            originalChannelId: originalSessionData.originalChannelId,
+            originalThreadTs: originalSessionData.originalThreadTs,
+          }),
+        },
+      ],
     };
 
     // 기존 suggest updates 로직 재사용
@@ -146,11 +153,13 @@ ${replies.map((reply: string, index: number) => `- ${replyAuthors[index]}: ${rep
     await client.chat.postMessage({
       channel: body.user.id, // DM으로 전송
       text: '😔 Something went wrong starting the document update. Please try again.',
-      blocks: [{
-        type: 'section',
-        block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-        text: { type: 'mrkdwn', text: '😔 Something went wrong starting the document update. Please try again.' }
-      }]
+      blocks: [
+        {
+          type: 'section',
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          text: { type: 'mrkdwn', text: '😔 Something went wrong starting the document update. Please try again.' },
+        },
+      ],
     });
 
     // 에러 로깅

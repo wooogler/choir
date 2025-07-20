@@ -42,20 +42,20 @@ export interface ProcessedDocument {
  */
 export function createAppendSuggestionBlock(originalMarkdown: string, appendedMarkdown: string): any {
   // Create a diff-like display: original content followed by new content (bold)
-  
+
   // Remove "File:" and "Path:" lines from original content since they're already shown in the title
   const cleanedOriginalMarkdown = originalMarkdown
     .split('\n')
-    .filter(line => !line.startsWith('File:') && !line.startsWith('Path:'))
+    .filter((line) => !line.startsWith('File:') && !line.startsWith('Path:'))
     .join('\n')
     .trim();
 
   // If content is empty, show section header instead
   if (!cleanedOriginalMarkdown) {
     // Extract section name from original markdown (Path: line)
-    const pathLine = originalMarkdown.split('\n').find(line => line.startsWith('Path:'));
+    const pathLine = originalMarkdown.split('\n').find((line) => line.startsWith('Path:'));
     const sectionName = pathLine ? pathLine.replace('Path:', '').trim() : 'Section';
-    
+
     return {
       type: 'rich_text',
       elements: [

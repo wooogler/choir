@@ -281,7 +281,10 @@ class GithubService {
 
               // Construct GitHub URL with proper encoding for file path
               // Split path by '/' and encode each segment individually to preserve path structure
-              const encodedPath = item.path.split('/').map(segment => encodeURIComponent(segment)).join('/');
+              const encodedPath = item.path
+                .split('/')
+                .map((segment) => encodeURIComponent(segment))
+                .join('/');
               const githubUrl = `https://github.com/${params.owner}/${params.repo}/blob/${actualRef}/${encodedPath}`;
 
               allMarkdownFiles.push({

@@ -1,7 +1,7 @@
 import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
-import { WorkspaceStore } from '../workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { WorkspaceStore } from '../workspace/workspace-store';
 
 const workspaceStore = new WorkspaceStore();
 
@@ -102,7 +102,7 @@ export function createQAChannelMessage(
           type: 'mrkdwn',
           text: `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.`,
         },
-        block_id: createCHOIRBlockId(CHOIRMessageType.SESSION_START),
+        block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO),
       },
       {
         type: 'section',
@@ -127,7 +127,7 @@ export function createQAChannelMessage(
           type: 'mrkdwn',
           text: `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.`,
         },
-        block_id: createCHOIRBlockId(CHOIRMessageType.SESSION_START),
+        block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO),
       },
       {
         type: 'section',
@@ -246,13 +246,13 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `The team member would like to discuss this with you. Could you help them?`,
+          text: `${senderIdentity} would like to discuss this with you. Could you help them?`,
         },
       },
     );
   }
 
-  // Anonymous 질문인 경우 "Send Reply to Questioner" 버튼 추가
+  // Anonymous 질문인 경우 실시간 전달 안내 메시지 추가
   if (isAnonymous && sessionId) {
     blocks.push(
       {
@@ -262,27 +262,8 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '💬 *Want to reply to the questioner?*\nPlease respond in this thread, then click the button below to send your replies to the anonymous questioner.',
+          text: '💬 *Want to reply to the questioner?*\nSimply respond in this thread! Your replies will be automatically forwarded to the anonymous questioner.',
         },
-      },
-      {
-        type: 'actions',
-        elements: [
-          {
-            type: 'button',
-            text: {
-              type: 'plain_text',
-              text: 'Send Reply to Questioner',
-              emoji: true,
-            },
-            style: 'primary',
-            action_id: 'send_reply_to_questioner',
-            value: JSON.stringify({
-              sessionId,
-              originalQuestionerId: questionerId,
-            }),
-          },
-        ],
       },
     );
   }

@@ -1,8 +1,8 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getUserName, getWorkspaceId } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { suggestUpdatesCallback } from '../document-update/suggestions/suggest-updates';
 
 /**
@@ -53,7 +53,7 @@ ${replies.map((reply: string, index: number) => `- ${replyAuthors[index]}: ${rep
 
     // 새로운 세션 생성 (document update용)
     const newSessionId = `manager_update_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    
+
     // 새 세션 데이터 저장 (원본 데이터 기반으로)
     const newSessionData = {
       ...originalSessionData,
@@ -80,7 +80,7 @@ ${replies.map((reply: string, index: number) => `- ${replyAuthors[index]}: ${rep
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '✅ *Analysis Complete* • 📊 10 messages analyzed\nSure! I\'ll suggest the following update to you.',
+              text: "✅ *Analysis Complete* • 📊 10 messages analyzed\nSure! I'll suggest the following update to you.",
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
           },
@@ -92,15 +92,17 @@ ${replies.map((reply: string, index: number) => `- ${replyAuthors[index]}: ${rep
     const modifiedBody = {
       ...body,
       channel: { id: channelId }, // Manager DM 채널로 설정
-      actions: [{
-        ...body.actions[0],
-        value: JSON.stringify({
-          sessionId: newSessionId,
-          knowledgeContent: combinedKnowledge,
-          originalChannelId: originalSessionData.originalChannelId,
-          originalThreadTs: originalSessionData.originalThreadTs,
-        })
-      }]
+      actions: [
+        {
+          ...body.actions[0],
+          value: JSON.stringify({
+            sessionId: newSessionId,
+            knowledgeContent: combinedKnowledge,
+            originalChannelId: originalSessionData.originalChannelId,
+            originalThreadTs: originalSessionData.originalThreadTs,
+          }),
+        },
+      ],
     };
 
     // 기존 suggest updates 로직 재사용
