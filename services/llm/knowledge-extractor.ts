@@ -1,8 +1,8 @@
+import type { WebClient } from '@slack/web-api';
 import { anonymizeText } from 'services/common/name-cache';
 import type { SlackMessage } from 'services/slack';
 import { processMessageHistory } from 'services/slack/conversation-history';
 import { type ChatCompletionOptions, createChatCompletion } from './completions';
-import type { WebClient } from '@slack/web-api';
 
 interface ExtractedKnowledge {
   content: string;
@@ -13,7 +13,7 @@ interface KnowledgeExtractionResult {
   cleanContent: string;
   detailedContent: string;
   knowledgeItem: ExtractedKnowledge | null;
-  processedMessages: Array<{ role: string; content: string; }>; // Add processed messages for View Messages
+  processedMessages: Array<{ role: string; content: string }>; // Add processed messages for View Messages
 }
 
 interface OrganizationalContext {
@@ -36,11 +36,9 @@ export async function extractKnowledgeFromMessages(
   try {
     // Use processMessageHistory to format messages with proper anonymization
     const processedMessages = await processMessageHistory(messages, client);
-    
+
     // Format messages with numbered references for source tracking
-    const formattedMessages = processedMessages
-      .map((msg, index) => `[${index + 1}] ${msg.content}`)
-      .join('\n');
+    const formattedMessages = processedMessages.map((msg, index) => `[${index + 1}] ${msg.content}`).join('\n');
 
     // Build organizational context section
     let contextSection = '';
@@ -72,11 +70,17 @@ IMPORTANT: You must specify which message numbers contain this knowledge using t
 ${contextSection}
 **Context**: This knowledge will be used to update team documentation, so focus on organizational decisions, processes, and standards rather than individual actions.
 
+**Priority Guidelines** (in order of importance):
+1. **NEW DECISIONS or POLICY CHANGES**: If the conversation contains new decisions, policy updates, or changes to existing practices, prioritize these over existing information
+2. **Manager/Leadership Input**: Statements from managers or team leaders carry higher weight than existing documentation or policies
+3. **Contextual Updates**: When there's a conflict between existing policy (mentioned in background) and new decisions (made in the conversation), prioritize the new decisions
+
 **Writing Guidelines**:
 - Write from the organization's perspective when appropriate
 - Focus on knowledge that would be valuable for the team to remember
 - Use natural language that fits the organizational context
 - Avoid including personal names or individual references
+- When extracting policy changes, clearly reflect the new decision rather than the old policy
 
 Focus on the most valuable information from these categories:
 1. **Decisions & Agreements**: Choices made, tools selected, or agreements reached
@@ -92,6 +96,7 @@ Extract the single most important knowledge that:
 - Represents the key decision, preference, or important information
 - Would help someone understand the organizational standard or decision
 - Is written from an organizational perspective
+- **PRIORITIZES NEW DECISIONS over existing policies when both are present**
 
 Format your response as a JSON object with this structure:
 {

@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { SessionType, getSessionData } from 'services/common';
 import { createQAChannelMessage, createQAChannelPreview, getUserName, getWorkspaceId } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { logModalSubmit } from '../../../services/common/user-interaction-logger';
 
 /**

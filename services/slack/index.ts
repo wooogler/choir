@@ -66,15 +66,15 @@ export {
 export { HomeScreenService } from './home-screen';
 
 // Utils
-export { 
-  createGitbookSectionLink, 
-  isDM, 
-  isDMByAPI, 
-  is1to1DM, 
+export {
+  createGitbookSectionLink,
+  isDM,
+  isDMByAPI,
+  is1to1DM,
   isGroupDM,
   classifyChannel,
   ChannelType,
-  type ChannelClassification 
+  type ChannelClassification,
 } from './utils';
 
 // Conversation History

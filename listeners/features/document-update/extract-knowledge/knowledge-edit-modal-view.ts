@@ -1,8 +1,8 @@
-import type { AllMiddlewareArgs, SlackViewMiddlewareArgs, SlackViewAction } from '@slack/bolt';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import type { AllMiddlewareArgs, SlackViewAction, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/user-interaction-logger';
 import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * Handle knowledge edit modal submission

@@ -7,12 +7,14 @@ import { DocumentEnhancer } from 'services/web-content/document-enhancer';
 export class QuestionProcessor {
   async processQuestion(userMessage: string, historyMessages: any[], client: any, logger: any) {
     try {
-      Logger.info(`QuestionProcessor: Starting to process question: "${userMessage.substring(0, 50)}${userMessage.length > 50 ? '...' : ''}"`);
-      
+      Logger.info(
+        `QuestionProcessor: Starting to process question: "${userMessage.substring(0, 50)}${userMessage.length > 50 ? '...' : ''}"`,
+      );
+
       // 벡터 스토어에서 관련 문서 가져오기
       const vectorStore = VectorStoreService.getInstance();
       Logger.info('QuestionProcessor: Got VectorStoreService instance, calling similaritySearch...');
-      
+
       let relevantDocs = await vectorStore.similaritySearch(userMessage, 5);
       Logger.info(`QuestionProcessor: similaritySearch returned ${relevantDocs.length} documents`);
 

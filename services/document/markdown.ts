@@ -137,7 +137,6 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
   let currentSection: ExtendedNode | null = null;
   const sectionStack: ExtendedNode[] = [];
 
-
   visit(root, (node, index, parent) => {
     // 노드를 확장 노드로 변환
     const extNode = node as ExtendedNode;
@@ -250,12 +249,12 @@ export function treeToMarkdown(docTree: DocumentTree): string {
         const itemContent = node.children
           ? node.children.map((child: any) => astToMarkdown(child, depth)).join('')
           : '';
-        
+
         // If itemContent already starts with a list marker, use it as is
         if (itemContent.match(/^-\s+/)) {
           return `${indent}${itemContent}`;
         }
-        
+
         return `${indent}${bullet} ${itemContent}`;
 
       case 'blockquote':
@@ -276,9 +275,7 @@ export function treeToMarkdown(docTree: DocumentTree): string {
         return node.value || '';
 
       case 'strong':
-        const strongText = node.children
-          ? node.children.map((child: any) => astToMarkdown(child, depth)).join('')
-          : '';
+        const strongText = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('') : '';
         return `**${strongText}**`;
 
       case 'emphasis':
@@ -291,9 +288,7 @@ export function treeToMarkdown(docTree: DocumentTree): string {
         return `\`${node.value || ''}\``;
 
       case 'link':
-        const linkText = node.children
-          ? node.children.map((child: any) => astToMarkdown(child, depth)).join('')
-          : '';
+        const linkText = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('') : '';
         const linkUrl = node.url || '';
         return `[${linkText}](${linkUrl})`;
 
@@ -310,7 +305,6 @@ export function treeToMarkdown(docTree: DocumentTree): string {
   }
 
   const markdown = astToMarkdown(docTree.root);
-
 
   // 빈 줄 정리
   return markdown
@@ -948,27 +942,24 @@ function appendSectionToEnd(tree: DocumentTree, headingNode: ExtendedNode, bodyN
  * @param content LLM이 생성한 마크다운 content
  * @returns 분할된 content 항목들의 배열
  */
-export function parseAndSplitContent(content: string): Array<{type: 'listItem' | 'paragraph', content: string}> {
-  const result: Array<{type: 'listItem' | 'paragraph', content: string}> = [];
-  
+export function parseAndSplitContent(content: string): Array<{ type: 'listItem' | 'paragraph'; content: string }> {
+  const result: Array<{ type: 'listItem' | 'paragraph'; content: string }> = [];
+
   try {
     // content를 마크다운으로 파싱
     const tree = unified().use(remarkParse).parse(content);
-    
+
     // root children만 순회하여 중복 방지
     if (tree.children && Array.isArray(tree.children)) {
       for (const child of tree.children) {
         if (is(child, 'paragraph')) {
           // 직접 paragraph인 경우 - 마크다운 문법 보존
           const tempRoot = { type: 'root' as const, children: [child] };
-          const markdownContent = unified()
-            .use(remarkStringify)
-            .stringify(tempRoot)
-            .trim();
+          const markdownContent = unified().use(remarkStringify).stringify(tempRoot).trim();
           if (markdownContent) {
             result.push({
               type: 'paragraph',
-              content: markdownContent
+              content: markdownContent,
             });
           }
         } else if (is(child, 'list')) {
@@ -981,14 +972,11 @@ export function parseAndSplitContent(content: string): Array<{type: 'listItem' |
                   const paragraph = listItem.children[0];
                   if (is(paragraph, 'paragraph')) {
                     const tempRoot = { type: 'root' as const, children: [paragraph] };
-                    const markdownContent = unified()
-                      .use(remarkStringify)
-                      .stringify(tempRoot)
-                      .trim();
+                    const markdownContent = unified().use(remarkStringify).stringify(tempRoot).trim();
                     if (markdownContent) {
                       result.push({
                         type: 'listItem',
-                        content: markdownContent
+                        content: markdownContent,
                       });
                     }
                   }
@@ -1002,14 +990,11 @@ export function parseAndSplitContent(content: string): Array<{type: 'listItem' |
             const paragraph = child.children[0];
             if (is(paragraph, 'paragraph')) {
               const tempRoot = { type: 'root' as const, children: [paragraph] };
-              const markdownContent = unified()
-                .use(remarkStringify)
-                .stringify(tempRoot)
-                .trim();
+              const markdownContent = unified().use(remarkStringify).stringify(tempRoot).trim();
               if (markdownContent) {
                 result.push({
                   type: 'listItem',
-                  content: markdownContent
+                  content: markdownContent,
                 });
               }
             }
@@ -1017,26 +1002,25 @@ export function parseAndSplitContent(content: string): Array<{type: 'listItem' |
         }
       }
     }
-    
+
     // 만약 파싱된 결과가 없다면 원본 content를 paragraph로 처리
     if (result.length === 0 && content.trim()) {
       result.push({
         type: 'paragraph',
-        content: content.trim()
+        content: content.trim(),
       });
     }
-    
   } catch (error) {
     console.warn('Content 파싱 실패, 원본을 paragraph로 처리:', error);
     // 파싱 실패 시 원본 content를 paragraph로 처리
     if (content.trim()) {
       result.push({
         type: 'paragraph',
-        content: content.trim()
+        content: content.trim(),
       });
     }
   }
-  
+
   return result;
 }
 
@@ -1048,20 +1032,20 @@ export function parseAndSplitContent(content: string): Array<{type: 'listItem' |
  * @returns 업데이트된 문서 트리
  */
 export function appendMultipleContents(
-  docTree: DocumentTree, 
-  referenceNodeId: string, 
-  contentItems: Array<{type: 'listItem' | 'paragraph', content: string}>
+  docTree: DocumentTree,
+  referenceNodeId: string,
+  contentItems: Array<{ type: 'listItem' | 'paragraph'; content: string }>,
 ): DocumentTree {
   let currentTree = docTree;
   let lastInsertedNodeId = referenceNodeId;
-  
+
   // 연속된 listItem들을 그룹화하여 처리
   let i = 0;
   console.log(`[DEBUG] appendMultipleContents: Processing ${contentItems.length} items`);
   while (i < contentItems.length) {
     const item = contentItems[i];
     console.log(`[DEBUG] Processing item ${i}: type=${item.type}, content="${item.content.substring(0, 30)}..."`);
-    
+
     if (item.type === 'listItem') {
       // 연속된 listItem들을 수집
       const listItems = [];
@@ -1069,45 +1053,55 @@ export function appendMultipleContents(
         listItems.push(contentItems[i]);
         i++;
       }
-      
+
       // 연속된 listItem들을 하나의 list로 만들어서 추가
       try {
-        currentTree = appendListToTree(currentTree, lastInsertedNodeId, listItems as Array<{type: 'listItem', content: string}>);
-        
+        currentTree = appendListToTree(
+          currentTree,
+          lastInsertedNodeId,
+          listItems as Array<{ type: 'listItem'; content: string }>,
+        );
+
         // list 노드의 ID를 찾기
         const beforeAppend = Date.now();
-        const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(id => 
-          id.startsWith(`${lastInsertedNodeId}_append_`) && 
-          parseInt(id.split('_append_')[1] || '0') >= beforeAppend - 1000 // 1초 여유
+        const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(
+          (id) =>
+            id.startsWith(`${lastInsertedNodeId}_append_`) &&
+            Number.parseInt(id.split('_append_')[1] || '0') >= beforeAppend - 1000, // 1초 여유
         );
-        
+
         if (candidateIds.length > 0) {
           const latestNodeId = candidateIds.reduce((latest, current) => {
-            const latestTimestamp = parseInt(latest.split('_append_')[1] || '0');
-            const currentTimestamp = parseInt(current.split('_append_')[1] || '0');
+            const latestTimestamp = Number.parseInt(latest.split('_append_')[1] || '0');
+            const currentTimestamp = Number.parseInt(current.split('_append_')[1] || '0');
             return currentTimestamp > latestTimestamp ? current : latest;
           });
           lastInsertedNodeId = latestNodeId;
           console.log(`List 항목들 추가 완료: ${listItems.length}개 listItem -> 새 노드 ID: ${latestNodeId}`);
         }
       } catch (error) {
-        console.error(`List 항목들 추가 실패:`, listItems.map(item => item.content.substring(0, 20)), error);
+        console.error(
+          `List 항목들 추가 실패:`,
+          listItems.map((item) => item.content.substring(0, 20)),
+          error,
+        );
       }
     } else {
       // paragraph인 경우 개별 처리
       try {
         const beforeAppend = Date.now();
         currentTree = appendNodeContent(currentTree, lastInsertedNodeId, item.content);
-        
-        const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(id => 
-          id.startsWith(`${lastInsertedNodeId}_append_`) && 
-          parseInt(id.split('_append_')[1] || '0') >= beforeAppend
+
+        const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(
+          (id) =>
+            id.startsWith(`${lastInsertedNodeId}_append_`) &&
+            Number.parseInt(id.split('_append_')[1] || '0') >= beforeAppend,
         );
-        
+
         if (candidateIds.length > 0) {
           const latestNodeId = candidateIds.reduce((latest, current) => {
-            const latestTimestamp = parseInt(latest.split('_append_')[1] || '0');
-            const currentTimestamp = parseInt(current.split('_append_')[1] || '0');
+            const latestTimestamp = Number.parseInt(latest.split('_append_')[1] || '0');
+            const currentTimestamp = Number.parseInt(current.split('_append_')[1] || '0');
             return currentTimestamp > latestTimestamp ? current : latest;
           });
           lastInsertedNodeId = latestNodeId;
@@ -1119,7 +1113,7 @@ export function appendMultipleContents(
       i++;
     }
   }
-  
+
   return currentTree;
 }
 
@@ -1127,9 +1121,9 @@ export function appendMultipleContents(
  * 연속된 listItem들을 하나의 list로 만들어서 트리에 추가
  */
 function appendListToTree(
-  docTree: DocumentTree, 
-  referenceNodeId: string, 
-  listItems: Array<{type: 'listItem', content: string}>
+  docTree: DocumentTree,
+  referenceNodeId: string,
+  listItems: Array<{ type: 'listItem'; content: string }>,
 ): DocumentTree {
   // 원본 트리의 깊은 복사본 생성
   const newTree: DocumentTree = {
@@ -1149,13 +1143,17 @@ function appendListToTree(
     ordered: false,
     children: listItems.map((item, index) => ({
       type: 'listItem' as const,
-      children: [{
-        type: 'paragraph' as const,
-        children: [{
-          type: 'text' as const,
-          value: item.content,
-        }],
-      }],
+      children: [
+        {
+          type: 'paragraph' as const,
+          children: [
+            {
+              type: 'text' as const,
+              value: item.content,
+            },
+          ],
+        },
+      ],
       id: `${listNodeId}_item_${index}`,
       fileName: (referenceNode as ExtendedNode).fileName,
       parentId: listNodeId,

@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { SessionType, getSessionData } from 'services/common';
+import { SessionType, getSessionData, trackAnonymousMessage } from 'services/common';
 import { createPrivateMessage, createPrivateMessagePreview, getUserName, getWorkspaceId } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { logModalSubmit } from '../../../services/common/user-interaction-logger';
 
 /**
@@ -72,13 +72,13 @@ export const askToOthersSubmitCallback = async ({
 
     // DM 참여자 결정: anonymous가 아닌 경우 질문자도 포함
     const dmParticipants = isAnonymous ? selectedUsers : [userId, ...selectedUsers];
-    
+
     // 변수 선언
     let successCount = 0;
     let failCount = 0;
     let conversationId = '';
-    let participantNames: string[] = [];
-    
+    const participantNames: string[] = [];
+
     try {
       // 참여자 이름들 가져오기
       for (const participantId of dmParticipants) {
@@ -90,11 +90,14 @@ export const askToOthersSubmitCallback = async ({
           participantNames.push(`<@${participantId}>`);
         }
       }
-      
+
       // 그룹 DM 생성 (참여자가 2명 이상인 경우) 또는 개별 DM (1명인 경우)
       if (dmParticipants.length === 1) {
-        // 1명인 경우 개별 DM
-        conversationId = dmParticipants[0];
+        // 1명인 경우 개별 DM - 실제 DM 채널 ID 가져오기
+        const conversation = await client.conversations.open({
+          users: dmParticipants[0],
+        });
+        conversationId = conversation.channel?.id || '';
       } else {
         // 2명 이상인 경우 그룹 DM 생성
         const conversation = await client.conversations.open({
@@ -102,7 +105,7 @@ export const askToOthersSubmitCallback = async ({
         });
         conversationId = conversation.channel?.id || '';
       }
-      
+
       if (conversationId) {
         // 공통 함수를 사용해 메시지 블록 생성 (anonymous 옵션 포함)
         const messageBlocks = createPrivateMessage(
@@ -123,7 +126,7 @@ export const askToOthersSubmitCallback = async ({
           sessionData.originalQuestion,
           sessionData.botResponse,
           true, // canAnswer - assume true for private sharing
-          isAnonymous
+          isAnonymous,
         );
 
         const postedMessage = await client.chat.postMessage({
@@ -131,9 +134,35 @@ export const askToOthersSubmitCallback = async ({
           text: messageText,
           blocks: messageBlocks,
         });
-        
-        // Anonymous 질문인 경우 메시지에 ANONYMOUS_QUESTION 타입이 이미 설정됨
-        
+
+        // Anonymous 질문인 경우 메시지 추적 등록 및 CHOIR의 안내 메시지 추가
+        if (isAnonymous && postedMessage.ts) {
+          trackAnonymousMessage(conversationId, postedMessage.ts, userId, sessionId);
+          logger.info('Anonymous message tracked', {
+            conversationId,
+            messageTs: postedMessage.ts,
+            originalQuestionerId: userId,
+            sessionId,
+          });
+
+          // CHOIR이 thread에 안내 메시지 추가
+          await client.chat.postMessage({
+            channel: conversationId,
+            thread_ts: postedMessage.ts,
+            text: 'Feel free to discuss this question in this thread! Your responses will be automatically shared with the anonymous questioner.',
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: '👋 Feel free to discuss this question in this thread!\n\n💡 *Your responses will be automatically shared with the anonymous questioner.*\n\n🤖 *Need CHOIR to help?* Just mention me with `@choir` and I\'ll join the discussion!',
+                },
+                block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+              },
+            ],
+          });
+        }
+
         successCount = 1;
         failCount = 0;
       } else {
@@ -149,7 +178,7 @@ export const askToOthersSubmitCallback = async ({
     if (sessionData.originalChannelId && successCount > 0) {
       // 참여자 이름들 표시
       const participantsList = participantNames.join(', ');
-      
+
       // 공통 성공 메시지 (채널에 공개)
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,
@@ -165,13 +194,13 @@ export const askToOthersSubmitCallback = async ({
           },
         ],
       });
-      
+
       // Anonymous가 아닌 경우에만 질문자에게 Open DM 버튼 제공 (ephemeral)
       if (!isAnonymous) {
         // 팀 ID 가져오기 (DM 링크용)
         const authInfo = await client.auth.test();
         const teamId = authInfo.team_id;
-        
+
         await client.chat.postEphemeral({
           channel: sessionData.originalChannelId,
           user: userId,

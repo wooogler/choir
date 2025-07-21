@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
 import { getManagers, getNonUserResponseMessage, getWorkspaceId, isCHOIRUser } from 'services/slack';
-import { handleIncomingMessage } from './message-router';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { handleIncomingMessage } from './message-router';
 
 /**
  * DM 메시지 처리 콜백

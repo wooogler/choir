@@ -2,9 +2,9 @@ import type { WebClient } from '@slack/web-api';
 import { SessionType, generateSessionId, storeSessionData } from 'services/common';
 import { logKnowledgeExtraction, logUpdateRequestProcessing } from 'services/common/user-interaction-logger';
 import { extractKnowledgeFromMessages } from 'services/llm/knowledge-extractor';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import {
   type SlackMessage,
+  classifyChannel,
   getCHOIRUsers,
   getChannelName,
   getFilteredConversationHistory,
@@ -12,12 +12,11 @@ import {
   getQAChannel,
   getUserName,
   getWorkspaceId,
-  classifyChannel,
   isManager,
 } from 'services/slack';
-import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { createEnhancedMessage } from 'services/slack/message-text-utils';
-
+import { WorkspaceStore } from 'services/workspace/workspace-store';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * Handle update request message with automatic knowledge extraction
@@ -57,23 +56,23 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     // Classify channel type to determine timeLimit and context
     const qaChannelId = await getQAChannel(workspaceId, client);
     const channelClassification = await classifyChannel(originalChannelId, client, qaChannelId);
-    
+
     console.log('🏷️ CHANNEL CLASSIFICATION:', {
       channelId: originalChannelId,
       type: channelClassification.type,
       displayName: channelClassification.displayName,
       timeLimit: channelClassification.timeLimit,
       description: channelClassification.description,
-      choirUsersCount: choirUsers.length
+      choirUsersCount: choirUsers.length,
     });
 
     // Use timeLimit from channel classification, with thread override
     const timeLimit = event.thread_ts ? 1440 : channelClassification.timeLimit; // 24 hours for threads, otherwise use classification
-    
+
     const filteredMessages = await getFilteredConversationHistory(client, event, choirUsers, {
       timeLimit, // Use classified timeLimit
-      messageLimit: 15, // fetch up to 15 messages
-      maxResults: 15, // return up to 15 messages including bot responses
+      messageLimit: 10, // fetch up to 15 messages
+      maxResults: 5, // return up to 15 messages including bot responses
     });
 
     if (!filteredMessages?.length) {
@@ -209,39 +208,42 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       const extractionResult = await extractKnowledgeFromMessages(last10Messages, organizationalContext, client);
 
       // Update loading message with compact analysis summary
-      const statusUpdateData = createEnhancedMessage({
-        text: `✅ Analyzed ${last10Messages.length} message${last10Messages.length > 1 ? 's' : ''} to extract knowledge`,
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `✅ *Analysis Complete* • 📊 ${last10Messages.length} message${last10Messages.length > 1 ? 's' : ''} analyzed`,
-            },
-            block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
-            accessory: {
-              type: 'button',
+      const statusUpdateData = createEnhancedMessage(
+        {
+          text: `✅ Analyzed ${last10Messages.length} message${last10Messages.length > 1 ? 's' : ''} to extract knowledge`,
+          blocks: [
+            {
+              type: 'section',
               text: {
-                type: 'plain_text',
-                text: 'View Messages',
-                emoji: true,
+                type: 'mrkdwn',
+                text: `✅ *Analysis Complete* • 📊 ${last10Messages.length} message${last10Messages.length > 1 ? 's' : ''} analyzed`,
               },
-              action_id: 'view_analyzed_messages',
-              value: JSON.stringify({
-                sessionId,
-                messageCount: extractionResult.processedMessages.length,
-                messages: extractionResult.processedMessages.map((msg, index) => ({
-                  username: msg.role === 'CHOIR' ? 'CHOIR' : msg.content.split(':')[0], // Extract username from "Username: message" format
-                  text: msg.content.includes(':') ? msg.content.split(':').slice(1).join(':').trim() : msg.content,
-                  ts: `${Date.now()}_${index}`, // Generate unique timestamp for ordering
-                })),
-              }),
+              block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
+              accessory: {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: 'View Messages',
+                  emoji: true,
+                },
+                action_id: 'view_analyzed_messages',
+                value: JSON.stringify({
+                  sessionId,
+                  messageCount: extractionResult.processedMessages.length,
+                  messages: extractionResult.processedMessages.map((msg, index) => ({
+                    username: msg.role === 'CHOIR' ? 'CHOIR' : msg.content.split(':')[0], // Extract username from "Username: message" format
+                    text: msg.content.includes(':') ? msg.content.split(':').slice(1).join(':').trim() : msg.content,
+                    ts: `${Date.now()}_${index}`, // Generate unique timestamp for ordering
+                  })),
+                }),
+              },
             },
-          },
-        ],
-      }, {
-        buttons: [{ text: 'View Messages', style: 'primary' }]
-      });
+          ],
+        },
+        {
+          buttons: [{ text: 'View Messages', style: 'primary' }],
+        },
+      );
 
       await client.chat.update({
         channel: originalChannelId,
@@ -264,12 +266,10 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       const publicMessage = await client.chat.postMessage({
         channel: originalChannelId,
         ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
-        ...createEnhancedMessage(
-          {
-            text: `Sure! I'll suggest the following update to ${managerText}.`,
-            blocks: blocks
-          }
-        ),
+        ...createEnhancedMessage({
+          text: `Sure! I'll suggest the following update to ${managerText}.`,
+          blocks: blocks,
+        }),
       });
 
       // Wait 1 second to ensure the public message appears first

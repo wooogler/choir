@@ -3,7 +3,6 @@ import { logQuestionProcessing } from 'services/common/user-interaction-logger';
 import { convertMarkdownToSlackText } from 'services/document/markdown';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { QuestionProcessor } from 'services/qa/question-processor';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import {
   createGitbookSectionLink,
   getCHOIRUsers,
@@ -16,6 +15,7 @@ import {
 } from 'services/slack';
 import type { SlackMessage } from 'services/slack';
 import { createEnhancedMessage } from 'services/slack/message-text-utils';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * 질문 메시지 처리
@@ -198,7 +198,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           type: 'mrkdwn',
           text: displayResponse,
         },
-        block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
+        block_id: createCHOIRBlockId(CHOIRMessageType.ANSWER),
       },
     ];
 
@@ -253,27 +253,30 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         : "💬 I couldn't find this information in our documentation. Would you like to ask others directly?";
 
       // Create enhanced message with button information
-      const ephemeralMessageData = createEnhancedMessage({
-        text: ephemeralText,
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: ephemeralText,
+      const ephemeralMessageData = createEnhancedMessage(
+        {
+          text: ephemeralText,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: ephemeralText,
+              },
             },
-          },
-          {
-            type: 'actions',
-            elements: actionElements,
-          },
-        ],
-      }, {
-        buttons: actionElements.map(element => ({
-          text: element.text.text,
-          style: element.style as any
-        }))
-      });
+            {
+              type: 'actions',
+              elements: actionElements,
+            },
+          ],
+        },
+        {
+          buttons: actionElements.map((element) => ({
+            text: element.text.text,
+            style: element.style as any,
+          })),
+        },
+      );
 
       await client.chat.postEphemeral({
         channel: event.channel,

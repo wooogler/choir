@@ -228,9 +228,9 @@ export function createDocumentsFromTree(
 
   // 빈 섹션들을 위한 placeholder Document 생성
   const sectionsWithContent = new Set<string>();
-  
+
   // 생성된 Document들에서 사용된 섹션ID들 수집
-  documents.forEach(doc => {
+  documents.forEach((doc) => {
     if (doc.metadata.sectionId) {
       sectionsWithContent.add(doc.metadata.sectionId);
     }
@@ -241,14 +241,14 @@ export function createDocumentsFromTree(
     if (!sectionsWithContent.has(sectionId)) {
       // 빈 섹션 발견 - placeholder Document 생성
       const headingText = toString(headingNode);
-      
+
       // 헤딩 경로 구성
       const ancestors = getAncestorNodes(headingNode, nodeParentMap);
       const headingPath = getHeadingPathForNode(headingNode, ancestors, headingMap, sectionToHeadings);
-      
+
       // 계층적 문맥 구성
       const contextPrefix = formatHeadingContext(headingPath, fileName);
-      
+
       // 빈 섹션용 placeholder Document 생성
       const placeholderDocument = new Document({
         pageContent: `${contextPrefix}`, // 빈 내용이지만 컨텍스트는 포함
@@ -263,7 +263,7 @@ export function createDocumentsFromTree(
           originalContent: '', // 원본 내용은 빈 문자열
         },
       });
-      
+
       documents.push(placeholderDocument);
     }
   }
@@ -695,7 +695,10 @@ function calculateImportance(node: ExtendedNode, ancestors: ExtendedNode[], head
 }
 
 // 섹션 이름 가져오기 함수 수정
-export function getSectionName(node: ExtendedNode, headingMap: Map<string, string>): { sectionName: string | undefined } {
+export function getSectionName(
+  node: ExtendedNode,
+  headingMap: Map<string, string>,
+): { sectionName: string | undefined } {
   let sectionName: string | undefined;
 
   if (node.sectionId && headingMap.has(node.sectionId)) {

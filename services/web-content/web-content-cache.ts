@@ -153,7 +153,7 @@ export class WebContentCache {
   public getWebContent(url: string): WebContentCacheItem | null {
     const cacheKey = this.generateCacheKey(url);
     const item = this.cacheData.items[cacheKey];
-    
+
     if (item) {
       console.info(`Found cached web content for ${url}`);
       return item;
@@ -167,7 +167,7 @@ export class WebContentCache {
    */
   public getMultipleWebContent(urls: string[]): Record<string, WebContentCacheItem> {
     const result: Record<string, WebContentCacheItem> = {};
-    
+
     for (const url of urls) {
       const item = this.getWebContent(url);
       if (item) {
@@ -216,10 +216,7 @@ export class WebContentCache {
     totalSize: number;
     cacheFilePath: string;
   } {
-    const totalSize = Object.values(this.cacheData.items).reduce(
-      (sum, item) => sum + item.content.length,
-      0
-    );
+    const totalSize = Object.values(this.cacheData.items).reduce((sum, item) => sum + item.content.length, 0);
 
     return {
       totalItems: Object.keys(this.cacheData.items).length,
@@ -254,6 +251,6 @@ export class WebContentCache {
    * 모든 캐시된 URL 목록을 반환합니다.
    */
   public getAllUrls(): string[] {
-    return Object.values(this.cacheData.items).map(item => item.url);
+    return Object.values(this.cacheData.items).map((item) => item.url);
   }
 }

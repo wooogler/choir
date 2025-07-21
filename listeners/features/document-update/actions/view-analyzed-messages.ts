@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { deAnonymizeText } from 'services/common/name-cache';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getWorkspaceId } from 'services/slack';
-import { deAnonymizeText } from 'services/common/name-cache';
 
 export const viewAnalyzedMessagesAction = async ({
   ack,
@@ -57,7 +57,7 @@ export const viewAnalyzedMessagesAction = async ({
           const text = msg.text || 'No text';
           const deAnonymizedUsername = deAnonymizeText(username);
           const deAnonymizedText = deAnonymizeText(text);
-          
+
           return {
             type: 'section' as const,
             text: {

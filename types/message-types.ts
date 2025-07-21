@@ -26,12 +26,20 @@ export enum CHOIRMessageType {
   // ===== 핵심 응답 메시지 =====
   
   /** 
-   * 주요 AI 응답 메시지
-   * 사용자 질문에 대한 답변, 대화 응답 등 핵심 콘텐츠
-   * 예: 질문 답변, 일반 대화 응답
+   * 일반 대화 응답 메시지
+   * 질문이 아닌 일반 대화, 인사, 확인 등의 응답
+   * 예: 일반 대화 응답, 확인 메시지
    * 대화 히스토리에 포함됨
    */
   RESPONSE = 'response',
+  
+  /**
+   * 질문에 대한 답변 메시지
+   * 사용자 질문에 대한 구체적인 답변 응답
+   * 예: Q&A 답변, 정보 제공 응답
+   * 대화 히스토리에 포함됨
+   */
+  ANSWER = 'answer',
   
   /** 
    * 작업 완료 확인 메시지
@@ -84,12 +92,12 @@ export enum CHOIRMessageType {
   ANONYMOUS_QUESTION = 'anonymous_question',
 
   /** 
-   * 세션 시작 표시 메시지
-   * 새로운 Q&A 세션의 시작을 나타내는 메시지
-   * 이전 컨텍스트와 분리하여 새로운 대화 세션을 구분할 때 사용
-   * 대화 히스토리에서 세션 구분점 역할 (이후 메시지만 컨텍스트에 포함)
+   * Q&A 공유 메시지
+   * 질문을 채널에 공유할 때의 인사말/소개 메시지
+   * 예: "Hi, #채널명\n사용자가 질문했고 제가 답변했습니다"
+   * 대화 히스토리에서 세션 구분점 역할 (이 메시지부터 새로운 세션 시작)
    */
-  SESSION_START = 'session_start',
+  QA_SHARE_INTRO = 'qa_share_intro',
   
   // ===== 시스템 관리 메시지 =====
   
@@ -138,7 +146,6 @@ export const EXCLUDE_FROM_HISTORY: CHOIRMessageType[] = [
   CHOIRMessageType.HEALTH_CHECK,
   CHOIRMessageType.MESSAGE_DELETE,
   CHOIRMessageType.NOTIFICATION, // 공유/알림 메시지도 제외
-  CHOIRMessageType.ANONYMOUS_QUESTION, // 익명 질문 메시지도 제외
   CHOIRMessageType.ERROR,
 ];
 
@@ -148,7 +155,16 @@ export const EXCLUDE_FROM_HISTORY: CHOIRMessageType[] = [
 export const SESSION_END_TYPES: CHOIRMessageType[] = [
   CHOIRMessageType.DOCUMENT_SUGGESTION,
   CHOIRMessageType.RESPONSE,
-  CHOIRMessageType.SUCCESS
+  CHOIRMessageType.SUCCESS,
+];
+
+/**
+ * 세션 시작을 나타내는 메시지 타입들
+ * 해당 메시지부터 (포함하여) 새로운 세션이 시작됨
+ */
+export const SESSION_START_TYPES: CHOIRMessageType[] = [
+  CHOIRMessageType.ANONYMOUS_QUESTION, // 익명 질문이 새로운 세션의 시작
+  CHOIRMessageType.QA_SHARE_INTRO,     // Q&A 공유 인사말이 새로운 세션의 시작
 ];
 
 /**

@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, App, BlockAction, SlackActionMiddlewareArgs } from '@slack/bolt';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { getChannelName, getWorkspaceId, isManager, isWorkspaceOwner, setQAChannel } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 // 선택된 채널을 임시 저장할 Map

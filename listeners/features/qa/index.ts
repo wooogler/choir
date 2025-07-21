@@ -3,16 +3,14 @@ import { askToChannelModalCallback } from './ask-to-channel-modal-action';
 import { askToChannelSubmitCallback } from './ask-to-channel-modal-view';
 import { askToOthersModalCallback } from './ask-to-others-modal-action';
 import { askToOthersSubmitCallback } from './ask-to-others-modal-view';
-import { sendReplyToQuestionerCallback } from './send-reply-to-questioner-action';
-import { suggestUpdatesFromManagerReplyCallback } from './suggest-updates-from-manager-reply-action';
 import { dismissManagerUpdateCallback } from './dismiss-manager-update-action';
+import { suggestUpdatesFromManagerReplyCallback } from './suggest-updates-from-manager-reply-action';
 // question-handler는 직접적인 action/view가 아니며, message-router.ts에서 직접 호출됨
 
 export const registerQAFeature = (app: App) => {
   // Actions
   app.action('ask_to_channel_modal', askToChannelModalCallback);
   app.action('ask_to_others_modal', askToOthersModalCallback);
-  app.action('send_reply_to_questioner', sendReplyToQuestionerCallback);
   app.action('suggest_updates_from_manager_reply', suggestUpdatesFromManagerReplyCallback);
   app.action('dismiss_manager_update', dismissManagerUpdateCallback);
 

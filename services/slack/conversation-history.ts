@@ -2,7 +2,14 @@ import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
 import { anonymizeText, getAnonymizationMapping } from 'services/common/name-cache';
 import { getUserName, isBotUser } from 'services/slack';
-import { CHOIRMessageType, EXCLUDE_FROM_HISTORY, SESSION_END_TYPES, type CHOIRMessageMetadata, getCHOIRMessageTypeFromBlocks } from 'types/message-types';
+import {
+  type CHOIRMessageMetadata,
+  CHOIRMessageType,
+  EXCLUDE_FROM_HISTORY,
+  SESSION_END_TYPES,
+  SESSION_START_TYPES,
+  getCHOIRMessageTypeFromBlocks,
+} from 'types/message-types';
 
 export interface ConversationHistoryOptions {
   timeLimit?: number; // minutes
@@ -103,7 +110,13 @@ async function getReferenceTimestamp(client: WebClient, event: any): Promise<num
 }
 
 // Helper function to collect messages from Slack API
-async function collectMessages(client: WebClient, event: any, adjustedLimit: number, timeLimitAgo: number, timeLimit: number): Promise<SlackMessage[]> {
+async function collectMessages(
+  client: WebClient,
+  event: any,
+  adjustedLimit: number,
+  timeLimitAgo: number,
+  timeLimit: number,
+): Promise<SlackMessage[]> {
   let messages: SlackMessage[] = [];
 
   if (event.thread_ts) {
@@ -138,6 +151,7 @@ async function collectMessages(client: WebClient, event: any, adjustedLimit: num
     // 3. Combine pre-thread conversation + thread messages (chronological order)
     // preThreadMessages from conversations.history comes in reverse chronological order
     // threadMessages from conversations.replies comes in chronological order
+    // Note: threadMessages already includes the parent message due to inclusive: true
     messages = [...preThreadMessages.reverse(), ...threadMessages];
   } else {
     // Non-thread mentions: use regular channel history
@@ -185,7 +199,7 @@ function debugLogMessages(messages: SlackMessage[], title: string): void {
     const userType = msg.bot_id ? 'BOT' : 'USER';
     const userId = msg.user || msg.bot_id || 'unknown';
     const textPreview = msg.text ? msg.text.substring(0, 100) + (msg.text.length > 100 ? '...' : '') : 'no text';
-    
+
     // Extract message type from metadata or blocks
     let messageType = msg.metadata?.messageType || 'UNKNOWN';
     if (messageType === 'UNKNOWN' && msg.blocks) {
@@ -194,11 +208,11 @@ function debugLogMessages(messages: SlackMessage[], title: string): void {
         messageType = typeFromBlocks;
       }
     }
-    
+
     console.log(`   ${idx + 1}. [${userType}] ${userId} @ ${timestamp}`);
     console.log(`      Type: ${messageType}`);
     console.log(`      Text: "${textPreview}"`);
-    
+
     // Show blocks info for debugging
     if (msg.blocks && msg.blocks.length > 0) {
       const blockIds = msg.blocks.map((block: any) => block.block_id).filter(Boolean);
@@ -228,39 +242,68 @@ function filterMessagesByType(messages: SlackMessage[]): SlackMessage[] {
       }
     }
 
-
     return true;
   });
 }
 
-// Helper function to find session end boundary and get messages after it
-function getMessagesAfterSessionEnd(messages: SlackMessage[]): SlackMessage[] {
-  // Find the last session end message (searching from newest to oldest)
+// Helper function to find session boundaries and get messages from current session
+function getMessagesAfterSessionBoundary(messages: SlackMessage[]): SlackMessage[] {
+  let sessionStartIndex = -1;
   let sessionEndIndex = -1;
+
+  // Find both session start and session end indices (searching from newest to oldest)
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    
-    // Check metadata first
-    if (msg.metadata?.messageType && SESSION_END_TYPES.includes(msg.metadata.messageType)) {
-      sessionEndIndex = i;
-      break;
+    let messageType = msg.metadata?.messageType;
+
+    // Check blocks as fallback if no metadata
+    if (!messageType && msg.blocks && msg.blocks.length > 0) {
+      messageType = getCHOIRMessageTypeFromBlocks(msg.blocks) || undefined;
     }
-    
-    // Check blocks as fallback
-    if (msg.blocks && msg.blocks.length > 0) {
-      const blockMessageType = getCHOIRMessageTypeFromBlocks(msg.blocks);
-      if (blockMessageType && SESSION_END_TYPES.includes(blockMessageType)) {
+
+    if (messageType) {
+      // Find latest session start
+      if (sessionStartIndex === -1 && SESSION_START_TYPES.includes(messageType)) {
+        sessionStartIndex = i;
+      }
+      
+      // Find latest session end (only if we haven't found one yet)
+      if (sessionEndIndex === -1 && SESSION_END_TYPES.includes(messageType)) {
         sessionEndIndex = i;
-        break;
       }
     }
   }
 
-  // If session end found, return messages after it; otherwise return all messages
-  if (sessionEndIndex >= 0 && sessionEndIndex < messages.length - 1) {
-    return messages.slice(sessionEndIndex + 1);
-  }
+  // Priority logic:
+  // 1. If we have both, use the one that comes LATER (more recent)
+  // 2. Session start is inclusive, session end is exclusive (after the end message)
   
+  if (sessionStartIndex >= 0 && sessionEndIndex >= 0) {
+    // Both found - use the more recent one
+    if (sessionStartIndex > sessionEndIndex) {
+      // Session start is more recent - return from session start (inclusive)
+      return messages.slice(sessionStartIndex);
+    } else {
+      // Session end is more recent - return after session end (exclusive)
+      if (sessionEndIndex < messages.length - 1) {
+        return messages.slice(sessionEndIndex + 1);
+      } else {
+        return []; // Session end is the last message, no messages after it
+      }
+    }
+  } else if (sessionStartIndex >= 0) {
+    // Only session start found
+    return messages.slice(sessionStartIndex);
+  } else if (sessionEndIndex >= 0) {
+    // Only session end found
+    if (sessionEndIndex < messages.length - 1) {
+      return messages.slice(sessionEndIndex + 1);
+    } else {
+      return []; // Session end is the last message, no messages after it
+    }
+  }
+
+  // No session boundaries found
   return messages;
 }
 
@@ -268,7 +311,6 @@ function getMessagesAfterSessionEnd(messages: SlackMessage[]): SlackMessage[] {
 // Input: Pre-filtered messages from getFilteredConversationHistory
 // Output: LLM-ready conversation format
 export const processMessageHistory = async (messages: SlackMessage[], client?: WebClient) => {
-
   // Process mentions if client is provided
   const processedMessages = client
     ? await Promise.all(
@@ -326,7 +368,7 @@ export async function getFilteredConversationHistory(
   try {
     const referenceTimestamp = await getReferenceTimestamp(client, event);
     const timeLimitAgo = Math.floor((referenceTimestamp - timeLimit * 60 * 1000) / 1000);
-    
+
     // Get conversation history or replies
     // For longer time limits, get more messages without oldest filter to ensure we get recent messages
     const adjustedLimit = timeLimit > 60 ? messageLimit * 5 : messageLimit; // Increase limit for longer time periods
@@ -342,9 +384,9 @@ export async function getFilteredConversationHistory(
     messages = filterMessagesByTime(messages, timeLimitAgo);
     messages = filterMessagesByUsers(messages, choirUsers);
     messages = filterMessagesByType(messages);
-    
-    // Step 3: Get messages after last session end
-    messages = getMessagesAfterSessionEnd(messages);
+
+    // Step 3: Get messages after last session boundary (session end or from latest session start)
+    messages = getMessagesAfterSessionBoundary(messages);
 
     // Step 4: Sort by timestamp and limit results
     const sortedMessages = [...messages].sort((a, b) => {

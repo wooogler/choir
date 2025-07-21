@@ -24,13 +24,13 @@ const sessionStores = {
  * @param sessionId 세션 ID
  * @param data 저장할 데이터 객체
  * @param sessionType 세션 타입 (DISCUSSION 또는 CONSULTATION)
- * @param expirationMs 세션 만료 시간 (밀리초, 기본값 30분)
+ * @param expirationMs 세션 만료 시간 (밀리초, 기본값 1시간)
  */
 export function storeSessionData(
   sessionId: string,
   data: any,
   sessionType: SessionType = SessionType.DOCUMENT_UPDATE,
-  expirationMs: number = 30 * 60 * 1000,
+  expirationMs: number = 60 * 60 * 1000, // 1시간으로 연장
 ): void {
   const sessionStore = sessionStores[sessionType];
 
@@ -140,10 +140,10 @@ export function trackAnonymousMessage(
  */
 export function getAnonymousMessageInfo(channelId: string): any {
   const store = sessionStores[SessionType.ANONYMOUS_MESSAGE];
-  
+
   console.log(`[DEBUG] getAnonymousMessageInfo - channelId: ${channelId}`);
   console.log(`[DEBUG] Available keys in store:`, Array.from(store.keys()));
-  
+
   // 해당 채널의 Anonymous 메시지 찾기
   for (const [key, session] of store.entries()) {
     // 내부 프로퍼티 제외하고 데이터 추출
@@ -160,7 +160,7 @@ export function getAnonymousMessageInfo(channelId: string): any {
       };
     }
   }
-  
+
   console.log(`[DEBUG] No matching anonymous message found for channelId: ${channelId}`);
   return null;
 }
@@ -172,7 +172,7 @@ export function getAnonymousMessageInfo(channelId: string): any {
 export function markAnonymousMessageProcessed(key: string): void {
   const store = sessionStores[SessionType.ANONYMOUS_MESSAGE];
   const session = store.get(key);
-  
+
   if (session) {
     session.isProcessed = true;
     console.log(`Anonymous message marked as processed: ${key}`);
@@ -190,7 +190,7 @@ export function markAnonymousMessageProcessed(key: string): void {
 export function getAnonymousThreadInfo(channelId: string, threadTs: string): any {
   const store = sessionStores[SessionType.ANONYMOUS_MESSAGE];
   const key = `${channelId}_${threadTs}`;
-  
+
   const session = store.get(key);
   if (session) {
     // 내부 프로퍼티 제외하고 데이터 추출
@@ -205,6 +205,6 @@ export function getAnonymousThreadInfo(channelId: string, threadTs: string): any
       };
     }
   }
-  
+
   return null;
 }

@@ -1,7 +1,7 @@
-import type { AllMiddlewareArgs, SlackActionMiddlewareArgs, BlockButtonAction } from '@slack/bolt';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { getWorkspaceId } from 'services/slack';
+import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/user-interaction-logger';
+import { getWorkspaceId } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * Handle file selection dropdown change
@@ -47,12 +47,12 @@ export const fileSelectionForUpdateAction = async ({
                     ...element,
                     value: JSON.stringify({
                       ...currentValue,
-                      selectedFile
-                    })
+                      selectedFile,
+                    }),
                   };
                 }
                 return element;
-              })
+              }),
             };
           }
           return block;
@@ -62,7 +62,7 @@ export const fileSelectionForUpdateAction = async ({
           channel: channelId,
           ts: messageTs,
           blocks: updatedBlocks,
-          text: originalMessage.text
+          text: originalMessage.text,
         });
       }
     }
@@ -87,7 +87,7 @@ export const startFileBasedReviewAction = async ({
 
   const userId = body.user.id;
   const channelId = body.channel?.id;
-  
+
   try {
     const value = body.actions?.[0]?.value;
     if (!value) {
@@ -101,7 +101,7 @@ export const startFileBasedReviewAction = async ({
       knowledgeSourceChannelId,
       knowledgeSourceThreadTs,
       selectedFile,
-      defaultFilePath // 기본 파일 정보
+      defaultFilePath, // 기본 파일 정보
     } = parsedValue;
 
     logger.info(`Starting file-based review with selectedFile: ${selectedFile}, sessionId: ${sessionId}`);
@@ -120,22 +120,9 @@ export const startFileBasedReviewAction = async ({
         if (history.messages && history.messages.length > 0) {
           const originalMessage = history.messages[0];
           if (originalMessage.blocks) {
-            const updatedBlocks = originalMessage.blocks.filter((block: any) => {
-              return block.type !== 'actions';
-            });
-
-            await client.chat.update({
+            await client.chat.delete({
               channel: channelId,
               ts: messageTs,
-              blocks: [
-                {
-                  type: 'section',
-                  block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
-                  text: { type: 'mrkdwn', text: 'Starting document review...' }
-                },
-                ...updatedBlocks.slice(1)
-              ] as any,
-              text: 'Starting document review...',
             });
           }
         }
@@ -146,24 +133,26 @@ export const startFileBasedReviewAction = async ({
 
     // Now trigger the actual suggestion flow with the selected file
     const { suggestUpdatesCallback } = await import('../suggestions/suggest-updates');
-    
+
     // Create a modified body for the suggest updates callback
     const isDefaultFile = selectedFile === defaultFilePath;
     const modifiedBody = {
       ...body,
-      actions: [{
-        value: JSON.stringify({
-          index: 0,
-          sessionId,
-          knowledgeContent,
-          originalChannelId: knowledgeSourceChannelId,
-          originalThreadTs: knowledgeSourceThreadTs,
-          selectedFile, // Pass the selected file
-          defaultFilePath, // Pass default file path
-          isFileBasedReview: true, // Flag to indicate this is file-based review
-          isDefaultFile // Flag to indicate if selected file is the default file
-        })
-      }]
+      actions: [
+        {
+          value: JSON.stringify({
+            index: 0,
+            sessionId,
+            knowledgeContent,
+            originalChannelId: knowledgeSourceChannelId,
+            originalThreadTs: knowledgeSourceThreadTs,
+            selectedFile, // Pass the selected file
+            defaultFilePath, // Pass default file path
+            isFileBasedReview: true, // Flag to indicate this is file-based review
+            isDefaultFile, // Flag to indicate if selected file is the default file
+          }),
+        },
+      ],
     };
 
     await suggestUpdatesCallback({
@@ -192,7 +181,6 @@ export const startFileBasedReviewAction = async ({
       },
       client,
     );
-
   } catch (error) {
     logger.error('Error starting file-based review:', error);
 
@@ -200,11 +188,16 @@ export const startFileBasedReviewAction = async ({
       await client.chat.postMessage({
         channel: channelId,
         text: `❌ Error starting review: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-          text: { type: 'mrkdwn', text: `❌ Error starting review: ${error instanceof Error ? error.message : 'Unknown error'}` }
-        }]
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: {
+              type: 'mrkdwn',
+              text: `❌ Error starting review: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          },
+        ],
       });
     }
 

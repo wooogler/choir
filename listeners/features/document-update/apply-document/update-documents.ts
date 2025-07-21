@@ -7,16 +7,16 @@ import type {
   UsersSelectAction,
   ViewSubmitAction,
 } from '@slack/bolt';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
 import { DocumentUpdate, getStoredDocumentUpdates } from 'services/document';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { GithubService, applyDocumentUpdatesToGithub } from 'services/github';
-import { createDocumentUpdateText } from 'services/slack/message-text-utils';
 import { getUserName, parseGithubUrl } from 'services/slack';
 import { getWorkspaceId } from 'services/slack';
+import { createDocumentUpdateText } from 'services/slack/message-text-utils';
 import { VectorStoreService } from 'services/vector/main-service';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 // Store user selection state
 const selectedUsers = new Map<string, string>();
@@ -132,11 +132,17 @@ const applySelectedToGithubAction = async ({
       await client.chat.postMessage({
         channel: dmResult.channel.id,
         text: resultMessage || "Document update process completed! If there were any issues, I've noted them above.",
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
-          text: { type: 'mrkdwn', text: resultMessage || "Document update process completed! If there were any issues, I've noted them above." }
-        }]
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+            text: {
+              type: 'mrkdwn',
+              text:
+                resultMessage || "Document update process completed! If there were any issues, I've noted them above.",
+            },
+          },
+        ],
       });
 
       // 성공한 경우 원본 채널에도 업데이트 내용 공유 - CHOIR 페르소나 적용
@@ -165,7 +171,7 @@ const applySelectedToGithubAction = async ({
 
           // Extract diff content for comprehensive text - pass the actual diffBlock object
           const diffContent = diffBlock || null;
-          
+
           // Create comprehensive text using helper function
           const comprehensiveText = createDocumentUpdateText(
             updatedFileName,
@@ -175,8 +181,8 @@ const applySelectedToGithubAction = async ({
             diffContent,
             [
               { text: 'View Changes', style: 'primary' },
-              { text: 'View File', url: githubUrl }
-            ]
+              { text: 'View File', url: githubUrl },
+            ],
           );
 
           await client.chat.postMessage({
@@ -187,9 +193,9 @@ const applySelectedToGithubAction = async ({
               {
                 type: 'section',
                 block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
-                text: { type: 'mrkdwn', text: channelUpdateText }
+                text: { type: 'mrkdwn', text: channelUpdateText },
               },
-              ...updateBlocks.slice(1)
+              ...updateBlocks.slice(1),
             ],
             unfurl_links: false,
             unfurl_media: false,
@@ -265,11 +271,16 @@ const applySelectedToGithubAction = async ({
         await client.chat.postMessage({
           channel: dmResult.channel.id,
           text: `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : 'Unknown error'}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`,
-          blocks: [{
-            type: 'section',
-            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-            text: { type: 'mrkdwn', text: `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : 'Unknown error'}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.` }
-          }]
+          blocks: [
+            {
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+              text: {
+                type: 'mrkdwn',
+                text: `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : 'Unknown error'}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`,
+              },
+            },
+          ],
         });
       }
     } catch (dmError) {
@@ -326,11 +337,13 @@ export const handleNewSectionModalSubmission = async ({
       await client.chat.postMessage({
         channel: user.id,
         text: '❌ Section title and body are required.',
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-          text: { type: 'mrkdwn', text: '❌ Section title and body are required.' }
-        }]
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: { type: 'mrkdwn', text: '❌ Section title and body are required.' },
+          },
+        ],
       });
 
       // 로그: 필수 필드 누락
@@ -358,11 +371,13 @@ export const handleNewSectionModalSubmission = async ({
       await client.chat.postMessage({
         channel: user.id,
         text: '❌ No target file found. Please try again.',
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-          text: { type: 'mrkdwn', text: '❌ No target file found. Please try again.' }
-        }]
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: { type: 'mrkdwn', text: '❌ No target file found. Please try again.' },
+          },
+        ],
       });
 
       // 로그: 대상 파일 없음
@@ -395,11 +410,13 @@ export const handleNewSectionModalSubmission = async ({
       await client.chat.postMessage({
         channel: user.id,
         text: `❌ Failed to add new section to vector store for file: ${targetFile}`,
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-          text: { type: 'mrkdwn', text: `❌ Failed to add new section to vector store for file: ${targetFile}` }
-        }]
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: { type: 'mrkdwn', text: `❌ Failed to add new section to vector store for file: ${targetFile}` },
+          },
+        ],
       });
 
       // 로그: 벡터 스토어 추가 실패
@@ -429,11 +446,13 @@ export const handleNewSectionModalSubmission = async ({
       await client.chat.postMessage({
         channel: user.id,
         text: `❌ Updated markdown file not found: ${targetFile}`,
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-          text: { type: 'mrkdwn', text: `❌ Updated markdown file not found: ${targetFile}` }
-        }]
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: { type: 'mrkdwn', text: `❌ Updated markdown file not found: ${targetFile}` },
+          },
+        ],
       });
 
       // 로그: 마크다운 파일 없음
@@ -468,11 +487,13 @@ export const handleNewSectionModalSubmission = async ({
       await client.chat.postMessage({
         channel: user.id,
         text: `❌ Invalid GitHub URL: ${githubUrl}`,
-        blocks: [{
-          type: 'section',
-          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-          text: { type: 'mrkdwn', text: `❌ Invalid GitHub URL: ${githubUrl}` }
-        }]
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: { type: 'mrkdwn', text: `❌ Invalid GitHub URL: ${githubUrl}` },
+          },
+        ],
       });
 
       // 로그: GitHub URL 파싱 실패
@@ -537,11 +558,13 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
           channel: buttonChannelId,
           ts: buttonMessageTs,
           text: successText,
-          blocks: [{
-            type: 'section',
-            block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
-            text: { type: 'mrkdwn', text: successText }
-          }]
+          blocks: [
+            {
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+              text: { type: 'mrkdwn', text: successText },
+            },
+          ],
         });
 
         logger.info(`Updated button message after successful section creation`);
@@ -556,11 +579,13 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
             channel: sessionData.mainChannelId,
             ts: sessionData.mainMessageTs,
             text: successText,
-            blocks: [{
-              type: 'section',
-              block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
-              text: { type: 'mrkdwn', text: successText }
-            }]
+            blocks: [
+              {
+                type: 'section',
+                block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+                text: { type: 'mrkdwn', text: successText },
+              },
+            ],
           });
 
           logger.info(`Updated main message after successful section creation`);
@@ -571,11 +596,13 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
             channel: sessionData.emptyVectorStoreChannelId,
             ts: sessionData.emptyVectorStoreMessageTs,
             text: successText,
-            blocks: [{
-              type: 'section',
-              block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
-              text: { type: 'mrkdwn', text: successText }
-            }]
+            blocks: [
+              {
+                type: 'section',
+                block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+                text: { type: 'mrkdwn', text: successText },
+              },
+            ],
           });
 
           logger.info(`Updated empty vector store message after successful section creation`);
@@ -620,9 +647,9 @@ I've added the new content. Knowledge grows stronger! ✨`;
             {
               type: 'section',
               block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
-              text: { type: 'mrkdwn', text: channelUpdateText }
+              text: { type: 'mrkdwn', text: channelUpdateText },
             },
-            ...updateBlocks.slice(1)
+            ...updateBlocks.slice(1),
           ],
           unfurl_links: false,
           unfurl_media: false,
@@ -665,11 +692,16 @@ I've added the new content. Knowledge grows stronger! ✨`;
     await client.chat.postMessage({
       channel: body.user.id,
       text: `❌ Failed to process new section submission: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      blocks: [{
-        type: 'section',
-        block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-        text: { type: 'mrkdwn', text: `❌ Failed to process new section submission: ${error instanceof Error ? error.message : 'Unknown error'}` }
-      }]
+      blocks: [
+        {
+          type: 'section',
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          text: {
+            type: 'mrkdwn',
+            text: `❌ Failed to process new section submission: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+        },
+      ],
     });
 
     // 로그: 실패

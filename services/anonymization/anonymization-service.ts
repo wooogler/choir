@@ -89,7 +89,7 @@ export class AnonymizationService {
       } else {
         const usedNames = new Set(Object.values(this.anonymizationData.anonymization).map((entry) => entry.fakeName));
         const { fakeName, fakeNickname } = generateFakeName(usedNames);
-        
+
         mapping = {
           realName,
           fakeName,
@@ -153,7 +153,7 @@ export class AnonymizationService {
     if (!text || typeof text !== 'string') {
       return text || '';
     }
-    
+
     let deAnonymizedText = text;
 
     // Sort mappings by lastUsed (most recent first) to handle duplicate names

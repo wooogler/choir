@@ -61,6 +61,9 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
 
   const logDownloadBlocks = buildLogDownloadBlocks(isUserManager, isOwner);
 
+  const loggingEnabled = await workspaceStore.getLoggingEnabled(workspaceId);
+  const loggingToggleBlocks = buildLoggingToggleBlocks(isUserManager, isOwner, loggingEnabled);
+
   const homeBlocks = [
     {
       type: 'section',
@@ -87,7 +90,7 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
     ...choirManagementBlocks,
     ...becomeManagerBlocks,
     ...organizationDescriptionBlocks,
-    ...logDownloadBlocks,
+    ...loggingToggleBlocks,
   ];
 };
 
@@ -456,76 +459,76 @@ const buildDocumentConnectionBlocks = async (
       const vectorStore = VectorStoreService.getInstance();
       const diagnosis = vectorStore.diagnoseVectorStore();
 
-    blocks.push(
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*Vector Store Status:* ${diagnosis.status === 'healthy' ? '✅ Healthy' : diagnosis.status === 'degraded' ? '⚠️ Degraded' : '❌ Error'}\n*Files:* ${diagnosis.details.documentCount}\n*Chunks:* ${diagnosis.details.vectorsCount}`,
+      blocks.push(
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Vector Store Status:* ${diagnosis.status === 'healthy' ? '✅ Healthy' : diagnosis.status === 'degraded' ? '⚠️ Degraded' : '❌ Error'}\n*Files:* ${diagnosis.details.documentCount}\n*Chunks:* ${diagnosis.details.vectorsCount}`,
+          },
         },
-      },
-      {
-        type: 'actions',
-        elements: [
-          {
-            type: 'button',
-            text: {
-              type: 'plain_text',
-              text: 'Normalize Markdown',
-              emoji: true,
-            },
-            style: 'primary',
-            action_id: 'normalize_markdown_files',
-            confirm: {
-              title: {
-                type: 'plain_text',
-                text: 'Normalize Markdown Files',
-              },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
               text: {
                 type: 'plain_text',
-                text: 'This will convert all markdown files to tree format and back to markdown, standardizing the formatting. This may change newlines, list styles, etc.',
+                text: 'Normalize Markdown',
+                emoji: true,
               },
+              style: 'primary',
+              action_id: 'normalize_markdown_files',
               confirm: {
-                type: 'plain_text',
-                text: 'Normalize',
-              },
-              deny: {
-                type: 'plain_text',
-                text: 'Cancel',
+                title: {
+                  type: 'plain_text',
+                  text: 'Normalize Markdown Files',
+                },
+                text: {
+                  type: 'plain_text',
+                  text: 'This will convert all markdown files to tree format and back to markdown, standardizing the formatting. This may change newlines, list styles, etc.',
+                },
+                confirm: {
+                  type: 'plain_text',
+                  text: 'Normalize',
+                },
+                deny: {
+                  type: 'plain_text',
+                  text: 'Cancel',
+                },
               },
             },
-          },
-          {
-            type: 'button',
-            text: {
-              type: 'plain_text',
-              text: 'Reload from GitHub',
-              emoji: true,
-            },
-            style: 'primary',
-            action_id: 'reload_from_github',
-            confirm: {
-              title: {
-                type: 'plain_text',
-                text: 'Reload from GitHub?',
-              },
+            {
+              type: 'button',
               text: {
                 type: 'plain_text',
-                text: 'This will fetch the latest files from GitHub and update the vector store. Any unsaved changes will be overwritten.',
+                text: 'Reload from GitHub',
+                emoji: true,
               },
+              style: 'primary',
+              action_id: 'reload_from_github',
               confirm: {
-                type: 'plain_text',
-                text: 'Reload',
-              },
-              deny: {
-                type: 'plain_text',
-                text: 'Cancel',
+                title: {
+                  type: 'plain_text',
+                  text: 'Reload from GitHub?',
+                },
+                text: {
+                  type: 'plain_text',
+                  text: 'This will fetch the latest files from GitHub and update the vector store. Any unsaved changes will be overwritten.',
+                },
+                confirm: {
+                  type: 'plain_text',
+                  text: 'Reload',
+                },
+                deny: {
+                  type: 'plain_text',
+                  text: 'Cancel',
+                },
               },
             },
-          },
-        ],
-      },
-    );
+          ],
+        },
+      );
     }
   }
 
@@ -626,6 +629,48 @@ const buildLogDownloadBlocks = (isUserManager: boolean, isOwner: boolean) => {
           },
           action_id: 'download_all_logs',
           style: 'primary',
+        },
+      ],
+    },
+    {
+      type: 'divider',
+    },
+  ];
+};
+
+const buildLoggingToggleBlocks = (isUserManager: boolean, isOwner: boolean, loggingEnabled: boolean) => {
+  if (!isUserManager && !isOwner) {
+    return [];
+  }
+
+  return [
+    {
+      type: 'header',
+      text: {
+        type: 'plain_text',
+        text: '🔧 Logging Settings',
+        emoji: true,
+      },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*File Logging:* ${loggingEnabled ? '✅ Enabled' : '❌ Disabled'}\n\nControls whether user interactions are saved to log files for research purposes.`,
+      },
+    },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: loggingEnabled ? 'Disable Logging' : 'Enable Logging',
+            emoji: true,
+          },
+          action_id: 'toggle_logging',
+          style: loggingEnabled ? 'danger' : 'primary',
         },
       ],
     },

@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getWorkspaceId } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { handleUpdateRequestMessage } from '../document-update/extract-knowledge/update-request-handler';
 
 /**

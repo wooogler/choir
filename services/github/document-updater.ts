@@ -55,7 +55,9 @@ export async function applyDocumentUpdatesToGithub({
               throw new Error(`Failed to append node ${appendUpdate.nodeId} in ${fileName}`);
             }
           } else {
-            console.warn(`Skipping append operation for empty content: nodeId=${appendUpdate.nodeId}, fileName=${fileName}`);
+            console.warn(
+              `Skipping append operation for empty content: nodeId=${appendUpdate.nodeId}, fileName=${fileName}`,
+            );
           }
         }
         // APPEND 작업 후 최신 MarkdownFile 객체를 다시 가져옴

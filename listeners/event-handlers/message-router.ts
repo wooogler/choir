@@ -4,10 +4,12 @@ import {
   getFilteredConversationHistory,
   getOrganizationDescription,
   getOrganizationName,
+  getUserName,
   getWorkspaceId,
   isManager,
 } from 'services/slack';
-import { getCHOIRMessageTypeFromBlocks, CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { CHOIRMessageType, createCHOIRBlockId, getCHOIRMessageTypeFromBlocks } from 'types/message-types';
+import { getAnonymousThreadInfo } from '../../services/common/session-store';
 import { logMessageProcessing } from '../../services/common/user-interaction-logger';
 import { handleGeneralConversationMessage } from '../features/conversation/general-conversation-handler';
 import { handleUpdateRequestMessage } from '../features/document-update/extract-knowledge/update-request-handler';
@@ -25,25 +27,94 @@ export async function handleIncomingMessage(client: any, event: any, message: st
   try {
     // Thread message인 경우 원본 메시지가 Anonymous 질문인지 확인
     if (event.thread_ts) {
+      // 먼저 mention 여부 확인 (try 블록 밖에서)
+      let isMentioned = false;
       try {
-        const threadResponse = await client.conversations.history({
-          channel: event.channel,
-          latest: event.thread_ts,
-          inclusive: true,
-          limit: 1,
-        });
-        
-        if (threadResponse.messages && threadResponse.messages.length > 0) {
-          const originalMessage = threadResponse.messages[0];
-          if (originalMessage.blocks) {
-            const messageType = getCHOIRMessageTypeFromBlocks(originalMessage.blocks);
-            if (messageType === CHOIRMessageType.ANONYMOUS_QUESTION) {
-              logger.info('Skipping thread reply for anonymous question', {
+        const botInfo = await client.auth.test();
+        const botUserId = botInfo.user_id;
+        isMentioned = message.includes(`<@${botUserId}>`) || message.includes('@choir');
+
+        // mention된 경우에는 익명 thread 체크를 우회하고 정상 처리
+        if (isMentioned) {
+          logger.info('CHOIR mentioned in thread - bypassing anonymous checks', {
+            channel: event.channel,
+            threadTs: event.thread_ts,
+          });
+          // mention된 경우 정상적인 메시지 처리 흐름으로 넘어감 (모든 익명 체크 우회)
+        } else {
+          // mention되지 않은 경우에만 익명 thread 체크
+          const anonymousInfo = getAnonymousThreadInfo(event.channel, event.thread_ts);
+          if (anonymousInfo) {
+            // Bot 메시지는 전달하지 않음 (CHOIR의 안내 메시지 등)
+            if (event.bot_id || event.subtype === 'bot_message') {
+              logger.info('Skipping bot message in anonymous thread', {
                 channel: event.channel,
                 threadTs: event.thread_ts,
-                messageType,
+                botId: event.bot_id,
+                subtype: event.subtype,
               });
               return true;
+            }
+
+            // Mention되지 않은 일반 메시지는 원래 질문자에게 전달
+            logger.info('Forwarding thread reply to anonymous questioner', {
+              channel: event.channel,
+              threadTs: event.thread_ts,
+              originalQuestionerId: anonymousInfo.originalQuestionerId,
+            });
+
+            // 메시지 작성자 이름 가져오기
+            const authorName = await getUserName(event.user, client);
+
+            // 원래 질문자에게 DM 전송
+            try {
+              await client.chat.postMessage({
+                channel: anonymousInfo.originalQuestionerId,
+                text: 'You received a reply to your anonymous question',
+                blocks: [
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `💬 *${authorName}* replied to your anonymous question:\n\n${message}`,
+                    },
+                  },
+                ],
+              });
+
+              logger.info('Successfully forwarded thread reply to anonymous questioner', {
+                originalQuestionerId: anonymousInfo.originalQuestionerId,
+                authorName,
+              });
+            } catch (dmError) {
+              logger.error('Failed to forward thread reply to anonymous questioner:', dmError);
+            }
+
+            return true;
+          }
+        }
+
+        // mention되지 않은 경우에만 fallback 체크 수행
+        if (!isMentioned) {
+          const threadResponse = await client.conversations.history({
+            channel: event.channel,
+            latest: event.thread_ts,
+            inclusive: true,
+            limit: 1,
+          });
+
+          if (threadResponse.messages && threadResponse.messages.length > 0) {
+            const originalMessage = threadResponse.messages[0];
+            if (originalMessage.blocks) {
+              const messageType = getCHOIRMessageTypeFromBlocks(originalMessage.blocks);
+              if (messageType === CHOIRMessageType.ANONYMOUS_QUESTION) {
+                logger.info('Skipping thread reply for anonymous question (fallback check)', {
+                  channel: event.channel,
+                  threadTs: event.thread_ts,
+                  messageType,
+                });
+                return true;
+              }
             }
           }
         }
@@ -82,7 +153,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     const isDM = event.channel_type === 'im';
     const messages = await getFilteredConversationHistory(client, event, choirUsers, {
       timeLimit: isDM ? 30 : 1440, // 30 minutes for DMs, 1 day for channels
-      messageLimit: 10,  // fetch up to 10 messages
+      messageLimit: 10, // fetch up to 10 messages
       maxResults: 5, // return up to 5 messages
     });
 
