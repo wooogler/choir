@@ -96,14 +96,8 @@ sudo systemctl reload nginx
 
 #### Deploy with PM2
 
-1. Build the application:
+Start the application with PM2 (replace `{workspace_name}` with your actual workspace name):
 
 ```bash
-pnpm run build
-```
-
-2. Start the application with PM2 (replace `{workspace_name}` with your actual workspace name):
-
-```bash
-pm2 start dist/app.js --name "choir-{workspace_name}" --env production
+pm2 start "pnpm run dev:prod" --name "choir-{workspace_name}"
 ```
