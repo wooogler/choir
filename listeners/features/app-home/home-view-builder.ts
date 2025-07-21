@@ -61,6 +61,9 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
 
   const logDownloadBlocks = buildLogDownloadBlocks(isUserManager, isOwner);
 
+  const loggingEnabled = await workspaceStore.getLoggingEnabled(workspaceId);
+  const loggingToggleBlocks = buildLoggingToggleBlocks(isUserManager, isOwner, loggingEnabled);
+
   const homeBlocks = [
     {
       type: 'section',
@@ -87,6 +90,7 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
     ...choirManagementBlocks,
     ...becomeManagerBlocks,
     ...organizationDescriptionBlocks,
+    ...loggingToggleBlocks,
   ];
 };
 
@@ -625,6 +629,48 @@ const buildLogDownloadBlocks = (isUserManager: boolean, isOwner: boolean) => {
           },
           action_id: 'download_all_logs',
           style: 'primary',
+        },
+      ],
+    },
+    {
+      type: 'divider',
+    },
+  ];
+};
+
+const buildLoggingToggleBlocks = (isUserManager: boolean, isOwner: boolean, loggingEnabled: boolean) => {
+  if (!isUserManager && !isOwner) {
+    return [];
+  }
+
+  return [
+    {
+      type: 'header',
+      text: {
+        type: 'plain_text',
+        text: '🔧 Logging Settings',
+        emoji: true,
+      },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*File Logging:* ${loggingEnabled ? '✅ Enabled' : '❌ Disabled'}\n\nControls whether user interactions are saved to log files for research purposes.`,
+      },
+    },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: loggingEnabled ? 'Disable Logging' : 'Enable Logging',
+            emoji: true,
+          },
+          action_id: 'toggle_logging',
+          style: loggingEnabled ? 'danger' : 'primary',
         },
       ],
     },

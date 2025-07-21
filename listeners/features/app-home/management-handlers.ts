@@ -8,6 +8,7 @@ import {
   removeManager,
   setCHOIRUsers,
 } from 'services/slack';
+import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 export const registerManagementHandlers = (app: App) => {
@@ -535,6 +536,65 @@ export const registerManagementHandlers = (app: App) => {
           managers_select_block: 'An error occurred while updating managers. Please try again.',
         },
       });
+    }
+  });
+
+  app.action('toggle_logging', async ({ ack, body, client, logger }) => {
+    await ack();
+
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      const workspaceStore = new WorkspaceStore();
+      const currentLogging = await workspaceStore.getLoggingEnabled(workspaceId);
+      const newLogging = !currentLogging;
+      
+      await workspaceStore.setLoggingEnabled(workspaceId, newLogging);
+
+      await client.chat.postEphemeral({
+        user: body.user.id,
+        channel: body.user.id,
+        text: `${newLogging ? '\u2705' : '\u274c'} Logging has been ${newLogging ? 'enabled' : 'disabled'}. Please refresh your app home to see the changes.`,
+      });
+
+      setTimeout(async () => {
+        try {
+          const mockEvent = {
+            type: 'app_home_opened' as const,
+            user: body.user.id,
+            tab: 'home' as const,
+            event_ts: Date.now().toString(),
+          };
+
+          const handlerArgs = {
+            client,
+            event: mockEvent,
+            logger,
+            context: {},
+            payload: mockEvent,
+          };
+
+          await appHomeOpenedCallback(handlerArgs as any);
+          logger.info(`Home screen refreshed for user ${body.user.id} after logging toggle`);
+        } catch (error) {
+          logger.error('Error refreshing home view after logging toggle:', error);
+        }
+      }, 1000);
+
+      logger.info('Logging setting toggled', {
+        workspaceId,
+        userId: body.user.id,
+        enabled: newLogging,
+      });
+    } catch (error) {
+      logger.error('Error toggling logging setting:', error);
+
+      if ('user' in body && body.user?.id) {
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '\u274c Error toggling logging setting. Please try again.',
+        });
+      }
     }
   });
 };

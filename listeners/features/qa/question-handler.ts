@@ -198,7 +198,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           type: 'mrkdwn',
           text: displayResponse,
         },
-        block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
+        block_id: createCHOIRBlockId(CHOIRMessageType.ANSWER),
       },
     ];
 

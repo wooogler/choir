@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { WebClient } from '@slack/web-api';
 import { getAllCachedNames } from './name-cache';
+import { WorkspaceStore } from 'services/workspace/workspace-store';
 
 export interface UserInteractionLog {
   timestamp: string;
@@ -65,7 +66,7 @@ class UserInteractionLogger {
   /**
    * 사용자 인터랙션 로그를 저장합니다.
    */
-  public logInteraction(
+  public async logInteraction(
     userId: string,
     workspaceId: string,
     interactionType: UserInteractionLog['interactionType'],
@@ -82,8 +83,16 @@ class UserInteractionLogger {
       workspaceName?: string;
       channelName?: string;
     },
-  ): void {
+  ): Promise<void> {
     try {
+      // Check if logging is enabled for this workspace
+      const workspaceStore = new WorkspaceStore();
+      const loggingEnabled = await workspaceStore.getLoggingEnabled(workspaceId);
+      
+      if (!loggingEnabled) {
+        return; // Skip logging if disabled
+      }
+
       this.updateCurrentDate();
 
       const logEntry: UserInteractionLog = {
@@ -130,7 +139,7 @@ class UserInteractionLogger {
     try {
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, channelId, client);
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'message',
@@ -145,7 +154,7 @@ class UserInteractionLogger {
           names,
         );
       } else {
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'message',
@@ -161,7 +170,7 @@ class UserInteractionLogger {
       }
     } catch (error) {
       console.warn('Error getting names for message processing logging, falling back to basic logging:', error);
-      this.logInteraction(
+      await this.logInteraction(
         userId,
         workspaceId,
         'message',
@@ -197,7 +206,7 @@ class UserInteractionLogger {
     try {
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, channelId, client);
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'message',
@@ -217,7 +226,7 @@ class UserInteractionLogger {
           names,
         );
       } else {
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'message',
@@ -238,7 +247,7 @@ class UserInteractionLogger {
       }
     } catch (error) {
       console.warn('Error getting names for question processing logging, falling back to basic logging:', error);
-      this.logInteraction(
+      await this.logInteraction(
         userId,
         workspaceId,
         'message',
@@ -278,7 +287,7 @@ class UserInteractionLogger {
     try {
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, channelId, client);
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'message',
@@ -297,7 +306,7 @@ class UserInteractionLogger {
           names,
         );
       } else {
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'message',
@@ -317,7 +326,7 @@ class UserInteractionLogger {
       }
     } catch (error) {
       console.warn('Error getting names for update request processing logging, falling back to basic logging:', error);
-      this.logInteraction(
+      await this.logInteraction(
         userId,
         workspaceId,
         'message',
@@ -354,7 +363,7 @@ class UserInteractionLogger {
     try {
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, channelId, client);
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'button_click',
@@ -372,7 +381,7 @@ class UserInteractionLogger {
           names,
         );
       } else {
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'button_click',
@@ -391,7 +400,7 @@ class UserInteractionLogger {
       }
     } catch (error) {
       console.warn('Error getting names for button click logging, falling back to basic logging:', error);
-      this.logInteraction(
+      await this.logInteraction(
         userId,
         workspaceId,
         'button_click',
@@ -430,7 +439,7 @@ class UserInteractionLogger {
 
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, actualChannelId, client);
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'modal_submit',
@@ -448,7 +457,7 @@ class UserInteractionLogger {
           names,
         );
       } else {
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'modal_submit',
@@ -469,7 +478,7 @@ class UserInteractionLogger {
       console.warn('Error getting names for modal submit logging, falling back to basic logging:', error);
       const actualChannelId = channelId || 'modal';
       const actualChannelType = channelType || 'dm';
-      this.logInteraction(
+      await this.logInteraction(
         userId,
         workspaceId,
         'modal_submit',
@@ -504,7 +513,7 @@ class UserInteractionLogger {
     try {
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, channelId, client);
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'error',
@@ -522,7 +531,7 @@ class UserInteractionLogger {
           names,
         );
       } else {
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'error',
@@ -541,7 +550,7 @@ class UserInteractionLogger {
       }
     } catch (error) {
       console.warn('Error getting names for error logging, falling back to basic logging:', error);
-      this.logInteraction(
+      await this.logInteraction(
         userId,
         workspaceId,
         'error',
@@ -579,7 +588,7 @@ class UserInteractionLogger {
     try {
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, channelId, client);
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'message',
@@ -598,7 +607,7 @@ class UserInteractionLogger {
           names,
         );
       } else {
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'message',
@@ -618,7 +627,7 @@ class UserInteractionLogger {
       }
     } catch (error) {
       console.warn('Error getting names for knowledge extraction logging, falling back to basic logging:', error);
-      this.logInteraction(
+      await this.logInteraction(
         userId,
         workspaceId,
         'message',
@@ -657,7 +666,7 @@ class UserInteractionLogger {
     try {
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, channelId, client);
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'button_click',
@@ -676,7 +685,7 @@ class UserInteractionLogger {
           names,
         );
       } else {
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'button_click',
@@ -696,7 +705,7 @@ class UserInteractionLogger {
       }
     } catch (error) {
       console.warn('Error getting names for manager notification logging, falling back to basic logging:', error);
-      this.logInteraction(
+      await this.logInteraction(
         userId,
         workspaceId,
         'button_click',
@@ -736,7 +745,7 @@ class UserInteractionLogger {
     try {
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, channelId, client);
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'button_click',
@@ -756,7 +765,7 @@ class UserInteractionLogger {
           names,
         );
       } else {
-        this.logInteraction(
+        await this.logInteraction(
           userId,
           workspaceId,
           'button_click',
@@ -777,7 +786,7 @@ class UserInteractionLogger {
       }
     } catch (error) {
       console.warn('Error getting names for document update logging, falling back to basic logging:', error);
-      this.logInteraction(
+      await this.logInteraction(
         userId,
         workspaceId,
         'button_click',

@@ -15,6 +15,7 @@ export interface WorkspaceConfig {
   organizationDescription?: string;
   managers: string[];
   choirUsers: string[]; // Users authorized to use CHOIR (includes managers)
+  loggingEnabled?: boolean; // Controls file-based logging on/off
   markdownFiles?: Array<{
     name: string;
     path: string;
@@ -141,6 +142,7 @@ export class WorkspaceStore {
       managers: [initialManagerId],
       choirUsers: [initialManagerId], // Manager is automatically a CHOIR user
       organizationName: teamInfo.team?.name || workspaceInfo.team || 'Our Organization',
+      loggingEnabled: true, // Default to enabled
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -458,6 +460,27 @@ export class WorkspaceStore {
     }
 
     return Object.keys(config.githubTokens);
+  }
+
+  /**
+   * 로깅 설정 토글
+   */
+  public async setLoggingEnabled(workspaceId: string, enabled: boolean): Promise<void> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+
+    config.loggingEnabled = enabled;
+    await this.saveWorkspaceConfig(config);
+  }
+
+  /**
+   * 로깅 설정 가져오기
+   */
+  public async getLoggingEnabled(workspaceId: string): Promise<boolean> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.loggingEnabled ?? true; // Default to enabled if not set
   }
 
   /**
