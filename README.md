@@ -1,95 +1,109 @@
-# Bolt for JavaScript (TypeScript) Template App
+# CHOIR - AI-Powered Slack Bot
 
-This is a generic Bolt for JavaScript (TypeScript) template app used to build out Slack apps.
-
-Before getting started, make sure you have a development workspace where you have permissions to install apps. If you don't have one setup, go ahead and [create one](https://slack.com/create).
+CHOIR is an AI-powered Slack bot designed to help organizations manage and leverage their collective knowledge stored as markdown files in GitHub repositories.
 
 ## Installation
+
+#### Server Access
+
+Connect to the server:
+```bash
+ssh sangwonlee@choir.cs.vt.edu
+# Enter password when prompted
+```
+
+#### Clone Repository
+
+```bash
+git clone https://github.com/wooogler/choir.git choir-{workspace_name}
+cd choir-{workspace_name}
+```
+
+#### Install Dependencies
+
+```bash
+pnpm install
+```
 
 #### Create a Slack App
 
 1. Open [https://api.slack.com/apps/new](https://api.slack.com/apps/new) and choose "From an app manifest"
 2. Choose the workspace you want to install the application to
-3. Copy the contents of [manifest.json](./manifest.json) into the text box that says `*Paste your manifest code here*` (within the JSON tab) and click _Next_
-4. Review the configuration and click _Create_
-5. Click _Install to Workspace_ and _Allow_ on the screen that follows. You'll then be redirected to the App Configuration dashboard.
+3. Copy the contents of [manifest.json](./manifest.json) into the text box that says `*Paste your manifest code here*` (within the JSON tab)
+4. **Important**: Update the `event_subscriptions.request_url` and `interactivity.request_url` in the manifest to: `https://choir.cs.vt.edu/{workspace_name}/slack/events`
+5. Click _Next_, review the configuration and click _Create_
+6. Click _Install to Workspace_ and _Allow_ on the screen that follows
 
 #### Environment Variables
 
-Before you can run the app, you'll need to store some environment variables.
-
 1. Copy `env.sample` to `.env`
-2. Open your apps configuration page from [this list](https://api.slack.com/apps), click _OAuth & Permissions_ in the left hand menu, then copy the _Bot User OAuth Token_ into your `.env` file under `SLACK_BOT_TOKEN`
-3. Click _Basic Information_ from the left hand menu and follow the steps in the _App-Level Tokens_ section to create an app-level token with the `connections:write` scope. Copy that token into your `.env` as `SLACK_APP_TOKEN`.
+2. Configure your Slack app credentials:
+   - Go to your app's _OAuth & Permissions_ page and copy the _Bot User OAuth Token_ to `SLACK_BOT_TOKEN`
+   - Go to _Basic Information_ and create an app-level token with `connections:write` scope for `SLACK_APP_TOKEN`
+   - Copy the _Signing Secret_ from _Basic Information_ to `SLACK_SIGNING_SECRET`
 
-#### Azure OpenAI Configuration
-
-This app supports Azure OpenAI for AI services. To configure Azure OpenAI:
-
-1. Set up an Azure OpenAI resource in the Azure portal
-2. Create deployments for chat and embeddings models
-3. Add the following environment variables to your `.env` file:
+3. Configure OpenAI (default AI provider):
 
 ```env
-# Azure OpenAI Configuration
-AZURE_OPENAI_API_KEY=your_azure_openai_api_key
-AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com
-AZURE_OPENAI_API_VERSION=2024-10-21
-AZURE_OPENAI_DEPLOYMENT_NAME=your-chat-deployment-name
-AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME=your-embeddings-deployment-name
+# Slack Configuration
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_APP_TOKEN=xapp-your-app-token
+SLACK_SIGNING_SECRET=your-signing-secret
 
-# Select AI service to use (openai or azure)
-AI_PROVIDER=azure
+# OpenAI Configuration
+OPENAI_API_KEY=your-openai-api-key
+
+# GitHub Integration
+GITHUB_TOKEN=your-github-personal-access-token
+
+# Server Configuration
+PORT=3000  # Use an available port (3000, 3001, 3002, etc.)
+
+# Optional
+MANAGER_PROMOTION_PASSWORD=your-manager-password
+CHOIR_CONSENT_FORM_URL=https://your-consent-form-url
 ```
 
-4. Validate your configuration using the provided utility:
-```typescript
-import { validateCurrentProvider } from 'services/llm';
-validateCurrentProvider(); // Returns true if current provider configuration is valid
+#### Configure Nginx
+
+1. Edit the `nginx-test-server.conf` file to add your workspace configuration:
+
+```nginx
+# Add this block for your workspace (replace {workspace_name} and {port})
+location = /{workspace_name}/slack/events {
+    proxy_pass http://localhost:{port}/slack/events;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_cache_bypass $http_upgrade;
+    proxy_read_timeout 60s;
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+}
 ```
 
-#### Install Dependencies
+2. Replace the nginx configuration:
 
-`npm install`
-
-#### Run Bolt Server
-
-`npm start`
-
-## Project Structure
-
-### `manifest.json`
-
-`manifest.json` is a configuration for Slack apps. With a manifest, you can create an app with a pre-defined configuration, or adjust the configuration of an existing app.
-
-### `app.ts`
-
-`app.ts` is the entry point for the application and is the file you'll run to start the server. This project aims to keep this file as thin as possible, primarily using it as a way to route inbound requests.
-
-### `/listeners`
-
-Every incoming request is routed to a "listener". Inside this directory, we group each listener based on the Slack Platform feature used, so `/listeners/shortcuts` handles incoming [Shortcuts](https://api.slack.com/interactivity/shortcuts) requests, `/listeners/views` handles [View submissions](https://api.slack.com/reference/interaction-payloads/views#view_submission) and so on.
-
-## App Distribution / OAuth
-
-Only implement OAuth if you plan to distribute your application across multiple workspaces. A separate `app-oauth.ts` file can be found with relevant OAuth settings.
-
-When using OAuth, Slack requires a public URL where it can send requests. In this template app, we've used [`ngrok`](https://ngrok.com/download). Checkout [this guide](https://ngrok.com/docs#getting-started-expose) for setting it up.
-
-Start `ngrok` to access the app on an external network and create a redirect URL for OAuth.
-
-```
-ngrok http 3000
+```bash
+sudo cp nginx-test-server.conf /etc/nginx/sites-available/test-server
+sudo nginx -t  # Test configuration
+sudo systemctl reload nginx
 ```
 
-This output should include a forwarding address for `http` and `https` (we'll use `https`). It should look something like the following:
+#### Deploy with PM2
 
-```
-Forwarding   https://3cb89939.ngrok.io -> http://localhost:3000
+1. Build the application:
+
+```bash
+pnpm run build
 ```
 
-Navigate to **OAuth & Permissions** in your app configuration and click **Add a Redirect URL**. The redirect URL should be set to your `ngrok` forwarding address with the `slack/oauth_redirect` path appended. For example:
+2. Start the application with PM2 (replace `{workspace_name}` with your actual workspace name):
 
-```
-https://3cb89939.ngrok.io/slack/oauth_redirect
+```bash
+pm2 start dist/app.js --name "choir-{workspace_name}" --env production
 ```
