@@ -153,7 +153,7 @@ export const EXCLUDE_FROM_HISTORY: CHOIRMessageType[] = [
  * 세션 종료를 나타내는 메시지 타입들
  */
 export const SESSION_END_TYPES: CHOIRMessageType[] = [
-  CHOIRMessageType.DOCUMENT_SUGGESTION,
+  
   CHOIRMessageType.RESPONSE,
   CHOIRMessageType.SUCCESS,
 ];
@@ -165,6 +165,7 @@ export const SESSION_END_TYPES: CHOIRMessageType[] = [
 export const SESSION_START_TYPES: CHOIRMessageType[] = [
   CHOIRMessageType.ANONYMOUS_QUESTION, // 익명 질문이 새로운 세션의 시작
   CHOIRMessageType.QA_SHARE_INTRO,     // Q&A 공유 인사말이 새로운 세션의 시작
+  CHOIRMessageType.DOCUMENT_SUGGESTION,
 ];
 
 /**

@@ -105,6 +105,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
           sessionData.originalMessageLink = messageLink;
         }
 
+        // Combined message: Suggestion content + Action buttons
         const blocks: any[] = [
           {
             type: 'section',
@@ -202,10 +203,12 @@ export const sendUpdateSuggestionToManagerCallback = async ({
         });
 
         // Store manager message info for later updates
-        sessionData.managerMessageInfo = {
+        sessionData.managerMessageInfo[managerId] = {
           channel: managerId,
-          ts: postedMessage.ts,
+          ts: postedMessage.ts, // Combined message
         };
+        
+        
         storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
 
         // 로그: 매니저 알림 성공

@@ -1,7 +1,8 @@
 import type { AllMiddlewareArgs, SlackViewAction, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/user-interaction-logger';
-import { getWorkspaceId } from 'services/slack';
+import { getWorkspaceId, getManagers, getUserName } from 'services/slack';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 // import suggestUpdatesCallback from "../document-handlers/suggest-updates"; // Not used here
 // import { SlackMessage } from "services/slack"; // Not used here
 
@@ -161,13 +162,138 @@ export async function handleKnowledgeEditManagerModal({
         ],
       });
 
-      await client.chat.update({
-        channel: managerMessageInfo.channel,
-        ts: managerMessageInfo.ts,
-        text: `Knowledge for session ${sessionId} was updated. Original requester: ${sessionData.userName || 'Unknown User'}`,
-        blocks: blocks,
-      });
-    } else {
+      try {
+        // Step 1: Delete the old message
+        try {
+          await client.chat.delete({
+            channel: managerMessageInfo.channel,
+            ts: managerMessageInfo.ts,
+          });
+        } catch (deleteError) {
+          logger.warn(`Failed to delete old message, proceeding with recreation:`, deleteError);
+        }
+        
+        // Step 2: Create new message with updated content (complete message with greeting and buttons)
+        const choirGreeting = `Hi there! I'm CHOIR, your friendly documentation assistant. 👋\n\n*${sessionData.userName || 'Unknown User'}* has a suggestion for updating our documents, and I'm helping to pass it along for review.`;
+        const choirCallToAction = `Could you please take a look and decide on the next steps? You can edit the suggested content or start the update process directly from here.`;
+        
+        const completeBlocks: any[] = [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: choirGreeting,
+            },
+          },
+          {
+            type: 'header',
+            text: {
+              type: 'plain_text',
+              text: '📝 Document Update Suggestion (Edited by Manager)',
+              emoji: true,
+            },
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*From:* *${sessionData.userName || 'Unknown User'}*`,
+            },
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*Suggestion:*\n\`\`\`${editedKnowledge.trim()}\`\`\``,
+            },
+          },
+        ];
+
+        if (sessionData.originalMessageLink) {
+          completeBlocks.push({
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+            },
+          });
+        }
+
+        completeBlocks.push(
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: choirCallToAction,
+            },
+          },
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: '✏️ Edit Suggestion',
+                  emoji: true,
+                },
+                action_id: 'open_knowledge_edit_manager_modal',
+                value: sessionId,
+              },
+              {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: '🚀 Start Update Process',
+                  emoji: true,
+                },
+                style: 'primary',
+                action_id: 'suggest_updates',
+                value: JSON.stringify({
+                  sessionId: sessionId,
+                  knowledgeContent: editedKnowledge.trim(),
+                  originalChannelId: sessionData.originalChannelId,
+                  originalThreadTs: sessionData.originalThreadTs,
+                }),
+              },
+              {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: 'Dismiss',
+                  emoji: true,
+                },
+                style: 'danger',
+                action_id: 'cancel_knowledge_extraction',
+                value: sessionId,
+              },
+            ],
+          },
+        );
+
+        const newMessage = await client.chat.postMessage({
+          channel: managerMessageInfo.channel,
+          text: `📝 Document update suggestion updated by manager for session ${sessionId}.`,
+          blocks: completeBlocks,
+          unfurl_links: false,
+          unfurl_media: false,
+        });
+        
+        // Step 3: Update session data with new timestamp
+        if (newMessage.ts) {
+          sessionData.managerMessageInfo[userId].ts = newMessage.ts;
+          storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+        }
+      } catch (updateError) {
+        logger.warn(
+          `Failed to update original message for manager ${userId} in session ${sessionId}: ${updateError instanceof Error ? updateError.message : 'Unknown error'}. Using fallback approach.`,
+        );
+        // Use the fallback logic that's already implemented below
+        // Fall through to the else block by setting managerMessageInfo to null
+      }
+    }
+    
+    if (!managerMessageInfo || !managerMessageInfo.ts || !managerMessageInfo.channel) {
       logger.warn(
         `Original message info not found for manager ${userId} in session ${sessionId}. Cannot update the message. Posting a new one as fallback.`,
       );
@@ -257,6 +383,50 @@ export async function handleKnowledgeEditManagerModal({
         unfurl_links: false,
         unfurl_media: false,
       });
+    }
+
+    // Update the original preview message in the channel/thread (similar to regular edit modal)
+    try {
+      // Get managers for the message  
+      const managers = await getManagers(workspaceId);
+      let managerText = 'managers';
+      if (managers.length > 0) {
+        // Get first manager's name as example
+        const firstManagerName = await getUserName(managers[0], client);
+        managerText = managers.length === 1 ? firstManagerName : `${firstManagerName} and other managers`;
+      }
+
+      // Find the original public message to update
+      if (sessionData.publicMessageTs) {
+        await client.chat.update({
+          channel: sessionData.originalChannelId,
+          ts: sessionData.publicMessageTs,
+          text: `Sure! I'll suggest the following update to ${managerText}. (Edited by Manager)`,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `Sure! I'll suggest the following update to ${managerText}. *(Edited by Manager)*`,
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
+            },
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `*Suggested Update*\n\`\`\`${editedKnowledge.trim()}\`\`\``,
+              },
+            },
+          ],
+        });
+        logger.info(`Public message updated for session ${sessionId} by manager ${userId}`);
+      } else {
+        logger.warn(`No publicMessageTs found for session ${sessionId}, cannot update public message`);
+      }
+    } catch (updateError) {
+      logger.warn('Failed to update original public message:', updateError);
+      // Continue without failing if public message update fails
     }
 
     // 로그: 성공
