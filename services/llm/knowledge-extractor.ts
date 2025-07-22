@@ -71,9 +71,10 @@ ${contextSection}
 **Context**: This knowledge will be used to update team documentation, so focus on organizational decisions, processes, and standards rather than individual actions.
 
 **Priority Guidelines** (in order of importance):
-1. **NEW DECISIONS or POLICY CHANGES**: If the conversation contains new decisions, policy updates, or changes to existing practices, prioritize these over existing information
-2. **Manager/Leadership Input**: Statements from managers or team leaders carry higher weight than existing documentation or policies
-3. **Contextual Updates**: When there's a conflict between existing policy (mentioned in background) and new decisions (made in the conversation), prioritize the new decisions
+1. **Manager/Leadership Statements**: ANY new information stated by managers or team leaders should be prioritized, especially when introducing completely new topics or policies
+2. **NEW DECISIONS or POLICY CHANGES**: If the conversation contains new decisions, policy updates, or changes to existing practices, prioritize these over existing information
+3. **Most Recent Information**: When multiple pieces of information are discussed, prioritize the most recent statements, especially if they introduce new knowledge
+4. **Background vs. New Information**: Previous CHOIR suggestions or responses in the conversation are often just providing context - prioritize new human statements over background information
 
 **Writing Guidelines**:
 - Write from the organization's perspective when appropriate
@@ -96,7 +97,8 @@ Extract the single most important knowledge that:
 - Represents the key decision, preference, or important information
 - Would help someone understand the organizational standard or decision
 - Is written from an organizational perspective
-- **PRIORITIZES NEW DECISIONS over existing policies when both are present**
+- **PRIORITIZES MANAGER STATEMENTS about new topics over previous CHOIR context**
+- **FOCUSES ON NEW INFORMATION rather than background context**
 
 Format your response as a JSON object with this structure:
 {
