@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { WebClient } from '@slack/web-api';
-import { getAllCachedNames } from './name-cache';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
+import { getAllCachedNames } from './name-cache';
 
 export interface UserInteractionLog {
   timestamp: string;
@@ -88,7 +88,7 @@ class UserInteractionLogger {
       // Check if logging is enabled for this workspace
       const workspaceStore = new WorkspaceStore();
       const loggingEnabled = await workspaceStore.getLoggingEnabled(workspaceId);
-      
+
       if (!loggingEnabled) {
         return; // Skip logging if disabled
       }

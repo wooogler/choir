@@ -64,52 +64,42 @@ export async function extractKnowledgeFromMessages(
       contextSection += '\n';
     }
 
-    const prompt = `Analyze the following numbered Slack conversation and extract the single most important piece of knowledge that should be documented for organizational purposes.
+    const prompt = `Extract knowledge from this Slack conversation to update team documentation.
 
 IMPORTANT: You must specify which message numbers contain this knowledge using the [number] references.
 ${contextSection}
-**Context**: This knowledge will be used to update team documentation, so focus on organizational decisions, processes, and standards rather than individual actions.
 
-**Priority Guidelines** (in order of importance):
-1. **Manager/Leadership Statements**: ANY new information stated by managers or team leaders should be prioritized, especially when introducing completely new topics or policies
-2. **NEW DECISIONS or POLICY CHANGES**: If the conversation contains new decisions, policy updates, or changes to existing practices, prioritize these over existing information
-3. **Most Recent Information**: When multiple pieces of information are discussed, prioritize the most recent statements, especially if they introduce new knowledge
-4. **Background vs. New Information**: Previous CHOIR suggestions or responses in the conversation are often just providing context - prioritize new human statements over background information
+**What to extract:**
+Look for NEW information shared by team members that should be documented, such as:
+- New decisions, policies, or process changes
+- Tips, best practices, or lessons learned  
+- Technical information or configurations
+- Important clarifications or exceptions to existing policies
 
-**Writing Guidelines**:
-- Write from the organization's perspective when appropriate
-- Focus on knowledge that would be valuable for the team to remember
-- Use natural language that fits the organizational context
-- Avoid including personal names or individual references
-- When extracting policy changes, clearly reflect the new decision rather than the old policy
+**What to IGNORE:**
+- CHOIR's responses (these are just existing documentation being quoted)
+- General discussion without actionable information
+- Personal actions or individual-specific information
 
-Focus on the most valuable information from these categories:
-1. **Decisions & Agreements**: Choices made, tools selected, or agreements reached
-2. **Process & Methodology**: How things are done or should be done
-3. **Technical Information**: Tools, technologies, specifications, or configurations
-4. **Action Items**: Tasks, next steps, or assignments
-5. **Insights & Learnings**: Important realizations or discoveries
-6. **Preferences & Standards**: Team preferences, standards, or guidelines
+**Priority order:**
+1. **Human team members' statements** - Always prioritize what humans say over CHOIR responses
+2. **New information** - Focus on what's being newly shared or decided
+3. **Manager/leadership input** - Especially important for policy decisions
+4. **Most recent information** - Latest statements in the conversation
 
-Extract the single most important knowledge that:
-- Provides the most useful information for the team
-- Could be referenced later in documentation
-- Represents the key decision, preference, or important information
-- Would help someone understand the organizational standard or decision
-- Is written from an organizational perspective
-- **PRIORITIZES MANAGER STATEMENTS about new topics over previous CHOIR context**
-- **FOCUSES ON NEW INFORMATION rather than background context**
+**Example:**
+If CHOIR says "According to documentation, X is the policy" but then a human says "Actually, in practice we also do Y", extract the human's addition about Y, not CHOIR's statement about X.
 
-Format your response as a JSON object with this structure:
+Format your response as a JSON object:
 {
-  "content": "Clear statement of the most important organizational knowledge",
-  "source": [1, 3, 5]
+  "content": "Clear statement of the organizational knowledge to document",
+  "source": [message_numbers]
 }
 
 Conversation:
 ${formattedMessages}
 
-Extract the most important organizational knowledge as JSON:`;
+Extract the most important NEW knowledge shared by humans:`;
 
     const extractedKnowledge = await createChatCompletion(
       [

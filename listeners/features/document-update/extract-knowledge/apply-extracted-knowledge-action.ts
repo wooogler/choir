@@ -18,6 +18,33 @@ export const applyExtractedKnowledgeCallback = async ({
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   await ack();
 
+  // response_url을 통해 ephemeral 메시지를 "적용됨" 상태로 업데이트
+  try {
+    if (body.response_url) {
+      await fetch(body.response_url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          replace_original: true,
+          text: '✅ Update applied!',
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '✅ *Update applied!*\nThe knowledge has been processed and applied to the documentation.',
+              },
+            },
+          ],
+        }),
+      });
+    }
+  } catch (error) {
+    logger.warn('Failed to update ephemeral message via response_url:', error);
+  }
+
   try {
     const sessionId = body.actions[0].value;
 

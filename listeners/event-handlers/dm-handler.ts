@@ -26,7 +26,7 @@ const dmMessageCallback = async ({
     if (!isUserCHOIRUser) {
       const managers = await getManagers(workspaceId);
       const consentFormUrl = process.env.CHOIR_CONSENT_FORM_URL; // Optional consent form URL
-      const nonUserMessage = await getNonUserResponseMessage(managers, consentFormUrl);
+      const nonUserMessage = await getNonUserResponseMessage(managers, consentFormUrl, client);
 
       await client.chat.postMessage({
         channel: event.channel,

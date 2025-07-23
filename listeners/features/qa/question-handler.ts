@@ -1,4 +1,4 @@
-import { SessionType, generateSessionId, storeSessionData } from 'services/common';
+import { SessionType, generateSessionId, getSessionData, storeSessionData } from 'services/common';
 import { logQuestionProcessing } from 'services/common/user-interaction-logger';
 import { convertMarkdownToSlackText } from 'services/document/markdown';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
@@ -160,6 +160,9 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     // 세션 ID 생성
     const sessionId = generateSessionId('consultation');
 
+    // ephemeral 메시지 timestamp 저장용 변수
+    let ephemeralMessageTs: string | undefined;
+
     // 세션 데이터 저장 (Q&A 채널 정보 포함, 공유용으로는 깔끔한 응답 사용)
     storeSessionData(
       sessionId,
@@ -171,6 +174,8 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         botResponse: cleanResponseForSharing,
         originalChannelId: event.channel,
         canAnswer: answerResult.canAnswer,
+        ephemeralMessageTs: undefined, // 나중에 업데이트됨
+        ephemeralUserId: event.user,
       },
       SessionType.DOCUMENT_UPDATE,
     );
@@ -249,8 +254,8 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     if (actionElements.length > 0) {
       // 답변 가능 여부에 따라 다른 메시지 제공
       const ephemeralText = answerResult.canAnswer
-        ? '💬 Not satisfied with my answer? Want to discuss this further or get more insights?'
-        : "💬 I couldn't find this information in our documentation. Would you like to ask others directly?";
+        ? '💡 Want to discuss this further or get additional insights from your team?'
+        : "💬 I couldn't find this information in our documentation. Would you like to ask your team directly?";
 
       // Create enhanced message with button information
       const ephemeralMessageData = createEnhancedMessage(
@@ -278,12 +283,30 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         },
       );
 
-      await client.chat.postEphemeral({
+      const ephemeralMessage = await client.chat.postEphemeral({
         channel: event.channel,
         ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
         user: event.user,
         ...ephemeralMessageData,
       });
+
+      // ephemeral 메시지 timestamp 저장 (삭제용)
+      ephemeralMessageTs = ephemeralMessage.message_ts;
+
+      // 세션 데이터에 ephemeral 메시지 정보 업데이트
+      if (ephemeralMessageTs) {
+        const currentSessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
+        if (currentSessionData) {
+          storeSessionData(
+            sessionId,
+            {
+              ...currentSessionData,
+              ephemeralMessageTs: ephemeralMessageTs,
+            },
+            SessionType.DOCUMENT_UPDATE,
+          );
+        }
+      }
     }
 
     // 관련 문서 정보를 응답의 스레드에 추가 (답변 가능한 경우에만)

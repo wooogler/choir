@@ -119,6 +119,14 @@ export const reloadFromGithubAction = async ({
     const success = await vectorStore.initialize(markdownFiles, false, true);
 
     if (success) {
+      // Update workspace markdown files cache
+      const { WorkspaceStore } = await import('services/workspace/workspace-store');
+      const workspaceStore = new WorkspaceStore();
+      const fileList = markdownFiles.map((file) => ({
+        name: file.name,
+        path: file.path,
+      }));
+      await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
       await client.chat.postMessage({
         channel: body.user.id,
         text: `✅ Successfully reloaded ${markdownFiles.length} files from GitHub and updated vector store!`,

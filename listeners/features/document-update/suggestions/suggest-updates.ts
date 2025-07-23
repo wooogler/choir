@@ -84,9 +84,6 @@ async function showFileSelectionDropdown(
       name: file.name,
       path: file.path,
     }));
-
-    // Cache the file list
-    await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
   }
 
   // Create file options for dropdown
@@ -221,11 +218,15 @@ export const suggestUpdatesCallback = async ({
             });
 
             if (updatedBlocks.length < originalMessage.blocks.length) {
-              await client.chat.delete({
+              await client.chat.update({
                 channel: currentDmChannelId,
                 ts: messageTsOfButtonClicked,
+                text: originalMessage.text || '',
+                blocks: updatedBlocks as any,
               });
-              logger.info(`Deleted message with buttons ${messageTsOfButtonClicked} in channel ${currentDmChannelId}`);
+              logger.info(
+                `Updated message removing buttons ${messageTsOfButtonClicked} in channel ${currentDmChannelId}`,
+              );
             } else {
               logger.info(`Buttons already removed or not found in message ${messageTsOfButtonClicked}`);
             }
@@ -234,7 +235,9 @@ export const suggestUpdatesCallback = async ({
       } catch (error: any) {
         // 익명 질문의 경우 channel_not_found 에러가 발생할 수 있음 - 무시하고 계속 진행
         if (error?.data?.error === 'channel_not_found') {
-          logger.info(`Channel not found for message ${messageTsOfButtonClicked} - likely an anonymous question DM, continuing process`);
+          logger.info(
+            `Channel not found for message ${messageTsOfButtonClicked} - likely an anonymous question DM, continuing process`,
+          );
         } else {
           logger.error(`Failed to update (remove buttons from) message ${messageTsOfButtonClicked}:`, error);
         }
@@ -266,9 +269,11 @@ export const suggestUpdatesCallback = async ({
               return true;
             });
             if (updatedBlocks.length < previousMessage.blocks.length) {
-              await client.chat.delete({
+              await client.chat.update({
                 channel: currentDmChannelId,
                 ts: lastMessageTs,
+                text: previousMessage.text || '',
+                blocks: updatedBlocks as any,
               });
             }
           }
@@ -276,7 +281,9 @@ export const suggestUpdatesCallback = async ({
       } catch (error: any) {
         // 익명 질문의 경우 channel_not_found 에러가 발생할 수 있음 - 무시하고 계속 진행
         if (error?.data?.error === 'channel_not_found') {
-          console.log('Channel not found for previous suggestion message - likely an anonymous question DM, continuing process');
+          console.log(
+            'Channel not found for previous suggestion message - likely an anonymous question DM, continuing process',
+          );
         } else {
           console.error('Error updating previous suggestion message (removing buttons):', error);
         }
@@ -296,6 +303,15 @@ export const suggestUpdatesCallback = async ({
     let sourceMessages: SlackMessage[] = [];
     const sessionId = parsedValue.sessionId;
     let isFileBasedReview = false;
+
+    // If knowledgeContent is not in the button value, get it from session data
+    if (!knowledgeContent && sessionId) {
+      const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
+      if (sessionData?.extractedKnowledge) {
+        knowledgeContent = sessionData.extractedKnowledge;
+        logger.info(`Retrieved knowledgeContent from session data for sessionId: ${sessionId}`);
+      }
+    }
 
     if (parsedValue.action === 'keep') {
       // Apply Changes 후 특정 파일에서 전체 검토로 전환
@@ -440,7 +456,7 @@ export const suggestUpdatesCallback = async ({
               console.error('진행 중 메시지 삭제 실패:', deleteError);
             }
           }
-          
+
           await client.chat.postMessage({
             channel: currentDmChannelId,
             text: `No relevant content found in the selected file: ${parsedValue.selectedFile}. Please try selecting a different file or choose "All Files" option.`,
@@ -486,7 +502,7 @@ export const suggestUpdatesCallback = async ({
           logger.error(
             `Could not find stored document update for index ${currentIndex - 1} and nodeId ${parsedValue.currentNodeId}`,
           );
-          
+
           // Delete progress message before showing error
           const progressTimestamp = getProgressMessageTimestamp(userId);
           if (progressTimestamp) {
@@ -500,7 +516,7 @@ export const suggestUpdatesCallback = async ({
               console.error('진행 중 메시지 삭제 실패:', deleteError);
             }
           }
-          
+
           await client.chat.postMessage({
             channel: currentDmChannelId!,
             text: '❌ Error: Could not retrieve the details for this update. Please try again or skip.',
@@ -756,7 +772,7 @@ export const suggestUpdatesCallback = async ({
                 },
               ],
             });
-            
+
             // Delete progress message before returning
             const progressTimestamp = getProgressMessageTimestamp(userId);
             if (progressTimestamp) {
@@ -770,7 +786,7 @@ export const suggestUpdatesCallback = async ({
                 console.error('진행 중 메시지 삭제 실패:', deleteError);
               }
             }
-            
+
             return;
           }
         } catch (error) {
@@ -790,7 +806,7 @@ export const suggestUpdatesCallback = async ({
             console.error('진행 중 메시지 삭제 실패:', deleteError);
           }
         }
-        
+
         // Fallback if new section creation fails
         await client.chat.postMessage({
           channel: currentDmChannelId,
@@ -824,7 +840,7 @@ export const suggestUpdatesCallback = async ({
       if (fileSelectionMessageTs) {
         setLastMessageTimestamp(userId, fileSelectionMessageTs);
       }
-      
+
       // Delete progress message before returning
       const progressTimestamp = getProgressMessageTimestamp(userId);
       if (progressTimestamp) {
@@ -838,7 +854,7 @@ export const suggestUpdatesCallback = async ({
           console.error('진행 중 메시지 삭제 실패:', deleteError);
         }
       }
-      
+
       return; // Exit here, wait for user to select file and click "Start Review"
     }
 
@@ -859,7 +875,7 @@ export const suggestUpdatesCallback = async ({
         unfurl_links: false,
         unfurl_media: false,
       });
-      
+
       // Delete progress message before returning
       const progressTimestamp = getProgressMessageTimestamp(userId);
       if (progressTimestamp) {
@@ -873,7 +889,7 @@ export const suggestUpdatesCallback = async ({
           console.error('진행 중 메시지 삭제 실패:', deleteError);
         }
       }
-      
+
       return;
     }
 
@@ -957,52 +973,7 @@ export const suggestUpdatesCallback = async ({
 
     if (isFirstSuggestion) {
       // Skip introduction message since it was already shown in file selection dropdown
-
-      // 원본 토론 링크 추가
-      if (knowledgeSourceChannelId && sessionId) {
-        const sessionDataForLink = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
-        const messageLink = sessionDataForLink?.originalMessageLink;
-
-        if (messageLink) {
-          try {
-            blocks.push({
-              type: 'section',
-              text: { type: 'mrkdwn', text: `📍 <${messageLink}|View original discussion> for context` },
-            });
-          } catch (linkError) {
-            logger.warn(
-              `Error adding original discussion link (already created) in suggestUpdatesCallback: ${linkError}`,
-            );
-          }
-        } else {
-          logger.warn(`originalMessageLink not found in sessionData for session ${sessionId}`);
-        }
-      } else if (!sessionId && knowledgeSourceChannelId) {
-        const authInfo = await client.auth.test();
-        const workspaceUrl = authInfo.url;
-        if (workspaceUrl) {
-          try {
-            const convInfo = await client.conversations.info({ channel: knowledgeSourceChannelId });
-            if (convInfo.ok && convInfo.channel && (!convInfo.channel.is_private || convInfo.channel.is_member)) {
-              const fallbackMessageLink = createMessageLink(
-                workspaceUrl,
-                knowledgeSourceChannelId,
-                knowledgeSourceThreadTs,
-              );
-              blocks.push({
-                type: 'section',
-                text: {
-                  type: 'mrkdwn',
-                  text: `📍 <${fallbackMessageLink}|View original discussion> for context (fallback link)`,
-                },
-              });
-            }
-          } catch (linkError) {
-            logger.warn(`Could not create fallback original discussion link in suggestUpdatesCallback: ${linkError}`);
-          }
-        }
-      }
-      blocks.push({ type: 'divider' });
+      // Original discussion link is handled by ui-builder.ts to avoid duplication
     }
 
     const suggestionNumber = currentIndex + 1;

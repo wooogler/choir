@@ -6,6 +6,7 @@ import mentionHandler from './event-handlers/mention-handler';
 import modalCloseHandler from './event-handlers/modal-close-handler';
 
 import { registerConversationFeature } from './features/conversation';
+import { registerDMFeatures } from './features/dm';
 import { registerDocumentUpdateFeature } from './features/document-update';
 import { registerPreferencesFeature } from './features/preferences';
 import { registerQAFeature } from './features/qa';
@@ -23,6 +24,7 @@ const registerListeners = (app: App) => {
   registerDocumentUpdateFeature(app);
   registerPreferencesFeature(app);
   registerConversationFeature(app);
+  registerDMFeatures(app);
 };
 
 export default registerListeners;

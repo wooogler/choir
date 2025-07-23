@@ -7,6 +7,9 @@ import { WorkspaceStore } from '../workspace/workspace-store';
 
 const workspaceStore = new WorkspaceStore();
 
+// Workspace ID 캐시
+let cachedWorkspaceId: string | null = null;
+
 /**
  * 사용자가 관리자인지 확인합니다.
  */
@@ -122,20 +125,37 @@ export async function isBotUser(userId: string, client: WebClient): Promise<bool
 }
 
 /**
- * 워크스페이스 ID를 가져옵니다.
+ * 워크스페이스 ID를 가져옵니다. (캐시됨)
  */
 export async function getWorkspaceId(client: WebClient): Promise<string> {
+  // 캐시된 값이 있으면 반환
+  if (cachedWorkspaceId) {
+    return cachedWorkspaceId;
+  }
+
   try {
     const authInfo = await client.auth.test();
     if (!authInfo.team_id) {
       Logger.warn('No team_id in auth.test response', { authInfo });
       throw new Error('No team_id in auth response');
     }
-    return authInfo.team_id;
+    
+    // 캐시에 저장
+    cachedWorkspaceId = authInfo.team_id;
+    Logger.info('Workspace ID cached', { workspaceId: cachedWorkspaceId });
+    
+    return cachedWorkspaceId;
   } catch (error) {
     Logger.error('Error getting workspace info', error as Error);
     throw new Error(`Failed to get workspace ID: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+}
+
+/**
+ * 캐시된 워크스페이스 ID를 클리어합니다. (테스트용)
+ */
+export function clearWorkspaceIdCache(): void {
+  cachedWorkspaceId = null;
 }
 
 /**

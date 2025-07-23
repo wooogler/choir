@@ -349,6 +349,14 @@ export const registerGitHubHandlers = (app: App) => {
         const success = await vectorStore.initialize(markdownFiles, false, true);
 
         if (success) {
+          // Update workspace markdown files cache
+          const workspaceStore = new WorkspaceStore();
+          const fileList = markdownFiles.map((file) => ({
+            name: file.name,
+            path: file.path,
+          }));
+          await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
+
           await client.chat.postEphemeral({
             user: userId,
             channel: userId,

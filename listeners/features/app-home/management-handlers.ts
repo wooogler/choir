@@ -547,7 +547,7 @@ export const registerManagementHandlers = (app: App) => {
       const workspaceStore = new WorkspaceStore();
       const currentLogging = await workspaceStore.getLoggingEnabled(workspaceId);
       const newLogging = !currentLogging;
-      
+
       await workspaceStore.setLoggingEnabled(workspaceId, newLogging);
 
       await client.chat.postEphemeral({

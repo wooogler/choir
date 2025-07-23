@@ -12,6 +12,7 @@ export {
   isWorkspaceOwner,
   isBotUser,
   getWorkspaceId,
+  clearWorkspaceIdCache,
   promoteToManagerWithPassword,
   getCHOIRUsers,
   setCHOIRUsers,
@@ -82,3 +83,11 @@ export {
   getFilteredConversationHistory,
   isCHOIRUser as isCHOIRUserFromHistory,
 } from './conversation-history';
+
+// Rate Limit Handling
+export {
+  withRateLimit,
+  notifyRateLimit,
+  safeSlackCall,
+  isRateLimitError,
+} from './rate-limit-handler';

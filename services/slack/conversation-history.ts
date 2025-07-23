@@ -266,7 +266,7 @@ function getMessagesAfterSessionBoundary(messages: SlackMessage[]): SlackMessage
       if (sessionStartIndex === -1 && SESSION_START_TYPES.includes(messageType)) {
         sessionStartIndex = i;
       }
-      
+
       // Find latest session end (only if we haven't found one yet)
       if (sessionEndIndex === -1 && SESSION_END_TYPES.includes(messageType)) {
         sessionEndIndex = i;
@@ -277,7 +277,7 @@ function getMessagesAfterSessionBoundary(messages: SlackMessage[]): SlackMessage
   // Priority logic:
   // 1. If we have both, use the one that comes LATER (more recent)
   // 2. Session start is inclusive, session end is exclusive (after the end message)
-  
+
   if (sessionStartIndex >= 0 && sessionEndIndex >= 0) {
     // Both found - use the more recent one
     if (sessionStartIndex > sessionEndIndex) {

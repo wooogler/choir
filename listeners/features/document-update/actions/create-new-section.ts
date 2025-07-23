@@ -81,9 +81,6 @@ export const createNewSectionAction = async ({
         name: file.name,
         path: file.path,
       }));
-
-      // Cache the file list
-      await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
     }
 
     // Create file options for dropdown

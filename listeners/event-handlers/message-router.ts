@@ -12,6 +12,7 @@ import { CHOIRMessageType, createCHOIRBlockId, getCHOIRMessageTypeFromBlocks } f
 import { getAnonymousThreadInfo } from '../../services/common/session-store';
 import { logMessageProcessing } from '../../services/common/user-interaction-logger';
 import { handleGeneralConversationMessage } from '../features/conversation/general-conversation-handler';
+import { handleDMClearCommand } from '../features/dm/clear-handler';
 import { handleUpdateRequestMessage } from '../features/document-update/extract-knowledge/update-request-handler';
 import { handleQuestionMessage } from '../features/qa/question-handler';
 
@@ -120,6 +121,24 @@ export async function handleIncomingMessage(client: any, event: any, message: st
         }
       } catch (historyError) {
         logger.warn('Failed to check thread original message type:', historyError);
+      }
+    }
+
+    // DM에서 Clear 명령어 체크 (로딩 메시지 전에)
+    if (event.channel_type === 'im') {
+      const clearCommands = ['clear', 'reset', '/clear', '/reset', 'clear chat', 'reset chat'];
+      const isClearCommand = clearCommands.some(
+        (cmd) =>
+          message.trim().toLowerCase() === cmd ||
+          message
+            .trim()
+            .toLowerCase()
+            .startsWith(cmd + ' '),
+      );
+
+      if (isClearCommand) {
+        logger.info('MessageRouter: DM Clear command detected');
+        return await handleDMClearCommand(client, event, logger);
       }
     }
 

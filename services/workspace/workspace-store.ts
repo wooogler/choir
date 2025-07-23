@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { WebClient } from '@slack/web-api';
+import { withRateLimit } from 'services/slack/rate-limit-handler';
 
 export interface WorkspaceConfig {
   workspaceId: string;
@@ -133,9 +134,15 @@ export class WorkspaceStore {
       return existingConfig;
     }
 
-    // 워크스페이스 정보 가져오기
-    const workspaceInfo = await client.auth.test();
-    const teamInfo = await client.team.info();
+    // 워크스페이스 정보 가져오기 (rate limit 처리)
+    const workspaceInfo = await withRateLimit(
+      () => client.auth.test(),
+      'get workspace auth info'
+    );
+    const teamInfo = await withRateLimit(
+      () => client.team.info(),
+      'get team info'
+    );
 
     const config: WorkspaceConfig = {
       workspaceId,

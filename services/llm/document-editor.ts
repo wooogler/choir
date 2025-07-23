@@ -71,16 +71,18 @@ export async function editMarkdownWithKnowledge(markdown: string, knowledgeConte
     [
       {
         role: 'system',
-        content: `As a document editor, modify this markdown document with the provided knowledge.
+        content: `As a document editor, modify this markdown document by integrating the provided knowledge.
+
+Your task: Update the existing content by merging new information rather than simply appending it.
 
 Key rules:
-1. Update information: Directly modify existing content when needed and only add important new information
-2. Keep it concise: Make minimal edits while maintaining the document's original style and tone
-3. When knowledge contradicts existing content, completely replace the conflicting content with the new information (do not keep both)
-4. If the knowledge is already covered or adds no new value, return the original document unchanged (do not add redundant content)
-5. Never include user identifiers or names
-6. Return only the edited markdown without explanations or tags
-7. Focus on incorporating the knowledge into the most relevant section of the document`,
+1. **Integration over addition**: When new knowledge relates to existing content, modify the existing sentences to include the new details rather than adding separate sentences
+2. **Replace contradictions**: When knowledge contradicts existing content, completely replace the conflicting content with the new information (do not keep both versions)
+3. **Enhance specificity**: If new knowledge makes general statements more specific, update the general statement to include the specific details
+4. **Preserve style**: Maintain the document's original tone and formatting style
+5. **Skip redundant content**: If the knowledge is already covered or adds no new value, return the original document unchanged
+6. **No user references**: Never include user identifiers or names
+7. **Clean output**: Return only the edited markdown without explanations or tags`,
       },
       {
         role: 'user',

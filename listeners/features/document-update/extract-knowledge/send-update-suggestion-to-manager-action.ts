@@ -19,6 +19,33 @@ export const sendUpdateSuggestionToManagerCallback = async ({
   let workspaceId: string;
   await ack();
 
+  // response_url을 통해 ephemeral 메시지를 "제안됨" 상태로 업데이트
+  try {
+    if (body.response_url) {
+      await fetch(body.response_url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          replace_original: true,
+          text: '✅ Update suggestion sent!',
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '✅ *Update suggestion sent!*\nYour suggestion has been forwarded to the managers for review.',
+              },
+            },
+          ],
+        }),
+      });
+    }
+  } catch (error) {
+    logger.warn('Failed to update ephemeral message via response_url:', error);
+  }
+
   try {
     const sessionId = body.actions[0].value;
 
@@ -64,7 +91,6 @@ export const sendUpdateSuggestionToManagerCallback = async ({
 
     // CHOIR의 메시지 템플릿
     const choirGreeting = `Hi there! I'm CHOIR, your friendly documentation assistant. 👋\n\n*${userName}* has a suggestion for updating our documents, and I'm helping to pass it along for review.`;
-    const choirCallToAction = `Could you please take a look and decide on the next steps? You can edit the suggested content or start the update process directly from here.`;
 
     for (const managerId of managers) {
       try {
@@ -142,57 +168,47 @@ export const sendUpdateSuggestionToManagerCallback = async ({
           blocks.push(originalMessageLinkBlock);
         }
 
-        blocks.push(
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: choirCallToAction,
+        blocks.push({
+          type: 'actions',
+          elements: [
+            {
+              type: 'button' as const,
+              text: {
+                type: 'plain_text' as const,
+                text: '✏️ Edit Suggestion',
+                emoji: true,
+              },
+              action_id: 'open_knowledge_edit_manager_modal',
+              value: sessionId,
             },
-          },
-          {
-            type: 'actions',
-            elements: [
-              {
-                type: 'button' as const,
-                text: {
-                  type: 'plain_text' as const,
-                  text: '✏️ Edit Suggestion',
-                  emoji: true,
-                },
-                action_id: 'open_knowledge_edit_manager_modal',
-                value: sessionId,
+            {
+              type: 'button' as const,
+              text: {
+                type: 'plain_text' as const,
+                text: '🚀 Start Update Process',
+                emoji: true,
               },
-              {
-                type: 'button' as const,
-                text: {
-                  type: 'plain_text' as const,
-                  text: '🚀 Start Update Process',
-                  emoji: true,
-                },
-                style: 'primary' as const,
-                action_id: 'suggest_updates',
-                value: JSON.stringify({
-                  sessionId: sessionId,
-                  knowledgeContent: sessionData.extractedKnowledge,
-                  originalChannelId: sessionData.originalChannelId,
-                  originalThreadTs: sessionData.originalThreadTs,
-                }),
+              style: 'primary' as const,
+              action_id: 'suggest_updates',
+              value: JSON.stringify({
+                sessionId: sessionId,
+                originalChannelId: sessionData.originalChannelId,
+                originalThreadTs: sessionData.originalThreadTs,
+              }),
+            },
+            {
+              type: 'button' as const,
+              text: {
+                type: 'plain_text' as const,
+                text: 'Dismiss',
+                emoji: false,
               },
-              {
-                type: 'button' as const,
-                text: {
-                  type: 'plain_text' as const,
-                  text: 'Dismiss',
-                  emoji: false,
-                },
-                style: 'danger' as const,
-                action_id: 'cancel_knowledge_extraction',
-                value: sessionId,
-              },
-            ],
-          },
-        );
+              style: 'danger' as const,
+              action_id: 'cancel_knowledge_extraction',
+              value: sessionId,
+            },
+          ],
+        });
 
         const postedMessage = await client.chat.postMessage({
           channel: managerId,
@@ -207,8 +223,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
           channel: managerId,
           ts: postedMessage.ts, // Combined message
         };
-        
-        
+
         storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
 
         // 로그: 매니저 알림 성공

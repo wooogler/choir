@@ -155,7 +155,7 @@ export const askToOthersSubmitCallback = async ({
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
-                  text: '👋 Feel free to discuss this question in this thread!\n\n💡 *Your responses will be automatically shared with the anonymous questioner.*\n\n🤖 *Need CHOIR to help?* Just mention me with `@choir` and I\'ll join the discussion!',
+                  text: "👋 Feel free to discuss this question in this thread!\n\n💡 *Your responses will be automatically shared with the anonymous questioner.*\n\n🤖 *Need CHOIR to help?* Just mention me with `@choir` and I'll join the discussion!",
                 },
                 block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
               },

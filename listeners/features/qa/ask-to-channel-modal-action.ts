@@ -15,6 +15,33 @@ export const askToChannelModalCallback = async ({
   const startTime = Date.now();
   await ack();
 
+  // response_url을 통해 ephemeral 메시지를 "공유됨" 상태로 업데이트
+  try {
+    if (body.response_url) {
+      await fetch(body.response_url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          replace_original: true,
+          text: '✅ Your Q&A has been shared!',
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '✅ *Your Q&A has been shared!*\nYour question and my response have been posted to the channel.',
+              },
+            },
+          ],
+        }),
+      });
+    }
+  } catch (error) {
+    logger.warn('Failed to update ephemeral message via response_url:', error);
+  }
+
   try {
     const sessionId = body.actions[0].value;
     if (!sessionId) {
