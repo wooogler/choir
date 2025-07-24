@@ -5,6 +5,12 @@ import { getUserName } from 'services/slack';
 import { processMessageHistory, processMessageText } from 'services/slack/conversation-history';
 import { createChatCompletion } from './completions';
 
+// Interface for edit result
+export interface EditResult {
+  action: 'update' | 'append';
+  content: string;
+}
+
 export async function editMarkdownWithUserMessages(markdown: string, userMessages: SlackMessage[], client: WebClient) {
   // Process message texts to handle mentions and anonymize content
   const processedMessages = await Promise.all(
@@ -63,7 +69,7 @@ ${processedMessages.map((message) => `${message.anonUser}: ${message.text}`).joi
   return responseContent?.replace(/<\/?markdown>/g, '') ?? markdown;
 }
 
-export async function editMarkdownWithKnowledge(markdown: string, knowledgeContent: string) {
+export async function editMarkdownWithKnowledge(markdown: string, knowledgeContent: string): Promise<EditResult> {
   // Anonymize the knowledge content before sending to LLM
   const anonymizedKnowledge = anonymizeText(knowledgeContent);
 
@@ -71,25 +77,53 @@ export async function editMarkdownWithKnowledge(markdown: string, knowledgeConte
     [
       {
         role: 'system',
-        content: `As a document editor, modify this markdown document by integrating the provided knowledge.
+        content: `As a document editor, analyze the provided knowledge and determine how to integrate it with the existing markdown document.
 
-Your task: Update the existing content by merging new information rather than simply appending it.
+Respond with a JSON object containing:
+1. "action": "update" or "append" - how the knowledge should be integrated
+2. "content": the modified/new content based on your chosen action
 
-Key rules:
-1. **Integration over addition**: When new knowledge relates to existing content, modify the existing sentences to include the new details rather than adding separate sentences
-2. **Replace contradictions**: When knowledge contradicts existing content, completely replace the conflicting content with the new information (do not keep both versions)
-3. **Enhance specificity**: If new knowledge makes general statements more specific, update the general statement to include the specific details
-4. **Preserve style**: Maintain the document's original tone and formatting style
-5. **Skip redundant content**: If the knowledge is already covered or adds no new value, return the original document unchanged
-6. **No user references**: Never include user identifiers or names
-7. **Clean output**: Return only the edited markdown without explanations or tags`,
+Action Selection Rules:
+- **"update"**: Choose when new knowledge should modify/enhance existing content
+  - Knowledge contradicts existing information
+  - Knowledge makes general statements more specific
+  - Knowledge provides missing details for existing topics
+  - Knowledge corrects or updates existing information
+
+- **"append"**: Choose when new knowledge should be added as separate content
+  - Knowledge introduces completely new topics/concepts
+  - Knowledge adds independent information that doesn't modify existing content
+  - Existing content is already comprehensive and new knowledge is supplementary
+
+Content Generation Rules:
+- For "update": Return the complete updated section with integrated knowledge
+- For "append": Return only the new content to be added
+- Maintain original tone and formatting style
+- Never include user identifiers or names
+- If knowledge adds no new value, choose "update" and return original content
+
+Examples:
+
+Example 1 (update):
+{
+  "action": "update",
+  "content": "Our lab provides funding support for major conferences (CHI, UIST, CSCW) if the student is the first author presenting a paper or poster."
+}
+
+Example 2 (append):
+{
+  "action": "append",
+  "content": "## New Section\n\nAdditional guidelines for conference submissions..."
+}`,
       },
       {
         role: 'user',
         content: `<markdown>${markdown}</markdown>
 <knowledge>
 ${anonymizedKnowledge}
-</knowledge>`,
+</knowledge>
+
+Analyze the knowledge and provide your JSON response:`,
       },
     ],
     {
@@ -97,11 +131,36 @@ ${anonymizedKnowledge}
       temperature: 0,
       function_name: 'editMarkdownWithKnowledge',
       debug: true,
+      response_format: { type: 'json_object' },
     },
   );
 
-  // Remove any markdown tags from the response
-  return responseContent?.replace(/<\/?markdown>/g, '') ?? markdown;
+  try {
+    let jsonString = responseContent?.trim() || '{}';
+
+    // Remove markdown code block markers if present
+    if (jsonString.startsWith('```json')) {
+      jsonString = jsonString.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (jsonString.startsWith('```')) {
+      jsonString = jsonString.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+
+    const parsed = JSON.parse(jsonString);
+
+    return {
+      action: parsed.action === 'append' ? 'append' : 'update',
+      content: parsed.content || markdown,
+    };
+  } catch (parseError) {
+    console.warn('Failed to parse JSON response from editMarkdownWithKnowledge:', parseError);
+    console.warn('Raw response:', responseContent);
+
+    // Fallback to update with original content
+    return {
+      action: 'update',
+      content: markdown,
+    };
+  }
 }
 
 export async function classifyMessageIntent(
