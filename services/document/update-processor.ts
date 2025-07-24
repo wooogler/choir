@@ -2,6 +2,7 @@ import type { Document } from '@langchain/core/documents';
 import type { WebClient } from '@slack/web-api';
 import {
   type NewSectionSuggestion,
+  createNewContentFromKnowledge,
   createNewSectionFromKnowledge,
 } from 'services/llm/content-generator';
 import { editMarkdownWithKnowledge } from 'services/llm/document-editor';
@@ -116,7 +117,7 @@ export async function processDocument(
 
     const nodeContent = doc.metadata.originalContent || doc.pageContent || '';
     // LLM을 호출하여 기존 내용을 기반으로 지식을 통합하거나 새로운 내용을 생성
-    const editResult = await editMarkdownWithKnowledge(
+    const llmEditedContent = await editMarkdownWithKnowledge(
       nodeContent, // 기존 노드 내용 전달
       knowledgeContent, // 새로운 지식 전달
     );
@@ -124,53 +125,76 @@ export async function processDocument(
     let suggestionType: 'UPDATE' | 'APPEND';
     let diffBlock: any;
     let hasChanges: boolean;
-    let finalUpdatedNodeContentForUpdate: string;
-    let appendedText: string | undefined = undefined;
+    let finalUpdatedNodeContentForUpdate = llmEditedContent; // UPDATE 시 사용될 전체 내용
+    let appendedText: string | undefined = undefined; // APPEND 시 추가될 내용
     let oldSlackTextForComparison: string;
     let newSlackTextForComparison: string;
 
-    // AI의 결정에 따라 처리
-    if (editResult.action === 'append') {
-      suggestionType = 'APPEND';
-      appendedText = editResult.content;
-      hasChanges = true;
-      diffBlock = createAppendSuggestionBlock(nodeContent, appendedText);
-      oldSlackTextForComparison = await convertMarkdownToSlackText(nodeContent);
-      newSlackTextForComparison = await convertMarkdownToSlackText(appendedText);
-      finalUpdatedNodeContentForUpdate = nodeContent; // APPEND 시에는 원본 노드 내용 유지
+    // 개선된 APPEND/UPDATE 구분 로직
+    // 1. 먼저 LLM 결과가 기존 내용과 실질적으로 동일한지 확인 (공백, 줄바꿈 등 정규화)
+    const normalizeContent = (content: string) => content.trim().replace(/\s+/g, ' ');
+    const normalizedNodeContent = normalizeContent(nodeContent);
+    const normalizedLlmContent = normalizeContent(llmEditedContent);
 
-      console.log('[processDocument] AI chose APPEND action');
-    } else {
-      // editResult.action === 'update'
+    if (normalizedNodeContent === normalizedLlmContent) {
+      // 내용이 실질적으로 동일하면 UPDATE (변경 없음)
       suggestionType = 'UPDATE';
-      finalUpdatedNodeContentForUpdate = editResult.content;
+      finalUpdatedNodeContentForUpdate = llmEditedContent;
       const oldSlackText = await convertMarkdownToSlackText(nodeContent);
       const newSlackText = await convertMarkdownToSlackText(finalUpdatedNodeContentForUpdate);
-      
-      // 내용이 실질적으로 동일한지 확인
-      const normalizeContent = (content: string) => content.trim().replace(/\s+/g, ' ');
-      const normalizedNodeContent = normalizeContent(nodeContent);
-      const normalizedUpdatedContent = normalizeContent(finalUpdatedNodeContentForUpdate);
-      
-      hasChanges = normalizedNodeContent !== normalizedUpdatedContent;
-      
-      if (!hasChanges) {
-        // 변경 사항이 없을 때는 현재 내용과 함께 "변경 없음" 메시지 표시
-        diffBlock = {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: `*Current Content (No Changes Required):*\n\`\`\`${oldSlackText.substring(0, Math.min(oldSlackText.length, 800))}\`\`\`\n\n_This section is already up-to-date with the provided knowledge._`,
-          },
-        };
-      } else {
-        diffBlock = createDiffBlock(oldSlackText, newSlackText);
-      }
-      
+
+      // 변경 사항이 없을 때는 현재 내용과 함께 "변경 없음" 메시지 표시
+      diffBlock = {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Current Content (No Changes Required):*\n\`\`\`${oldSlackText.substring(0, Math.min(oldSlackText.length, 800))}\`\`\`\n\n_This section is already up-to-date with the provided knowledge._`,
+        },
+      };
+
+      hasChanges = false; // 실질적 변경 없음
       oldSlackTextForComparison = oldSlackText;
       newSlackTextForComparison = newSlackText;
 
-      console.log('[processDocument] AI chose UPDATE action, has changes:', hasChanges);
+      console.log('[processDocument] No substantial changes detected, treating as UPDATE');
+    } else if (llmEditedContent.startsWith(nodeContent) && llmEditedContent.length > nodeContent.length) {
+      // 2. 기존 내용으로 시작하고 더 긴 경우 APPEND 시도
+      appendedText = await createNewContentFromKnowledge(nodeContent, knowledgeContent);
+
+      // 3. 실제로 의미있는 내용이 추가되었는지 확인
+      if (appendedText && appendedText.trim() !== '' && appendedText.trim().length > 10) {
+        suggestionType = 'APPEND';
+        hasChanges = true;
+        diffBlock = createAppendSuggestionBlock(nodeContent, appendedText);
+        oldSlackTextForComparison = await convertMarkdownToSlackText(nodeContent);
+        newSlackTextForComparison = await convertMarkdownToSlackText(appendedText);
+
+        console.log('[processDocument] Meaningful content to append detected, treating as APPEND');
+      } else {
+        // 추가할 내용이 의미없으면 UPDATE로 폴백
+        suggestionType = 'UPDATE';
+        finalUpdatedNodeContentForUpdate = llmEditedContent;
+        const oldSlackText = await convertMarkdownToSlackText(nodeContent);
+        const newSlackText = await convertMarkdownToSlackText(finalUpdatedNodeContentForUpdate);
+        diffBlock = createDiffBlock(oldSlackText, newSlackText);
+        hasChanges = oldSlackText !== newSlackText;
+        oldSlackTextForComparison = oldSlackText;
+        newSlackTextForComparison = newSlackText;
+
+        console.log('[processDocument] No meaningful content to append, falling back to UPDATE');
+      }
+    } else {
+      // 4. 그 외의 경우는 UPDATE
+      suggestionType = 'UPDATE';
+      finalUpdatedNodeContentForUpdate = llmEditedContent;
+      const oldSlackText = await convertMarkdownToSlackText(nodeContent);
+      const newSlackText = await convertMarkdownToSlackText(finalUpdatedNodeContentForUpdate || nodeContent);
+      diffBlock = createDiffBlock(oldSlackText, newSlackText);
+      hasChanges = oldSlackText !== newSlackText;
+      oldSlackTextForComparison = oldSlackText;
+      newSlackTextForComparison = newSlackText;
+
+      console.log('[processDocument] General content modification detected, treating as UPDATE');
     }
 
     // 메시지 정보 추출 및 중복 제거
