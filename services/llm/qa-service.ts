@@ -8,7 +8,10 @@ import { createChatCompletion } from './completions';
 
 // Format context from documents
 const formatContext = (docs: any[]) => {
-  return docs.map((doc) => doc.pageContent).join('\n\n');
+  return docs.map((doc, index) => {
+    const title = doc.metadata?.title || doc.metadata?.source || `Document ${index + 1}`;
+    return `--- ${title} ---\n${doc.pageContent}`;
+  }).join('\n\n');
 };
 
 // Interface for answer result
@@ -95,13 +98,14 @@ Guidelines for answering:
 - When users mention @CHOIR, that's me! Feel free to be conversational
 - Use a warm, academic tone - professional but not overly formal
 
-Here's the relevant documentation I can reference:
+==== DOCUMENTATION ====
 ${context}
 
-User's conversation history:
+==== CONVERSATION HISTORY ====
 ${messages.map((m) => m.content).join('\n')}
 
-Current question: ${anonymizedCurrentQuestion}
+==== CURRENT QUESTION ====
+${anonymizedCurrentQuestion}
 
 Analyze whether you can answer based on the documentation and provide your response as JSON:`;
 
