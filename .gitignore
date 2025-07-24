@@ -11,3 +11,4 @@ screenshots/
 python/venv/
 python/*.pdf
 python/*.md
+python/*.html

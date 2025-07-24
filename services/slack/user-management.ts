@@ -307,7 +307,7 @@ export async function getNonUserResponseMessage(
 I'd love to help you, but it looks like you're not currently registered as a CHOIR user. CHOIR is part of a research study designed to help teams manage and access their collective knowledge more effectively.
 
 To start using CHOIR, you'll need to:
-1. *Contact a workspace manager* - ${managerMentions} can add you to the CHOIR user list
+1. *Contact a CHOIR manager* - ${managerMentions} can add you to the CHOIR user list
 ${consentSection}
 
 *Why join?* CHOIR can help you quickly find answers from your team's documentation, get contextual responses to questions, and contribute to advancing research on AI-powered collaboration tools.
