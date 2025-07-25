@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/user-interaction-logger';
+import { getStoredDocumentUpdates } from 'services/document/document-store';
 
 /**
  * 문서 업데이트 제안 편집 모달을 표시합니다.
@@ -24,6 +25,17 @@ export const showSuggestionEditorModal = async ({
     // 버튼의 value에서 필요한 정보 파싱
     const actionValue = JSON.parse(value);
     const suggestionType = actionValue.suggestionType || 'UPDATE';
+    const { index, nodeId } = actionValue;
+
+    // Get stored document updates to retrieve the actual content
+    const storedUpdates = getStoredDocumentUpdates(body.user.id);
+    const currentUpdate = storedUpdates.find(
+      (update) => update.index === index && update.nodeId === nodeId
+    );
+
+    if (!currentUpdate) {
+      throw new Error('Document update not found in stored updates');
+    }
 
     let nodeContent = '';
     let editableContent = '';
@@ -33,15 +45,15 @@ export const showSuggestionEditorModal = async ({
 
     if (suggestionType === 'APPEND') {
       // APPEND의 경우 originalLastNodeContent와 appendedNodeContent 사용
-      nodeContent = actionValue.originalLastNodeContent || '';
-      editableContent = actionValue.appendedNodeContent || '';
+      nodeContent = currentUpdate.originalLastNodeContent || '';
+      editableContent = currentUpdate.appendedNodeContent || '';
       modalTitle = 'Edit Append Content';
       originalLabel = '*Reference content (will be followed by):*';
       editableLabel = 'New content to add after it';
     } else {
       // UPDATE의 경우 기존 방식 유지
-      nodeContent = actionValue.nodeContent || '';
-      editableContent = actionValue.updatedNodeContent || '';
+      nodeContent = currentUpdate.nodeContent || '';
+      editableContent = currentUpdate.updatedNodeContent || '';
     }
 
     // 필수 값 확인

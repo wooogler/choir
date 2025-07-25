@@ -35,16 +35,25 @@ export const fileSelectionForUpdateAction = async ({
     if (history.messages && history.messages.length > 0) {
       const originalMessage = history.messages[0];
       if (originalMessage.blocks) {
-        // Find the action block and update the button value
+        // Get the selected file name for display
+        const selectedFileName = (body as any).actions[0].selected_option?.text?.text || selectedFile;
+        
+        // Find the action block and update the button text and value
         const updatedBlocks = originalMessage.blocks.map((block: any) => {
           if (block.type === 'actions') {
             return {
               ...block,
               elements: block.elements.map((element: any) => {
+                // Update the "Select Recommended" button to show selected file
                 if (element.action_id === 'start_file_based_review') {
                   const currentValue = JSON.parse(element.value);
                   return {
                     ...element,
+                    text: {
+                      type: 'plain_text',
+                      text: `📄 Select ${selectedFileName}`,
+                      emoji: true,
+                    },
                     value: JSON.stringify({
                       ...currentValue,
                       selectedFile,

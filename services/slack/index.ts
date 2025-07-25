@@ -5,6 +5,7 @@ export type { SlackMessage } from './conversation-history';
 export {
   isManager,
   getManagers,
+  getManagerText,
   addManager,
   removeManager,
   setupInitialManager,

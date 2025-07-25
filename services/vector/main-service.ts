@@ -257,7 +257,7 @@ export class VectorStoreService {
 
   /**
    * 특정 파일에 제한된 유사도 검색 수행
-   * 메타데이터 사전 필터링 → 해당 파일 문서들에 대해서만 유사도 검색
+   * FAISS 스토어의 내장 필터링 기능 사용
    */
   public async similaritySearchByFile(query: string, filePath: string, k = 1): Promise<Document<DocumentMetadata>[]> {
     try {
@@ -274,57 +274,31 @@ export class VectorStoreService {
         `Performing file-specific similarity search for query: "${cleanedQuery.substring(0, 50)}${cleanedQuery.length > 50 ? '...' : ''}" in file: ${filePath} with k=${k}`,
       );
 
-      // 1. 메타데이터로 해당 파일의 문서들만 사전 필터링
-      const allDocuments = this.storeManager.getDocuments();
-      const fileDocuments = allDocuments.filter((doc) => {
-        const fileName = doc.metadata?.fileName;
-        return fileName === filePath || fileName === filePath.split('/').pop();
-      });
+      // Extract filename for filter (support both full path and basename)
+      const fileName = filePath.split('/').pop() || filePath;
+      
+      // Use FAISS store's built-in file filtering
+      const results = await this.storeManager.similaritySearchByFile(cleanedQuery, fileName, k);
 
-      if (fileDocuments.length === 0) {
-        Logger.warn(`No documents found for file: ${filePath}`);
-        return [];
-      }
-
-      Logger.info(
-        `Found ${fileDocuments.length} documents in file: ${filePath}, performing similarity search only on these documents`,
-      );
-
-      // 2. FAISS에서 더 많은 결과를 가져온 후 해당 파일만 필터링
-      // 해당 파일 문서 수를 고려하여 적절한 검색 범위 설정
-      const searchK = Math.min(Math.max(fileDocuments.length, k * 5), 100);
-      const allResults = await this.storeManager.similaritySearch(cleanedQuery, searchK);
-
-      // 3. 해당 파일의 문서들만 필터링
-      const fileResults = allResults.filter((doc) => {
-        const fileName = doc.metadata?.fileName;
-        return fileName === filePath || fileName === filePath.split('/').pop();
-      });
-
-      // 4. k개로 제한
-      const limitedResults = fileResults.slice(0, k);
-
-      Logger.info(
-        `File-specific search: ${searchK} searched → ${fileResults.length} file matches → ${limitedResults.length} final results`,
-      );
+      Logger.info(`File-specific search returned ${results.length} results for file: ${fileName}`);
 
       // Debug: Log file-specific results
-      console.log('=== FILE-SPECIFIC SEARCH RESULTS ===');
-      console.log(`Target file: ${filePath}`);
-      console.log(`All search results: ${allResults.length}`);
-      console.log(`Filtered file results: ${fileResults.length}`);
-      console.log(`Final limited results: ${limitedResults.length}`);
-      limitedResults.forEach((doc, index) => {
-        console.log(`[${index + 1}] File: ${doc.metadata?.fileName || 'Unknown'}`);
-        console.log(`    Section: ${doc.metadata?.sectionName || 'Unknown'}`);
-        console.log(`    Full Content:`);
-        console.log(doc.pageContent);
-        console.log(`    Metadata:`, JSON.stringify(doc.metadata, null, 2));
-        console.log('---');
-      });
-      console.log('=== END FILE-SPECIFIC RESULTS ===');
+      if (results.length > 0) {
+        console.log('=== FILE-SPECIFIC SEARCH RESULTS ===');
+        console.log(`Target file: ${filePath} (filter: ${fileName})`);
+        console.log(`Results found: ${results.length}`);
+        results.forEach((doc, index) => {
+          console.log(`[${index + 1}] File: ${doc.metadata?.fileName || 'Unknown'}`);
+          console.log(`    Section: ${doc.metadata?.sectionName || 'Unknown'}`);
+          console.log(`    Content Preview: ${doc.pageContent.substring(0, 100)}...`);
+          console.log('---');
+        });
+        console.log('=== END FILE-SPECIFIC RESULTS ===');
+      } else {
+        Logger.warn(`No results found for file: ${fileName}`);
+      }
 
-      return limitedResults;
+      return results;
     } catch (error) {
       Logger.error('Error performing file-specific similarity search', error as Error);
       return [];

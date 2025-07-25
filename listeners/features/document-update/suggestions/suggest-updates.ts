@@ -104,47 +104,22 @@ async function showFileSelectionDropdown(
   const userName = await getUserName(userId, client);
   const message = await client.chat.postMessage({
     channel: currentDmChannelId,
-    text: `👋 Hi *${userName}*! I'm CHOIR, your documentation assistant. I've analyzed your knowledge and found ${searchResults.length} relevant document${searchResults.length > 1 ? 's' : ''} that might need updates.`,
+    text: '📁 Which file would you like to focus on first?',
     blocks: [
       {
         type: 'section',
-        block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
         text: {
           type: 'mrkdwn',
-          text: `👋 Hi *${userName}*! I'm CHOIR, your documentation assistant. I've analyzed your knowledge and found ${searchResults.length} relevant document${searchResults.length > 1 ? 's' : ''} that might need updates.`,
-        },
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `📁 *Which file would you like to focus on first?*\n\nI can either:\n• Review documents across all files (recommended)\n• Focus on a specific file of your choice`,
+          text: '📁 *Which file would you like to focus on first?*',
         },
         accessory: {
           type: 'static_select',
           action_id: 'file_selection_for_update',
           placeholder: {
             type: 'plain_text',
-            text: 'Choose a file...',
+            text: 'Choose a specific file...',
           },
-          initial_option: defaultFileOption,
-          options: [
-            {
-              text: {
-                type: 'plain_text',
-                text: '🔍 All Files (Recommended)',
-              },
-              value: 'ALL_FILES',
-            },
-            ...fileOptions,
-          ],
-        },
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*Your Knowledge:*\n\`\`\`${knowledgeContent}\`\`\``,
+          options: fileOptions,
         },
       },
       {
@@ -154,7 +129,7 @@ async function showFileSelectionDropdown(
             type: 'button',
             text: {
               type: 'plain_text',
-              text: '▶️ Start Review',
+              text: '🎯 Select Recommended',
               emoji: true,
             },
             style: 'primary',
@@ -164,8 +139,8 @@ async function showFileSelectionDropdown(
               knowledgeContent,
               knowledgeSourceChannelId,
               knowledgeSourceThreadTs,
-              selectedFile: 'ALL_FILES', // default selection
-              defaultFilePath: defaultFilePath, // 기본 파일 정보 추가
+              selectedFile: 'ALL_FILES',
+              defaultFilePath: defaultFilePath,
             }),
           },
         ],
@@ -992,14 +967,6 @@ export const suggestUpdatesCallback = async ({
       originalChannelId: knowledgeSourceChannelId,
       originalThreadTs: knowledgeSourceThreadTs,
       sessionId: sessionId,
-      ...(processedDoc.suggestionType === 'UPDATE' && {
-        nodeContent: processedDoc.nodeContent,
-        updatedNodeContent: processedDoc.updatedNodeContent,
-      }),
-      ...(processedDoc.suggestionType === 'APPEND' && {
-        originalLastNodeContent: processedDoc.originalLastNodeContent,
-        appendedNodeContent: processedDoc.appendedNodeContent,
-      }),
     };
 
     const updateButtonValue = {

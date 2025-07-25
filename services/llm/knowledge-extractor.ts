@@ -64,11 +64,11 @@ ${contextSection}
 
 **Your task:** Extract organizational knowledge in this conversation:
 
-PRIORITIZE the topic that is discussed towards the end of the conversation
+PRIORITIZE new organizational knowledge shared by human team members, especially information mentioned towards the end of the conversation. Focus on fresh insights rather than CHOIR's responses, suggestions, or confirmations of existing policies.
 
 **Think about what the requester likely wants documented based on the conversation flow.**
 
-If you find organizational knowledge worth documenting, respond with just the knowledge statement as plain text.
+If you find organizational knowledge worth documenting, respond with the complete knowledge statement as plain text. Include all relevant details, examples, and reference URLs to preserve the full context and value of the information.
 
 Conversation:
 ${formattedMessages}
@@ -90,7 +90,7 @@ What organizational knowledge should be documented from this conversation?`;
       {
         model: 'gpt-4o',
         temperature: 0.3,
-        max_tokens: 1000,
+        max_tokens: 2000,
         function_name: 'extractKnowledgeFromMessages',
         debug: true,
       } as ChatCompletionOptions,

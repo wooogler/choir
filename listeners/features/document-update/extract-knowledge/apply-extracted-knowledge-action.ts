@@ -151,7 +151,6 @@ export const applyExtractedKnowledgeCallback = async ({
     const suggestUpdatesValue = {
       originalChannelId: sessionData.originalChannelId,
       originalThreadTs: sessionData.originalThreadTs,
-      knowledgeContent: sessionData.extractedKnowledge,
       sessionId: sessionId,
     };
 

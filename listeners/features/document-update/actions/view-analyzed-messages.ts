@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { SessionType, getSessionData } from 'services/common';
 import { deAnonymizeText } from 'services/common/name-cache';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getWorkspaceId } from 'services/slack';
@@ -19,7 +20,16 @@ export const viewAnalyzedMessagesAction = async ({
     }
 
     const parsedValue = JSON.parse(value);
-    const { sessionId, messageCount, messages } = parsedValue;
+    const { sessionId, messageCount } = parsedValue;
+
+    // Get messages from session data
+    const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
+    if (!sessionData) {
+      throw new Error('Session data not found');
+    }
+
+    // Use processedMessages from session data if available, otherwise use original messages
+    const messages = sessionData.processedMessages || sessionData.messages || [];
 
     // Create modal with analyzed messages
     const modal = {
@@ -52,9 +62,31 @@ export const viewAnalyzedMessagesAction = async ({
           },
         },
         ...messages.map((msg: any, index: number) => {
-          // De-anonymize the username and text for user display
-          const username = msg.username || 'Unknown User';
-          const text = msg.text || 'No text';
+          // Handle both processedMessages format and original messages format
+          let username = 'Unknown User';
+          let text = 'No text';
+          
+          if (msg.role && msg.content) {
+            // processedMessages format: { role: 'CHOIR' | 'user', content: 'Username: message' }
+            if (msg.role === 'CHOIR') {
+              username = 'CHOIR';
+              text = msg.content.replace(/^CHOIR:\s*/, '');
+            } else {
+              // Extract username from "Username: message" format
+              const colonIndex = msg.content.indexOf(':');
+              if (colonIndex > 0) {
+                username = msg.content.substring(0, colonIndex);
+                text = msg.content.substring(colonIndex + 1).trim();
+              } else {
+                text = msg.content;
+              }
+            }
+          } else {
+            // Original messages format: { username: 'User', text: 'message' }
+            username = msg.username || 'Unknown User';
+            text = msg.text || 'No text';
+          }
+
           const deAnonymizedUsername = deAnonymizeText(username);
           const deAnonymizedText = deAnonymizeText(text);
 

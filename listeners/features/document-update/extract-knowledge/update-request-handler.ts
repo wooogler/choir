@@ -9,6 +9,7 @@ import {
   getChannelName,
   getFilteredConversationHistory,
   getManagers,
+  getManagerText,
   getQAChannel,
   getUserName,
   getWorkspaceId,
@@ -177,12 +178,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
 
       // Get managers for the message
       const managers = await getManagers(workspaceId);
-      let managerText = 'managers';
-      if (managers.length > 0) {
-        // Get first manager's name as example
-        const firstManagerName = await getUserName(managers[0], client);
-        managerText = managers.length === 1 ? firstManagerName : `${firstManagerName} and other managers`;
-      }
+      const managerText = await getManagerText(workspaceId, client);
 
       // Get workspace configuration for organizational context
       const workspaceStore = new WorkspaceStore();
@@ -230,11 +226,6 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
                 value: JSON.stringify({
                   sessionId,
                   messageCount: extractionResult.processedMessages.length,
-                  messages: extractionResult.processedMessages.map((msg, index) => ({
-                    username: msg.role === 'CHOIR' ? 'CHOIR' : msg.content.split(':')[0], // Extract username from "Username: message" format
-                    text: msg.content.includes(':') ? msg.content.split(':').slice(1).join(':').trim() : msg.content,
-                    ts: `${Date.now()}_${index}`, // Generate unique timestamp for ordering
-                  })),
                 }),
               },
             },
@@ -254,12 +245,36 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       // First: Send public message with the suggested update content
       const blocks = [
         {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: `Sure! I'll suggest the following update to ${managerText}.\n*Suggested Update*\n\`\`\`${extractionResult.cleanContent}\`\`\``,
-          },
+          type: 'rich_text',
           block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
+          elements: [
+            {
+              type: 'rich_text_section',
+              elements: [
+                {
+                  type: 'text',
+                  text: `Sure! I'll suggest the following update to ${managerText}.\n`,
+                },
+                {
+                  type: 'text',
+                  text: 'Suggested Update',
+                  style: {
+                    bold: true,
+                  },
+                },
+              ],
+            },
+            {
+              type: 'rich_text_preformatted',
+              elements: [
+                {
+                  type: 'text',
+                  text: extractionResult.cleanContent,
+                },
+              ],
+              border: 0,
+            },
+          ],
         },
       ];
 
@@ -350,6 +365,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           userId,
           extractedKnowledge: extractionResult.cleanContent, // Store clean content for editing
           messages: last10Messages,
+          processedMessages: extractionResult.processedMessages, // Store processed messages for View Messages
           publicMessageTs: publicMessage.ts, // Store public message timestamp for updates
           lastEditedBy: userId, // Track who initially extracted the knowledge
           lastEditedAt: new Date().toISOString(), // Track when it was initially extracted

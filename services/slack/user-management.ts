@@ -275,6 +275,28 @@ export async function isCHOIRUser(workspaceId: string, userId: string): Promise<
 }
 
 /**
+ * Get formatted manager text with all manager names
+ */
+export async function getManagerText(workspaceId: string, client: WebClient): Promise<string> {
+  try {
+    const managers = await getManagers(workspaceId);
+    if (managers.length === 0) {
+      return 'managers';
+    }
+
+    // Get all manager names
+    const managerNames = await Promise.all(
+      managers.map(managerId => getUserName(managerId, client))
+    );
+
+    return managerNames.join(', ');
+  } catch (error) {
+    Logger.error('Error getting manager text', error as Error, { workspaceId });
+    return 'managers';
+  }
+}
+
+/**
  * Get standardized Non-user response message with manager list and consent form URL
  */
 export async function getNonUserResponseMessage(
