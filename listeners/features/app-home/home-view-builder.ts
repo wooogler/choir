@@ -81,33 +81,36 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
     },
   ];
 
-  // 일반 사용자(매니저가 아닌 경우)에게 Messages 탭으로 이동할 수 있는 버튼 제공
-  if (!isUserManager && !isOwner) {
-    homeBlocks.push(
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: '💬 *Ready to get started?* Click the button below to chat with CHOIR!',
-        },
+  // 모든 사용자에게 Messages 탭으로 이동할 수 있는 버튼 제공
+  // Get team and bot info for deep link
+  const authTest = await client.auth.test();
+  const teamId = authTest.team_id;
+  const botUserId = authTest.user_id;
+  
+  homeBlocks.push(
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '💬 *Ready to get started?* Click the button below to chat with CHOIR!',
       },
-      {
-        type: 'actions',
-        elements: [
-          {
-            type: 'button',
-            text: {
-              type: 'plain_text',
-              text: '💬 Start Chatting with CHOIR',
-              emoji: true,
-            },
-            style: 'primary',
-            action_id: 'open_messages_tab',
+    },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: '💬 Start Chatting with CHOIR',
+            emoji: true,
           },
-        ],
-      } as any,
-    );
-  }
+          style: 'primary',
+          url: `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
+        },
+      ],
+    } as any,
+  );
 
   homeBlocks.push({
     type: 'divider',
