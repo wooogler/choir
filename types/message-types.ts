@@ -132,7 +132,14 @@ export enum CHOIRMessageType {
    * 임시 메시지 삭제 등
    * 대화 히스토리에서 제외됨
    */
-  MESSAGE_DELETE = 'message_delete'
+  MESSAGE_DELETE = 'message_delete',
+
+  /** 
+   * 구분선 메시지
+   * 메시지 구분을 위한 구분선 메시지
+   * 대화 히스토리에서 제외됨
+   */
+  DIVIDER = 'divider'
 }
 
 /**
@@ -147,6 +154,7 @@ export const EXCLUDE_FROM_HISTORY: CHOIRMessageType[] = [
   CHOIRMessageType.MESSAGE_DELETE,
   CHOIRMessageType.NOTIFICATION, // 공유/알림 메시지도 제외
   CHOIRMessageType.ERROR,
+  CHOIRMessageType.DIVIDER,
 ];
 
 /**

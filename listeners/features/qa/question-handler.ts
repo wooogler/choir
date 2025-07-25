@@ -86,11 +86,6 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     // 공유용 깔끔한 응답 (참조 문구 없이)
     const cleanResponseForSharing = response;
 
-    // 실제 표시용 응답 (참조 문구 포함)
-    const displayResponse = answerResult.canAnswer
-      ? response + "\n\nIf you'd like to read the original document, please refer to the sources linked in the reply."
-      : response;
-
     // 대화 히스토리에서 모든 고유 사용자 ID 추출
     const historyUsers = new Set<string>();
     historyUsers.add(event.user); // 현재 메시지를 보낸 사용자 추가
@@ -140,21 +135,15 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     const qaChannelId = await getQAChannel(workspaceId, client);
 
     // Q&A 채널 표시용 형식 지정
-    let qaChannelText = '';
     let qaChannelName = '';
     if (qaChannelId) {
       try {
         const channelInfo = await client.conversations.info({ channel: qaChannelId });
         qaChannelName = channelInfo.channel?.name || 'unknown';
-        qaChannelText = `#${qaChannelName}`;
       } catch (error) {
         logger.warn(`Could not get Q&A channel name for ${qaChannelId}:`, error);
-        qaChannelText = 'Unknown channel';
         qaChannelName = '';
       }
-    } else {
-      qaChannelText = 'No Q&A channel configured';
-      qaChannelName = '';
     }
 
     // 세션 ID 생성
@@ -180,8 +169,6 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       SessionType.DOCUMENT_UPDATE,
     );
 
-    // 질문이 스레드에서 왔는지 확인
-    const isThreadQuestion = event.thread_ts !== undefined;
 
     // 로딩 메시지 삭제
     if (loadingMessageTs) {
@@ -195,22 +182,47 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       }
     }
 
-    // 응답 메시지 전송 (Ask Managers 버튼 없이)
+    // 응답 메시지 전송 (질문자 정보 컨텍스트 포함)
     const responseBlocks = [
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: displayResponse,
+          text: response,
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.ANSWER),
       },
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: `Answered <@${event.user}>'s question`,
+          },
+        ],
+      },
+      {
+        type: 'divider',
+        block_id: createCHOIRBlockId(CHOIRMessageType.DIVIDER),
+      }
     ];
+
+    // 답변 가능한 경우에만 참조 문구 추가
+    if (answerResult.canAnswer) {
+      responseBlocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: "If you'd like to read the original document, please refer to the sources linked in the reply.",
+        },
+        block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+      });
+    }
 
     const messageResult = await client.chat.postMessage({
       channel: event.channel,
       ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
-      text: displayResponse,
+      text: response,
       mrkdwn: true,
       blocks: responseBlocks,
       unfurl_links: false,

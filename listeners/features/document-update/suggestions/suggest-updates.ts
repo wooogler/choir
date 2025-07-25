@@ -665,21 +665,20 @@ export const suggestUpdatesCallback = async ({
       return;
     }
 
-    if (isFirstSuggestion) {
-      const progressMessage = await client.chat.postMessage({
-        channel: currentDmChannelId,
-        text: 'Preparing document update suggestions...',
-        blocks: [
-          {
-            type: 'section',
-            block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
-            text: { type: 'mrkdwn', text: 'Preparing document update suggestions...' },
-          },
-        ],
-      });
-      if (progressMessage.ts) {
-        setProgressMessageTimestamp(userId, progressMessage.ts);
-      }
+    // 모든 제안에서 로딩 메시지 표시 (일관성을 위해)
+    const progressMessage = await client.chat.postMessage({
+      channel: currentDmChannelId,
+      text: 'Preparing document update suggestions...',
+      blocks: [
+        {
+          type: 'section',
+          block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
+          text: { type: 'mrkdwn', text: 'Preparing document update suggestions...' },
+        },
+      ],
+    });
+    if (progressMessage.ts) {
+      setProgressMessageTimestamp(userId, progressMessage.ts);
     }
 
     if (currentIndex === 0 && !isFileBasedReview) {
