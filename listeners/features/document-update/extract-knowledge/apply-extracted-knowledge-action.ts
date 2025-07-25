@@ -106,6 +106,7 @@ export const applyExtractedKnowledgeCallback = async ({
       // Show ephemeral processing message with DM button
       await client.chat.postEphemeral({
         channel: sessionData.originalChannelId,
+        ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
         user: body.user.id,
         text: '🔄 Processing knowledge and generating document updates...',
         blocks: [

@@ -73,13 +73,23 @@ Your task is to classify the user message as 'question' (asking for information 
 Update_request includes: direct requests to save information about the organization, suggestions for document changes, AND statements containing new knowledge, facts, decisions, tools being used, processes, or any information that could be valuable for documentation.
 
 Examples of update_request:
-
 'I will use Microsoft Teams for online meeting'
 'We decided to switch to React for the frontend'
 'The API endpoint is now https://api.example.com'
 'Please update the document'
 'Please save this information'
-- 'This document needs to be updated'
+'This document needs to be updated'
+
+Examples of general_conversation:
+'How do I use CHOIR?'
+'What can you do?'
+'How does CHOIR work?'
+'What are your features?'
+'How can I interact with you?'
+'What commands do you support?'
+'Hello'
+'Hi there'
+'Thanks'
 
 Respond with only 'question', 'update_request', or 'general_conversation'.
 
@@ -103,6 +113,7 @@ ${descOrg ? `- About: ${descOrg}` : ''}${contextSection}`;
       max_tokens: 15,
       function_name: 'classifyMessageIntent',
       debug: true,
+      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
     },
   );
 

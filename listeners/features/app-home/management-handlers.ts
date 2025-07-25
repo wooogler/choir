@@ -10,8 +10,67 @@ import {
 } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 export const registerManagementHandlers = (app: App) => {
+  // Messages 탭으로 이동하는 버튼 처리
+  app.action('open_messages_tab', async ({ ack, body, client, logger }) => {
+    await ack();
+
+    try {
+      const userId = (body as any).user.id;
+
+      // 사용자와의 DM 채널을 열거나 가져오기
+      const conversation = await client.conversations.open({
+        users: userId,
+      });
+
+      const dmChannelId = conversation.channel?.id;
+
+      if (dmChannelId) {
+        // DM에 환영 메시지 전송 (Messages 탭에 표시됨)
+        await client.chat.postMessage({
+          channel: dmChannelId,
+          text: 'Hello! Welcome to CHOIR! 👋',
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '👋 *Hello! Welcome to CHOIR!*\n\nI\'m here to help you with questions, document updates, and more. What would you like to do today?',
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+            },
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '💡 *Here are some things you can try:*\n• Ask me any question about your lab\'s documents\n• Request document updates based on messages\n• Get help with CHOIR features',
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+            },
+            {
+              type: 'context',
+              elements: [
+                {
+                  type: 'mrkdwn',
+                  text: '✨ _Just type your message below to get started!_',
+                },
+              ],
+              block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+            },
+          ],
+        });
+
+        logger.info(`Welcome message sent to user ${userId} in DM ${dmChannelId}`);
+      }
+
+      logger.info(`User ${userId} clicked "Start Chatting with CHOIR" button`);
+    } catch (error) {
+      logger.error('Error handling open_messages_tab action:', error);
+    }
+  });
+
   app.action('request_manager_permission', async ({ ack, body, client, logger }) => {
     await ack();
 

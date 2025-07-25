@@ -79,10 +79,39 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
         text: 'CHOIR is a tool that automatically updates documents based on Slack conversations.',
       },
     },
-    {
-      type: 'divider',
-    },
   ];
+
+  // 일반 사용자(매니저가 아닌 경우)에게 Messages 탭으로 이동할 수 있는 버튼 제공
+  if (!isUserManager && !isOwner) {
+    homeBlocks.push(
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '💬 *Ready to get started?* Click the button below to chat with CHOIR!',
+        },
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '💬 Start Chatting with CHOIR',
+              emoji: true,
+            },
+            style: 'primary',
+            action_id: 'open_messages_tab',
+          },
+        ],
+      } as any,
+    );
+  }
+
+  homeBlocks.push({
+    type: 'divider',
+  } as any);
 
   return [
     ...homeBlocks,
@@ -268,19 +297,13 @@ const buildBecomeManagerBlocks = (isUserManager: boolean, isOwner: boolean) => {
 
   return [
     {
-      type: 'header',
-      text: {
-        type: 'plain_text',
-        text: '👑 Request Manager Access',
-        emoji: true,
-      },
-    },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: 'Enter the manager password to gain access to advanced features and settings.',
-      },
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: '🔒 _Need access to advanced features? Contact your workspace administrator._',
+        },
+      ],
     },
     {
       type: 'actions',
@@ -289,10 +312,9 @@ const buildBecomeManagerBlocks = (isUserManager: boolean, isOwner: boolean) => {
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Become Manager',
+            text: 'Manager Access',
             emoji: true,
           },
-          style: 'primary',
           action_id: 'request_manager_permission',
         },
       ],

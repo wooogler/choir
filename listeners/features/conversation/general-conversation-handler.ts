@@ -43,17 +43,52 @@ export async function handleGeneralConversationMessage(
     const repoInfo = await getGithubRepo(workspaceId);
     const URLtoGithubORWebsite = repoInfo ? repoInfo.url : '';
 
-    const replyText = await respondToGeneralConversation(
-      message,
-      userName || 'there',
-      organizationName,
-      descOrg,
-      URLtoGithubORWebsite,
-    );
+    // Check if the message is asking about CHOIR usage
+    const lowerMessage = message.toLowerCase();
+    const isUsageQuestion = lowerMessage.includes('how') && 
+      (lowerMessage.includes('use') || lowerMessage.includes('work') || lowerMessage.includes('do')) &&
+      (lowerMessage.includes('choir') || lowerMessage.includes('you'));
+    
+    const isFeatureQuestion = lowerMessage.includes('what') && 
+      (lowerMessage.includes('can') || lowerMessage.includes('feature') || lowerMessage.includes('do'));
 
-    // Add document source reference naturally if GitHub URL is available
+    let replyText;
+    
+    if (isUsageQuestion || isFeatureQuestion) {
+      // Provide specific CHOIR usage instructions
+      replyText = `Hi *${userName}*! 👋 I'm CHOIR, and I'm here to help you with ${organizationName}'s documents and knowledge management.
+
+*🔍 Here's how you can use me:*
+
+*💬 For Questions:* Ask me anything about your documents or ${organizationName}
+• Example: "What's our policy on remote work?"
+• Example: "How do we handle code reviews?"
+
+*📝 For Updates:* Share new information that should be documented
+• Example: "We decided to use React for the new project"
+• Example: "The meeting time changed to 3 PM on Fridays"
+
+*🔧 How to reach me:*
+• *In channels:* Mention me with \`@choir\` followed by your message
+• *Direct message:* Send me a DM anytime - just like you're doing now!
+
+*✨ I can also help you update documents, extract knowledge from conversations, and keep your team's information organized.*
+
+What would you like to try first?`;
+    } else {
+      // Use the regular general conversation responder
+      replyText = await respondToGeneralConversation(
+        message,
+        userName || 'there',
+        organizationName,
+        descOrg,
+        URLtoGithubORWebsite,
+      );
+    }
+
+    // Add document source reference naturally if GitHub URL is available (but not for usage instructions)
     let fullReplyText = replyText;
-    if (URLtoGithubORWebsite) {
+    if (URLtoGithubORWebsite && !isUsageQuestion && !isFeatureQuestion) {
       fullReplyText += `\n\n_Based on <${URLtoGithubORWebsite}|${organizationName}'s documentation>_`;
     }
 
