@@ -71,7 +71,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
             try {
               await client.chat.postMessage({
                 channel: anonymousInfo.originalQuestionerId,
-                text: 'You received a reply to your anonymous question',
+                text: `${authorName}: ${message}`,
                 blocks: [
                   {
                     type: 'section',
@@ -142,22 +142,6 @@ export async function handleIncomingMessage(client: any, event: any, message: st
       }
     }
 
-    // CHOIR 페르소나를 반영한 로딩 메시지 전송 (채널에 표시)
-    const loadingMessage = await client.chat.postMessage({
-      channel: event.channel,
-      ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
-      text: '🤔 Let me think about how I can best help you with that...',
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '🤔 Let me think about how I can best help you with that...',
-          },
-          block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
-        },
-      ],
-    });
 
     // Get organization information
     const workspaceId = await getWorkspaceId(client);
@@ -204,17 +188,6 @@ export async function handleIncomingMessage(client: any, event: any, message: st
       logger.error('Error logging intent classification:', logError);
     }
 
-    // 로딩 메시지 삭제
-    if (loadingMessage.ts) {
-      try {
-        await client.chat.delete({
-          channel: event.channel,
-          ts: loadingMessage.ts,
-        });
-      } catch (deleteError) {
-        logger.warn('Failed to delete loading message:', deleteError);
-      }
-    }
 
     if (messageIntent === 'question') {
       // 질문으로 처리

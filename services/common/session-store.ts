@@ -118,7 +118,6 @@ export function trackAnonymousMessage(
   sessionId: string,
 ): void {
   const key = `${channelId}_${messageTs}`;
-  console.log(`[DEBUG] trackAnonymousMessage - channelId: ${channelId}, messageTs: ${messageTs}, key: ${key}`);
   storeSessionData(
     key,
     {
@@ -141,16 +140,11 @@ export function trackAnonymousMessage(
 export function getAnonymousMessageInfo(channelId: string): any {
   const store = sessionStores[SessionType.ANONYMOUS_MESSAGE];
 
-  console.log(`[DEBUG] getAnonymousMessageInfo - channelId: ${channelId}`);
-  console.log(`[DEBUG] Available keys in store:`, Array.from(store.keys()));
-
   // 해당 채널의 Anonymous 메시지 찾기
   for (const [key, session] of store.entries()) {
     // 내부 프로퍼티 제외하고 데이터 추출
     const { _timerId, _createdAt, ...data } = session;
-    console.log(`[DEBUG] Checking key: ${key}, data.channelId: ${data.channelId}, isProcessed: ${data.isProcessed}`);
     if (data.channelId === channelId && !data.isProcessed) {
-      console.log(`[DEBUG] Found matching anonymous message for channelId: ${channelId}`);
       return {
         messageTs: data.messageTs,
         originalQuestionerId: data.originalQuestionerId,
@@ -161,7 +155,6 @@ export function getAnonymousMessageInfo(channelId: string): any {
     }
   }
 
-  console.log(`[DEBUG] No matching anonymous message found for channelId: ${channelId}`);
   return null;
 }
 

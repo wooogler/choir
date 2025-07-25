@@ -12,8 +12,14 @@ const dmMessageCallback = async ({
   logger,
 }: AllMiddlewareArgs & SlackEventMiddlewareArgs<'message'>) => {
   try {
-    // DM 메시지인 경우에만 처리
-    if (event.channel_type !== 'im') return;
+    // DM 메시지인 경우에만 처리 (개별 DM은 모든 경우, 그룹 DM은 thread만)
+    if (event.channel_type === 'im') {
+      // 개별 DM: 모든 메시지 처리
+    } else if (event.channel_type === 'mpim' && 'thread_ts' in event && event.thread_ts) {
+      // 그룹 DM: thread 메시지만 처리 (익명 질문 reply 전달용)
+    } else {
+      return;
+    }
 
     // Get workspace and check if user is a CHOIR user
     const workspaceId = await getWorkspaceId(client);
