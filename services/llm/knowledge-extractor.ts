@@ -57,30 +57,18 @@ export async function extractKnowledgeFromMessages(
       contextSection += '\n';
     }
 
-    const prompt = `You are an experienced knowledge curator analyzing a team conversation to identify what should be documented.
+    const prompt = `You are an experienced knowledge curator named CHOIR analyzing a team conversation to identify what should be documented.
 
 Read this conversation and understand the context and flow. What organizational knowledge is being shared or confirmed that would be valuable to document?
 ${contextSection}
 
-**Your task:** Extract organizational knowledge by understanding what's actually NEW in this conversation:
+**Your task:** Extract organizational knowledge in this conversation:
 
-- Prioritize what HUMANS newly share or confirm
-- If CHOIR suggests something and a human says "save it" → extract the suggestion
-- If CHOIR provides info and human confirms it's correct → extract it
-- If a human shares new tools/processes → extract it
-- Avoid extracting CHOIR's existing documentation quotes unless humans validate them
-
-**Focus on NEW organizational knowledge:**
-✅ Extract: Human says "We use Zoom for meetings" → extract this new info
-✅ Extract: CHOIR suggests policy, human says "yes, document this" → extract the policy  
-❌ Don't extract: CHOIR quoting existing docs without human validation
-❌ Don't extract: CHOIR's suggestions that humans haven't confirmed
+PRIORITIZE the topic that is discussed towards the end of the conversation
 
 **Think about what the requester likely wants documented based on the conversation flow.**
 
 If you find organizational knowledge worth documenting, respond with just the knowledge statement as plain text.
-
-If no organizational knowledge should be documented, respond with: "No organizational knowledge found"
 
 Conversation:
 ${formattedMessages}
@@ -92,7 +80,7 @@ What organizational knowledge should be documented from this conversation?`;
         {
           role: 'system',
           content:
-            'You are CHOIR, a helpful knowledge curator who extracts organizational knowledge from team conversations for documentation purposes. Focus on decisions, processes, and standards that represent what the organization or team does, rather than individual actions. Always write from an organizational perspective and provide source message numbers.',
+            'You are CHOIR, a helpful knowledge curator who extracts organizational knowledge from team conversations for documentation purposes. Focus on decisions, processes, and standards that represent what the organization or team does, rather than individual actions.',
         },
         {
           role: 'user',
