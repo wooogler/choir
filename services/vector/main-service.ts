@@ -960,6 +960,53 @@ export class VectorStoreService {
   }
 
   /**
+   * 단일 문서를 벡터 스토어에 추가
+   */
+  public async addDocument(fileName: string, content: string, metadata: DocumentMetadata): Promise<boolean> {
+    try {
+      Logger.info(`Adding single document to vector store: ${fileName}`);
+
+      // 기존 파일 처리 로직을 재사용하여 MarkdownFile 객체 생성
+      const markdownFile: MarkdownFile = {
+        name: fileName,
+        path: metadata.fileName || fileName,
+        content: content,
+        githubUrl: metadata.githubUrl,
+        tree: {} as any // 임시로 빈 객체, 아래에서 설정
+      };
+
+      // parseMarkdownToTree를 사용하여 트리 생성
+      const { parseMarkdownToTree } = await import('../document/markdown');
+      markdownFile.tree = parseMarkdownToTree(content);
+
+             // createDocumentsFromTree를 사용하여 Document 배열 생성
+       const { createDocumentsFromTree } = await import('../llm');
+       const documents = createDocumentsFromTree(markdownFile.tree, markdownFile.name, markdownFile.githubUrl);
+
+      if (documents.length === 0) {
+        Logger.warn(`No content found in document: ${fileName}`);
+        return true;
+      }
+
+      // 기존 addDocumentsToVectorStore 메서드 사용
+      const success = await this.addDocumentsToVectorStore(documents);
+      
+      if (success) {
+        // markdownFiles 배열에도 추가하여 캐시에 포함
+        this.markdownFiles.push(markdownFile);
+        Logger.info(`Successfully added single document ${fileName} with ${documents.length} nodes to vector store`);
+      } else {
+        Logger.error(`Failed to add single document ${fileName} to vector store`);
+      }
+
+      return success;
+    } catch (error) {
+      Logger.error(`Error adding single document ${fileName} to vector store`, error as Error);
+      return false;
+    }
+  }
+
+  /**
    * Document들을 벡터 스토어에 추가
    */
   private async addDocumentsToVectorStore(documents: Document<DocumentMetadata>[]): Promise<boolean> {

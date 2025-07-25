@@ -648,6 +648,111 @@ class GithubService {
     return JSON.stringify(commitMessageJson);
   }
 
+  /**
+   * Create a new file in the repository
+   */
+  async createFile(params: {
+    owner: string;
+    repo: string;
+    path: string;
+    content: string;
+    message: string;
+    workspaceId?: string;
+    userId?: string;
+  }): Promise<void> {
+    try {
+      const octokit = await this.getOctokit(params.workspaceId, params.userId);
+      const defaultBranch = await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId);
+
+      // Check if file already exists
+      try {
+        await octokit.rest.repos.getContent({
+          owner: params.owner,
+          repo: params.repo,
+          path: params.path,
+          ref: defaultBranch,
+        });
+        
+        // If we get here, file exists
+        throw new GitHubError('File already exists', {
+          code: ErrorCodes.GITHUB_FILE_EXISTS,
+          metadata: { owner: params.owner, repo: params.repo, path: params.path },
+        });
+      } catch (error: any) {
+        // If error status is 404, file doesn't exist - proceed with creation
+        if (error.status !== 404) {
+          throw error; // Re-throw non-404 errors
+        }
+      }
+
+      // Create the file
+      await this.throttledRequest(async () => {
+        return octokit.rest.repos.createOrUpdateFileContents({
+          owner: params.owner,
+          repo: params.repo,
+          path: params.path,
+          message: params.message,
+          content: Buffer.from(params.content).toString('base64'),
+          branch: defaultBranch,
+        });
+      });
+
+      Logger.info(`Successfully created file ${params.path} in ${params.owner}/${params.repo}`);
+    } catch (error) {
+      Logger.error('Failed to create file', error as Error);
+      throw new GitHubError('Failed to create file', {
+        code: ErrorCodes.GITHUB_CONNECTION_FAILED,
+        metadata: { owner: params.owner, repo: params.repo, path: params.path },
+      });
+    }
+  }
+
+  /**
+   * Get a file from the repository
+   */
+  async getFile(params: {
+    owner: string;
+    repo: string;
+    path: string;
+    workspaceId?: string;
+    userId?: string;
+  }): Promise<{ content: string; sha: string } | null> {
+    try {
+      const octokit = await this.getOctokit(params.workspaceId, params.userId);
+      const defaultBranch = await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId);
+
+      const response = await this.throttledRequest(async () => {
+        return octokit.rest.repos.getContent({
+          owner: params.owner,
+          repo: params.repo,
+          path: params.path,
+          ref: defaultBranch,
+        });
+      });
+
+      if ('content' in response.data && typeof response.data.content === 'string') {
+        const content = Buffer.from(response.data.content, 'base64').toString('utf-8');
+        return {
+          content,
+          sha: response.data.sha,
+        };
+      }
+
+      return null;
+    } catch (error: any) {
+      if (error.status === 404) {
+        Logger.warn(`File not found: ${params.path} in ${params.owner}/${params.repo}`);
+        return null;
+      }
+      
+      Logger.error('Failed to get file', error as Error);
+      throw new GitHubError('Failed to get file', {
+        code: ErrorCodes.GITHUB_CONNECTION_FAILED,
+        metadata: { owner: params.owner, repo: params.repo, path: params.path },
+      });
+    }
+  }
+
   // Cache management methods
   public clearCache(): void {
     this.fileContentCache.clear();

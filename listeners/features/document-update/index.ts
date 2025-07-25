@@ -1,7 +1,9 @@
 import type { App } from '@slack/bolt';
 
 import { createNewSectionAction } from './actions/create-new-section';
+import { createFileSubmissionCallback } from './actions/create-file-submission';
 import { fileSelectionForUpdateAction, startFileBasedReviewAction } from './actions/file-selection';
+import { showCreateFileModalCallback } from './actions/show-create-file-modal';
 import { viewAnalyzedMessagesAction } from './actions/view-analyzed-messages';
 import { cancelDocumentUpdatesCallback } from './apply-document/cancel-document-updates-action';
 import { rejectUpdateCallback } from './apply-document/reject-update'; // Named export from reject-update.ts
@@ -39,12 +41,14 @@ export const registerDocumentUpdateFeature = (app: App) => {
   app.action('view_analyzed_messages', viewAnalyzedMessagesAction);
   app.action('file_selection_for_update', fileSelectionForUpdateAction);
   app.action('start_file_based_review', startFileBasedReviewAction);
+  app.action('show_create_file_modal', showCreateFileModalCallback);
 
   // Views
   app.view('update_editor_submission', handleSuggestionEditorSubmission);
   app.view('knowledge_edit_modal', handleKnowledgeEditModal);
   app.view('knowledge_edit_manager_modal', handleKnowledgeEditManagerModal);
   app.view('new_section_modal', handleNewSectionModalSubmission);
+  app.view('create_file_modal', createFileSubmissionCallback);
 };
 
 export * from './extract-knowledge/update-request-handler';

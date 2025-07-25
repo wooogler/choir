@@ -149,6 +149,21 @@ async function showFileSelectionDropdown(
               defaultFilePath: defaultFilePath,
             }),
           },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '📄 Create New File',
+              emoji: true,
+            },
+            action_id: 'show_create_file_modal',
+            value: JSON.stringify({
+              sessionId,
+              knowledgeContent,
+              knowledgeSourceChannelId,
+              knowledgeSourceThreadTs,
+            }),
+          },
         ],
       },
     ],
