@@ -254,8 +254,6 @@ export async function processDocument(
       console.log('[processDocument] Original Node Content (for UPDATE):', nodeContent);
       console.log('[processDocument] LLM Edited Content (for UPDATE):', finalUpdatedNodeContentForUpdate);
     }
-    console.log('[processDocument] Generated Diff Block (for Slack):');
-    console.dir(diffBlock, { depth: null }); // diffBlock 객체를 자세히 보기 위해 console.dir 사용
     // --- 로깅 끝 ---
 
     return result;

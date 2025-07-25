@@ -200,7 +200,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
               type: 'button' as const,
               text: {
                 type: 'plain_text' as const,
-                text: 'Dismiss',
+                text: 'Decline',
                 emoji: false,
               },
               style: 'danger' as const,
