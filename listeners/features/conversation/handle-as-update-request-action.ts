@@ -50,25 +50,26 @@ export const handleAsUpdateRequestCallback = async ({
       unfurl_media: false,
     });
 
-    // 원본 메시지 업데이트 (버튼 제거)
-    const channelId = body.channel?.id;
-    const messageTs = body.message?.ts;
-
-    if (channelId && messageTs) {
-      await client.chat.update({
-        channel: channelId,
-        ts: messageTs,
-        text: "✅ Got it! I've processed your message as an update request.",
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: "✅ Got it! I've processed your message as an update request.",
+    // response_url을 통해 ephemeral 메시지를 "처리됨" 상태로 업데이트
+    if (body.response_url) {
+      await fetch(body.response_url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          replace_original: true,
+          text: "✅ Got it! I've processed your message as an update request.",
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: "✅ Got it! I've processed your message as an update request.",
+              },
             },
-            block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
-          },
-        ],
+          ],
+        }),
       });
     }
 
@@ -93,7 +94,7 @@ export const handleAsUpdateRequestCallback = async ({
         originalThreadTs: messageData.threadTs,
         originalChannelType: messageData.channelType,
         originalMessageLength: messageData.originalMessage?.length || 0,
-        messageUpdated: !!(channelId && messageTs),
+        messageUpdated: !!body.response_url,
       },
       client,
     );

@@ -23,23 +23,26 @@ export const dismissManagerUpdateCallback = async ({
     }
     const { channelId, messageTs } = JSON.parse(actionValue);
 
-    // 버튼들을 제거하고 완료 메시지로 업데이트
-    const currentMessageTs = (body.message as any)?.ts;
-    if (currentMessageTs) {
-      await client.chat.update({
-        channel: channelId,
-        ts: currentMessageTs,
-        text: 'Reply sent successfully!',
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: '✅ *Reply successfully sent to the anonymous questioner!*\nIf you need help with documentation updates in the future, just mention me.',
+    // response_url을 통해 ephemeral 메시지를 "완료됨" 상태로 업데이트
+    if (body.response_url) {
+      await fetch(body.response_url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          replace_original: true,
+          text: 'Reply sent successfully!',
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '✅ *Reply successfully sent to the anonymous questioner!*\nIf you need help with documentation updates in the future, just mention me.',
+              },
             },
-            block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
-          },
-        ],
+          ],
+        }),
       });
     }
 

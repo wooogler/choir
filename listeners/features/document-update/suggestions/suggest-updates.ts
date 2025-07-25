@@ -101,6 +101,11 @@ async function showFileSelectionDropdown(
     fileOptions.find((option) => option.value === defaultFilePath || option.text.text === defaultFilePath) ||
     fileOptions[0];
 
+  // Add (Recommended) to the default file option
+  if (defaultFileOption) {
+    defaultFileOption.text.text += ' (Recommended)';
+  }
+
   const userName = await getUserName(userId, client);
   const message = await client.chat.postMessage({
     channel: currentDmChannelId,
@@ -120,6 +125,7 @@ async function showFileSelectionDropdown(
             text: 'Choose a specific file...',
           },
           options: fileOptions,
+          initial_option: defaultFileOption,
         },
       },
       {
@@ -129,8 +135,8 @@ async function showFileSelectionDropdown(
             type: 'button',
             text: {
               type: 'plain_text',
-              text: '🎯 Select Recommended',
-              emoji: true,
+              text: 'Start Review',
+              emoji: false,
             },
             style: 'primary',
             action_id: 'start_file_based_review',
@@ -139,7 +145,7 @@ async function showFileSelectionDropdown(
               knowledgeContent,
               knowledgeSourceChannelId,
               knowledgeSourceThreadTs,
-              selectedFile: 'ALL_FILES',
+              selectedFile: defaultFilePath,
               defaultFilePath: defaultFilePath,
             }),
           },
@@ -288,7 +294,12 @@ export const suggestUpdatesCallback = async ({
       }
     }
 
-    if (parsedValue.action === 'keep') {
+    if (parsedValue.action === 'keep' || parsedValue.action === 'skip') {
+      // 액션별 로깅
+      if (parsedValue.action === 'skip') {
+        logger.info(`User skipped suggestion ${currentIndex} for nodeId: ${parsedValue.currentNodeId}`);
+      }
+      
       // Apply Changes 후 특정 파일에서 전체 검토로 전환
       if (parsedValue.shouldSwitchToAllFiles) {
         logger.info('Switching from specific file review to all files review');
@@ -302,11 +313,11 @@ export const suggestUpdatesCallback = async ({
           knowledgeContent = sessionData.extractedKnowledge;
         } else {
           logger.warn(
-            `Extracted knowledge not found in session data for session ${sessionId} when action is "keep". This might lead to issues if not handled elsewhere.`,
+            `Extracted knowledge not found in session data for session ${sessionId} when action is "${parsedValue.action}". This might lead to issues if not handled elsewhere.`,
           );
         }
       } else {
-        logger.error("SessionId not found when action is 'keep'. Cannot retrieve knowledgeContent.");
+        logger.error(`SessionId not found when action is '${parsedValue.action}'. Cannot retrieve knowledgeContent.`);
       }
     }
 
@@ -403,6 +414,15 @@ export const suggestUpdatesCallback = async ({
             const allFilesResults = await vectorStore.similaritySearch(knowledgeContent, 5);
             searchResults = allFilesResults;
             storeSearchResults(userId, searchResults);
+            
+            // Log search results details
+            logger.info(`=== SIMILARITY SEARCH RESULTS (ALL_FILES) ===`);
+            logger.info(`Found ${searchResults.length} documents:`);
+            searchResults.forEach((doc, index) => {
+              logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
+              logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
+            });
+            logger.info(`=== END SEARCH RESULTS ===`);
           }
         } else {
           // Case 2: Different specific file - search 1 document in that file
@@ -413,6 +433,16 @@ export const suggestUpdatesCallback = async ({
             1,
           );
           searchResults = fileSpecificResults;
+          
+          // Log file-specific search results
+          logger.info(`=== FILE-SPECIFIC SEARCH RESULTS (${parsedValue.selectedFile}) ===`);
+          logger.info(`Found ${searchResults.length} documents:`);
+          searchResults.forEach((doc, index) => {
+            logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
+            logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
+          });
+          logger.info(`=== END FILE-SPECIFIC RESULTS ===`);
+          
           // Don't store these results as they're file-specific
         }
 
@@ -421,15 +451,14 @@ export const suggestUpdatesCallback = async ({
           // Delete progress message before showing error
           const progressTimestamp = getProgressMessageTimestamp(userId);
           if (progressTimestamp) {
-            try {
-              await client.chat.delete({
-                channel: currentDmChannelId,
-                ts: progressTimestamp,
-              });
-              deleteProgressMessageTimestamp(userId);
-            } catch (deleteError) {
-              console.error('진행 중 메시지 삭제 실패:', deleteError);
-            }
+            // try {
+            //   await client.chat.delete({
+            //     channel: currentDmChannelId,
+            //     ts: progressTimestamp,
+            //   });
+            // } catch (deleteError) {
+            //   console.error('진행 중 메시지 삭제 실패:', deleteError);
+            // }
           }
 
           await client.chat.postMessage({
@@ -465,6 +494,15 @@ export const suggestUpdatesCallback = async ({
         const allFilesResults = await vectorStore.similaritySearch(knowledgeContent, 5);
         searchResults = allFilesResults;
         storeSearchResults(userId, searchResults);
+        
+        // Log search results details
+        logger.info(`=== SIMILARITY SEARCH RESULTS (SWITCH TO ALL FILES) ===`);
+        logger.info(`Found ${searchResults.length} documents:`);
+        searchResults.forEach((doc, index) => {
+          logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
+          logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
+        });
+        logger.info(`=== END SEARCH RESULTS ===`);
       }
 
       if (parsedValue.action === 'keep' && parsedValue.currentNodeId) {
@@ -481,15 +519,14 @@ export const suggestUpdatesCallback = async ({
           // Delete progress message before showing error
           const progressTimestamp = getProgressMessageTimestamp(userId);
           if (progressTimestamp) {
-            try {
-              await client.chat.delete({
-                channel: currentDmChannelId!,
-                ts: progressTimestamp,
-              });
-              deleteProgressMessageTimestamp(userId);
-            } catch (deleteError) {
-              console.error('진행 중 메시지 삭제 실패:', deleteError);
-            }
+            // try {
+            //   await client.chat.delete({
+            //     channel: currentDmChannelId!,
+            //     ts: progressTimestamp,
+            //   });
+            // } catch (deleteError) {
+            //   console.error('진행 중 메시지 삭제 실패:', deleteError);
+            // }
           }
 
           await client.chat.postMessage({
@@ -658,6 +695,16 @@ export const suggestUpdatesCallback = async ({
 
     if (currentIndex === 0 && !isFileBasedReview) {
       searchResults = await vectorStore.similaritySearch(knowledgeContent, 5);
+      
+      // Log search results details
+      logger.info(`=== SIMILARITY SEARCH RESULTS (INITIAL SEARCH) ===`);
+      logger.info(`Found ${searchResults?.length || 0} documents:`);
+      searchResults?.forEach((doc, index) => {
+        logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
+        logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
+      });
+      logger.info(`=== END SEARCH RESULTS ===`);
+      
       if (!searchResults || searchResults.length === 0) {
         // No search results, redirect to new section creation
         const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
@@ -750,15 +797,14 @@ export const suggestUpdatesCallback = async ({
             // Delete progress message before returning
             const progressTimestamp = getProgressMessageTimestamp(userId);
             if (progressTimestamp) {
-              try {
-                await client.chat.delete({
-                  channel: currentDmChannelId,
-                  ts: progressTimestamp,
-                });
-                deleteProgressMessageTimestamp(userId);
-              } catch (deleteError) {
-                console.error('진행 중 메시지 삭제 실패:', deleteError);
-              }
+              // try {
+              //   await client.chat.delete({
+              //     channel: currentDmChannelId,
+              //     ts: progressTimestamp,
+              //   });
+              // } catch (deleteError) {
+              //   console.error('진행 중 메시지 삭제 실패:', deleteError);
+              // }
             }
 
             return;
@@ -770,15 +816,14 @@ export const suggestUpdatesCallback = async ({
         // Delete progress message before showing fallback error
         const progressTimestamp = getProgressMessageTimestamp(userId);
         if (progressTimestamp) {
-          try {
-            await client.chat.delete({
-              channel: currentDmChannelId,
-              ts: progressTimestamp,
-            });
-            deleteProgressMessageTimestamp(userId);
-          } catch (deleteError) {
-            console.error('진행 중 메시지 삭제 실패:', deleteError);
-          }
+          // try {
+          //   await client.chat.delete({
+          //     channel: currentDmChannelId,
+          //     ts: progressTimestamp,
+          //   });
+          // } catch (deleteError) {
+          //   console.error('진행 중 메시지 삭제 실패:', deleteError);
+          // }
         }
 
         // Fallback if new section creation fails
@@ -818,15 +863,14 @@ export const suggestUpdatesCallback = async ({
       // Delete progress message before returning
       const progressTimestamp = getProgressMessageTimestamp(userId);
       if (progressTimestamp) {
-        try {
-          await client.chat.delete({
-            channel: currentDmChannelId,
-            ts: progressTimestamp,
-          });
-          deleteProgressMessageTimestamp(userId);
-        } catch (deleteError) {
-          console.error('진행 중 메시지 삭제 실패:', deleteError);
-        }
+        // try {
+        //   await client.chat.delete({
+        //     channel: currentDmChannelId,
+        //     ts: progressTimestamp,
+        //   });
+        // } catch (deleteError) {
+        //   console.error('진행 중 메시지 삭제 실패:', deleteError);
+        // }
       }
 
       return; // Exit here, wait for user to select file and click "Start Review"
@@ -853,15 +897,14 @@ export const suggestUpdatesCallback = async ({
       // Delete progress message before returning
       const progressTimestamp = getProgressMessageTimestamp(userId);
       if (progressTimestamp) {
-        try {
-          await client.chat.delete({
-            channel: currentDmChannelId,
-            ts: progressTimestamp,
-          });
-          deleteProgressMessageTimestamp(userId);
-        } catch (deleteError) {
-          console.error('진행 중 메시지 삭제 실패:', deleteError);
-        }
+        // try {
+        //   await client.chat.delete({
+        //     channel: currentDmChannelId,
+        //     ts: progressTimestamp,
+        //   });
+        // } catch (deleteError) {
+        //   console.error('진행 중 메시지 삭제 실패:', deleteError);
+        // }
       }
 
       return;
@@ -879,15 +922,14 @@ export const suggestUpdatesCallback = async ({
     // 진행 메시지 삭제 (공통 로직)
     const progressTimestamp = getProgressMessageTimestamp(userId);
     if (progressTimestamp) {
-      try {
-        await client.chat.delete({
-          channel: currentDmChannelId,
-          ts: progressTimestamp,
-        });
-        deleteProgressMessageTimestamp(userId);
-      } catch (deleteError) {
-        console.error('진행 중 메시지 삭제 실패:', deleteError);
-      }
+      // try {
+      //   await client.chat.delete({
+      //     channel: currentDmChannelId,
+      //     ts: progressTimestamp,
+      //   });
+      // } catch (deleteError) {
+      //   console.error('진행 중 메시지 삭제 실패:', deleteError);
+      // }
     }
 
     // processedDoc이 null이거나 변경사항이 없어도 사용자에게 표시 (자동 스킵 방지)
@@ -979,6 +1021,16 @@ export const suggestUpdatesCallback = async ({
         isFileBasedReview && parsedValue.selectedFile !== 'ALL_FILES' && !parsedValue.isDefaultFile,
     };
 
+    const skipButtonValue = {
+      index: currentIndex + 1,
+      action: 'skip',
+      sessionId: sessionId,
+      currentNodeId: processedDoc.nodeId,
+      // Apply Changes 후 특정 파일에서 전체 검토로 전환하는 로직
+      shouldSwitchToAllFiles:
+        isFileBasedReview && parsedValue.selectedFile !== 'ALL_FILES' && !parsedValue.isDefaultFile,
+    };
+
     const cancelButtonValue = {
       userId: userId,
       originalChannelId: knowledgeSourceChannelId,
@@ -989,7 +1041,7 @@ export const suggestUpdatesCallback = async ({
       suggestionType: processedDoc.suggestionType,
     };
 
-    // Main action buttons (Edit, Apply, Stop Review)
+    // Main action buttons (Edit, Apply, Skip, Stop Review)
     const mainActionButtons = [
       {
         type: 'button' as const,
@@ -1007,6 +1059,12 @@ export const suggestUpdatesCallback = async ({
         style: 'primary' as const,
         action_id: 'suggest_updates',
         value: JSON.stringify(updateButtonValue),
+      },
+      {
+        type: 'button' as const,
+        text: { type: 'plain_text' as const, text: '⏭️ Skip This', emoji: true },
+        action_id: 'skip_suggestion',
+        value: JSON.stringify(skipButtonValue),
       },
       {
         type: 'button' as const,

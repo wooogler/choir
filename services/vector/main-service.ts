@@ -33,9 +33,9 @@ export class VectorStoreService {
     this.documentProcessor = new DocumentProcessor();
     this.cacheManager = new VectorCacheManager();
 
-    // FAISS 사용 (안정적이고 빠른 벡터 검색)
+    // FAISS 사용 (안정적이고 빠른 벡터 검색, 파일별 인덱싱)
     this.storeManager = new FAISSStoreManager(this.embeddingService);
-    Logger.info('Using FAISS vector store (stable and fast)');
+    Logger.info('Using FAISS vector store (stable and fast, file-based indexing)');
   }
 
   public static getInstance(embeddingService?: EmbeddingService): VectorStoreService {
@@ -61,7 +61,7 @@ export class VectorStoreService {
 
       if (!this.markdownFiles.length) {
         Logger.info('No documents loaded, starting with empty vector store');
-        return await this.storeManager.initializeStore([], [], false);
+        return await this.storeManager.initializeStore([], []);
       }
 
       this.cacheId = this.cacheManager.generateCacheId();
@@ -72,7 +72,7 @@ export class VectorStoreService {
         return false;
       }
 
-      Logger.info(`Vector store initialized with ${this.storeManager.getDocuments().length} documents`);
+      Logger.info(`VectorStoreService: Ready with ${this.storeManager.getDocuments().length} documents`);
       return true;
     } catch (error) {
       Logger.error('Failed to initialize vector store', error as Error);
@@ -124,7 +124,7 @@ export class VectorStoreService {
       const documents = await this.documentProcessor.prepareDocuments(markdownFiles);
       if (documents.length === 0) {
         Logger.warn('No valid documents found, initializing empty vector store');
-        return await this.storeManager.initializeStore([], [], false);
+        return await this.storeManager.initializeStore([], []);
       }
 
       const texts = this.documentProcessor.prepareTextsForEmbedding(documents);
@@ -154,7 +154,7 @@ export class VectorStoreService {
         documentTrees,
       });
 
-      return await this.storeManager.initializeStore(documents, embeddings, false);
+      return await this.storeManager.initializeStore(documents, embeddings);
     } catch (error) {
       Logger.error('Error building vector store from files', error as Error);
       return false;
@@ -207,7 +207,7 @@ export class VectorStoreService {
         });
       }
 
-      const success = await this.storeManager.initializeStore(documents, embeddings, true);
+      const success = await this.storeManager.initializeStore(documents, embeddings);
 
       if (success) {
         Logger.info(`Successfully restored vector store from cache with ${documents.length} documents`);

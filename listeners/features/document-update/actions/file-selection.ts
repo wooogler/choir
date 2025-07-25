@@ -3,8 +3,11 @@ import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
+// Simple in-memory storage for file selections to avoid rate limits
+const fileSelections = new Map<string, string>();
+
 /**
- * Handle file selection dropdown change
+ * Handle file selection dropdown change - simplified without chat.update to avoid rate limits
  */
 export const fileSelectionForUpdateAction = async ({
   ack,
@@ -17,64 +20,15 @@ export const fileSelectionForUpdateAction = async ({
   try {
     const selectedFile = (body as any).actions[0].selected_option?.value;
     const userId = (body as any).user.id;
-    const channelId = (body as any).channel?.id;
     const messageTs = (body as any).container?.message_ts;
 
-    if (!selectedFile || !channelId || !messageTs) {
+    if (!selectedFile || !userId || !messageTs) {
       return;
     }
 
-    // Update the button value with selected file
-    const history = await client.conversations.history({
-      channel: channelId,
-      latest: messageTs,
-      inclusive: true,
-      limit: 1,
-    });
-
-    if (history.messages && history.messages.length > 0) {
-      const originalMessage = history.messages[0];
-      if (originalMessage.blocks) {
-        // Get the selected file name for display
-        const selectedFileName = (body as any).actions[0].selected_option?.text?.text || selectedFile;
-        
-        // Find the action block and update the button text and value
-        const updatedBlocks = originalMessage.blocks.map((block: any) => {
-          if (block.type === 'actions') {
-            return {
-              ...block,
-              elements: block.elements.map((element: any) => {
-                // Update the "Select Recommended" button to show selected file
-                if (element.action_id === 'start_file_based_review') {
-                  const currentValue = JSON.parse(element.value);
-                  return {
-                    ...element,
-                    text: {
-                      type: 'plain_text',
-                      text: `📄 Select ${selectedFileName}`,
-                      emoji: true,
-                    },
-                    value: JSON.stringify({
-                      ...currentValue,
-                      selectedFile,
-                    }),
-                  };
-                }
-                return element;
-              }),
-            };
-          }
-          return block;
-        });
-
-        await client.chat.update({
-          channel: channelId,
-          ts: messageTs,
-          blocks: updatedBlocks,
-          text: originalMessage.text,
-        });
-      }
-    }
+    // Store the selected file in memory for later retrieval
+    const selectionKey = `${userId}_${messageTs}`;
+    fileSelections.set(selectionKey, selectedFile);
 
     logger.info(`User ${userId} selected file: ${selectedFile}`);
   } catch (error) {
@@ -109,14 +63,22 @@ export const startFileBasedReviewAction = async ({
       knowledgeContent,
       knowledgeSourceChannelId,
       knowledgeSourceThreadTs,
-      selectedFile,
       defaultFilePath, // 기본 파일 정보
     } = parsedValue;
+
+    // Get the currently selected file from the dropdown or use default
+    const messageTs = body.container?.message_ts;
+    const selectionKey = `${userId}_${messageTs}`;
+    let selectedFile = fileSelections.get(selectionKey) || parsedValue.selectedFile;
+    
+    // Clean up the selection from memory after use
+    if (messageTs) {
+      fileSelections.delete(selectionKey);
+    }
 
     logger.info(`Starting file-based review with selectedFile: ${selectedFile}, sessionId: ${sessionId}`);
 
     // Remove buttons from current message
-    const messageTs = body.container?.message_ts;
     if (messageTs && channelId) {
       try {
         const history = await client.conversations.history({

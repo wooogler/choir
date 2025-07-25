@@ -26,6 +26,7 @@ export const registerDocumentUpdateFeature = (app: App) => {
   app.action('edit_update', showSuggestionEditorModal);
   app.action('cancel_document_updates', cancelDocumentUpdatesCallback); // mention-handler.ts 에서도 사용했었음. 여기서 중앙 관리.
   app.action('suggest_updates', suggestUpdatesCallback);
+  app.action('skip_suggestion', suggestUpdatesCallback);
   app.action('reject_update', rejectUpdateCallback);
   app.action('apply_to_document', applySelectedToGithubAction);
   app.action('apply_extracted_knowledge', applyExtractedKnowledgeCallback);
