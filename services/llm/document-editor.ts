@@ -5,64 +5,6 @@ import { getUserName } from 'services/slack';
 import { processMessageHistory, processMessageText } from 'services/slack/conversation-history';
 import { createChatCompletion } from './completions';
 
-export async function editMarkdownWithUserMessages(markdown: string, userMessages: SlackMessage[], client: WebClient) {
-  // Process message texts to handle mentions and anonymize content
-  const processedMessages = await Promise.all(
-    userMessages.map(async (message) => {
-      const processedText = await processMessageText(message.text || '', client);
-
-      // Get anonymized username using consistent name-cache system
-      let anonUser = 'Unknown';
-      const userId = message.user || message.bot_id;
-      if (userId) {
-        const userName = await getUserName(userId, client);
-        const anonymizationMapping = getAnonymizationMapping(userId, userName);
-        anonUser = anonymizationMapping.fakeNickname;
-      } else if (message.username) {
-        // Fallback: anonymize username directly if no userId field
-        anonUser = anonymizeText(message.username);
-      }
-
-      return {
-        anonUser,
-        text: processedText,
-      };
-    }),
-  );
-
-  const responseContent = await createChatCompletion(
-    [
-      {
-        role: 'system',
-        content: `As a document editor, modify this markdown document with information from the conversation.
-
-Key rules:
-1. Update information: Directly modify existing content when needed and only add important new information
-2. Keep it concise: Make minimal edits while maintaining the document's original style and tone
-3. When conversation mentions contradict existing content, replace the existing content with new information
-4. Never include user identifiers or names
-5. Return only the edited markdown without explanations or tags`,
-      },
-      {
-        role: 'user',
-        content: `<markdown>${markdown}</markdown>
-<conversation>
-${processedMessages.map((message) => `${message.anonUser}: ${message.text}`).join('\n')}
-</conversation>`,
-      },
-    ],
-    {
-      model: 'gpt-4o-mini',
-      temperature: 0,
-      function_name: 'editMarkdownWithUserMessages',
-      debug: true,
-    },
-  );
-
-  // Remove any markdown tags from the response
-  return responseContent?.replace(/<\/?markdown>/g, '') ?? markdown;
-}
-
 export async function editMarkdownWithKnowledge(markdown: string, knowledgeContent: string) {
   // Anonymize the knowledge content before sending to LLM
   const anonymizedKnowledge = anonymizeText(knowledgeContent);
@@ -93,7 +35,7 @@ ${anonymizedKnowledge}
       },
     ],
     {
-      model: 'gpt-4o-mini',
+      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
       temperature: 0,
       function_name: 'editMarkdownWithKnowledge',
       debug: true,

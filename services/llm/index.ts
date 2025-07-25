@@ -9,7 +9,6 @@ export { answerQuestion } from './qa-service';
 
 // Document editing functions
 export {
-  editMarkdownWithUserMessages,
   editMarkdownWithKnowledge,
   classifyMessageIntent,
 } from './document-editor';

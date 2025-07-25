@@ -36,7 +36,7 @@ Create NEW content to append based on the knowledge. Return ONLY the new content
       },
     ],
     {
-      model: 'gpt-4o-mini',
+      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
       temperature: 0.1,
       max_tokens: 500,
       function_name: 'createNewContentFromKnowledge',
@@ -96,7 +96,7 @@ Analyze the knowledge and suggest a new section with appropriate title, content,
       },
     ],
     {
-      model: 'gpt-4o-mini',
+      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
       temperature: 0.3,
       max_tokens: 800,
       function_name: 'createNewSectionFromKnowledge',
