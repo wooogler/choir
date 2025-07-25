@@ -4,15 +4,8 @@ import type { SlackMessage } from 'services/slack';
 import { processMessageHistory } from 'services/slack/conversation-history';
 import { type ChatCompletionOptions, createChatCompletion } from './completions';
 
-interface ExtractedKnowledge {
-  content: string;
-  source: number[];
-}
-
 interface KnowledgeExtractionResult {
   cleanContent: string;
-  detailedContent: string;
-  knowledgeItem: ExtractedKnowledge | null;
   processedMessages: Array<{ role: string; content: string }>; // Add processed messages for View Messages
 }
 
@@ -64,42 +57,35 @@ export async function extractKnowledgeFromMessages(
       contextSection += '\n';
     }
 
-    const prompt = `Extract knowledge from this Slack conversation to update team documentation.
+    const prompt = `You are an experienced knowledge curator analyzing a team conversation to identify what should be documented.
 
-IMPORTANT: You must specify which message numbers contain this knowledge using the [number] references.
+Read this conversation and understand the context and flow. What organizational knowledge is being shared or confirmed that would be valuable to document?
 ${contextSection}
 
-**What to extract:**
-Look for NEW information shared by team members that should be documented, such as:
-- New decisions, policies, or process changes
-- Tips, best practices, or lessons learned  
-- Technical information or configurations
-- Important clarifications or exceptions to existing policies
+**Your task:** Extract organizational knowledge by understanding what's actually NEW in this conversation:
 
-**What to IGNORE:**
-- CHOIR's responses (these are just existing documentation being quoted)
-- General discussion without actionable information
-- Personal actions or individual-specific information
+- Prioritize what HUMANS newly share or confirm
+- If CHOIR suggests something and a human says "save it" → extract the suggestion
+- If CHOIR provides info and human confirms it's correct → extract it
+- If a human shares new tools/processes → extract it
+- Avoid extracting CHOIR's existing documentation quotes unless humans validate them
 
-**Priority order:**
-1. **Human team members' statements** - Always prioritize what humans say over CHOIR responses
-2. **New information** - Focus on what's being newly shared or decided
-3. **Manager/leadership input** - Especially important for policy decisions
-4. **Most recent information** - Latest statements in the conversation
+**Focus on NEW organizational knowledge:**
+✅ Extract: Human says "We use Zoom for meetings" → extract this new info
+✅ Extract: CHOIR suggests policy, human says "yes, document this" → extract the policy  
+❌ Don't extract: CHOIR quoting existing docs without human validation
+❌ Don't extract: CHOIR's suggestions that humans haven't confirmed
 
-**Example:**
-If CHOIR says "According to documentation, X is the policy" but then a human says "Actually, in practice we also do Y", extract the human's addition about Y, not CHOIR's statement about X.
+**Think about what the requester likely wants documented based on the conversation flow.**
 
-Format your response as a JSON object:
-{
-  "content": "Clear statement of the organizational knowledge to document",
-  "source": [message_numbers]
-}
+If you find organizational knowledge worth documenting, respond with just the knowledge statement as plain text.
+
+If no organizational knowledge should be documented, respond with: "No organizational knowledge found"
 
 Conversation:
 ${formattedMessages}
 
-Extract the most important NEW knowledge shared by humans:`;
+What organizational knowledge should be documented from this conversation?`;
 
     const extractedKnowledge = await createChatCompletion(
       [
@@ -119,7 +105,6 @@ Extract the most important NEW knowledge shared by humans:`;
         max_tokens: 1000,
         function_name: 'extractKnowledgeFromMessages',
         debug: true,
-        response_format: { type: 'json_object' },
       } as ChatCompletionOptions,
     );
 
@@ -127,56 +112,23 @@ Extract the most important NEW knowledge shared by humans:`;
       throw new Error('No knowledge could be extracted from the messages');
     }
 
-    // Parse the JSON response and format it as a single string
-    try {
-      let jsonString = extractedKnowledge.trim();
+    // Clean up the response text
+    let cleanContent = extractedKnowledge.trim();
 
-      // Remove markdown code block markers if present
-      if (jsonString.startsWith('```json')) {
-        jsonString = jsonString.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-      } else if (jsonString.startsWith('```')) {
-        jsonString = jsonString.replace(/^```\s*/, '').replace(/\s*```$/, '');
-      }
-
-      const knowledgeItem: ExtractedKnowledge = JSON.parse(jsonString.trim());
-
-      // Validate the structure
-      if (
-        !knowledgeItem ||
-        typeof knowledgeItem.content !== 'string' ||
-        knowledgeItem.content.trim() === '' ||
-        !Array.isArray(knowledgeItem.source) ||
-        knowledgeItem.source.length === 0
-      ) {
-        throw new Error('Invalid knowledge structure');
-      }
-
-      // Create clean content (just the knowledge without source references)
-      const cleanContent = knowledgeItem.content;
-
-      // Create detailed content (with source references)
-      const sourceRefs = knowledgeItem.source.map((num) => `[${num}]`).join(', ');
-      const detailedContent = `${knowledgeItem.content}\n📍 Sources: ${sourceRefs}`;
-
-      return {
-        cleanContent,
-        detailedContent,
-        knowledgeItem,
-        processedMessages,
-      };
-    } catch (parseError) {
-      console.warn('Failed to parse JSON response, returning raw text:', parseError);
-      console.warn('Raw response:', extractedKnowledge);
-
-      // Fallback to raw response if JSON parsing fails
-      const fallbackContent = extractedKnowledge.trim();
-      return {
-        cleanContent: fallbackContent,
-        detailedContent: fallbackContent,
-        knowledgeItem: null,
-        processedMessages,
-      };
+    // Remove markdown code block markers if present
+    if (cleanContent.startsWith('```')) {
+      cleanContent = cleanContent.replace(/^```.*?\n/, '').replace(/\n```$/, '');
     }
+
+    // Check if no knowledge was found
+    if (cleanContent === 'No organizational knowledge found' || cleanContent === '') {
+      cleanContent = '';
+    }
+
+    return {
+      cleanContent,
+      processedMessages,
+    };
   } catch (error) {
     console.error('Error extracting knowledge from messages:', error);
     throw new Error(`Failed to extract knowledge: ${error instanceof Error ? error.message : 'Unknown error'}`);

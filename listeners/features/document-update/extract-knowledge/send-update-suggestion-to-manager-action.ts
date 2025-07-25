@@ -19,32 +19,32 @@ export const sendUpdateSuggestionToManagerCallback = async ({
   let workspaceId: string;
   await ack();
 
-  // response_url을 통해 ephemeral 메시지를 "제안됨" 상태로 업데이트
-  try {
-    if (body.response_url) {
-      await fetch(body.response_url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          replace_original: true,
-          text: '✅ Update suggestion sent!',
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: '✅ *Update suggestion sent!*\nYour suggestion has been forwarded to the managers for review.',
-              },
-            },
-          ],
-        }),
-      });
-    }
-  } catch (error) {
-    logger.warn('Failed to update ephemeral message via response_url:', error);
-  }
+  // response_url을 통해 ephemeral 메시지를 "제안됨" 상태로 업데이트 - DISABLED
+  // try {
+  //   if (body.response_url) {
+  //     await fetch(body.response_url, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //       },
+  //       body: JSON.stringify({
+  //         replace_original: true,
+  //         text: '✅ Update suggestion sent!',
+  //         blocks: [
+  //           {
+  //             type: 'section',
+  //             text: {
+  //               type: 'mrkdwn',
+  //               text: '✅ *Update suggestion sent!*\nYour suggestion has been forwarded to the managers for review.',
+  //             },
+  //           },
+  //         ],
+  //       }),
+  //     });
+  //   }
+  // } catch (error) {
+  //   logger.warn('Failed to update ephemeral message via response_url:', error);
+  // }
 
   try {
     const sessionId = body.actions[0].value;

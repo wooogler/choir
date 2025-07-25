@@ -15,32 +15,32 @@ export const askToOthersModalCallback = async ({
   const startTime = Date.now();
   await ack();
 
-  // response_url을 통해 ephemeral 메시지를 "공유됨" 상태로 업데이트
-  try {
-    if (body.response_url) {
-      await fetch(body.response_url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          replace_original: true,
-          text: '✅ Private DM created!',
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: '✅ *Private DM created!*\nYour Q&A has been shared privately with the selected members.',
-              },
-            },
-          ],
-        }),
-      });
-    }
-  } catch (error) {
-    logger.warn('Failed to update ephemeral message via response_url:', error);
-  }
+  // response_url을 통해 ephemeral 메시지를 "공유됨" 상태로 업데이트 - DISABLED
+  // try {
+  //   if (body.response_url) {
+  //     await fetch(body.response_url, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //       },
+  //       body: JSON.stringify({
+  //         replace_original: true,
+  //         text: '✅ Private DM created!',
+  //         blocks: [
+  //           {
+  //             type: 'section',
+  //             text: {
+  //               type: 'mrkdwn',
+  //               text: '✅ *Private DM created!*\nYour Q&A has been shared privately with the selected members.',
+  //             },
+  //           },
+  //         ],
+  //       }),
+  //     });
+  //   }
+  // } catch (error) {
+  //   logger.warn('Failed to update ephemeral message via response_url:', error);
+  // }
 
   try {
     const sessionId = body.actions[0].value;

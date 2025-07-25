@@ -18,32 +18,32 @@ export const applyExtractedKnowledgeCallback = async ({
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   await ack();
 
-  // response_url을 통해 ephemeral 메시지를 "적용됨" 상태로 업데이트
-  try {
-    if (body.response_url) {
-      await fetch(body.response_url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          replace_original: true,
-          text: '✅ Update applied!',
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: '✅ *Update applied!*\nThe knowledge has been processed and applied to the documentation.',
-              },
-            },
-          ],
-        }),
-      });
-    }
-  } catch (error) {
-    logger.warn('Failed to update ephemeral message via response_url:', error);
-  }
+  // response_url을 통해 ephemeral 메시지를 "적용됨" 상태로 업데이트 - DISABLED
+  // try {
+  //   if (body.response_url) {
+  //     await fetch(body.response_url, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //       },
+  //       body: JSON.stringify({
+  //         replace_original: true,
+  //         text: '✅ Update applied!',
+  //         blocks: [
+  //           {
+  //             type: 'section',
+  //             text: {
+  //               type: 'mrkdwn',
+  //               text: '✅ *Update applied!*\nThe knowledge has been processed and applied to the documentation.',
+  //             },
+  //           },
+  //         ],
+  //       }),
+  //     });
+  //   }
+  // } catch (error) {
+  //   logger.warn('Failed to update ephemeral message via response_url:', error);
+  // }
 
   try {
     const sessionId = body.actions[0].value;
@@ -136,15 +136,8 @@ export const applyExtractedKnowledgeCallback = async ({
       });
     }
 
-    // Prepare source messages based on knowledgeItem.source indices
-    let sourceMessages = [];
-    if (sessionData.knowledgeItem?.source && sessionData.messages) {
-      sourceMessages = sessionData.knowledgeItem.source
-        .map((messageIndex: number) => {
-          return sessionData.messages[messageIndex - 1]; // Convert to 0-based index
-        })
-        .filter(Boolean); // Remove any undefined entries
-    }
+    // Use all messages as source messages
+    let sourceMessages = sessionData.messages || [];
 
     // Update session data with source messages for easier access
     sessionData.sourceMessages = sourceMessages;

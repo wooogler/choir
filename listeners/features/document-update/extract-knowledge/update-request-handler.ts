@@ -349,8 +349,6 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           originalThreadTs: event.thread_ts,
           userId,
           extractedKnowledge: extractionResult.cleanContent, // Store clean content for editing
-          detailedKnowledge: extractionResult.detailedContent, // Store detailed content for source viewing
-          knowledgeItem: extractionResult.knowledgeItem, // Store structured data
           messages: last10Messages,
           publicMessageTs: publicMessage.ts, // Store public message timestamp for updates
           lastEditedBy: userId, // Track who initially extracted the knowledge
@@ -380,7 +378,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           isUserManager,
           managersCount: managers.length,
           sourceMessageCount: last10Messages.length,
-          hasKnowledgeItem: !!extractionResult.knowledgeItem,
+          hasKnowledgeItem: !!extractionResult.cleanContent,
           sourceMessages: last10Messages.map((msg) => ({
             userId: msg.user || msg.bot_id || 'unknown',
             username: msg.username || 'Unknown',

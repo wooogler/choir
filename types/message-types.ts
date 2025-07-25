@@ -153,9 +153,9 @@ export const EXCLUDE_FROM_HISTORY: CHOIRMessageType[] = [
  * 세션 종료를 나타내는 메시지 타입들
  */
 export const SESSION_END_TYPES: CHOIRMessageType[] = [
-  
   CHOIRMessageType.RESPONSE,
   CHOIRMessageType.SUCCESS,
+
 ];
 
 /**
