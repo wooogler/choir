@@ -197,7 +197,9 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         elements: [
           {
             type: 'mrkdwn',
-            text: `Answered <@${event.user}>'s question`,
+            text: answerResult.canAnswer 
+              ? `Answered <@${event.user}>'s question`
+              : `Responded to <@${event.user}>'s question`,
           },
         ],
       },
