@@ -7,13 +7,13 @@ import {
   createGitbookSectionLink,
   getCHOIRUsers,
   getChannelName,
-  getFilteredConversationHistory,
   getManagers,
   getQAChannel,
   getUserName,
   getWorkspaceId,
 } from 'services/slack';
 import type { SlackMessage } from 'services/slack';
+import { ConversationCache } from 'services/slack/conversation-cache';
 import { createEnhancedMessage } from 'services/slack/message-text-utils';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -52,8 +52,9 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     const workspaceId = await getWorkspaceId(client);
     const choirUsers = await getCHOIRUsers(workspaceId);
 
-    // Get filtered conversation history (excludes Non-CHOIR users)
-    const messages = await getFilteredConversationHistory(client, event, choirUsers, {
+    // Get filtered conversation history using cache (excludes Non-CHOIR users)
+    const conversationCache = ConversationCache.getInstance();
+    const messages = await conversationCache.getOrFetchHistory(client, event, choirUsers, {
       timeLimit: 5, // 5 minutes
       messageLimit: 10, // fetch up to 10 messages
       maxResults: 5, // return up to 5 messages
@@ -170,19 +171,10 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     );
 
 
-    // 로딩 메시지 삭제
-    if (loadingMessageTs) {
-      try {
-        await client.chat.delete({
-          channel: event.channel,
-          ts: loadingMessageTs,
-        });
-      } catch (error) {
-        logger.warn('Failed to delete loading message:', error);
-      }
-    }
-
-    // 응답 메시지 전송 (질문자 정보 컨텍스트 포함)
+    // Get user name for context (without mention to avoid thread notifications)
+    const questionerName = await getUserName(event.user, client);
+    
+    // 응답 메시지 블록 구성 (질문자 정보 컨텍스트 포함)
     const responseBlocks = [
       {
         type: 'section',
@@ -198,8 +190,8 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           {
             type: 'mrkdwn',
             text: answerResult.canAnswer 
-              ? `Answered <@${event.user}>'s question`
-              : `Responded to <@${event.user}>'s question`,
+              ? `Answered ${questionerName}'s question`
+              : `Responded to ${questionerName}'s question`,
           },
         ],
       },
@@ -221,15 +213,45 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       });
     }
 
-    const messageResult = await client.chat.postMessage({
-      channel: event.channel,
-      ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
-      text: response,
-      mrkdwn: true,
-      blocks: responseBlocks,
-      unfurl_links: false,
-      unfurl_media: false,
-    });
+    // 로딩 메시지를 답변으로 업데이트 (chat.delete 대신 chat.update 사용)
+    let messageResult;
+    if (loadingMessageTs) {
+      try {
+        messageResult = await client.chat.update({
+          channel: event.channel,
+          ts: loadingMessageTs,
+          text: response,
+          blocks: responseBlocks,
+        });
+        logger.info(`Successfully updated loading message ${loadingMessageTs} to answer`);
+      } catch (updateError) {
+        logger.warn(`Failed to update loading message ${loadingMessageTs}:`, updateError);
+        logger.info('Falling back to creating new answer message');
+        
+        // Fallback to new message if update fails
+        messageResult = await client.chat.postMessage({
+          channel: event.channel,
+          ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
+          text: response,
+          mrkdwn: true,
+          blocks: responseBlocks,
+          unfurl_links: false,
+          unfurl_media: false,
+        });
+      }
+    } else {
+      // Create new message if no loading message timestamp
+      logger.info('No loading message timestamp available, creating new answer message');
+      messageResult = await client.chat.postMessage({
+        channel: event.channel,
+        ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
+        text: response,
+        mrkdwn: true,
+        blocks: responseBlocks,
+        unfurl_links: false,
+        unfurl_media: false,
+      });
+    }
 
     // 응답 메시지가 완전히 전송된 후 약간의 지연을 두고 공유 버튼을 전송
     await new Promise((resolve) => setTimeout(resolve, 1000)); // 1초 지연
@@ -321,6 +343,22 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           );
         }
       }
+    }
+
+    // Add CHOIR response to cache so next question includes this response
+    if (messageResult?.ts) {
+      // Create CHOIR message object to add to cache
+      const choirMessage: SlackMessage = {
+        ts: messageResult.ts,
+        bot_id: 'choir_bot', // Mark as bot message
+        text: response,
+        thread_ts: event.thread_ts,
+        // Add other relevant fields
+        user: undefined, // Bot messages don't have user field
+      };
+      
+      conversationCache.addMessageToCache(event.channel, event.thread_ts, choirMessage);
+      logger.info(`Added CHOIR response to cache for channel ${event.channel}`);
     }
 
     // 관련 문서 정보를 응답의 스레드에 추가 (답변 가능한 경우에만)
@@ -492,34 +530,49 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       client,
     );
 
-    // 로딩 메시지가 있으면 삭제
+    // 로딩 메시지를 에러 메시지로 업데이트 (chat.delete 대신 chat.update 사용)
+    const errorBlocks = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: 'Sorry, I encountered an error while processing your question. Please try again later.',
+        },
+        block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+      },
+    ];
+
     if (loadingMessageTs) {
       try {
-        await client.chat.delete({
+        await client.chat.update({
           channel: event.channel,
           ts: loadingMessageTs,
+          text: 'Sorry, I encountered an error while processing your question. Please try again later.',
+          blocks: errorBlocks,
         });
-      } catch (deleteError) {
-        logger.warn('Failed to delete loading message:', deleteError);
+        logger.info(`Successfully updated loading message ${loadingMessageTs} to error message`);
+      } catch (updateError) {
+        logger.warn(`Failed to update loading message ${loadingMessageTs} to error:`, updateError);
+        logger.info('Falling back to creating new error message');
+        
+        // Fallback to new message if update fails
+        await client.chat.postMessage({
+          channel: event.channel,
+          ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
+          text: 'Sorry, I encountered an error while processing your question. Please try again later.',
+          blocks: errorBlocks,
+        });
       }
+    } else {
+      // Create new error message if no loading message timestamp
+      logger.info('No loading message timestamp available, creating new error message');
+      await client.chat.postMessage({
+        channel: event.channel,
+        ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
+        text: 'Sorry, I encountered an error while processing your question. Please try again later.',
+        blocks: errorBlocks,
+      });
     }
-
-    // 에러 메시지 전송
-    await client.chat.postMessage({
-      channel: event.channel,
-      ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
-      text: 'Sorry, I encountered an error while processing your question. Please try again later.',
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: 'Sorry, I encountered an error while processing your question. Please try again later.',
-          },
-          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-        },
-      ],
-    });
 
     return false;
   }

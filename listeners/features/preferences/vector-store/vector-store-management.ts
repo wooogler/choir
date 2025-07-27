@@ -4,6 +4,7 @@ import { treeToMarkdown } from 'services/document/markdown';
 import { GithubService } from 'services/github';
 import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
+import { logButtonClick } from 'services/common/user-interaction-logger';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { appHomeOpenedCallback } from '../../../event-handlers/app-home-handler';
 
@@ -16,6 +17,7 @@ export const reloadFromGithubAction = async ({
   body,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<any>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
@@ -38,6 +40,23 @@ export const reloadFromGithubAction = async ({
           },
         ],
       });
+
+      // Log permission denied
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        'app_home',
+        'dm',
+        'reload_from_github',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Permission denied',
+          isOwner,
+          isUserManager,
+        },
+        client,
+      );
       return;
     }
 
@@ -166,6 +185,24 @@ export const reloadFromGithubAction = async ({
           logger.error('Error refreshing home view after GitHub reload:', error);
         }
       }, 3000);
+
+      // Log success
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        'app_home',
+        'dm',
+        'reload_from_github',
+        Date.now() - startTime,
+        true,
+        {
+          filesCount: markdownFiles.length,
+          repoOwner: repoInfo.owner,
+          repoName: repoInfo.repo,
+          repoPath: repoInfo.path || '',
+        },
+        client,
+      );
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
@@ -181,6 +218,25 @@ export const reloadFromGithubAction = async ({
           },
         ],
       });
+
+      // Log vector store failure
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        'app_home',
+        'dm',
+        'reload_from_github',
+        Date.now() - startTime,
+        false,
+        {
+          error: 'Failed to update vector store',
+          filesCount: markdownFiles.length,
+          repoOwner: repoInfo.owner,
+          repoName: repoInfo.repo,
+          repoPath: repoInfo.path || '',
+        },
+        client,
+      );
     }
   } catch (error) {
     logger.error('Error reloading from GitHub:', error);
@@ -198,6 +254,27 @@ export const reloadFromGithubAction = async ({
         },
       ],
     });
+
+    // Log catch error
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        'app_home',
+        'dm',
+        'reload_from_github',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Failed to log error:', logError);
+    }
   }
 };
 
@@ -207,6 +284,7 @@ export const normalizeMarkdownFilesAction = async ({
   body,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<any>) => {
+  const startTime = Date.now();
   await ack();
 
   logger.info('Normalize markdown files action triggered by user:', body.user.id);
@@ -428,6 +506,23 @@ export const normalizeMarkdownFilesAction = async ({
               logger.error('Error refreshing home view after markdown normalization:', error);
             }
           }, 1000);
+
+          // Log successful normalization
+          await logButtonClick(
+            body.user.id,
+            workspaceId,
+            'app_home',
+            'dm',
+            'normalize_markdown_files',
+            Date.now() - startTime,
+            true,
+            {
+              successCount,
+              totalFiles: markdownFiles.length,
+              vectorStoreRebuilt: true,
+            },
+            client,
+          );
         } else {
           await client.chat.postMessage({
             channel: body.user.id,

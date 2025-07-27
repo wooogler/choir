@@ -56,6 +56,7 @@ async function showFileSelectionDropdown(
   sessionId: string,
   knowledgeSourceChannelId?: string,
   knowledgeSourceThreadTs?: string,
+  progressMessageTs?: string,
 ) {
   const workspaceId = await getWorkspaceId(client);
   const workspaceStore = new WorkspaceStore();
@@ -107,71 +108,103 @@ async function showFileSelectionDropdown(
   }
 
   const userName = await getUserName(userId, client);
-  const message = await client.chat.postMessage({
-    channel: currentDmChannelId,
-    text: '📁 Which file would you like to focus on first?',
-    blocks: [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: '📁 *Which file would you like to focus on first?*',
+  
+  const fileSelectionBlocks = [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '📁 *Which file would you like to focus on first?*',
+      },
+      block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+      accessory: {
+        type: 'static_select',
+        action_id: 'file_selection_for_update',
+        placeholder: {
+          type: 'plain_text',
+          text: 'Choose a specific file...',
         },
-        accessory: {
-          type: 'static_select',
-          action_id: 'file_selection_for_update',
-          placeholder: {
+        options: fileOptions,
+        initial_option: defaultFileOption,
+      },
+    },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: {
             type: 'plain_text',
-            text: 'Choose a specific file...',
+            text: 'Start Review',
+            emoji: false,
           },
-          options: fileOptions,
-          initial_option: defaultFileOption,
+          style: 'primary',
+          action_id: 'start_file_based_review',
+          value: JSON.stringify({
+            sessionId,
+            knowledgeContent,
+            knowledgeSourceChannelId,
+            knowledgeSourceThreadTs,
+            selectedFile: defaultFilePath,
+            defaultFilePath: defaultFilePath,
+          }),
         },
-      },
-      {
-        type: 'actions',
-        elements: [
-          {
-            type: 'button',
-            text: {
-              type: 'plain_text',
-              text: 'Start Review',
-              emoji: false,
-            },
-            style: 'primary',
-            action_id: 'start_file_based_review',
-            value: JSON.stringify({
-              sessionId,
-              knowledgeContent,
-              knowledgeSourceChannelId,
-              knowledgeSourceThreadTs,
-              selectedFile: defaultFilePath,
-              defaultFilePath: defaultFilePath,
-            }),
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: '📄 Create New File',
+            emoji: true,
           },
-          {
-            type: 'button',
-            text: {
-              type: 'plain_text',
-              text: '📄 Create New File',
-              emoji: true,
-            },
-            action_id: 'show_create_file_modal',
-            value: JSON.stringify({
-              sessionId,
-              knowledgeContent,
-              knowledgeSourceChannelId,
-              knowledgeSourceThreadTs,
-            }),
-          },
-        ],
-      },
-    ],
-    unfurl_links: false,
-    unfurl_media: false,
-  });
+          action_id: 'show_create_file_modal',
+          value: JSON.stringify({
+            sessionId,
+            knowledgeContent,
+            knowledgeSourceChannelId,
+            knowledgeSourceThreadTs,
+          }),
+        },
+      ],
+    },
+  ];
 
-  return message.ts;
+  if (progressMessageTs) {
+    // Try to update existing progress message with file selection UI
+    try {
+      await client.chat.update({
+        channel: currentDmChannelId,
+        ts: progressMessageTs,
+        text: '📁 Which file would you like to focus on first?',
+        blocks: fileSelectionBlocks,
+      });
+      console.log(`Successfully updated progress message ${progressMessageTs} to file selection UI`);
+      return progressMessageTs;
+    } catch (updateError: any) {
+      console.warn(`Failed to update progress message ${progressMessageTs}:`, updateError?.message || updateError);
+      console.log('Falling back to creating new message for file selection');
+      
+      // Fallback to new message if update fails
+      const message = await client.chat.postMessage({
+        channel: currentDmChannelId,
+        text: '📁 Which file would you like to focus on first?',
+        blocks: fileSelectionBlocks,
+        unfurl_links: false,
+        unfurl_media: false,
+      });
+      return message.ts;
+    }
+  } else {
+    // Create new message if no progress message timestamp
+    console.log('No progress message timestamp available, creating new file selection message');
+    const message = await client.chat.postMessage({
+      channel: currentDmChannelId,
+      text: '📁 Which file would you like to focus on first?',
+      blocks: fileSelectionBlocks,
+      unfurl_links: false,
+      unfurl_media: false,
+    });
+    return message.ts;
+  }
 }
 
 export const suggestUpdatesCallback = async ({
@@ -310,9 +343,47 @@ export const suggestUpdatesCallback = async ({
     }
 
     if (parsedValue.action === 'keep' || parsedValue.action === 'skip') {
-      // 액션별 로깅
+      // Handle Skip This button with response_url
       if (parsedValue.action === 'skip') {
         logger.info(`User skipped suggestion ${currentIndex} for nodeId: ${parsedValue.currentNodeId}`);
+        
+        // Use response_url to replace the current message with skip confirmation
+        const responseUrl = (body as any).response_url;
+        if (responseUrl) {
+          try {
+            // Get current document info for better skip message
+            const currentDoc = searchResults[currentIndex];
+            const suggestionNumber = currentIndex + 1;
+            const fileName = currentDoc?.metadata?.fileName || 'Unknown file';
+            
+            const response = await fetch(responseUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                replace_original: true,
+                text: `⏭️ Skipped suggestion ${suggestionNumber} for ${fileName}`,
+                blocks: [{
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `⏭️ *Skipped* suggestion ${suggestionNumber} for ${fileName}`,
+                  },
+                }],
+              }),
+            });
+
+            if (response.ok) {
+              logger.info(`Successfully used response_url to show skip confirmation for suggestion ${currentIndex}`);
+            } else {
+              logger.warn(`Failed to use response_url for skip confirmation: ${response.status} ${response.statusText}`);
+            }
+          } catch (responseUrlError) {
+            logger.error('Error using response_url for skip confirmation:', responseUrlError);
+            // Continue with normal flow if response_url fails
+          }
+        } else {
+          logger.warn('No response_url available for skip confirmation');
+        }
       }
       
       // Apply Changes 후 특정 파일에서 전체 검토로 전환
@@ -463,18 +534,6 @@ export const suggestUpdatesCallback = async ({
 
         // Check if we found any results
         if (searchResults.length === 0) {
-          // Delete progress message before showing error
-          const progressTimestamp = getProgressMessageTimestamp(userId);
-          if (progressTimestamp) {
-            // try {
-            //   await client.chat.delete({
-            //     channel: currentDmChannelId,
-            //     ts: progressTimestamp,
-            //   });
-            // } catch (deleteError) {
-            //   console.error('진행 중 메시지 삭제 실패:', deleteError);
-            // }
-          }
 
           await client.chat.postMessage({
             channel: currentDmChannelId,
@@ -531,18 +590,6 @@ export const suggestUpdatesCallback = async ({
             `Could not find stored document update for index ${currentIndex - 1} and nodeId ${parsedValue.currentNodeId}`,
           );
 
-          // Delete progress message before showing error
-          const progressTimestamp = getProgressMessageTimestamp(userId);
-          if (progressTimestamp) {
-            // try {
-            //   await client.chat.delete({
-            //     channel: currentDmChannelId!,
-            //     ts: progressTimestamp,
-            //   });
-            // } catch (deleteError) {
-            //   console.error('진행 중 메시지 삭제 실패:', deleteError);
-            // }
-          }
 
           await client.chat.postMessage({
             channel: currentDmChannelId!,
@@ -611,40 +658,30 @@ export const suggestUpdatesCallback = async ({
                 }
               }
 
-              if (currentUpdate.suggestionType === 'APPEND') {
-                notificationText = `✅ New Content Appended by ${updatedBy}: <${currentUpdate.githubUrl}|${currentUpdate.fileName}> - ${sectionInfo}`;
-                blocks.push({ type: 'section', text: { type: 'mrkdwn', text: notificationText } });
+              // 통일된 알림 메시지
+              notificationText = `✅ Document Updated by ${updatedBy}: <${currentUpdate.githubUrl}|${currentUpdate.fileName}> - ${sectionInfo}`;
+              blocks.push({ type: 'section', text: { type: 'mrkdwn', text: notificationText } });
 
-                // APPEND의 경우 새로 추가된 내용만 표시
+              // 항상 diff 블록 생성하여 변경사항 표시
+              try {
+                const { convertMarkdownToSlackText } = await import('services/document');
+                const { createDiffBlock } = await import('services/slack');
+
+                const oldSlackText = await convertMarkdownToSlackText(currentUpdate.nodeContent);
+                const newSlackText = await convertMarkdownToSlackText(currentUpdate.updatedNodeContent);
+                const updatedDiffBlock = createDiffBlock(oldSlackText, newSlackText);
+
+                blocks.push(updatedDiffBlock);
+              } catch (diffError) {
+                console.error('Failed to create updated diff block:', diffError);
+                // fallback으로 업데이트된 내용만 표시
                 blocks.push({
                   type: 'section',
-                  text: { type: 'mrkdwn', text: `*New Content:*\n\`\`\`${currentUpdate.appendedNodeContent}\`\`\`` },
+                  text: {
+                    type: 'mrkdwn',
+                    text: `*Updated Content:*\n\`\`\`${currentUpdate.updatedNodeContent}\`\`\``,
+                  },
                 });
-              } else {
-                notificationText = `✅ Document Updated by ${updatedBy}: <${currentUpdate.githubUrl}|${currentUpdate.fileName}> - ${sectionInfo}`;
-                blocks.push({ type: 'section', text: { type: 'mrkdwn', text: notificationText } });
-
-                // UPDATE의 경우 manager가 수정한 최종 내용으로 새로운 diff 생성
-                try {
-                  const { convertMarkdownToSlackText } = await import('services/document');
-                  const { createDiffBlock } = await import('services/slack');
-
-                  const oldSlackText = await convertMarkdownToSlackText(currentUpdate.nodeContent);
-                  const newSlackText = await convertMarkdownToSlackText(currentUpdate.updatedNodeContent);
-                  const updatedDiffBlock = createDiffBlock(oldSlackText, newSlackText);
-
-                  blocks.push(updatedDiffBlock);
-                } catch (diffError) {
-                  console.error('Failed to create updated diff block:', diffError);
-                  // fallback으로 업데이트된 내용만 표시
-                  blocks.push({
-                    type: 'section',
-                    text: {
-                      type: 'mrkdwn',
-                      text: `*Updated Content:*\n\`\`\`${currentUpdate.updatedNodeContent}\`\`\``,
-                    },
-                  });
-                }
               }
 
               await client.chat.postMessage({
@@ -692,20 +729,26 @@ export const suggestUpdatesCallback = async ({
       return;
     }
 
-    // 모든 제안에서 로딩 메시지 표시 (일관성을 위해)
+    // Show appropriate loading message based on the stage
+    const loadingText = currentIndex === 0 && !isFileBasedReview 
+      ? '🔍 Finding relevant documents to update...'
+      : '📝 Generating update suggestions...';
+      
     const progressMessage = await client.chat.postMessage({
       channel: currentDmChannelId,
-      text: 'Preparing document update suggestions...',
+      text: loadingText,
       blocks: [
         {
           type: 'section',
           block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
-          text: { type: 'mrkdwn', text: 'Preparing document update suggestions...' },
+          text: { type: 'mrkdwn', text: loadingText },
         },
       ],
     });
     if (progressMessage.ts) {
       setProgressMessageTimestamp(userId, progressMessage.ts);
+      const actualChannel = progressMessage.channel || currentDmChannelId;
+      console.log(`[DEBUG] Progress message created. ts: ${progressMessage.ts}, channel: ${actualChannel}, originalDmChannelId: ${currentDmChannelId}`);
     }
 
     if (currentIndex === 0 && !isFileBasedReview) {
@@ -809,18 +852,6 @@ export const suggestUpdatesCallback = async ({
               ],
             });
 
-            // Delete progress message before returning
-            const progressTimestamp = getProgressMessageTimestamp(userId);
-            if (progressTimestamp) {
-              // try {
-              //   await client.chat.delete({
-              //     channel: currentDmChannelId,
-              //     ts: progressTimestamp,
-              //   });
-              // } catch (deleteError) {
-              //   console.error('진행 중 메시지 삭제 실패:', deleteError);
-              // }
-            }
 
             return;
           }
@@ -828,18 +859,6 @@ export const suggestUpdatesCallback = async ({
           console.error('Error creating new section when no search results found:', error);
         }
 
-        // Delete progress message before showing fallback error
-        const progressTimestamp = getProgressMessageTimestamp(userId);
-        if (progressTimestamp) {
-          // try {
-          //   await client.chat.delete({
-          //     channel: currentDmChannelId,
-          //     ts: progressTimestamp,
-          //   });
-          // } catch (deleteError) {
-          //   console.error('진행 중 메시지 삭제 실패:', deleteError);
-          // }
-        }
 
         // Fallback if new section creation fails
         await client.chat.postMessage({
@@ -859,33 +878,36 @@ export const suggestUpdatesCallback = async ({
         return;
       }
 
-      // Show file selection dropdown before first suggestion
+      // Show file selection dropdown before first suggestion (update progress message)
       storeSearchResults(userId, searchResults);
+      const progressTimestamp = getProgressMessageTimestamp(userId);
+      
+      // Use the actual channel where progress message was created
+      const progressChannel = progressMessage?.channel || currentDmChannelId;
+      console.log(`[DEBUG] About to show file selection. progressTimestamp: ${progressTimestamp}, progressChannel: ${progressChannel}, currentDmChannelId: ${currentDmChannelId}`);
+      
       const fileSelectionMessageTs = await showFileSelectionDropdown(
         client,
         userId,
-        currentDmChannelId,
+        progressChannel, // Use actual progress message channel
         searchResults,
         knowledgeContent,
         sessionId,
         knowledgeSourceChannelId,
         knowledgeSourceThreadTs,
+        progressTimestamp,
       );
+      
+      console.log(`[DEBUG] File selection result. fileSelectionMessageTs: ${fileSelectionMessageTs}, was progressTimestamp used: ${!!progressTimestamp}`);
+      
       if (fileSelectionMessageTs) {
         setLastMessageTimestamp(userId, fileSelectionMessageTs);
       }
-
-      // Delete progress message before returning
-      const progressTimestamp = getProgressMessageTimestamp(userId);
+      
+      // Clear progress message timestamp since it's now updated to file selection
       if (progressTimestamp) {
-        // try {
-        //   await client.chat.delete({
-        //     channel: currentDmChannelId,
-        //     ts: progressTimestamp,
-        //   });
-        // } catch (deleteError) {
-        //   console.error('진행 중 메시지 삭제 실패:', deleteError);
-        // }
+        deleteProgressMessageTimestamp(userId);
+        console.log(`[DEBUG] Cleared progress message timestamp: ${progressTimestamp}`);
       }
 
       return; // Exit here, wait for user to select file and click "Start Review"
@@ -909,18 +931,6 @@ export const suggestUpdatesCallback = async ({
         unfurl_media: false,
       });
 
-      // Delete progress message before returning
-      const progressTimestamp = getProgressMessageTimestamp(userId);
-      if (progressTimestamp) {
-        // try {
-        //   await client.chat.delete({
-        //     channel: currentDmChannelId,
-        //     ts: progressTimestamp,
-        //   });
-        // } catch (deleteError) {
-        //   console.error('진행 중 메시지 삭제 실패:', deleteError);
-        // }
-      }
 
       return;
     }
@@ -934,18 +944,6 @@ export const suggestUpdatesCallback = async ({
       vectorStore,
     );
 
-    // 진행 메시지 삭제 (공통 로직)
-    const progressTimestamp = getProgressMessageTimestamp(userId);
-    if (progressTimestamp) {
-      // try {
-      //   await client.chat.delete({
-      //     channel: currentDmChannelId,
-      //     ts: progressTimestamp,
-      //   });
-      // } catch (deleteError) {
-      //   console.error('진행 중 메시지 삭제 실패:', deleteError);
-      // }
-    }
 
     // processedDoc이 null이거나 변경사항이 없어도 사용자에게 표시 (자동 스킵 방지)
     if (!processedDoc) {
@@ -982,11 +980,6 @@ export const suggestUpdatesCallback = async ({
       originalChannelId: knowledgeSourceChannelId,
       originalThreadTs: knowledgeSourceThreadTs,
       suggestionType: processedDoc.suggestionType,
-      ...(processedDoc.suggestionType === 'APPEND' && {
-        originalLastNodeContent: processedDoc.originalLastNodeContent,
-        appendedNodeContent: processedDoc.appendedNodeContent,
-        updatedNodeContent: processedDoc.originalLastNodeContent,
-      }),
     };
 
     const currentUpdates = getStoredDocumentUpdates(userId);
@@ -1090,65 +1083,56 @@ export const suggestUpdatesCallback = async ({
       },
     ];
 
-    // Create New Section button (separate actions block)
-    const newSectionButton =
-      processedDoc.suggestionType === 'APPEND' && processedDoc.newSectionSuggestion
-        ? {
-            type: 'button' as const,
-            text: { type: 'plain_text' as const, text: '💡 Create New Section', emoji: true },
-            action_id: 'create_new_section',
-            value: JSON.stringify(
-              (() => {
-                // 새 섹션 데이터를 세션에 저장
-                const newSectionSessionId = `new_section_${userId}_${Date.now()}`;
-                storeSessionData(
-                  newSectionSessionId,
-                  {
-                    sectionTitle: processedDoc.newSectionSuggestion!.sectionTitle,
-                    sectionContent: processedDoc.newSectionSuggestion!.sectionContent,
-                    recommendedFile: processedDoc.newSectionSuggestion!.recommendedFile,
-                    reasoning: processedDoc.newSectionSuggestion!.reasoning,
-                    githubUrl: processedDoc.githubUrl,
-                    originalChannelId: knowledgeSourceChannelId,
-                    originalThreadTs: knowledgeSourceThreadTs,
-                    sessionId: sessionId,
-                  },
-                  SessionType.NEW_SECTION,
-                );
+    // Create New Section button (항상 표시)
+    const newSectionButton = processedDoc.newSectionSuggestion
+      ? {
+          type: 'button' as const,
+          text: { type: 'plain_text' as const, text: '💡 Create New Section', emoji: true },
+          action_id: 'create_new_section',
+          value: JSON.stringify(
+            (() => {
+              // 새 섹션 데이터를 세션에 저장
+              const newSectionSessionId = `new_section_${userId}_${Date.now()}`;
+              storeSessionData(
+                newSectionSessionId,
+                {
+                  sectionTitle: processedDoc.newSectionSuggestion!.sectionTitle,
+                  sectionContent: processedDoc.newSectionSuggestion!.sectionContent,
+                  recommendedFile: processedDoc.newSectionSuggestion!.recommendedFile,
+                  reasoning: processedDoc.newSectionSuggestion!.reasoning,
+                  githubUrl: processedDoc.githubUrl,
+                  originalChannelId: knowledgeSourceChannelId,
+                  originalThreadTs: knowledgeSourceThreadTs,
+                  sessionId: sessionId,
+                },
+                SessionType.NEW_SECTION,
+              );
 
-                // 버튼 value에는 sessionId만 저장
-                return {
-                  newSectionSessionId,
-                  userId,
-                };
-              })(),
-            ),
-          }
-        : null;
+              // 버튼 value에는 sessionId만 저장
+              return {
+                newSectionSessionId,
+                userId,
+              };
+            })(),
+          ),
+        }
+      : null;
 
-    // CHOIR의 작업별 설명 메시지 (bonus idea 제외)
+    // CHOIR의 통일된 설명 메시지
     let explanationText = '';
-    if (processedDoc.suggestionType === 'APPEND') {
-      if (processedDoc.hasChanges) {
-        explanationText = `:mag: I found a section that could benefit from additional content based on your knowledge. I'm suggesting we append new information to the existing content rather than replacing it, since the current content is still valuable.`;
-      } else {
-        explanationText = `✅ I reviewed this section and it looks good! The existing content already covers what you mentioned, so no changes are needed here.`;
-      }
+    if (processedDoc.hasChanges) {
+      explanationText = `📝 I found content that could be *enhanced* based on your knowledge. I'm showing you the specific changes I'd recommend - you can see exactly what would be modified or added.`;
     } else {
-      if (processedDoc.hasChanges) {
-        explanationText = `📝 I found some content that could be *updated* to better reflect your knowledge. I'm showing you the specific changes I'd recommend - you can see exactly what would be modified.`;
-      } else {
-        explanationText = `✅ Great news! This section is already up-to-date with your knowledge. I'm showing you the current content so you can verify it covers what you intended.`;
-      }
+      explanationText = `✅ Great news! This section is already well-aligned with your knowledge. I'm showing you the current content so you can verify it covers what you intended.`;
     }
 
-    // Separate bonus idea text for APPEND suggestions
+    // 항상 새 섹션 제안 보너스 아이디어 표시
     let bonusIdeaText = '';
-    if (processedDoc.suggestionType === 'APPEND' && processedDoc.newSectionSuggestion) {
+    if (processedDoc.newSectionSuggestion) {
       if (processedDoc.hasChanges) {
-        bonusIdeaText = `💡 *Bonus idea:* I also think your knowledge would make a great standalone section! If you'd like, I can suggest creating a completely new section instead of appending to the existing one. Just click the "Create New Section" button below to see my recommendation!`;
+        bonusIdeaText = `💡 *Bonus idea:* I also think your knowledge would make a great standalone section! If you'd like, I can suggest creating a completely new section instead of updating the existing one. Just click the "Create New Section" button below to see my recommendation!`;
       } else {
-        bonusIdeaText = `💡 *But here's a thought:* Even though this section is already complete, your knowledge might deserve its own dedicated section! I can suggest where and how to create a new section for your content. Check out the "Create New Section" option below!`;
+        bonusIdeaText = `💡 *But here's a thought:* Even though this section is already well-aligned, your knowledge might deserve its own dedicated section! I can suggest where and how to create a new section for your content. Check out the "Create New Section" option below!`;
       }
     }
 
@@ -1173,23 +1157,61 @@ export const suggestUpdatesCallback = async ({
 
     blocks.push({ type: 'divider' });
 
-    const result = await client.chat.postMessage({
-      channel: currentDmChannelId!,
-      blocks: blocks,
-      unfurl_links: false,
-      unfurl_media: false,
-      text: 'Document Update Suggestions',
-    });
+    // Try to update the existing progress message with the suggestion
+    const progressTimestamp = getProgressMessageTimestamp(userId);
+    const progressChannel = progressMessage?.channel || currentDmChannelId;
+    
+    let suggestionMessageTs: string | undefined;
+    
+    if (progressTimestamp && progressChannel) {
+      try {
+        await client.chat.update({
+          channel: progressChannel,
+          ts: progressTimestamp,
+          blocks: blocks,
+          text: 'Document Update Suggestions',
+        });
+        console.log(`Successfully updated progress message ${progressTimestamp} to suggestion`);
+        suggestionMessageTs = progressTimestamp;
+        
+        // Clear progress timestamp since it's now the suggestion message
+        deleteProgressMessageTimestamp(userId);
+      } catch (updateError: any) {
+        console.warn(`Failed to update progress message ${progressTimestamp}:`, updateError?.message || updateError);
+        console.log('Falling back to creating new suggestion message');
+        
+        // Fallback to new message if update fails
+        const result = await client.chat.postMessage({
+          channel: currentDmChannelId!,
+          blocks: blocks,
+          unfurl_links: false,
+          unfurl_media: false,
+          text: 'Document Update Suggestions',
+        });
+        suggestionMessageTs = result.ts;
+      }
+    } else {
+      // Create new message if no progress message timestamp
+      console.log('No progress message timestamp available, creating new suggestion message');
+      const result = await client.chat.postMessage({
+        channel: currentDmChannelId!,
+        blocks: blocks,
+        unfurl_links: false,
+        unfurl_media: false,
+        text: 'Document Update Suggestions',
+      });
+      suggestionMessageTs = result.ts;
+    }
 
-    if (result.ts) {
-      setLastMessageTimestamp(userId, result.ts);
+    if (suggestionMessageTs) {
+      setLastMessageTimestamp(userId, suggestionMessageTs);
     }
 
     // Store main message timestamp for Create New Section updates
-    if (result.ts && sessionId && processedDoc.suggestionType === 'APPEND' && processedDoc.newSectionSuggestion) {
+    if (suggestionMessageTs && sessionId && processedDoc.newSectionSuggestion) {
       const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
       if (sessionData) {
-        sessionData.mainMessageTs = result.ts;
+        sessionData.mainMessageTs = suggestionMessageTs;
         sessionData.mainChannelId = currentDmChannelId;
         storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
       }

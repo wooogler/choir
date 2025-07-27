@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getStoredDocumentUpdates } from 'services/document/document-store';
+import { getWorkspaceId } from 'services/slack';
 
 /**
  * 문서 업데이트 제안 편집 모달을 표시합니다.
@@ -19,7 +20,7 @@ export const showSuggestionEditorModal = async ({
     // 버튼의 value 확인
     const value = body.actions?.[0]?.value;
     if (!value) {
-      throw new Error('버튼 값을 찾을 수 없습니다');
+      throw new Error('Button value not found');
     }
 
     // 버튼의 value에서 필요한 정보 파싱
@@ -43,25 +44,16 @@ export const showSuggestionEditorModal = async ({
     let originalLabel = '*Original Content:*';
     let editableLabel = 'Updated Content';
 
-    if (suggestionType === 'APPEND') {
-      // APPEND의 경우 originalLastNodeContent와 appendedNodeContent 사용
-      nodeContent = currentUpdate.originalLastNodeContent || '';
-      editableContent = currentUpdate.appendedNodeContent || '';
-      modalTitle = 'Edit Append Content';
-      originalLabel = '*Reference content (will be followed by):*';
-      editableLabel = 'New content to add after it';
-    } else {
-      // UPDATE의 경우 기존 방식 유지
-      nodeContent = currentUpdate.nodeContent || '';
-      editableContent = currentUpdate.updatedNodeContent || '';
-    }
+    // 통일된 UPDATE 방식으로 처리
+    nodeContent = currentUpdate.nodeContent || '';
+    editableContent = currentUpdate.updatedNodeContent || '';
 
-    // 필수 값 확인
-    if (!nodeContent || !editableContent) {
+    // 필수 값 확인 (빈 섹션의 경우 nodeContent가 빈 문자열일 수 있음)
+    if (editableContent === undefined || editableContent === null || !editableContent.trim()) {
       console.log('nodeContent', nodeContent);
       console.log('editableContent', editableContent);
       console.log('suggestionType', suggestionType);
-      throw new Error('필수 콘텐츠 값이 누락되었습니다');
+      throw new Error('Required content values are missing');
     }
 
     // 모달 화면 생성
@@ -97,7 +89,7 @@ export const showSuggestionEditorModal = async ({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: nodeContent,
+              text: (nodeContent && nodeContent.trim()) ? nodeContent : '*Empty section - content will be generated*',
             },
           },
           {
@@ -127,9 +119,10 @@ export const showSuggestionEditorModal = async ({
     });
 
     // 로그: 성공
+    const workspaceId = await getWorkspaceId(client);
     await logButtonClick(
       body.user.id,
-      'unknown',
+      workspaceId,
       body.channel?.id || 'dm',
       'dm',
       'edit_update',
@@ -159,7 +152,7 @@ export const showSuggestionEditorModal = async ({
       if (dmResult.ok && dmResult.channel?.id) {
         await client.chat.postMessage({
           channel: dmResult.channel.id,
-          text: `업데이트 편집기를 열 수 없습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
+          text: `Cannot open update editor: ${error instanceof Error ? error.message : 'Unknown error'}`,
         });
       }
     } catch (dmError) {
@@ -167,20 +160,25 @@ export const showSuggestionEditorModal = async ({
     }
 
     // 로그: 실패
-    await logButtonClick(
-      body.user.id,
-      'unknown',
-      body.channel?.id || 'dm',
-      'dm',
-      'edit_update',
-      Date.now() - startTime,
-      false,
-      {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        errorStack: error instanceof Error ? error.stack : undefined,
-        buttonValue: body.actions?.[0]?.value,
-      },
-      client,
-    );
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        body.channel?.id || 'dm',
+        'dm',
+        'edit_update',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          buttonValue: body.actions?.[0]?.value,
+        },
+        client,
+      );
+    } catch (logError) {
+      console.error('Failed to log error:', logError);
+    }
   }
 };

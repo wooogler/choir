@@ -102,7 +102,7 @@ export function createQAChannelMessage(
           type: 'mrkdwn',
           text: `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.`,
         },
-        block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO),
+        block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO_UNANSWERED),
       },
       {
         type: 'section',
@@ -127,7 +127,7 @@ export function createQAChannelMessage(
           type: 'mrkdwn',
           text: `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.`,
         },
-        block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO),
+        block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO_ANSWERED),
       },
       {
         type: 'section',

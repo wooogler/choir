@@ -5,45 +5,120 @@ import { getUserName } from 'services/slack';
 import { processMessageHistory, processMessageText } from 'services/slack/conversation-history';
 import { createChatCompletion } from './completions';
 
-export async function editMarkdownWithKnowledge(markdown: string, knowledgeContent: string) {
-  // Anonymize the knowledge content before sending to LLM
+export async function editMarkdownWithKnowledge(
+  markdown: string, 
+  knowledgeContent: string, 
+  context?: { fileName?: string; sectionName?: string; headingPath?: string }
+) {
   const anonymizedKnowledge = anonymizeText(knowledgeContent);
+  const isEmpty = !markdown.trim();
+  
+  // 빈 섹션과 기존 내용에 대해 다른 프롬프트 사용
+  if (isEmpty) {
+    return await createContentForEmptySection(anonymizedKnowledge, context);
+  } else {
+    return await enhanceExistingContent(markdown, anonymizedKnowledge, context);
+  }
+}
 
-  const responseContent = await createChatCompletion(
+/**
+ * 빈 섹션에 대해 새로운 내용 생성
+ */
+async function createContentForEmptySection(
+  knowledgeContent: string, 
+  context?: { fileName?: string; sectionName?: string; headingPath?: string }
+) {
+  const contextInfo = context?.headingPath || context?.sectionName || 'Unknown section';
+  
+  const response = await createChatCompletion(
     [
       {
         role: 'system',
-        content: `As a document editor, modify this markdown document by integrating the provided knowledge.
+        content: `You are a documentation writer. Create content for an empty section using ONLY the provided knowledge.
 
-Your task: Update the existing content by merging new information rather than simply appending it.
+CONSTRAINTS:
+- Use ONLY information from the knowledge - no external details, links, or assumptions
+- Write as a single paragraph or simple list items (no headings, subheadings, or complex structure)
+- Keep content concise and directly relevant to the section context
+- Never include user names or identifiers
+- If knowledge is insufficient for this section, return empty string
 
-Key rules:
-1. **Integration over addition**: When new knowledge relates to existing content, modify the existing sentences to include the new details rather than adding separate sentences
-2. **Replace contradictions**: When knowledge contradicts existing content, completely replace the conflicting content with the new information (do not keep both versions)
-3. **Enhance specificity**: If new knowledge makes general statements more specific, update the general statement to include the specific details
-4. **Preserve style**: Maintain the document's original tone and formatting style
-5. **Skip redundant content**: If the knowledge is already covered or adds no new value, return the original document unchanged
-6. **No user references**: Never include user identifiers or names
-7. **Clean output**: Return only the edited markdown without explanations or tags`,
+TASK: Write appropriate content for this section using only the provided knowledge.`,
       },
       {
         role: 'user',
-        content: `<markdown>${markdown}</markdown>
-<knowledge>
-${anonymizedKnowledge}
-</knowledge>`,
+        content: `FILE: ${context?.fileName || 'Unknown'}
+SECTION: ${contextInfo}
+
+KNOWLEDGE:
+${knowledgeContent}
+
+Generate content that fits this section context using only the provided knowledge:`,
+      },
+    ],
+    {
+      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
+      temperature: 0.1,
+      max_tokens: 300,
+      function_name: 'createContentForEmptySection',
+      debug: true,
+    },
+  );
+
+  return response?.trim() || '';
+}
+
+/**
+ * 기존 내용을 knowledge로 향상
+ */
+async function enhanceExistingContent(
+  markdown: string, 
+  knowledgeContent: string, 
+  context?: { fileName?: string; sectionName?: string; headingPath?: string }
+) {
+  const contextInfo = context?.headingPath || context?.sectionName || 'Unknown section';
+  
+  const response = await createChatCompletion(
+    [
+      {
+        role: 'system',
+        content: `You are a careful editor. Enhance existing content with provided knowledge.
+
+CONSTRAINTS:
+- Use ONLY information from the knowledge - no external details or links  
+- PRESERVE exact structure: paragraph stays paragraph, list item stays list item
+- NO new headings, sections, or structural changes
+- Integrate knowledge naturally into existing sentences
+- Never include user names or identifiers
+- If knowledge contradicts existing content, update with accurate information
+- If knowledge adds no value, return original unchanged
+
+TASK: Carefully integrate knowledge into the existing content while preserving structure.`,
+      },
+      {
+        role: 'user',
+        content: `FILE: ${context?.fileName || 'Unknown'}
+SECTION: ${contextInfo}
+
+EXISTING CONTENT:
+${markdown}
+
+KNOWLEDGE TO INTEGRATE:
+${knowledgeContent}
+
+Enhanced content:`,
       },
     ],
     {
       model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
       temperature: 0,
-      function_name: 'editMarkdownWithKnowledge',
+      max_tokens: 500,
+      function_name: 'enhanceExistingContent',
       debug: true,
     },
   );
 
-  // Remove any markdown tags from the response
-  return responseContent?.replace(/<\/?markdown>/g, '') ?? markdown;
+  return response?.replace(/<\/?markdown>/g, '') || markdown;
 }
 
 export async function classifyMessageIntent(

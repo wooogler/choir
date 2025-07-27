@@ -59,13 +59,13 @@ export const handleAsQuestionCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: "✅ Got it! I've processed your message as a question.",
+          text: "✅ Processed as Question",
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: "✅ Got it! I've processed your message as a question.",
+                text: `✅ *Message processed as Question*\n\n📝 *Original message:* "${messageData.originalMessage}"\n🔄 *Action taken:* Searching documents and generating answer`,
               },
             },
           ],

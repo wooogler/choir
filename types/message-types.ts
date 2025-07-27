@@ -92,12 +92,20 @@ export enum CHOIRMessageType {
   ANONYMOUS_QUESTION = 'anonymous_question',
 
   /** 
-   * Q&A 공유 메시지
-   * 질문을 채널에 공유할 때의 인사말/소개 메시지
+   * Q&A 공유 메시지 (답변 가능한 경우)
+   * CHOIR가 질문에 답변할 수 있었을 때의 인사말/소개 메시지
    * 예: "Hi, #채널명\n사용자가 질문했고 제가 답변했습니다"
    * 대화 히스토리에서 세션 구분점 역할 (이 메시지부터 새로운 세션 시작)
    */
-  QA_SHARE_INTRO = 'qa_share_intro',
+  QA_SHARE_INTRO_ANSWERED = 'qa_share_intro_answered',
+
+  /** 
+   * Q&A 공유 메시지 (답변 불가능한 경우)
+   * CHOIR가 질문에 답변할 수 없었을 때의 인사말/소개 메시지
+   * 예: "Hi, #채널명\n사용자가 질문했지만 제가 답변할 수 없었습니다"
+   * 대화 히스토리에서 세션 구분점 역할 (이 메시지부터 새로운 세션 시작)
+   */
+  QA_SHARE_INTRO_UNANSWERED = 'qa_share_intro_unanswered',
   
   // ===== 시스템 관리 메시지 =====
   
@@ -172,7 +180,8 @@ export const SESSION_END_TYPES: CHOIRMessageType[] = [
  */
 export const SESSION_START_TYPES: CHOIRMessageType[] = [
   CHOIRMessageType.ANONYMOUS_QUESTION, // 익명 질문이 새로운 세션의 시작
-  CHOIRMessageType.QA_SHARE_INTRO,     // Q&A 공유 인사말이 새로운 세션의 시작
+  CHOIRMessageType.QA_SHARE_INTRO_ANSWERED,     // Q&A 공유 인사말(답변 가능)이 새로운 세션의 시작
+  CHOIRMessageType.QA_SHARE_INTRO_UNANSWERED,   // Q&A 공유 인사말(답변 불가)이 새로운 세션의 시작
   CHOIRMessageType.DOCUMENT_SUGGESTION,
 ];
 

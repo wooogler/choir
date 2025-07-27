@@ -126,7 +126,7 @@ export function createDocumentsFromTree(
       const listItemNode = node as ListItem & ExtendedNode;
       const text = toString(listItemNode);
 
-      // 계층적 문맥 구성
+      // 계층적 문맥 구성 (listItem에는 - 접두사 포함)
       const contextPrefix = formatHeadingContext(headingPath, fileName);
 
       // 엔티티 추출
@@ -135,8 +135,8 @@ export function createDocumentsFromTree(
       // 섹션 이름과 GitBook 링크 가져오기
       const { sectionName } = getSectionName(listItemNode, headingMap);
 
-      // 콘텐츠 구성 (리스트 아이템은 일반적으로 짧아서 청킹하지 않음)
-      const fullContent = `${contextPrefix}${text}`;
+      // 콘텐츠 구성 (listItem에는 - 접두사 추가)
+      const fullContent = `${contextPrefix}- ${text}`;
 
       documents.push(
         new Document({
@@ -149,7 +149,7 @@ export function createDocumentsFromTree(
             nodeType: 'listItem',
             githubUrl,
             headingPath: headingPath.join(' > '), // 배열을 문자열로 변환
-            originalContent: text, // 컨텍스트 제외한 원본 내용 저장
+            originalContent: `- ${text}`, // listItem의 경우 - 접두사 포함하여 저장
           },
         }),
       );

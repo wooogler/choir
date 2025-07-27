@@ -266,6 +266,7 @@ export const createNewSectionAction = async ({
         newSectionSessionId,
         sessionId,
         sectionTitle,
+        sectionContent,
         sectionContentLength: sectionContent.length,
         recommendedFile,
         reasoningLength: reasoning.length,

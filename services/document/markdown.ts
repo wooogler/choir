@@ -1180,3 +1180,246 @@ function appendListToTree(
 
   return newTree;
 }
+
+/**
+ * 문서 트리에서 특정 노드를 제거합니다
+ * @param tree 문서 트리
+ * @param nodeId 제거할 노드 ID
+ * @returns 업데이트된 문서 트리
+ */
+export function removeNodeFromTree(tree: DocumentTree, nodeId: string): DocumentTree {
+  const nodeToRemove = tree.nodeMap.get(nodeId);
+  if (!nodeToRemove) {
+    console.warn(`Node ${nodeId} not found in tree`);
+    return tree;
+  }
+
+  // 부모 노드에서 해당 노드 제거
+  if (nodeToRemove.parentId) {
+    const parentNode = tree.nodeMap.get(nodeToRemove.parentId);
+    if (parentNode && Array.isArray((parentNode as any).children)) {
+      const parentChildren = (parentNode as any).children;
+      const nodeIndex = parentChildren.findIndex((child: any) => child.id === nodeId);
+      if (nodeIndex !== -1) {
+        parentChildren.splice(nodeIndex, 1);
+        console.log(`Removed node ${nodeId} from parent ${nodeToRemove.parentId}`);
+      }
+    }
+  } else {
+    // 루트 레벨에서 제거
+    if (Array.isArray(tree.root.children)) {
+      const rootChildren = tree.root.children as any[];
+      const nodeIndex = rootChildren.findIndex((child: any) => child.id === nodeId);
+      if (nodeIndex !== -1) {
+        rootChildren.splice(nodeIndex, 1);
+        console.log(`Removed node ${nodeId} from root`);
+      }
+    }
+  }
+
+  // 노드맵에서 제거
+  tree.nodeMap.delete(nodeId);
+  
+  // 자식 노드들도 재귀적으로 제거
+  if (Array.isArray((nodeToRemove as any).children)) {
+    for (const child of (nodeToRemove as any).children) {
+      if (child.id) {
+        tree = removeNodeFromTree(tree, child.id);
+      }
+    }
+  }
+
+  return tree;
+}
+
+/**
+ * content 항목들을 개별 노드로 추가 (벡터 스토어용 - 각 listItem이 개별 Document가 됨)
+ * @param docTree 문서 트리
+ * @param referenceNodeId 참조 노드 ID (부모)
+ * @param contentItems 추가할 content 항목들
+ * @returns 업데이트된 문서 트리
+ */
+export function appendIndividualContents(
+  docTree: DocumentTree,
+  referenceNodeId: string,
+  contentItems: Array<{ type: 'listItem' | 'paragraph'; content: string }>,
+): DocumentTree {
+  let currentTree = docTree;
+  let lastInsertedNodeId = referenceNodeId;
+
+  console.log(`[DEBUG] appendIndividualContents: Processing ${contentItems.length} items as individual nodes`);
+  
+  for (let i = 0; i < contentItems.length; i++) {
+    const item = contentItems[i];
+    console.log(`[DEBUG] Processing item ${i}: type=${item.type}, content="${item.content.substring(0, 30)}..."`);
+
+    try {
+      if (item.type === 'listItem') {
+        // listItem을 개별 노드로 추가 (list로 감싸지 않음)
+        const beforeAppend = Date.now();
+        currentTree = appendListItemAsIndividualNode(currentTree, lastInsertedNodeId, item.content);
+        
+        // 새로 추가된 노드 ID 찾기
+        const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(
+          (id) =>
+            id.startsWith(`${lastInsertedNodeId}_append_`) &&
+            Number.parseInt(id.split('_append_')[1] || '0') >= beforeAppend - 1000,
+        );
+
+        if (candidateIds.length > 0) {
+          const latestNodeId = candidateIds.reduce((latest, current) => {
+            const latestTimestamp = Number.parseInt(latest.split('_append_')[1] || '0');
+            const currentTimestamp = Number.parseInt(current.split('_append_')[1] || '0');
+            return currentTimestamp > latestTimestamp ? current : latest;
+          });
+          lastInsertedNodeId = latestNodeId;
+          console.log(`Individual listItem 추가 완료: "${item.content.substring(0, 20)}..." -> 새 노드 ID: ${latestNodeId}`);
+        }
+      } else {
+        // paragraph인 경우 기존 방식 사용
+        const beforeAppend = Date.now();
+        currentTree = appendNodeContent(currentTree, lastInsertedNodeId, item.content);
+        
+        // 새로 추가된 노드 ID 찾기  
+        const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(
+          (id) =>
+            id.startsWith(`${lastInsertedNodeId}_append_`) &&
+            Number.parseInt(id.split('_append_')[1] || '0') >= beforeAppend - 1000,
+        );
+
+        if (candidateIds.length > 0) {
+          const latestNodeId = candidateIds.reduce((latest, current) => {
+            const latestTimestamp = Number.parseInt(latest.split('_append_')[1] || '0');
+            const currentTimestamp = Number.parseInt(current.split('_append_')[1] || '0');
+            return currentTimestamp > latestTimestamp ? current : latest;
+          });
+          lastInsertedNodeId = latestNodeId;
+          console.log(`Individual paragraph 추가 완료: "${item.content.substring(0, 20)}..." -> 새 노드 ID: ${latestNodeId}`);
+        }
+      }
+    } catch (error) {
+      console.error(
+        `Individual content 추가 실패: type=${item.type}, content="${item.content.substring(0, 20)}..."`,
+        error,
+      );
+    }
+  }
+
+  return currentTree;
+}
+
+/**
+ * listItem을 개별 노드로 추가 (list로 감싸지 않음)
+ */
+function appendListItemAsIndividualNode(
+  docTree: DocumentTree,
+  referenceNodeId: string,
+  content: string,
+): DocumentTree {
+  // content를 마크다운으로 파싱하여 listItem 노드 생성
+  const tree = unified().use(remarkParse).parse(`- ${content}`);
+  
+  if (tree.children && tree.children.length > 0) {
+    const listNode = tree.children[0];
+    if (is(listNode, 'list') && listNode.children && listNode.children.length > 0) {
+      const listItemNode = listNode.children[0];
+      if (is(listItemNode, 'listItem')) {
+        // 개별 listItem 노드를 트리에 추가
+        return appendParsedNodeToTree(docTree, referenceNodeId, listItemNode, 'listItem');
+      }
+    }
+  }
+  
+  throw new Error(`Failed to parse listItem content: ${content}`);
+}
+
+/**
+ * 파싱된 노드를 트리에 추가
+ */
+function appendParsedNodeToTree(
+  docTree: DocumentTree,
+  referenceNodeId: string,
+  nodeToAdd: any,
+  nodeType: string,
+): DocumentTree {
+  // 원본 트리의 깊은 복사본 생성
+  const newTree: DocumentTree = {
+    title: docTree.title,
+    nodeMap: new Map(docTree.nodeMap),
+    sectionMap: new Map(docTree.sectionMap),
+    root: JSON.parse(JSON.stringify(docTree.root)),
+  };
+
+  const referenceNode = newTree.nodeMap.get(referenceNodeId);
+  if (!referenceNode || !referenceNode.id) return newTree;
+
+  // 새 노드 ID 생성
+  const timestamp = Date.now();
+  const newNodeId = `${referenceNodeId}_append_${timestamp}`;
+
+  // 노드 복사 및 ID 설정
+  const newNode = JSON.parse(JSON.stringify(nodeToAdd));
+  newNode.id = newNodeId;
+  newNode.parentId = referenceNode.parentId || referenceNode.id;
+  newNode.sectionId = referenceNode.sectionId;
+
+  // 자식 노드들에도 ID 설정 (재귀적으로)
+  const referenceSectionId = referenceNode.sectionId;
+  function assignIds(node: any, parentId: string) {
+    if (node.children && Array.isArray(node.children)) {
+      for (let i = 0; i < node.children.length; i++) {
+        const child = node.children[i];
+        child.id = `${parentId}_child_${i}`;
+        child.parentId = parentId;
+        child.sectionId = referenceSectionId;
+        assignIds(child, child.id);
+      }
+    }
+  }
+  assignIds(newNode, newNodeId);
+
+  // 부모 노드의 children 배열에 추가
+  const parentNodeId = referenceNode.parentId || referenceNode.id;
+  const parentNode = parentNodeId ? newTree.nodeMap.get(parentNodeId) : null;
+  if (parentNode && Array.isArray((parentNode as any).children)) {
+    const parentChildren = (parentNode as any).children;
+    
+    // 참조 노드 다음 위치에 삽입
+    const referenceIndex = parentChildren.findIndex((child: any) => child.id === referenceNodeId);
+    if (referenceIndex !== -1) {
+      parentChildren.splice(referenceIndex + 1, 0, newNode);
+    } else {
+      parentChildren.push(newNode);
+    }
+  } else if (!referenceNode.parentId) {
+    // 루트 레벨에 추가
+    if (Array.isArray(newTree.root.children)) {
+      const rootChildren = newTree.root.children as any[];
+      const referenceIndex = rootChildren.findIndex((child: any) => child.id === referenceNodeId);
+      if (referenceIndex !== -1) {
+        rootChildren.splice(referenceIndex + 1, 0, newNode);
+      } else {
+        rootChildren.push(newNode);
+      }
+    }
+  }
+
+  // 새 노드를 nodeMap에 추가
+  newTree.nodeMap.set(newNodeId, newNode);
+
+  // 자식 노드들도 nodeMap에 추가 (재귀적으로)
+  function addToNodeMap(node: any) {
+    if (node.id) {
+      newTree.nodeMap.set(node.id, node);
+    }
+    if (node.children && Array.isArray(node.children)) {
+      for (const child of node.children) {
+        addToNodeMap(child);
+      }
+    }
+  }
+  addToNodeMap(newNode);
+
+  console.log(`새 ${nodeType} 노드 추가: ${newNodeId}`);
+  return newTree;
+}

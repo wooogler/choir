@@ -50,6 +50,7 @@ export const startFileBasedReviewAction = async ({
 
   const userId = body.user.id;
   const channelId = body.channel?.id;
+  const responseUrl = body.response_url;
 
   try {
     const value = body.actions?.[0]?.value;
@@ -78,27 +79,37 @@ export const startFileBasedReviewAction = async ({
 
     logger.info(`Starting file-based review with selectedFile: ${selectedFile}, sessionId: ${sessionId}`);
 
-    // Remove buttons from current message
-    if (messageTs && channelId) {
+    // Show user's selection using response_url instead of deleting message
+    if (responseUrl) {
       try {
-        const history = await client.conversations.history({
-          channel: channelId,
-          latest: messageTs,
-          inclusive: true,
-          limit: 1,
+        const selectedFileName = selectedFile.split('/').pop() || selectedFile;
+        const response = await fetch(responseUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            replace_original: true,
+            text: `📁 Selected file: ${selectedFileName}`,
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: `📁 *Selected file:* ${selectedFileName}`,
+                },
+              },
+            ],
+            unfurl_links: false,
+            unfurl_media: false,
+          }),
         });
-
-        if (history.messages && history.messages.length > 0) {
-          const originalMessage = history.messages[0];
-          if (originalMessage.blocks) {
-            await client.chat.delete({
-              channel: channelId,
-              ts: messageTs,
-            });
-          }
+        
+        if (!response.ok) {
+          console.error('Failed to send selection response:', await response.text());
         }
       } catch (error) {
-        logger.error('Failed to update file selection message:', error);
+        logger.error('Failed to send selection via response_url:', error);
       }
     }
 

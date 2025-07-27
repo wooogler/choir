@@ -9,10 +9,12 @@ import {
   setCHOIRUsers,
 } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
+import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 export const registerManagementHandlers = (app: App) => {
   app.action('request_manager_permission', async ({ ack, body, client, logger }) => {
+    const startTime = Date.now();
     await ack();
 
     try {
@@ -60,6 +62,20 @@ export const registerManagementHandlers = (app: App) => {
           ],
         },
       });
+
+      // Log success
+      const workspaceId = await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        'app_home',
+        'dm',
+        'request_manager_permission',
+        Date.now() - startTime,
+        true,
+        {},
+        client,
+      );
     } catch (error) {
       logger.error('Error opening manager promotion modal:', error);
 
@@ -70,10 +86,33 @@ export const registerManagementHandlers = (app: App) => {
           text: '❌ Error opening manager promotion modal. Please try again.',
         });
       }
+
+      // Log error
+      try {
+        const workspaceId = await getWorkspaceId(client);
+        await logButtonClick(
+          body.user.id,
+          workspaceId,
+          'app_home',
+          'dm',
+          'request_manager_permission',
+          Date.now() - startTime,
+          false,
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+          },
+          client,
+        );
+      } catch (logError) {
+        logger.error('Failed to log error:', logError);
+      }
     }
   });
 
   app.view('manager_promotion_modal', async ({ ack, body, client, logger, view }) => {
+    const startTime = Date.now();
+    
     try {
       const password = view.state.values.password_block.password_input.value;
 
@@ -84,6 +123,22 @@ export const registerManagementHandlers = (app: App) => {
             password_block: 'Please enter the promotion password.',
           },
         });
+        
+        // Log validation error
+        const workspaceId = await getWorkspaceId(client);
+        await logModalSubmit(
+          body.user.id,
+          workspaceId,
+          'manager_promotion_modal',
+          Date.now() - startTime,
+          false,
+          {
+            error: 'Empty password',
+          },
+          client,
+          'app_home',
+          'dm',
+        );
         return;
       }
 
@@ -129,6 +184,21 @@ export const registerManagementHandlers = (app: App) => {
           workspaceId,
           userId,
         });
+
+        // Log successful promotion
+        await logModalSubmit(
+          body.user.id,
+          workspaceId,
+          'manager_promotion_modal',
+          Date.now() - startTime,
+          true,
+          {
+            promoted: true,
+          },
+          client,
+          'app_home',
+          'dm',
+        );
       } else {
         await ack({
           response_action: 'errors',
@@ -136,6 +206,21 @@ export const registerManagementHandlers = (app: App) => {
             password_block: 'Invalid password. Please check the password and try again.',
           },
         });
+
+        // Log invalid password
+        await logModalSubmit(
+          body.user.id,
+          workspaceId,
+          'manager_promotion_modal',
+          Date.now() - startTime,
+          false,
+          {
+            error: 'Invalid password',
+          },
+          client,
+          'app_home',
+          'dm',
+        );
       }
     } catch (error) {
       logger.error('Error processing manager promotion modal:', error);
@@ -146,10 +231,32 @@ export const registerManagementHandlers = (app: App) => {
           password_block: 'An error occurred while processing your request. Please try again.',
         },
       });
+
+      // Log error
+      try {
+        const workspaceId = await getWorkspaceId(client);
+        await logModalSubmit(
+          body.user.id,
+          workspaceId,
+          'manager_promotion_modal',
+          Date.now() - startTime,
+          false,
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+          },
+          client,
+          'app_home',
+          'dm',
+        );
+      } catch (logError) {
+        logger.error('Failed to log error:', logError);
+      }
     }
   });
 
   app.action('manage_choir_users', async ({ ack, body, client, logger }) => {
+    const startTime = Date.now();
     await ack();
 
     try {
@@ -221,6 +328,21 @@ export const registerManagementHandlers = (app: App) => {
           ],
         },
       });
+
+      // Log success
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        'app_home',
+        'dm',
+        'manage_choir_users',
+        Date.now() - startTime,
+        true,
+        {
+          currentUsersCount: choirUsers.length,
+        },
+        client,
+      );
     } catch (error) {
       logger.error('Error opening CHOIR users management modal:', error);
 
@@ -231,10 +353,33 @@ export const registerManagementHandlers = (app: App) => {
           text: '❌ Error opening user management modal. Please try again.',
         });
       }
+
+      // Log error
+      try {
+        const workspaceId = await getWorkspaceId(client);
+        await logButtonClick(
+          body.user.id,
+          workspaceId,
+          'app_home',
+          'dm',
+          'manage_choir_users',
+          Date.now() - startTime,
+          false,
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+          },
+          client,
+        );
+      } catch (logError) {
+        logger.error('Failed to log error:', logError);
+      }
     }
   });
 
   app.view('choir_users_modal', async ({ ack, body, client, logger, view }) => {
+    const startTime = Date.now();
+    
     try {
       const selectedUsers = view.state.values.choir_users_select_block.choir_users_select.selected_users || [];
 
@@ -290,6 +435,21 @@ export const registerManagementHandlers = (app: App) => {
           userId: body.user.id,
           userCount: selectedUsers.length,
         });
+
+        // Log successful update
+        await logModalSubmit(
+          body.user.id,
+          workspaceId,
+          'choir_users_modal',
+          Date.now() - startTime,
+          true,
+          {
+            usersCount: selectedUsers.length,
+          },
+          client,
+          'app_home',
+          'dm',
+        );
       } else {
         await ack({
           response_action: 'errors',
@@ -297,6 +457,22 @@ export const registerManagementHandlers = (app: App) => {
             choir_users_select_block: 'Failed to update CHOIR users. Please try again.',
           },
         });
+
+        // Log update failure
+        await logModalSubmit(
+          body.user.id,
+          workspaceId,
+          'choir_users_modal',
+          Date.now() - startTime,
+          false,
+          {
+            error: 'Failed to update CHOIR users',
+            usersCount: selectedUsers.length,
+          },
+          client,
+          'app_home',
+          'dm',
+        );
       }
     } catch (error) {
       logger.error('Error processing CHOIR users modal:', error);
@@ -311,6 +487,7 @@ export const registerManagementHandlers = (app: App) => {
   });
 
   app.action('manage_managers', async ({ ack, body, client, logger }) => {
+    const startTime = Date.now();
     await ack();
 
     try {
@@ -402,6 +579,21 @@ export const registerManagementHandlers = (app: App) => {
           ],
         },
       });
+
+      // Log success
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        'app_home',
+        'dm',
+        'manage_managers',
+        Date.now() - startTime,
+        true,
+        {
+          managersCount: managers.length,
+        },
+        client,
+      );
     } catch (error) {
       logger.error('Error opening managers management modal:', error);
 
@@ -411,6 +603,27 @@ export const registerManagementHandlers = (app: App) => {
           channel: body.user.id,
           text: '❌ Error opening manager management modal. Please try again.',
         });
+      }
+
+      // Log error
+      try {
+        const workspaceId = await getWorkspaceId(client);
+        await logButtonClick(
+          body.user.id,
+          workspaceId,
+          'app_home',
+          'dm',
+          'manage_managers',
+          Date.now() - startTime,
+          false,
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+          },
+          client,
+        );
+      } catch (logError) {
+        logger.error('Failed to log error:', logError);
       }
     }
   });
@@ -540,6 +753,7 @@ export const registerManagementHandlers = (app: App) => {
   });
 
   app.action('toggle_logging', async ({ ack, body, client, logger }) => {
+    const startTime = Date.now();
     await ack();
 
     try {
@@ -585,6 +799,22 @@ export const registerManagementHandlers = (app: App) => {
         userId: body.user.id,
         enabled: newLogging,
       });
+
+      // Log success
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        'app_home',
+        'dm',
+        'toggle_logging',
+        Date.now() - startTime,
+        true,
+        {
+          previousState: currentLogging,
+          newState: newLogging,
+        },
+        client,
+      );
     } catch (error) {
       logger.error('Error toggling logging setting:', error);
 
@@ -594,6 +824,27 @@ export const registerManagementHandlers = (app: App) => {
           channel: body.user.id,
           text: '\u274c Error toggling logging setting. Please try again.',
         });
+      }
+
+      // Log error
+      try {
+        const workspaceId = await getWorkspaceId(client);
+        await logButtonClick(
+          body.user.id,
+          workspaceId,
+          'app_home',
+          'dm',
+          'toggle_logging',
+          Date.now() - startTime,
+          false,
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+          },
+          client,
+        );
+      } catch (logError) {
+        logger.error('Failed to log error:', logError);
       }
     }
   });

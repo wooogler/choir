@@ -517,9 +517,10 @@ export class VectorStoreService {
   }
 
   /**
-   * 특정 노드에 내용 추가 (증분 업데이트) - 여러 listItem/paragraph 지원
+   * 특정 노드를 새로운 내용으로 교체 (enhanceExistingContent용) - 여러 listItem/paragraph 지원
+   * 예: 기존 "- A is B" → 새로운 "- A is C\n- B is C" (1개 노드 → 2개 노드로 교체)
    */
-  public async appendSpecificNode(fileName: string, nodeId: string, content: string): Promise<boolean> {
+  public async replaceNodeWithEnhancedContent(fileName: string, nodeId: string, content: string): Promise<boolean> {
     try {
       const file = this.getMarkdownFile(fileName);
       if (!file) {
@@ -527,8 +528,10 @@ export class VectorStoreService {
         return false;
       }
 
+      let addedCount = 0; // Declare at method scope
+
       // Import 함수들
-      const { parseAndSplitContent, appendMultipleContents } = await import('../document/markdown');
+      const { parseAndSplitContent, appendIndividualContents, removeNodeFromTree } = await import('../document/markdown');
 
       // 1. content를 파싱하여 개별 항목들로 분할
       const contentItems = parseAndSplitContent(content);
@@ -537,115 +540,79 @@ export class VectorStoreService {
         contentItems.map((item) => `${item.type}: "${item.content.substring(0, 30)}..."`),
       );
 
-      // 2. 분할된 content가 여러 개인 경우 각각을 별도 노드로 추가
-      if (contentItems.length > 1) {
-        Logger.info(`Adding ${contentItems.length} separate nodes for multi-item content`);
-        file.tree = appendMultipleContents(file.tree, nodeId, contentItems);
-        Logger.info(`Appended ${contentItems.length} separate nodes to ${nodeId} in ${fileName}`);
-      } else if (contentItems.length === 1) {
-        // 단일 항목인 경우 기존 방식으로 처리
-        const { appendNodeContent } = await import('../document/markdown');
-        file.tree = appendNodeContent(file.tree, nodeId, contentItems[0].content);
-        Logger.info(`Appended single content item to node ${nodeId} in ${fileName}`);
-      } else {
-        Logger.warn(`No valid content items found in: "${content}"`);
-        return false;
+      // 2. 기존 노드 목록 저장 (새 노드 감지용)
+      const existingNodeIds = new Set(file.tree.nodeMap.keys());
+
+      // 3. 기존 노드를 벡터 스토어에서 제거
+      await this.removeNodeFromVectorStore(nodeId);
+      Logger.info(`Removed existing node ${nodeId} from vector store`);
+
+      // 4. 기존 노드를 문서 트리에서 제거  
+      const originalNode = file.tree.nodeMap.get(nodeId);
+      if (originalNode) {
+        file.tree = removeNodeFromTree(file.tree, nodeId);
+        Logger.info(`Removed existing node ${nodeId} from document tree`);
       }
 
-      // 3. 벡터 스토어 노드 단위 증분 업데이트
-      Logger.info('Performing node-level incremental vector store update for appended content');
-
-      // 기존 문서에서 nodeId 목록을 가져와서 새로 추가된 노드들 식별
-      const existingDocuments = this.storeManager.getDocuments().filter((doc) => doc.metadata.fileName === fileName);
-      const existingNodeIds = new Set(existingDocuments.map((doc) => doc.metadata.nodeId));
-
-      // APPEND 작업 전에 해당 섹션의 기존 빈 document들 제거
-      const referenceNode = file.tree.nodeMap.get(nodeId);
-      if (referenceNode && referenceNode.sectionId) {
-        const sectionId = referenceNode.sectionId;
-        const emptyDocumentsToRemove = existingDocuments.filter(
-          (doc) =>
-            doc.metadata.sectionId === sectionId &&
-            (!doc.metadata.originalContent || doc.metadata.originalContent.trim().length === 0),
-        );
-
-        if (emptyDocumentsToRemove.length > 0) {
-          Logger.info(
-            `Removing ${emptyDocumentsToRemove.length} empty placeholder documents from section ${sectionId}`,
-          );
-          await this.storeManager.removeDocuments(emptyDocumentsToRemove);
-
-          // nodeDocumentMap에서도 제거
-          emptyDocumentsToRemove.forEach((doc) => {
-            if (doc.metadata.nodeId) {
-              this.nodeDocumentMap.delete(doc.metadata.nodeId);
-            }
-          });
-        }
-      }
-
-      // 현재 트리의 모든 노드에서 새로 추가된 노드들 찾기
-      const newlyAddedNodes = Array.from(file.tree.nodeMap.entries()).filter(
-        ([newNodeId]) => !existingNodeIds.has(newNodeId) && newNodeId.includes(`${nodeId}_append_`),
-      );
-
-      Logger.info(`Found ${newlyAddedNodes.length} newly added nodes to add to vector store`);
-
-      // 새로 추가된 노드들을 벡터 스토어에 추가
-      const { toString } = await import('mdast-util-to-string');
-      let addedCount = 0;
-
-      for (const [newNodeId, newNode] of newlyAddedNodes) {
-        try {
-          const newNodeContent = toString(newNode);
-          if (newNodeContent && newNodeContent.trim()) {
-            const success = await this.addNodeIncremental(fileName, newNodeId, newNodeContent, newNode.type as any);
-            if (success) {
-              addedCount++;
-              Logger.info(`Successfully added new node ${newNodeId} to vector store`);
-            } else {
-              Logger.warn(`Failed to add new node ${newNodeId} to vector store`);
-            }
-          }
-        } catch (error) {
-          Logger.error(`Error adding new node ${newNodeId} to vector store:`, error as Error);
-        }
-      }
-
-      // 참조 노드도 업데이트 (내용이 변경되었을 수 있음) - 단, 헤딩 노드는 제외
-      const updatedNode = file.tree.nodeMap.get(nodeId);
-      if (updatedNode) {
-        const updatedNodeContent = toString(updatedNode);
-
-        // 헤딩 노드는 벡터 스토어에서 업데이트하지 않음
-        if (updatedNode.type === 'heading') {
-          Logger.info(`Skipping reference node update for heading ${nodeId} - headings are not in vector store`);
+      // 5. 분할된 content들을 새로운 노드로 추가
+      if (contentItems.length > 0 && originalNode) {
+        Logger.info(`Adding ${contentItems.length} replacement nodes for enhanced content`);
+        // 원래 노드의 부모를 찾아서 그 위치에 새로운 노드들을 개별적으로 추가
+        const parentNode = originalNode.parentId ? file.tree.nodeMap.get(originalNode.parentId) : null;
+        if (parentNode && originalNode.parentId) {
+          file.tree = appendIndividualContents(file.tree, originalNode.parentId, contentItems);
         } else {
-          const success = await this.updateNodeIncremental(
-            fileName,
-            nodeId,
-            updatedNodeContent,
-            updatedNode.type as any,
-          );
-          if (!success) {
-            Logger.warn('Failed to update reference node in vector store, but tree was updated');
-            return false;
-          }
-          Logger.info(`Successfully updated reference node ${nodeId} in vector store`);
+          // 부모가 없으면 root에 추가
+          file.tree = appendIndividualContents(file.tree, file.tree.root.id as string, contentItems);
         }
+        
+        // 6. 새로 추가된 노드들을 벡터 스토어에 추가
+        Logger.info('Adding replacement nodes to vector store');
+        const { toString } = await import('mdast-util-to-string');
+        
+        // 새로 추가된 노드들을 정확하게 찾기 (기존 노드 목록과 비교)
+        const allNodes = Array.from(file.tree.nodeMap.entries());
+        const newNodes = allNodes.filter(([newNodeId, newNode]) => {
+          // 기존에 없던 노드들만 선택
+          return !existingNodeIds.has(newNodeId);
+        });
+        
+        Logger.info(`Found ${newNodes.length} new nodes to add to vector store`);
+        
+        for (const [newNodeId, newNode] of newNodes) {
+          // 이미 벡터 스토어에 있는 노드는 건너뛰기
+          if (this.nodeDocumentMap.has(newNodeId)) {
+            continue;
+          }
+          
+          try {
+            const newNodeContent = toString(newNode);
+            if (newNodeContent && newNodeContent.trim()) {
+              const success = await this.addNodeIncremental(fileName, newNodeId, newNodeContent, newNode.type as any);
+              if (success) {
+                addedCount++;
+                Logger.info(`Successfully added replacement node ${newNodeId} to vector store`);
+              } else {
+                Logger.warn(`Failed to add replacement node ${newNodeId} to vector store`);
+              }
+            }
+          } catch (error) {
+            Logger.error(`Error adding replacement node ${newNodeId} to vector store:`, error as Error);
+          }
+        }
+        
+        Logger.info(`Successfully added ${addedCount}/${newNodes.length} replacement nodes to vector store`);
       } else {
-        Logger.error(`Could not find updated reference node ${nodeId} in tree`);
+        Logger.warn(`No content items found in enhanced content: "${content}"`);
         return false;
       }
 
-      const referenceNodeAction = updatedNode?.type === 'heading' ? 'skipped (heading)' : 'updated';
       Logger.info(
-        `Vector store update completed: ${addedCount} new nodes added, 1 reference node ${referenceNodeAction}`,
+        `Node replacement completed successfully: removed 1 original node, added ${addedCount} replacement nodes`,
       );
-
       return true;
     } catch (error) {
-      Logger.error('Error appending to specific node', error as Error);
+      Logger.error('Error replacing node with enhanced content', error as Error);
       return false;
     }
   }

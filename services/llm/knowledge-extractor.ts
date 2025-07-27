@@ -21,6 +21,36 @@ interface OrganizationalContext {
 /**
  * Extract knowledge from a collection of Slack messages
  */
+// Helper function to extract Q&A content from QA_SHARE_INTRO messages
+function extractQAContent(messageText: string, canAnswer: boolean): { question: string; answer: string | null; canAnswer: boolean } | null {
+  const questionMatch = messageText.match(/\*Question:\*\s*```([^`]+)```/);
+  
+  if (questionMatch) {
+    const question = questionMatch[1].trim();
+    
+    if (canAnswer) {
+      // For answered questions, extract the response
+      const responseMatch = messageText.match(/\*My response:\*\s*```([^`]+)```/);
+      if (responseMatch) {
+        return {
+          question,
+          answer: responseMatch[1].trim(),
+          canAnswer: true
+        };
+      }
+    } else {
+      // For unanswered questions, no response expected
+      return {
+        question,
+        answer: null,
+        canAnswer: false
+      };
+    }
+  }
+  
+  return null;
+}
+
 export async function extractKnowledgeFromMessages(
   messages: SlackMessage[],
   context?: OrganizationalContext,
@@ -30,8 +60,37 @@ export async function extractKnowledgeFromMessages(
     // Use processMessageHistory to format messages with proper anonymization
     const processedMessages = await processMessageHistory(messages, client);
 
-    // Format messages with numbered references for source tracking
-    const formattedMessages = processedMessages.map((msg, index) => `[${index + 1}] ${msg.content}`).join('\n');
+    // Separate Q&A content from regular conversation
+    const qaContent: Array<{ question: string; answer: string | null; canAnswer: boolean }> = [];
+    const conversationMessages: Array<{ role: string; content: string }> = [];
+
+    for (let i = 0; i < processedMessages.length; i++) {
+      const msg = processedMessages[i];
+      const originalMsg = messages[i];
+      
+      // Check if this is a QA_SHARE_INTRO message (answered or unanswered)
+      const isQAShareAnswered = originalMsg.metadata?.messageType === 'qa_share_intro_answered' ||
+        (originalMsg.blocks && originalMsg.blocks.some((block: any) => 
+          block.block_id && block.block_id.includes('qa_share_intro_answered')));
+      
+      const isQAShareUnanswered = originalMsg.metadata?.messageType === 'qa_share_intro_unanswered' ||
+        (originalMsg.blocks && originalMsg.blocks.some((block: any) => 
+          block.block_id && block.block_id.includes('qa_share_intro_unanswered')));
+      
+      if ((isQAShareAnswered || isQAShareUnanswered) && msg.role === 'CHOIR') {
+        const canAnswer = isQAShareAnswered;
+        const extracted = extractQAContent(msg.content, canAnswer);
+        if (extracted) {
+          qaContent.push(extracted);
+          continue; // Skip adding to conversation
+        }
+      }
+      
+      conversationMessages.push(msg);
+    }
+
+    // Format conversation messages with numbered references for source tracking
+    const formattedMessages = conversationMessages.map((msg, index) => `[${index + 1}] ${msg.content}`).join('\n');
 
     // Build organizational context section
     let contextSection = '';
@@ -57,14 +116,26 @@ export async function extractKnowledgeFromMessages(
       contextSection += '\n';
     }
 
+    // Add Q&A context (there can only be one Q&A per conversation due to SESSION_START_TYPES)
+    let qaContextSection = '';
+    if (qaContent.length > 0) {
+      const qa = qaContent[0]; // Only one Q&A possible
+      
+      if (qa.canAnswer) {
+        qaContextSection += `\n\n**Existing Q&A from Current Documentation**:\nQ: ${qa.question}\nA: ${qa.answer}\n\nFocus on identifying NEW information that goes beyond what's already documented in the Q&A above.`;
+      } else {
+        qaContextSection += `\n\n**Question Not Covered by Current Documentation**:\n- ${qa.question}\n\nLook for team knowledge that could help answer this question or establish relevant policies.`;
+      }
+    }
+
     const prompt = `You are an experienced knowledge curator named CHOIR analyzing a team conversation to identify what should be documented.
 
 Read this conversation and understand the context and flow. What organizational knowledge is being shared or confirmed that would be valuable to document?
-${contextSection}
+${contextSection}${qaContextSection}
 
 **Your task:** Extract organizational knowledge in this conversation:
 
-PRIORITIZE new organizational knowledge shared by human team members, especially information mentioned towards the end of the conversation. Focus on fresh insights rather than CHOIR's responses, suggestions, or confirmations of existing policies.
+PRIORITIZE organizational knowledge shared by human team members (not CHOIR's responses). Look for decisions, processes, tools, standards, policies, or practices that the organization uses. Include any information about what the team does, how they work, or what tools/methods they use.
 
 **Think about what the requester likely wants documented based on the conversation flow.**
 

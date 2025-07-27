@@ -28,13 +28,13 @@ export const applyExtractedKnowledgeCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: '✅ Update applied!',
+          text: '✅ Update started!',
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '✅ *Update applied!*\nThe knowledge has been processed and applied to the documentation.',
+                text: '✅ *Update started!*',
               },
             },
           ],

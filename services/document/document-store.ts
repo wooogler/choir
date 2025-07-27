@@ -98,16 +98,9 @@ export const updateDocumentContent = (userId: string, index: number, newContent:
   // 기존 업데이트 가져오기
   const update = userUpdates.documentUpdates[index];
 
-  // suggestionType에 따라 다른 필드 업데이트
-  if (update.suggestionType === 'APPEND') {
-    // APPEND의 경우 appendedNodeContent 업데이트
-    update.appendedNodeContent = newContent;
-    update.newContent = newContent; // newContent 필드도 함께 업데이트
-  } else {
-    // UPDATE의 경우 기존 방식 유지
-    update.updatedNodeContent = newContent;
-    update.newContent = newContent; // newContent 필드도 함께 업데이트
-  }
+  // 통일된 UPDATE 방식으로 처리
+  update.updatedNodeContent = newContent;
+  update.newContent = newContent;
 
   console.log('=== Document Store Update ===');
   console.log(`File: ${update.fileName}`);

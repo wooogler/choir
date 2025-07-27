@@ -17,7 +17,7 @@ import {
 } from 'services/slack';
 import { createEnhancedMessage } from 'services/slack/message-text-utils';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
-import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { CHOIRMessageType, createCHOIRBlockId, getCHOIRMessageTypeFromBlocks } from 'types/message-types';
 
 /**
  * Handle update request message with automatic knowledge extraction
@@ -112,17 +112,8 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     }
 
     // filteredMessages is already SlackMessage[] from getFilteredConversationHistory
-    // Sort messages by timestamp (oldest first) - they should already be sorted but ensure consistency
-    const sortedMessages = [...filteredMessages].sort((a, b) => {
-      const tsA = Number.parseFloat(a.ts || '0');
-      const tsB = Number.parseFloat(b.ts || '0');
-      return tsA - tsB;
-    });
-
-    // Take the last 10 messages for knowledge extraction
-    const last10Messages = sortedMessages.slice(-10);
-
-    if (last10Messages.length === 0) {
+    // Messages are already sorted by timestamp from getFilteredConversationHistory
+    if (filteredMessages.length === 0) {
       await client.chat.update({
         channel: originalChannelId,
         ts: loadingMessage.ts,
@@ -190,6 +181,9 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         channelType = 'Thread Discussion';
       }
 
+      // Check if conversation contains Q&A shared content (no longer needed as separate flag)
+      // Q&A context is now handled directly in extractKnowledgeFromMessages
+
       // Build organizational context
       const organizationalContext = {
         organizationName: workspaceConfig?.organizationName,
@@ -201,18 +195,18 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       };
 
       // Extract knowledge from messages with organizational context
-      const extractionResult = await extractKnowledgeFromMessages(last10Messages, organizationalContext, client);
+      const extractionResult = await extractKnowledgeFromMessages(filteredMessages, organizationalContext, client);
 
       // Update loading message with compact analysis summary
       const statusUpdateData = createEnhancedMessage(
         {
-          text: `✅ Analyzed ${last10Messages.length} message${last10Messages.length > 1 ? 's' : ''} to extract knowledge`,
+          text: `✅ Analyzed ${filteredMessages.length} message${filteredMessages.length > 1 ? 's' : ''} to extract knowledge`,
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `✅ *Analysis Complete* • 📊 ${last10Messages.length} message${last10Messages.length > 1 ? 's' : ''} analyzed`,
+                text: `✅ *Analysis Complete* • 📊 ${filteredMessages.length} message${filteredMessages.length > 1 ? 's' : ''} analyzed`,
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
               accessory: {
@@ -364,7 +358,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           originalThreadTs: event.thread_ts,
           userId,
           extractedKnowledge: extractionResult.cleanContent, // Store clean content for editing
-          messages: last10Messages,
+          messages: filteredMessages,
           processedMessages: extractionResult.processedMessages, // Store processed messages for View Messages
           publicMessageTs: publicMessage.ts, // Store public message timestamp for updates
           lastEditedBy: userId, // Track who initially extracted the knowledge
@@ -386,16 +380,16 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         totalProcessingTime,
         true,
         extractionResult.cleanContent,
-        last10Messages.length,
+        filteredMessages.length,
         {
           sessionId,
           channelName,
           extractorName,
           isUserManager,
           managersCount: managers.length,
-          sourceMessageCount: last10Messages.length,
+          sourceMessageCount: filteredMessages.length,
           hasKnowledgeItem: !!extractionResult.cleanContent,
-          sourceMessages: last10Messages.map((msg) => ({
+          sourceMessages: filteredMessages.map((msg) => ({
             userId: msg.user || msg.bot_id || 'unknown',
             username: msg.username || 'Unknown',
             text: msg.text?.substring(0, 200) || '', // 메시지 내용 일부만 저장

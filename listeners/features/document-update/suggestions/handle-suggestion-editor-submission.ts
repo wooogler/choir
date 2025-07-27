@@ -25,7 +25,7 @@ export const handleSuggestionEditorSubmission = async ({
     );
 
     if (!messageTs || !channelId) {
-      throw new Error('필수 메타데이터가 누락되었습니다');
+      throw new Error('Required metadata is missing');
     }
 
     // 입력된 업데이트 내용 가져오기
@@ -39,17 +39,10 @@ export const handleSuggestionEditorSubmission = async ({
     console.log('Content updated successfully');
     console.log('=== End Document Update Edit ===');
 
-    // suggestionType에 따라 다른 블록 생성
-    let newDiffBlock;
-    if (suggestionType === 'APPEND') {
-      // APPEND의 경우 appendSuggestionBlock 생성
-      newDiffBlock = createAppendSuggestionBlock(nodeContent, updatedContent);
-    } else {
-      // UPDATE의 경우 기존 diff 블록 생성
-      const oldSlackText = await convertMarkdownToSlackText(nodeContent);
-      const newSlackText = await convertMarkdownToSlackText(updatedContent);
-      newDiffBlock = createDiffBlock(oldSlackText, newSlackText);
-    }
+    // 통일된 diff 블록 생성
+    const oldSlackText = await convertMarkdownToSlackText(nodeContent);
+    const newSlackText = await convertMarkdownToSlackText(updatedContent);
+    const newDiffBlock = createDiffBlock(oldSlackText, newSlackText);
 
     // 기존 메시지 가져오기
     const result = await client.conversations.history({
@@ -60,7 +53,7 @@ export const handleSuggestionEditorSubmission = async ({
     });
 
     if (!result.messages || result.messages.length === 0) {
-      throw new Error('기존 메시지를 찾을 수 없습니다');
+      throw new Error('Original message not found');
     }
 
     const message = result.messages[0];
@@ -88,26 +81,15 @@ export const handleSuggestionEditorSubmission = async ({
           if (element.action_id === 'edit_update') {
             const originalValue = JSON.parse(element.value);
 
-            // suggestionType에 따라 다른 필드 업데이트
-            if (suggestionType === 'APPEND') {
-              return {
-                ...element,
-                value: JSON.stringify({
-                  ...originalValue,
-                  originalLastNodeContent: nodeContent,
-                  appendedNodeContent: updatedContent,
-                }),
-              };
-            } else {
-              return {
-                ...element,
-                value: JSON.stringify({
-                  ...originalValue,
-                  nodeContent,
-                  updatedNodeContent: updatedContent,
-                }),
-              };
-            }
+            // 통일된 UPDATE 방식으로 처리
+            return {
+              ...element,
+              value: JSON.stringify({
+                ...originalValue,
+                nodeContent,
+                updatedNodeContent: updatedContent,
+              }),
+            };
           }
           return { ...element }; // 다른 버튼들도 깊은 복사
         });
@@ -166,7 +148,7 @@ export const handleSuggestionEditorSubmission = async ({
         channelType,
       );
     } else {
-      throw new Error('Diff 블록을 찾을 수 없습니다');
+      throw new Error('Diff block not found');
     }
   } catch (error) {
     console.error('Error handling suggestion editor submission:', error);
@@ -180,7 +162,7 @@ export const handleSuggestionEditorSubmission = async ({
       if (dmResult.ok && dmResult.channel?.id) {
         await client.chat.postMessage({
           channel: dmResult.channel.id,
-          text: `수정 사항을 저장할 수 없습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
+          text: `Cannot save changes: ${error instanceof Error ? error.message : 'Unknown error'}`,
         });
       }
     } catch (dmError) {

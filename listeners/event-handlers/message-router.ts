@@ -1,13 +1,13 @@
 import { classifyMessageIntent } from 'services/llm/document-editor';
 import {
   getCHOIRUsers,
-  getFilteredConversationHistory,
   getOrganizationDescription,
   getOrganizationName,
   getUserName,
   getWorkspaceId,
   isManager,
 } from 'services/slack';
+import { ConversationCache } from 'services/slack/conversation-cache';
 import { CHOIRMessageType, createCHOIRBlockId, getCHOIRMessageTypeFromBlocks } from 'types/message-types';
 import { getAnonymousThreadInfo } from '../../services/common/session-store';
 import { logMessageProcessing } from '../../services/common/user-interaction-logger';
@@ -151,10 +151,11 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     // Get CHOIR users for filtering conversation history
     const choirUsers = await getCHOIRUsers(workspaceId);
 
-    // Get filtered conversation history (excludes Non-CHOIR users)
+    // Get filtered conversation history using cache (excludes Non-CHOIR users)
     // Use shorter time limit for DMs since they are more immediate conversations
     const isDM = event.channel_type === 'im';
-    const messages = await getFilteredConversationHistory(client, event, choirUsers, {
+    const conversationCache = ConversationCache.getInstance();
+    const messages = await conversationCache.getOrFetchHistory(client, event, choirUsers, {
       timeLimit: isDM ? 30 : 1440, // 30 minutes for DMs, 1 day for channels
       messageLimit: 10, // fetch up to 10 messages
       maxResults: 5, // return up to 5 messages

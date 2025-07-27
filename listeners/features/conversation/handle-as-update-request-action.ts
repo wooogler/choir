@@ -59,13 +59,13 @@ export const handleAsUpdateRequestCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: "✅ Got it! I've processed your message as an update request.",
+          text: "✅ Processed as Update Request",
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: "✅ Got it! I've processed your message as an update request.",
+                text: `✅ *Message processed as Update Request*\n\n📝 *Original message:* "${messageData.originalMessage}"\n🔄 *Action taken:* Extracting knowledge and generating document updates`,
               },
             },
           ],

@@ -6,6 +6,7 @@ import {
   setOrganizationDescription,
   setOrganizationName,
 } from 'services/slack';
+import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 export const registerOrganizationHandlers = (app: App) => {
@@ -107,6 +108,7 @@ export const registerOrganizationHandlers = (app: App) => {
   });
 
   app.action('edit_organization_info', async ({ ack, body, client, logger }) => {
+    const startTime = Date.now();
     await ack();
 
     try {
@@ -170,6 +172,22 @@ export const registerOrganizationHandlers = (app: App) => {
           ],
         },
       });
+
+      // Log success
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        'app_home',
+        'dm',
+        'edit_organization_info',
+        Date.now() - startTime,
+        true,
+        {
+          currentName: organizationName,
+          currentDescription: organizationDescription,
+        },
+        client,
+      );
     } catch (error) {
       logger.error('Error opening organization edit modal:', error);
       await client.chat.postEphemeral({
@@ -177,10 +195,33 @@ export const registerOrganizationHandlers = (app: App) => {
         channel: body.user.id,
         text: '❌ Error opening edit modal. Please try again.',
       });
+
+      // Log error
+      try {
+        const workspaceId = await getWorkspaceId(client);
+        await logButtonClick(
+          body.user.id,
+          workspaceId,
+          'app_home',
+          'dm',
+          'edit_organization_info',
+          Date.now() - startTime,
+          false,
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+          },
+          client,
+        );
+      } catch (logError) {
+        logger.error('Failed to log error:', logError);
+      }
     }
   });
 
   app.view('edit_organization_modal', async ({ ack, body, client, logger, view }) => {
+    const startTime = Date.now();
+    
     try {
       const newName = view.state.values.organization_name_input_block.organization_name_input.value;
       const newDescription =
@@ -232,6 +273,22 @@ export const registerOrganizationHandlers = (app: App) => {
           logger.error('Error refreshing home view after organization info update:', error);
         }
       }, 1000);
+
+      // Log successful update
+      await logModalSubmit(
+        body.user.id,
+        workspaceId,
+        'edit_organization_modal',
+        Date.now() - startTime,
+        true,
+        {
+          nameLength: newName.trim().length,
+          descriptionLength: newDescription?.trim().length || 0,
+        },
+        client,
+        'app_home',
+        'dm',
+      );
     } catch (error) {
       logger.error('Error updating organization info:', error);
       await ack({
@@ -240,6 +297,27 @@ export const registerOrganizationHandlers = (app: App) => {
           organization_name_input_block: 'An error occurred while updating organization info. Please try again.',
         },
       });
+
+      // Log error
+      try {
+        const workspaceId = await getWorkspaceId(client);
+        await logModalSubmit(
+          body.user.id,
+          workspaceId,
+          'edit_organization_modal',
+          Date.now() - startTime,
+          false,
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+          },
+          client,
+          'app_home',
+          'dm',
+        );
+      } catch (logError) {
+        logger.error('Failed to log error:', logError);
+      }
     }
   });
 };

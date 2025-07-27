@@ -115,87 +115,64 @@ export async function processDocument(
       return null;
     }
 
-    const nodeContent = doc.metadata.originalContent || doc.pageContent || '';
-    // LLM을 호출하여 기존 내용을 기반으로 지식을 통합하거나 새로운 내용을 생성
-    const llmEditedContent = await editMarkdownWithKnowledge(
-      nodeContent, // 기존 노드 내용 전달
-      knowledgeContent, // 새로운 지식 전달
-    );
-
-    let suggestionType: 'UPDATE' | 'APPEND';
-    let diffBlock: any;
-    let hasChanges: boolean;
-    let finalUpdatedNodeContentForUpdate = llmEditedContent; // UPDATE 시 사용될 전체 내용
-    let appendedText: string | undefined = undefined; // APPEND 시 추가될 내용
-    let oldSlackTextForComparison: string;
-    let newSlackTextForComparison: string;
-
-    // 개선된 APPEND/UPDATE 구분 로직
-    // 1. 먼저 LLM 결과가 기존 내용과 실질적으로 동일한지 확인 (공백, 줄바꿈 등 정규화)
-    const normalizeContent = (content: string) => content.trim().replace(/\s+/g, ' ');
-    const normalizedNodeContent = normalizeContent(nodeContent);
-    const normalizedLlmContent = normalizeContent(llmEditedContent);
-
-    if (normalizedNodeContent === normalizedLlmContent) {
-      // 내용이 실질적으로 동일하면 UPDATE (변경 없음)
-      suggestionType = 'UPDATE';
-      finalUpdatedNodeContentForUpdate = llmEditedContent;
-      const oldSlackText = await convertMarkdownToSlackText(nodeContent);
-      const newSlackText = await convertMarkdownToSlackText(finalUpdatedNodeContentForUpdate);
-
-      // 변경 사항이 없을 때는 현재 내용과 함께 "변경 없음" 메시지 표시
-      diffBlock = {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*Current Content (No Changes Required):*\n\`\`\`${oldSlackText.substring(0, Math.min(oldSlackText.length, 800))}\`\`\`\n\n_This section is already up-to-date with the provided knowledge._`,
-        },
-      };
-
-      hasChanges = false; // 실질적 변경 없음
-      oldSlackTextForComparison = oldSlackText;
-      newSlackTextForComparison = newSlackText;
-
-      console.log('[processDocument] No substantial changes detected, treating as UPDATE');
-    } else if (llmEditedContent.startsWith(nodeContent) && llmEditedContent.length > nodeContent.length) {
-      // 2. 기존 내용으로 시작하고 더 긴 경우 APPEND 시도
-      appendedText = await createNewContentFromKnowledge(nodeContent, knowledgeContent);
-
-      // 3. 실제로 의미있는 내용이 추가되었는지 확인
-      if (appendedText && appendedText.trim() !== '' && appendedText.trim().length > 10) {
-        suggestionType = 'APPEND';
-        hasChanges = true;
-        diffBlock = createAppendSuggestionBlock(nodeContent, appendedText);
-        oldSlackTextForComparison = await convertMarkdownToSlackText(nodeContent);
-        newSlackTextForComparison = await convertMarkdownToSlackText(appendedText);
-
-        console.log('[processDocument] Meaningful content to append detected, treating as APPEND');
-      } else {
-        // 추가할 내용이 의미없으면 UPDATE로 폴백
-        suggestionType = 'UPDATE';
-        finalUpdatedNodeContentForUpdate = llmEditedContent;
-        const oldSlackText = await convertMarkdownToSlackText(nodeContent);
-        const newSlackText = await convertMarkdownToSlackText(finalUpdatedNodeContentForUpdate);
-        diffBlock = createDiffBlock(oldSlackText, newSlackText);
-        hasChanges = oldSlackText !== newSlackText;
-        oldSlackTextForComparison = oldSlackText;
-        newSlackTextForComparison = newSlackText;
-
-        console.log('[processDocument] No meaningful content to append, falling back to UPDATE');
-      }
+    // originalContent가 있으면 사용 (순수한 내용), 없으면 pageContent에서 컨텍스트 제거
+    let nodeContent = '';
+    if (doc.metadata.originalContent) {
+      nodeContent = doc.metadata.originalContent;
     } else {
-      // 4. 그 외의 경우는 UPDATE
-      suggestionType = 'UPDATE';
-      finalUpdatedNodeContentForUpdate = llmEditedContent;
-      const oldSlackText = await convertMarkdownToSlackText(nodeContent);
-      const newSlackText = await convertMarkdownToSlackText(finalUpdatedNodeContentForUpdate || nodeContent);
-      diffBlock = createDiffBlock(oldSlackText, newSlackText);
-      hasChanges = oldSlackText !== newSlackText;
-      oldSlackTextForComparison = oldSlackText;
-      newSlackTextForComparison = newSlackText;
-
-      console.log('[processDocument] General content modification detected, treating as UPDATE');
+      // pageContent에서 "File: ... Path: ..." 컨텍스트 제거
+      const lines = doc.pageContent.split('\n');
+      let contentStartIndex = 0;
+      
+      // "File:" 또는 "Path:"로 시작하는 라인들을 건너뜀
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('File:') || line.startsWith('Path:') || line === '') {
+          contentStartIndex = i + 1;
+        } else {
+          break;
+        }
+      }
+      
+      nodeContent = lines.slice(contentStartIndex).join('\n').trim();
     }
+
+    // 빈 섹션 처리: 빈 문자열로 시작하여 LLM이 처음부터 생성하도록 함
+    if (!nodeContent) {
+      nodeContent = ''; // 빈 문자열로 시작
+      console.log(`[processDocument] Empty section detected, starting with blank content for nodeId: ${nodeId}`);
+    }
+    // 병렬로 LLM 호출: 메인 업데이트 + 새 섹션 제안
+    const [llmEditedContent, newSectionSuggestion] = await Promise.all([
+      editMarkdownWithKnowledge(nodeContent, knowledgeContent, {
+        fileName: doc.metadata.fileName,
+        sectionName: doc.metadata.sectionName,
+        headingPath: doc.metadata.headingPath,
+      }),
+      (async () => {
+        // 새 섹션 제안 생성을 위해 모든 마크다운 파일 목록 가져오기
+        const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
+        const availableFiles = allMarkdownFiles.map((file) => ({
+          fileName: file.name,
+          githubUrl: file.githubUrl,
+          description: `${file.name} - Documentation file`,
+        }));
+        return await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
+      })(),
+    ]);
+
+    // 단순화된 로직: 항상 UPDATE 타입으로 처리하되 diff UI 사용
+    const suggestionType: 'UPDATE' = 'UPDATE'; // 타입 통일
+    const oldSlackText = await convertMarkdownToSlackText(nodeContent);
+    const newSlackText = await convertMarkdownToSlackText(llmEditedContent);
+    
+    // 항상 diff 블록 생성
+    const diffBlock = createDiffBlock(oldSlackText, newSlackText);
+    const hasChanges = oldSlackText !== newSlackText;
+
+    console.log('[processDocument] Using unified UPDATE approach with diff UI');
+    console.log('[processDocument] Has Changes:', hasChanges);
+    console.log('[processDocument] For node ID:', nodeId);
 
     // 메시지 정보 추출 및 중복 제거
     const uniqueMessageInfo = Array.from(
@@ -218,42 +195,24 @@ export async function processDocument(
       sectionName: doc.metadata.sectionName || '',
       headingPath: doc.metadata.headingPath,
       nodeId,
-      nodeContent, // APPEND 시에는 마지막 노드의 내용, UPDATE 시에는 원본 노드의 내용
-      updatedNodeContent: suggestionType === 'UPDATE' ? finalUpdatedNodeContentForUpdate : nodeContent, // APPEND 시에는 원본 노드 내용 유지
+      nodeContent, // 원본 노드 내용
+      updatedNodeContent: llmEditedContent, // LLM이 생성한 업데이트된 내용
       diffBlock,
-      oldContent: oldSlackTextForComparison.substring(0, Math.min(oldSlackTextForComparison.length, 1500)),
-      newContent: newSlackTextForComparison.substring(0, Math.min(newSlackTextForComparison.length, 1500)),
+      oldContent: oldSlackText.substring(0, Math.min(oldSlackText.length, 1500)),
+      newContent: newSlackText.substring(0, Math.min(newSlackText.length, 1500)),
       messages: uniqueMessageInfo,
       hasChanges,
-      suggestionType,
+      suggestionType, // 항상 'UPDATE'
+      newSectionSuggestion, // 항상 포함
     };
-
-    if (suggestionType === 'APPEND') {
-      result.originalLastNodeContent = nodeContent;
-      result.appendedNodeContent = appendedText;
-
-      // 새 섹션 제안 생성을 위해 모든 마크다운 파일 목록 가져오기
-      const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
-      const availableFiles = allMarkdownFiles.map((file) => ({
-        fileName: file.name,
-        githubUrl: file.githubUrl,
-        description: `${file.name} - Documentation file`,
-      }));
-
-      result.newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
-    }
 
     // --- 로깅 추가 ---
     console.log('[processDocument] Suggestion Type:', suggestionType);
     console.log('[processDocument] Has Changes:', hasChanges);
     console.log('[processDocument] For node ID:', nodeId);
-    if (suggestionType === 'APPEND') {
-      console.log('[processDocument] Original Node Content (for APPEND):', nodeContent);
-      console.log('[processDocument] Generated Appended Text:', appendedText);
-    } else {
-      console.log('[processDocument] Original Node Content (for UPDATE):', nodeContent);
-      console.log('[processDocument] LLM Edited Content (for UPDATE):', finalUpdatedNodeContentForUpdate);
-    }
+    console.log('[processDocument] Original Node Content:', nodeContent);
+    console.log('[processDocument] LLM Edited Content:', llmEditedContent);
+    console.log('[processDocument] New Section Suggestion available:', !!newSectionSuggestion);
     // --- 로깅 끝 ---
 
     return result;

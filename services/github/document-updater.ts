@@ -38,53 +38,50 @@ export async function applyDocumentUpdatesToGithub({
         throw new Error(`File not found in vector store: ${fileName}`);
       }
 
-      // APPEND와 UPDATE 작업을 분리 처리
-      const appendOperations = fileUpdates.filter((update) => update.suggestionType === 'APPEND');
-      const updateOperations = fileUpdates.filter((update) => update.suggestionType !== 'APPEND');
-
-      // 1. APPEND 작업 먼저 처리 (벡터 스토어 내의 트리 업데이트)
-      if (appendOperations.length > 0) {
-        for (const appendUpdate of appendOperations) {
-          if (appendUpdate.appendedNodeContent !== undefined && appendUpdate.appendedNodeContent !== null) {
-            const success = await vectorStore.appendSpecificNode(
-              fileName,
-              appendUpdate.nodeId,
-              appendUpdate.appendedNodeContent,
-            );
-            if (!success) {
-              throw new Error(`Failed to append node ${appendUpdate.nodeId} in ${fileName}`);
+      // 통일된 처리: 모든 업데이트를 parseAndSplitContent 방식으로 처리
+      for (const update of fileUpdates) {
+        if (update.updatedNodeContent !== undefined && update.updatedNodeContent !== null) {
+          // 기존 노드 내용과 비교하여 실제 변경사항이 있는지 확인
+          const currentNode = currentMarkdownFile.tree.nodeMap.get(update.nodeId);
+          if (currentNode) {
+            const { toString } = await import('mdast-util-to-string');
+            const currentContent = toString(currentNode);
+            
+            // 내용이 다른 경우에만 업데이트 처리
+            if (currentContent.trim() !== update.updatedNodeContent.trim()) {
+              const success = await vectorStore.replaceNodeWithEnhancedContent(
+                fileName,
+                update.nodeId,
+                update.updatedNodeContent,
+              );
+              if (!success) {
+                throw new Error(`Failed to update node ${update.nodeId} in ${fileName}`);
+              }
+              Logger.info(`Successfully processed unified update for node ${update.nodeId}`);
+            } else {
+              Logger.info(`No changes detected for node ${update.nodeId}, skipping update`);
             }
           } else {
-            console.warn(
-              `Skipping append operation for empty content: nodeId=${appendUpdate.nodeId}, fileName=${fileName}`,
-            );
+            Logger.warn(`Node ${update.nodeId} not found in tree, skipping update`);
           }
-        }
-        // APPEND 작업 후 최신 MarkdownFile 객체를 다시 가져옴
-        currentMarkdownFile = vectorStore.getMarkdownFile(fileName);
-        if (!currentMarkdownFile) {
-          throw new Error(`File not found in vector store after APPEND: ${fileName}`);
+        } else {
+          console.warn(
+            `Skipping update operation for empty content: nodeId=${update.nodeId}, fileName=${fileName}`,
+          );
         }
       }
 
-      // 2. 최종 마크다운 생성
-      let updatedMarkdownForGithub: string;
+      // 업데이트 후 최신 MarkdownFile 객체를 다시 가져옴
+      currentMarkdownFile = vectorStore.getMarkdownFile(fileName);
+      if (!currentMarkdownFile) {
+        throw new Error(`File not found in vector store after updates: ${fileName}`);
+      }
+
+      // 최종 마크다운 생성
       const { treeToMarkdown } = await import('services/document/markdown');
-
-      if (updateOperations.length > 0) {
-        // UPDATE 작업이 있으면, (APPEND가 이미 적용된) 현재 트리에 UPDATE를 적용
-        updatedMarkdownForGithub = updateDocTreeWithChanges(currentMarkdownFile.tree, updateOperations);
-      } else {
-        // APPEND만 있었던 경우, (APPEND가 이미 적용된) 현재 트리를 마크다운으로 변환
-        Logger.debug(`APPEND 후 트리 상태 (UPDATE 없음):`, {
-          nodeMapSize: currentMarkdownFile.tree.nodeMap.size,
-          appendedNodes: Array.from(currentMarkdownFile.tree.nodeMap.keys()).filter((id) => id.includes('_append_')),
-        });
-
-        updatedMarkdownForGithub = treeToMarkdown(currentMarkdownFile.tree);
-
-        Logger.debug(`변환된 마크다운 길이 (UPDATE 없음): ${updatedMarkdownForGithub.length}`);
-      }
+      const updatedMarkdownForGithub = treeToMarkdown(currentMarkdownFile.tree);
+      
+      Logger.debug(`Generated final markdown length: ${updatedMarkdownForGithub.length}`);
 
       const allMessages = fileUpdates.flatMap((update) => update.messages || []);
       const commitMessage = await githubService.createCommitMessage(
@@ -93,7 +90,6 @@ export async function applyDocumentUpdatesToGithub({
         fileUpdates[0].nodeId,
         fileUpdates[0].knowledgeContent ||
           fileUpdates[0].updatedNodeContent ||
-          fileUpdates[0].appendedNodeContent ||
           'Updated content',
         allMessages,
         client,
@@ -117,28 +113,8 @@ export async function applyDocumentUpdatesToGithub({
 
       Logger.info(`Successfully updated ${fileName} on GitHub`);
 
-      // 4. GitHub 업데이트 성공 후, 최종적으로 벡터 스토어의 문서 내용 및 임베딩 업데이트 (UPDATE 작업에 대해서만)
-      if (updateOperations.length > 0) {
-        try {
-          const nodeUpdates = updateOperations.map((op) => ({
-            nodeId: op.nodeId,
-            content: op.updatedNodeContent,
-          }));
-          const vectorUpdateSuccess = await vectorStore.updateSpecificNodes(fileName, nodeUpdates);
-          if (vectorUpdateSuccess) {
-            Logger.info(`Successfully updated vector store for ${fileName} (UPDATE operations)`);
-          } else {
-            Logger.warn(
-              `Failed to update vector store for ${fileName} (UPDATE operations), but GitHub update was successful`,
-            );
-          }
-        } catch (vectorError) {
-          Logger.error(
-            `Error updating vector store for ${fileName} (UPDATE operations) after GitHub success`,
-            vectorError as Error,
-          );
-        }
-      }
+      // 벡터 스토어는 이미 appendSpecificNode를 통해 업데이트됨
+      Logger.info(`Vector store updates completed during node processing for ${fileName}`);
 
       successfulUpdates.push(fileName);
     } catch (error) {

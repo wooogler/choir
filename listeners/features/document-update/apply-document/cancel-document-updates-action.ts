@@ -19,6 +19,7 @@ export const cancelDocumentUpdatesCallback = async ({
   try {
     const userId = body.user.id;
     const value = body.actions?.[0]?.value;
+    const responseUrl = body.response_url;
 
     if (!value) {
       throw new Error('Button value not found');
@@ -35,58 +36,16 @@ export const cancelDocumentUpdatesCallback = async ({
       ? 'The document update process has been cancelled.'
       : 'Document update process completed.';
 
-    // DM 채널 열기
-    const dmResult = await client.conversations.open({
-      users: userId,
-    });
-
-    if (!dmResult.ok || !dmResult.channel?.id) {
-      throw new Error('DM 채널을 열 수 없습니다');
-    }
-
-    const dmChannelId = dmResult.channel.id;
-
-    // 진행 중 메시지가 있다면 삭제
-    const progressTs = getProgressMessageTimestamp(userId);
-    if (progressTs) {
+    // Use response_url to replace the current message with cancellation status
+    if (responseUrl) {
       try {
-        await client.chat.delete({
-          channel: dmChannelId,
-          ts: progressTs,
-        });
-        deleteProgressMessageTimestamp(userId);
-        logger.info('Progress message deleted successfully');
-      } catch (deleteError) {
-        logger.warn('진행 중 메시지 삭제 실패 (메시지가 이미 없을 수 있음):', deleteError);
-      }
-    }
-
-    // 마지막 suggestion 메시지를 "cancelled" 메시지로 업데이트
-    const lastMessageTs = getLastMessageTimestamp(userId);
-    if (lastMessageTs) {
-      try {
-        await client.chat.update({
-          channel: dmChannelId,
-          ts: lastMessageTs,
-          text: cancelMessage,
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: `${cancelText} ${cancelMessage}`,
-              },
-              block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
-            },
-          ],
-        });
-        logger.info('Last message updated successfully with cancellation');
-      } catch (updateError) {
-        logger.warn('마지막 메시지 업데이트 실패, 새 메시지로 대체:', updateError);
-        // 업데이트 실패 시 새 메시지 전송
-        try {
-          await client.chat.postMessage({
-            channel: dmChannelId,
+        const response = await fetch(responseUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            replace_original: true,
             text: cancelMessage,
             blocks: [
               {
@@ -95,34 +54,73 @@ export const cancelDocumentUpdatesCallback = async ({
                   type: 'mrkdwn',
                   text: `${cancelText} ${cancelMessage}`,
                 },
-                block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
+              },
+            ],
+            unfurl_links: false,
+            unfurl_media: false,
+          }),
+        });
+        
+        if (!response.ok) {
+          console.error('Failed to send cancellation response:', await response.text());
+          throw new Error('Failed to send cancellation via response_url');
+        }
+        
+        logger.info('Cancellation message sent via response_url successfully');
+      } catch (responseError) {
+        logger.error('Failed to send cancellation via response_url:', responseError);
+        
+        // Fallback to regular postMessage if response_url fails
+        const dmResult = await client.conversations.open({
+          users: userId,
+        });
+
+        if (dmResult.ok && dmResult.channel?.id) {
+          await client.chat.postMessage({
+            channel: dmResult.channel.id,
+            text: cancelMessage,
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: `${cancelText} ${cancelMessage}`,
+                },
               },
             ],
           });
-        } catch (postError) {
-          logger.error('새 취소 메시지 전송도 실패:', postError);
         }
       }
     } else {
-      // lastMessageTs가 없는 경우 새 메시지 전송
-      try {
-        await client.chat.postMessage({
-          channel: dmChannelId,
-          text: cancelMessage,
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: `${cancelText} ${cancelMessage}`,
-              },
-            },
-          ],
-        });
-        logger.info('New cancellation message sent');
-      } catch (postError) {
-        logger.error('새 취소 메시지 전송 실패:', postError);
+      // Fallback for cases where response_url is not available
+      const dmResult = await client.conversations.open({
+        users: userId,
+      });
+
+      if (!dmResult.ok || !dmResult.channel?.id) {
+        throw new Error('DM 채널을 열 수 없습니다');
       }
+
+      await client.chat.postMessage({
+        channel: dmResult.channel.id,
+        text: cancelMessage,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `${cancelText} ${cancelMessage}`,
+            },
+          },
+        ],
+      });
+    }
+
+    // Clean up progress message timestamp if exists
+    const progressTs = getProgressMessageTimestamp(userId);
+    if (progressTs) {
+      deleteProgressMessageTimestamp(userId);
+      logger.info('Progress message timestamp cleared');
     }
 
     // 로그: 문서 업데이트 취소
@@ -131,7 +129,7 @@ export const cancelDocumentUpdatesCallback = async ({
       await logButtonClick(
         userId,
         workspaceId,
-        dmChannelId,
+        'dm',
         'dm',
         'cancel_document_updates',
         Date.now() - startTime,
