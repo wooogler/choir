@@ -46,7 +46,7 @@ export async function applyDocumentUpdatesToGithub({
           if (currentNode) {
             const { toString } = await import('mdast-util-to-string');
             const currentContent = toString(currentNode);
-            
+
             // 내용이 다른 경우에만 업데이트 처리
             if (currentContent.trim() !== update.updatedNodeContent.trim()) {
               const success = await vectorStore.replaceNodeWithEnhancedContent(
@@ -65,9 +65,7 @@ export async function applyDocumentUpdatesToGithub({
             Logger.warn(`Node ${update.nodeId} not found in tree, skipping update`);
           }
         } else {
-          console.warn(
-            `Skipping update operation for empty content: nodeId=${update.nodeId}, fileName=${fileName}`,
-          );
+          console.warn(`Skipping update operation for empty content: nodeId=${update.nodeId}, fileName=${fileName}`);
         }
       }
 
@@ -80,7 +78,7 @@ export async function applyDocumentUpdatesToGithub({
       // 최종 마크다운 생성
       const { treeToMarkdown } = await import('services/document/markdown');
       const updatedMarkdownForGithub = treeToMarkdown(currentMarkdownFile.tree);
-      
+
       Logger.debug(`Generated final markdown length: ${updatedMarkdownForGithub.length}`);
 
       const allMessages = fileUpdates.flatMap((update) => update.messages || []);
@@ -88,9 +86,7 @@ export async function applyDocumentUpdatesToGithub({
         fileName,
         userId,
         fileUpdates[0].nodeId,
-        fileUpdates[0].knowledgeContent ||
-          fileUpdates[0].updatedNodeContent ||
-          'Updated content',
+        fileUpdates[0].knowledgeContent || fileUpdates[0].updatedNodeContent || 'Updated content',
         allMessages,
         client,
       );

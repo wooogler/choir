@@ -4,8 +4,8 @@ import { FaissStore } from '@langchain/community/vectorstores/faiss';
 import { Document } from '@langchain/core/documents';
 import { Logger } from '../common/logger';
 import type { EmbeddingService } from './embedding-service';
-import { type DocumentMetadata, VectorStoreError } from './types';
 import { MultiFileFAISSManager } from './multi-file-faiss-manager';
+import { type DocumentMetadata, VectorStoreError } from './types';
 
 /**
  * FAISS 기반 벡터 스토어 관리자
@@ -21,7 +21,7 @@ export class FAISSStoreManager {
   private embeddingService: EmbeddingService;
   private indexPath: string;
   private documentIdMap = new Map<string, number>(); // nodeId -> FAISS index mapping
-  
+
   // 멀티파일 매니저 추가
   private multiFileManager: MultiFileFAISSManager;
   private useMultiFileMode = false;
@@ -30,7 +30,7 @@ export class FAISSStoreManager {
     this.embeddingService = embeddingService;
     this.indexPath = path.join(process.cwd(), 'data', 'faiss-index');
     this.useMultiFileMode = useMultiFile;
-    
+
     // 멀티파일 매니저 초기화
     this.multiFileManager = new MultiFileFAISSManager(embeddingService);
 
@@ -53,7 +53,7 @@ export class FAISSStoreManager {
       Logger.info(
         `Initializing FAISS vector store with ${documents.length} documents${isFromCache ? ' (from cache)' : ' (fresh build)'} (multiFile: ${this.useMultiFileMode})`,
       );
-      
+
       // 멀티파일 모드인 경우 MultiFileFAISSManager 사용
       if (this.useMultiFileMode) {
         const success = await this.multiFileManager.initialize(documents);
@@ -125,7 +125,7 @@ export class FAISSStoreManager {
         Logger.error('FAISS store not initialized');
         return false;
       }
-      
+
       // 멀티파일 모드인 경우
       if (this.useMultiFileMode) {
         // 파일별로 그룹화하여 추가
@@ -133,20 +133,20 @@ export class FAISSStoreManager {
         for (const doc of documents) {
           const fileName = doc.metadata.fileName;
           if (!fileName) continue;
-          
+
           if (!fileGroups.has(fileName)) {
             fileGroups.set(fileName, []);
           }
           fileGroups.get(fileName)!.push(doc);
         }
-        
+
         // 각 파일별로 문서 추가
         for (const [fileName, fileDocs] of fileGroups.entries()) {
           await this.multiFileManager.addDocumentsToFile(fileName, fileDocs);
         }
         return true;
       }
-      
+
       if (!this.store) {
         Logger.error('FAISS store not initialized');
         return false;
@@ -255,7 +255,7 @@ export class FAISSStoreManager {
         }
         return true;
       }
-      
+
       const documentsToRemove = this.documents.filter((doc) => doc.metadata.nodeId === nodeId);
       return await this.removeDocuments(documentsToRemove);
     } catch (error) {
@@ -273,12 +273,12 @@ export class FAISSStoreManager {
         Logger.error('FAISS: Vector store not initialized for search');
         throw new VectorStoreError('Vector store not initialized');
       }
-      
+
       // 멀티파일 모드인 경우 글로벌 검색 사용 (로그 중복 방지)
       if (this.useMultiFileMode) {
         return this.multiFileManager.searchGlobal(query, k);
       }
-      
+
       if (!this.store) {
         Logger.error('FAISS: Vector store not initialized for search');
         throw new VectorStoreError('Vector store not initialized');
@@ -375,7 +375,7 @@ export class FAISSStoreManager {
     if (this.useMultiFileMode) {
       return this.multiFileManager.searchInFile(query, fileName, k);
     }
-    
+
     // 기존 방식 (필터링 후처리)
     return this.similaritySearch(query, k, { fileName });
   }
@@ -395,7 +395,7 @@ export class FAISSStoreManager {
     if (this.useMultiFileMode) {
       return this.multiFileManager.getDocuments();
     }
-    
+
     return this.documents;
   }
 
@@ -431,10 +431,10 @@ export class FAISSStoreManager {
           ...multiFileStats.details,
           mode: 'multi-file',
           legacyIndexPath: this.indexPath,
-        }
+        },
       };
     }
-    
+
     return {
       status: this.isInitialized ? 'healthy' : 'error',
       details: {
@@ -462,7 +462,6 @@ export class FAISSStoreManager {
       Logger.warn('Failed to save FAISS index', error as Error);
     }
   }
-
 
   /**
    * 기존 인덱스 파일 삭제

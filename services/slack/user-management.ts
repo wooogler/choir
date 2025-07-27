@@ -139,11 +139,11 @@ export async function getWorkspaceId(client: WebClient): Promise<string> {
       Logger.warn('No team_id in auth.test response', { authInfo });
       throw new Error('No team_id in auth response');
     }
-    
+
     // 캐시에 저장
     cachedWorkspaceId = authInfo.team_id;
     Logger.info('Workspace ID cached', { workspaceId: cachedWorkspaceId });
-    
+
     return cachedWorkspaceId;
   } catch (error) {
     Logger.error('Error getting workspace info', error as Error);
@@ -285,9 +285,7 @@ export async function getManagerText(workspaceId: string, client: WebClient): Pr
     }
 
     // Get all manager names
-    const managerNames = await Promise.all(
-      managers.map(managerId => getUserName(managerId, client))
-    );
+    const managerNames = await Promise.all(managers.map((managerId) => getUserName(managerId, client)));
 
     return managerNames.join(', ');
   } catch (error) {

@@ -6,13 +6,13 @@ import { processMessageHistory, processMessageText } from 'services/slack/conver
 import { createChatCompletion } from './completions';
 
 export async function editMarkdownWithKnowledge(
-  markdown: string, 
-  knowledgeContent: string, 
-  context?: { fileName?: string; sectionName?: string; headingPath?: string }
+  markdown: string,
+  knowledgeContent: string,
+  context?: { fileName?: string; sectionName?: string; headingPath?: string },
 ) {
   const anonymizedKnowledge = anonymizeText(knowledgeContent);
   const isEmpty = !markdown.trim();
-  
+
   // 빈 섹션과 기존 내용에 대해 다른 프롬프트 사용
   if (isEmpty) {
     return await createContentForEmptySection(anonymizedKnowledge, context);
@@ -25,11 +25,11 @@ export async function editMarkdownWithKnowledge(
  * 빈 섹션에 대해 새로운 내용 생성
  */
 async function createContentForEmptySection(
-  knowledgeContent: string, 
-  context?: { fileName?: string; sectionName?: string; headingPath?: string }
+  knowledgeContent: string,
+  context?: { fileName?: string; sectionName?: string; headingPath?: string },
 ) {
   const contextInfo = context?.headingPath || context?.sectionName || 'Unknown section';
-  
+
   const response = await createChatCompletion(
     [
       {
@@ -72,12 +72,12 @@ Generate content that fits this section context using only the provided knowledg
  * 기존 내용을 knowledge로 향상
  */
 async function enhanceExistingContent(
-  markdown: string, 
-  knowledgeContent: string, 
-  context?: { fileName?: string; sectionName?: string; headingPath?: string }
+  markdown: string,
+  knowledgeContent: string,
+  context?: { fileName?: string; sectionName?: string; headingPath?: string },
 ) {
   const contextInfo = context?.headingPath || context?.sectionName || 'Unknown section';
-  
+
   const response = await createChatCompletion(
     [
       {

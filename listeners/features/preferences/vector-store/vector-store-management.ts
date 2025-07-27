@@ -1,10 +1,10 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { logButtonClick } from 'services/common/user-interaction-logger';
 import { parseMarkdownToTree } from 'services/document';
 import { treeToMarkdown } from 'services/document/markdown';
 import { GithubService } from 'services/github';
 import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
-import { logButtonClick } from 'services/common/user-interaction-logger';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { appHomeOpenedCallback } from '../../../event-handlers/app-home-handler';
 

@@ -22,12 +22,15 @@ interface OrganizationalContext {
  * Extract knowledge from a collection of Slack messages
  */
 // Helper function to extract Q&A content from QA_SHARE_INTRO messages
-function extractQAContent(messageText: string, canAnswer: boolean): { question: string; answer: string | null; canAnswer: boolean } | null {
+function extractQAContent(
+  messageText: string,
+  canAnswer: boolean,
+): { question: string; answer: string | null; canAnswer: boolean } | null {
   const questionMatch = messageText.match(/\*Question:\*\s*```([^`]+)```/);
-  
+
   if (questionMatch) {
     const question = questionMatch[1].trim();
-    
+
     if (canAnswer) {
       // For answered questions, extract the response
       const responseMatch = messageText.match(/\*My response:\*\s*```([^`]+)```/);
@@ -35,7 +38,7 @@ function extractQAContent(messageText: string, canAnswer: boolean): { question: 
         return {
           question,
           answer: responseMatch[1].trim(),
-          canAnswer: true
+          canAnswer: true,
         };
       }
     } else {
@@ -43,11 +46,11 @@ function extractQAContent(messageText: string, canAnswer: boolean): { question: 
       return {
         question,
         answer: null,
-        canAnswer: false
+        canAnswer: false,
       };
     }
   }
-  
+
   return null;
 }
 
@@ -67,20 +70,27 @@ export async function extractKnowledgeFromMessages(
     for (let i = 0; i < processedMessages.length; i++) {
       const msg = processedMessages[i];
       const originalMsg = messages[i];
-      
+
       // Check if this is a QA_SHARE_INTRO message (answered or unanswered)
-      const isQAShareAnswered = originalMsg.metadata?.messageType === 'qa_share_intro_answered' ||
-        (originalMsg.blocks && originalMsg.blocks.some((block: any) => 
-          block.block_id && block.block_id.includes('qa_share_intro_answered')));
-      
-      const isQAShareUnanswered = originalMsg.metadata?.messageType === 'qa_share_intro_unanswered' ||
-        (originalMsg.blocks && originalMsg.blocks.some((block: any) => 
-          block.block_id && block.block_id.includes('qa_share_intro_unanswered')));
-      
+      const isQAShareAnswered =
+        originalMsg.metadata?.messageType === 'qa_share_intro_answered' ||
+        (originalMsg.blocks &&
+          originalMsg.blocks.some(
+            (block: any) => block.block_id && block.block_id.includes('qa_share_intro_answered'),
+          ));
+
+      const isQAShareUnanswered =
+        originalMsg.metadata?.messageType === 'qa_share_intro_unanswered' ||
+        (originalMsg.blocks &&
+          originalMsg.blocks.some(
+            (block: any) => block.block_id && block.block_id.includes('qa_share_intro_unanswered'),
+          ));
+
       // Check if this is a user comment block
-      const isUserComment = originalMsg.blocks && originalMsg.blocks.some((block: any) => 
-        block.block_id && block.block_id.includes('user_comment'));
-      
+      const isUserComment =
+        originalMsg.blocks &&
+        originalMsg.blocks.some((block: any) => block.block_id && block.block_id.includes('user_comment'));
+
       // Handle Q&A SHARE messages (these should be excluded from conversation)
       if ((isQAShareAnswered || isQAShareUnanswered) && msg.role === 'CHOIR') {
         // Extract Q&A content for context
@@ -89,26 +99,27 @@ export async function extractKnowledgeFromMessages(
         if (extracted) {
           qaContent.push(extracted);
         }
-        
+
         // If there's also a user comment in this message, extract it as user input
         if (isUserComment) {
           const commentMatch = msg.content.match(/\*(.+?) added:\*\s*([\s\S]*)/);
           if (commentMatch) {
             const userName = commentMatch[1];
             const comment = commentMatch[2].trim();
-            if (comment) { // Only add if comment is not empty
+            if (comment) {
+              // Only add if comment is not empty
               conversationMessages.push({
                 role: 'user',
-                content: `${userName}: ${comment}` // Format same as other user messages
+                content: `${userName}: ${comment}`, // Format same as other user messages
               });
             }
           }
         }
-        
+
         // Skip adding the Q&A share message itself to conversation
         continue;
       }
-      
+
       // Add all other messages to conversation
       conversationMessages.push(msg);
     }
@@ -144,7 +155,7 @@ export async function extractKnowledgeFromMessages(
     let qaContextSection = '';
     if (qaContent.length > 0) {
       const qa = qaContent[0]; // Only one Q&A possible
-      
+
       if (qa.canAnswer) {
         qaContextSection += `\n\n**Existing Q&A from Current Documentation**:\nQ: ${qa.question}\nA: ${qa.answer}\n\nFocus on identifying NEW information that goes beyond what's already documented in the Q&A above.`;
       } else {
@@ -164,7 +175,8 @@ What specific organizational policies, processes, or practices are discussed her
       [
         {
           role: 'system',
-          content: 'You are CHOIR, a knowledge curator. Extract organizational policies, processes, and practices from team conversations for documentation.',
+          content:
+            'You are CHOIR, a knowledge curator. Extract organizational policies, processes, and practices from team conversations for documentation.',
         },
         {
           role: 'user',

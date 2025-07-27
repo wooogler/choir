@@ -142,7 +142,6 @@ export async function handleIncomingMessage(client: any, event: any, message: st
       }
     }
 
-
     // Get organization information
     const workspaceId = await getWorkspaceId(client);
     const orgName = (await getOrganizationName(workspaceId)) || '';
@@ -188,7 +187,6 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     } catch (logError) {
       logger.error('Error logging intent classification:', logError);
     }
-
 
     if (messageIntent === 'question') {
       // 질문으로 처리

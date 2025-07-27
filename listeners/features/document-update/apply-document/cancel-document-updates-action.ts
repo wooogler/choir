@@ -60,16 +60,16 @@ export const cancelDocumentUpdatesCallback = async ({
             unfurl_media: false,
           }),
         });
-        
+
         if (!response.ok) {
           console.error('Failed to send cancellation response:', await response.text());
           throw new Error('Failed to send cancellation via response_url');
         }
-        
+
         logger.info('Cancellation message sent via response_url successfully');
       } catch (responseError) {
         logger.error('Failed to send cancellation via response_url:', responseError);
-        
+
         // Fallback to regular postMessage if response_url fails
         const dmResult = await client.conversations.open({
           users: userId,

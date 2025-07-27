@@ -90,7 +90,11 @@ export async function applyDocumentChanges({
       for (const update of fileData.documentUpdates) {
         if (update.suggestionType === 'APPEND' && update.appendedNodeContent) {
           // APPEND: 새로운 노드를 추가
-          const success = await vectorStore.replaceNodeWithEnhancedContent(fileName, update.nodeId, update.appendedNodeContent);
+          const success = await vectorStore.replaceNodeWithEnhancedContent(
+            fileName,
+            update.nodeId,
+            update.appendedNodeContent,
+          );
           if (!success) {
             throw new Error(`Failed to append node ${update.nodeId} in ${fileName}`);
           }

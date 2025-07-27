@@ -123,7 +123,7 @@ export async function processDocument(
       // pageContent에서 "File: ... Path: ..." 컨텍스트 제거
       const lines = doc.pageContent.split('\n');
       let contentStartIndex = 0;
-      
+
       // "File:" 또는 "Path:"로 시작하는 라인들을 건너뜀
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -133,7 +133,7 @@ export async function processDocument(
           break;
         }
       }
-      
+
       nodeContent = lines.slice(contentStartIndex).join('\n').trim();
     }
 
@@ -162,10 +162,10 @@ export async function processDocument(
     ]);
 
     // 단순화된 로직: 항상 UPDATE 타입으로 처리하되 diff UI 사용
-    const suggestionType: 'UPDATE' = 'UPDATE'; // 타입 통일
+    const suggestionType = 'UPDATE' as const; // 타입 통일
     const oldSlackText = await convertMarkdownToSlackText(nodeContent);
     const newSlackText = await convertMarkdownToSlackText(llmEditedContent);
-    
+
     // 항상 diff 블록 생성
     const diffBlock = createDiffBlock(oldSlackText, newSlackText);
     const hasChanges = oldSlackText !== newSlackText;

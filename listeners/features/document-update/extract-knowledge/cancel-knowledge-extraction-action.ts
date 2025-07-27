@@ -63,8 +63,10 @@ export const cancelKnowledgeExtractionCallback = async ({
     const channelId = body.container?.channel_id || userId;
     const messageTs = body.container?.message_ts;
     const isUserCancellation = userId === (sessionData as any).userId; // User cancelling their own request
-    
-    logger.info(`Attempting to cancel knowledge extraction - Channel: ${channelId}, Message TS: ${messageTs}, User cancellation: ${isUserCancellation}`);
+
+    logger.info(
+      `Attempting to cancel knowledge extraction - Channel: ${channelId}, Message TS: ${messageTs}, User cancellation: ${isUserCancellation}`,
+    );
 
     // Handle manager DM message update (for manager decline)
     if (!isUserCancellation && messageTs) {
@@ -78,11 +80,13 @@ export const cancelKnowledgeExtractionCallback = async ({
 
         if (currentMessage.messages && currentMessage.messages.length > 0) {
           const message = currentMessage.messages[0];
-          
+
           // Remove action blocks (buttons) but keep all other content
-          const blocksWithoutActions = message.blocks ? message.blocks.filter((block: any) => {
-            return block.type !== 'actions';
-          }) : [];
+          const blocksWithoutActions = message.blocks
+            ? message.blocks.filter((block: any) => {
+                return block.type !== 'actions';
+              })
+            : [];
 
           // Get manager name for declined status
           let managerName = 'manager';
@@ -109,7 +113,7 @@ export const cancelKnowledgeExtractionCallback = async ({
             text: message.text || 'Document Update Suggestion',
             blocks: [...blocksWithoutActions, declinedBlock] as any,
           });
-          
+
           logger.info(`Successfully updated manager message to show declined status`);
         }
       } catch (messageError) {
@@ -122,9 +126,9 @@ export const cancelKnowledgeExtractionCallback = async ({
       try {
         const sessionDataTyped = sessionData as any;
         const userName = sessionDataTyped.userName || 'A team member';
-        
+
         let notificationText, notificationBlocks;
-        
+
         if (isUserCancellation) {
           // User cancelled their own request
           notificationText = '❌ Update suggestion cancelled';
@@ -147,7 +151,7 @@ export const cancelKnowledgeExtractionCallback = async ({
           } catch (error) {
             logger.warn('Failed to get manager name for decline notification:', error);
           }
-          
+
           notificationText = `❌ Update suggestion declined by ${managerName}`;
           notificationBlocks = [
             {
@@ -160,9 +164,11 @@ export const cancelKnowledgeExtractionCallback = async ({
             },
           ];
         }
-        
-        logger.info(`Sending ${isUserCancellation ? 'cancellation' : 'decline'} notification to channel: ${originalChannelId}`);
-        
+
+        logger.info(
+          `Sending ${isUserCancellation ? 'cancellation' : 'decline'} notification to channel: ${originalChannelId}`,
+        );
+
         await client.chat.postMessage({
           channel: originalChannelId,
           ...(originalThreadTs ? { thread_ts: originalThreadTs } : {}),
@@ -171,7 +177,7 @@ export const cancelKnowledgeExtractionCallback = async ({
           unfurl_links: false,
           unfurl_media: false,
         });
-        
+
         logger.info(`Successfully sent notification to ${originalChannelId}`);
 
         // If this is a manager decline (not user cancellation), notify other managers
@@ -263,10 +269,10 @@ async function notifyOtherManagersAboutDecline(
     // Get workspace ID and managers list
     const workspaceId = await getWorkspaceId(client);
     const managers = await getManagers(workspaceId);
-    
+
     // Filter out the declining manager
-    const otherManagers = managers.filter(managerId => managerId !== decliningManagerId);
-    
+    const otherManagers = managers.filter((managerId) => managerId !== decliningManagerId);
+
     if (otherManagers.length === 0) {
       logger.info('No other managers to notify about decline');
       return;
@@ -280,7 +286,7 @@ async function notifyOtherManagersAboutDecline(
     const notificationPromises = otherManagers.map(async (managerId) => {
       try {
         const simpleMessage = `${decliningManagerName} declined the document update suggestion from *${userName}*. You can still review this suggestion if you think it has merit.`;
-        
+
         await client.chat.postMessage({
           channel: managerId, // DM to manager
           text: simpleMessage,

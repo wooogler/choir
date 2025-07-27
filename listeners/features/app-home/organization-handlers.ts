@@ -1,4 +1,5 @@
 import type { App, SlackActionMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
+import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
 import {
   getOrganizationDescription,
   getOrganizationName,
@@ -6,7 +7,6 @@ import {
   setOrganizationDescription,
   setOrganizationName,
 } from 'services/slack';
-import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 export const registerOrganizationHandlers = (app: App) => {
@@ -221,7 +221,7 @@ export const registerOrganizationHandlers = (app: App) => {
 
   app.view('edit_organization_modal', async ({ ack, body, client, logger, view }) => {
     const startTime = Date.now();
-    
+
     try {
       const newName = view.state.values.organization_name_input_block.organization_name_input.value;
       const newDescription =

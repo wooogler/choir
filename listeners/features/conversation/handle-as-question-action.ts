@@ -59,7 +59,7 @@ export const handleAsQuestionCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: "✅ Processed as Question",
+          text: '✅ Processed as Question',
           blocks: [
             {
               type: 'section',

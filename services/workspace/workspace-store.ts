@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { WebClient } from '@slack/web-api';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
 
@@ -17,6 +17,7 @@ export interface WorkspaceConfig {
   managers: string[];
   choirUsers: string[]; // Users authorized to use CHOIR (includes managers)
   loggingEnabled?: boolean; // Controls file-based logging on/off
+  readOnlyFiles?: string[]; // Files that are read-only (excluded from document updates)
   markdownFiles?: Array<{
     name: string;
     path: string;
@@ -135,14 +136,8 @@ export class WorkspaceStore {
     }
 
     // 워크스페이스 정보 가져오기 (rate limit 처리)
-    const workspaceInfo = await withRateLimit(
-      () => client.auth.test(),
-      'get workspace auth info'
-    );
-    const teamInfo = await withRateLimit(
-      () => client.team.info(),
-      'get team info'
-    );
+    const workspaceInfo = await withRateLimit(() => client.auth.test(), 'get workspace auth info');
+    const teamInfo = await withRateLimit(() => client.team.info(), 'get team info');
 
     const config: WorkspaceConfig = {
       workspaceId,
@@ -513,5 +508,74 @@ export class WorkspaceStore {
       this.logger.error(`Failed to get all workspace configs: ${error}`);
       return [];
     }
+  }
+
+  /**
+   * 읽기 전용 파일 목록 가져오기
+   */
+  public async getReadOnlyFiles(workspaceId: string): Promise<string[]> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.readOnlyFiles || [];
+  }
+
+  /**
+   * 읽기 전용 파일 목록 설정 (기존 목록 대체)
+   */
+  public async setReadOnlyFiles(workspaceId: string, fileNames: string[]): Promise<boolean> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) return false;
+
+    config.readOnlyFiles = fileNames;
+    await this.saveWorkspaceConfig(config);
+    return true;
+  }
+
+  /**
+   * 읽기 전용 파일 추가
+   */
+  public async addReadOnlyFile(workspaceId: string, fileName: string): Promise<boolean> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) return false;
+
+    if (!config.readOnlyFiles) {
+      config.readOnlyFiles = [];
+    }
+
+    if (!config.readOnlyFiles.includes(fileName)) {
+      config.readOnlyFiles.push(fileName);
+      await this.saveWorkspaceConfig(config);
+    }
+    return true;
+  }
+
+  /**
+   * 읽기 전용 파일 제거
+   */
+  public async removeReadOnlyFile(workspaceId: string, fileName: string): Promise<boolean> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config || !config.readOnlyFiles) return false;
+
+    config.readOnlyFiles = config.readOnlyFiles.filter((name) => name !== fileName);
+    await this.saveWorkspaceConfig(config);
+    return true;
+  }
+
+  /**
+   * 파일이 읽기 전용인지 확인
+   */
+  public async isReadOnlyFile(workspaceId: string, fileName: string): Promise<boolean> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.readOnlyFiles?.includes(fileName) || false;
+  }
+
+  /**
+   * 쓰기 가능한 파일 목록 가져오기 (전체 파일 목록에서 읽기 전용 파일 제외)
+   */
+  public async getWritableFiles(workspaceId: string): Promise<Array<{ name: string; path: string }>> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config?.markdownFiles) return [];
+
+    const readOnlyFiles = config.readOnlyFiles || [];
+    return config.markdownFiles.filter((file) => !readOnlyFiles.includes(file.name));
   }
 }

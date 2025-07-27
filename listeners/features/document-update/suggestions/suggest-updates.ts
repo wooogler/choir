@@ -66,11 +66,11 @@ async function showFileSelectionDropdown(
     throw new Error('Workspace configuration or GitHub repository not found');
   }
 
-  // Get available markdown files for file selection dropdown
-  let fileList = await workspaceStore.getCachedMarkdownFiles(workspaceId);
+  // Get writable files for file selection dropdown (excludes read-only files)
+  let fileList = await workspaceStore.getWritableFiles(workspaceId);
 
-  if (!fileList) {
-    // If no cache, load from GitHub and cache the result
+  if (!fileList || fileList.length === 0) {
+    // If no cached writable files, load from GitHub and cache, then filter
     const { owner, repo, path } = config.githubRepo;
     const githubService = GithubService.getInstance();
     const markdownFiles = await githubService.getAllMarkdownFiles({
@@ -81,13 +81,27 @@ async function showFileSelectionDropdown(
       userId: userId,
     });
 
-    fileList = markdownFiles.map((file) => ({
+    // Cache all files
+    await workspaceStore.setMarkdownFilesCache(workspaceId, markdownFiles.map((file) => ({
       name: file.name,
       path: file.path,
-    }));
+    })));
+
+    // Get writable files after caching
+    fileList = await workspaceStore.getWritableFiles(workspaceId);
   }
 
-  // Create file options for dropdown
+  // If no writable files available, show error
+  if (!fileList || fileList.length === 0) {
+    await client.chat.postEphemeral({
+      channel: userId, // Use DM channel
+      user: userId,
+      text: '❌ No writable files available for document updates. All files are marked as read-only.',
+    });
+    return;
+  }
+
+  // Create file options for dropdown (only writable files)
   const fileOptions = fileList.map((file) => ({
     text: {
       type: 'plain_text' as const,
@@ -108,7 +122,7 @@ async function showFileSelectionDropdown(
   }
 
   const userName = await getUserName(userId, client);
-  
+
   const fileSelectionBlocks = [
     {
       type: 'section',
@@ -182,7 +196,7 @@ async function showFileSelectionDropdown(
     } catch (updateError: any) {
       console.warn(`Failed to update progress message ${progressMessageTs}:`, updateError?.message || updateError);
       console.log('Falling back to creating new message for file selection');
-      
+
       // Fallback to new message if update fails
       const message = await client.chat.postMessage({
         channel: currentDmChannelId,
@@ -227,12 +241,18 @@ export const suggestUpdatesCallback = async ({
     try {
       const parsedValue = JSON.parse(value);
       const sessionId = parsedValue.sessionId;
-      
+
       // Check if this is a manager starting the update process (not a continue action)
       // Only apply concurrency control for initial manager clicks, not subsequent actions
-      if (sessionId && !parsedValue.index && !parsedValue.action && !parsedValue.isFileBasedReview && !parsedValue.selectedFile) {
+      if (
+        sessionId &&
+        !parsedValue.index &&
+        !parsedValue.action &&
+        !parsedValue.isFileBasedReview &&
+        !parsedValue.selectedFile
+      ) {
         const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
-        
+
         if (sessionData) {
           // Skip concurrency control if this manager is already processing
           if (sessionData.processingBy === userId) {
@@ -240,7 +260,7 @@ export const suggestUpdatesCallback = async ({
           } else if (sessionData.status === 'processing') {
             // Different manager is processing
             const processingManagerName = sessionData.processingManagerName || 'Another manager';
-            
+
             // Use response_url to show original message with disabled buttons + error message
             try {
               if (body.response_url) {
@@ -311,8 +331,10 @@ export const suggestUpdatesCallback = async ({
             } catch (responseError) {
               logger.warn('Failed to send conflict message via response_url:', responseError);
             }
-            
-            logger.info(`Manager ${userId} tried to process session ${sessionId} but it's already being processed by ${sessionData.processingBy}`);
+
+            logger.info(
+              `Manager ${userId} tried to process session ${sessionId} but it's already being processed by ${sessionData.processingBy}`,
+            );
             return;
           } else {
             // No one is processing yet, claim it
@@ -322,12 +344,12 @@ export const suggestUpdatesCallback = async ({
             sessionData.processingManagerName = managerName;
             sessionData.processingAt = new Date().toISOString();
             storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
-            
+
             logger.info(`Manager ${managerName} (${userId}) claimed processing for session ${sessionId}`);
 
             // Update other managers' messages to show conflict state
             await updateOtherManagerMessages(sessionData, userId, managerName, client, logger);
-            
+
             // Notify original channel about who started processing
             await notifyOriginalChannel(sessionData, managerName, client, logger);
           }
@@ -465,7 +487,7 @@ export const suggestUpdatesCallback = async ({
       // Handle Skip This button with response_url
       if (parsedValue.action === 'skip') {
         logger.info(`User skipped suggestion ${currentIndex} for nodeId: ${parsedValue.currentNodeId}`);
-        
+
         // Use response_url to replace the current message with skip confirmation
         const responseUrl = (body as any).response_url;
         if (responseUrl) {
@@ -474,27 +496,31 @@ export const suggestUpdatesCallback = async ({
             const currentDoc = searchResults[currentIndex];
             const suggestionNumber = currentIndex + 1;
             const fileName = currentDoc?.metadata?.fileName || 'Unknown file';
-            
+
             const response = await fetch(responseUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 replace_original: true,
                 text: `⏭️ Skipped suggestion ${suggestionNumber} for ${fileName}`,
-                blocks: [{
-                  type: 'section',
-                  text: {
-                    type: 'mrkdwn',
-                    text: `⏭️ *Skipped* suggestion ${suggestionNumber} for ${fileName}`,
+                blocks: [
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `⏭️ *Skipped* suggestion ${suggestionNumber} for ${fileName}`,
+                    },
                   },
-                }],
+                ],
               }),
             });
 
             if (response.ok) {
               logger.info(`Successfully used response_url to show skip confirmation for suggestion ${currentIndex}`);
             } else {
-              logger.warn(`Failed to use response_url for skip confirmation: ${response.status} ${response.statusText}`);
+              logger.warn(
+                `Failed to use response_url for skip confirmation: ${response.status} ${response.statusText}`,
+              );
             }
           } catch (responseUrlError) {
             logger.error('Error using response_url for skip confirmation:', responseUrlError);
@@ -504,7 +530,7 @@ export const suggestUpdatesCallback = async ({
           logger.warn('No response_url available for skip confirmation');
         }
       }
-      
+
       // Apply Changes 후 특정 파일에서 전체 검토로 전환
       if (parsedValue.shouldSwitchToAllFiles) {
         logger.info('Switching from specific file review to all files review');
@@ -614,12 +640,13 @@ export const suggestUpdatesCallback = async ({
           logger.info('Using stored search results (ALL_FILES or default file selected)');
           searchResults = getSearchResults(userId);
 
-          // If no stored results, search for 5 documents
+          // If no stored results, search for 5 documents (excluding read-only files)
           if (!searchResults || searchResults.length === 0) {
-            const allFilesResults = await vectorStore.similaritySearch(knowledgeContent, 5);
+            const workspaceId = await getWorkspaceId(client);
+            const allFilesResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
             searchResults = allFilesResults;
             storeSearchResults(userId, searchResults);
-            
+
             // Log search results details
             logger.info(`=== SIMILARITY SEARCH RESULTS (ALL_FILES) ===`);
             logger.info(`Found ${searchResults.length} documents:`);
@@ -638,7 +665,7 @@ export const suggestUpdatesCallback = async ({
             1,
           );
           searchResults = fileSpecificResults;
-          
+
           // Log file-specific search results
           logger.info(`=== FILE-SPECIFIC SEARCH RESULTS (${parsedValue.selectedFile}) ===`);
           logger.info(`Found ${searchResults.length} documents:`);
@@ -647,13 +674,12 @@ export const suggestUpdatesCallback = async ({
             logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
           });
           logger.info(`=== END FILE-SPECIFIC RESULTS ===`);
-          
+
           // Don't store these results as they're file-specific
         }
 
         // Check if we found any results
         if (searchResults.length === 0) {
-
           await client.chat.postMessage({
             channel: currentDmChannelId,
             text: `No relevant content found in the selected file: ${parsedValue.selectedFile}. Please try selecting a different file or choose "All Files" option.`,
@@ -683,11 +709,14 @@ export const suggestUpdatesCallback = async ({
 
       // Apply Changes 후 특정 파일에서 전체 검토로 전환된 경우 처리
       if (parsedValue.shouldSwitchToAllFiles && (!searchResults || searchResults.length === 0)) {
-        logger.info('No cached results found after switching to all files, performing new search');
-        const allFilesResults = await vectorStore.similaritySearch(knowledgeContent, 5);
+        logger.info(
+          'No cached results found after switching to all files, performing new search (excluding read-only files)',
+        );
+        const workspaceId = await getWorkspaceId(client);
+        const allFilesResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
         searchResults = allFilesResults;
         storeSearchResults(userId, searchResults);
-        
+
         // Log search results details
         logger.info(`=== SIMILARITY SEARCH RESULTS (SWITCH TO ALL FILES) ===`);
         logger.info(`Found ${searchResults.length} documents:`);
@@ -708,7 +737,6 @@ export const suggestUpdatesCallback = async ({
           logger.error(
             `Could not find stored document update for index ${currentIndex - 1} and nodeId ${parsedValue.currentNodeId}`,
           );
-
 
           await client.chat.postMessage({
             channel: currentDmChannelId!,
@@ -821,13 +849,13 @@ export const suggestUpdatesCallback = async ({
 
               // Also notify other managers about this update
               await notifyOtherManagersAboutUpdate(
-                currentUpdate, 
-                userId, 
-                updatedBy, 
-                notificationText, 
-                blocks, 
-                client, 
-                logger
+                currentUpdate,
+                userId,
+                updatedBy,
+                notificationText,
+                blocks,
+                client,
+                logger,
               );
             } catch (channelError) {
               console.error('Failed to post update to original channel:', channelError);
@@ -860,10 +888,11 @@ export const suggestUpdatesCallback = async ({
     }
 
     // Show appropriate loading message based on the stage
-    const loadingText = currentIndex === 0 && !isFileBasedReview 
-      ? '🔍 Finding relevant documents to update...'
-      : '📝 Generating update suggestions...';
-      
+    const loadingText =
+      currentIndex === 0 && !isFileBasedReview
+        ? '🔍 Finding relevant documents to update...'
+        : '📝 Generating update suggestions...';
+
     const progressMessage = await client.chat.postMessage({
       channel: currentDmChannelId,
       text: loadingText,
@@ -878,12 +907,15 @@ export const suggestUpdatesCallback = async ({
     if (progressMessage.ts) {
       setProgressMessageTimestamp(userId, progressMessage.ts);
       const actualChannel = progressMessage.channel || currentDmChannelId;
-      console.log(`[DEBUG] Progress message created. ts: ${progressMessage.ts}, channel: ${actualChannel}, originalDmChannelId: ${currentDmChannelId}`);
+      console.log(
+        `[DEBUG] Progress message created. ts: ${progressMessage.ts}, channel: ${actualChannel}, originalDmChannelId: ${currentDmChannelId}`,
+      );
     }
 
     if (currentIndex === 0 && !isFileBasedReview) {
-      searchResults = await vectorStore.similaritySearch(knowledgeContent, 5);
-      
+      const workspaceId = await getWorkspaceId(client);
+      searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
+
       // Log search results details
       logger.info(`=== SIMILARITY SEARCH RESULTS (INITIAL SEARCH) ===`);
       logger.info(`Found ${searchResults?.length || 0} documents:`);
@@ -892,7 +924,7 @@ export const suggestUpdatesCallback = async ({
         logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
       });
       logger.info(`=== END SEARCH RESULTS ===`);
-      
+
       if (!searchResults || searchResults.length === 0) {
         // No search results, redirect to new section creation
         const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
@@ -982,13 +1014,11 @@ export const suggestUpdatesCallback = async ({
               ],
             });
 
-
             return;
           }
         } catch (error) {
           console.error('Error creating new section when no search results found:', error);
         }
-
 
         // Fallback if new section creation fails
         await client.chat.postMessage({
@@ -1011,11 +1041,13 @@ export const suggestUpdatesCallback = async ({
       // Show file selection dropdown before first suggestion (update progress message)
       storeSearchResults(userId, searchResults);
       const progressTimestamp = getProgressMessageTimestamp(userId);
-      
+
       // Use the actual channel where progress message was created
       const progressChannel = progressMessage?.channel || currentDmChannelId;
-      console.log(`[DEBUG] About to show file selection. progressTimestamp: ${progressTimestamp}, progressChannel: ${progressChannel}, currentDmChannelId: ${currentDmChannelId}`);
-      
+      console.log(
+        `[DEBUG] About to show file selection. progressTimestamp: ${progressTimestamp}, progressChannel: ${progressChannel}, currentDmChannelId: ${currentDmChannelId}`,
+      );
+
       const fileSelectionMessageTs = await showFileSelectionDropdown(
         client,
         userId,
@@ -1027,13 +1059,15 @@ export const suggestUpdatesCallback = async ({
         knowledgeSourceThreadTs,
         progressTimestamp,
       );
-      
-      console.log(`[DEBUG] File selection result. fileSelectionMessageTs: ${fileSelectionMessageTs}, was progressTimestamp used: ${!!progressTimestamp}`);
-      
+
+      console.log(
+        `[DEBUG] File selection result. fileSelectionMessageTs: ${fileSelectionMessageTs}, was progressTimestamp used: ${!!progressTimestamp}`,
+      );
+
       if (fileSelectionMessageTs) {
         setLastMessageTimestamp(userId, fileSelectionMessageTs);
       }
-      
+
       // Clear progress message timestamp since it's now updated to file selection
       if (progressTimestamp) {
         deleteProgressMessageTimestamp(userId);
@@ -1061,7 +1095,6 @@ export const suggestUpdatesCallback = async ({
         unfurl_media: false,
       });
 
-
       return;
     }
 
@@ -1073,7 +1106,6 @@ export const suggestUpdatesCallback = async ({
       client,
       vectorStore,
     );
-
 
     // processedDoc이 null이거나 변경사항이 없어도 사용자에게 표시 (자동 스킵 방지)
     if (!processedDoc) {
@@ -1290,9 +1322,9 @@ export const suggestUpdatesCallback = async ({
     // Try to update the existing progress message with the suggestion
     const progressTimestamp = getProgressMessageTimestamp(userId);
     const progressChannel = progressMessage?.channel || currentDmChannelId;
-    
+
     let suggestionMessageTs: string | undefined;
-    
+
     if (progressTimestamp && progressChannel) {
       try {
         await client.chat.update({
@@ -1303,13 +1335,13 @@ export const suggestUpdatesCallback = async ({
         });
         console.log(`Successfully updated progress message ${progressTimestamp} to suggestion`);
         suggestionMessageTs = progressTimestamp;
-        
+
         // Clear progress timestamp since it's now the suggestion message
         deleteProgressMessageTimestamp(userId);
       } catch (updateError: any) {
         console.warn(`Failed to update progress message ${progressTimestamp}:`, updateError?.message || updateError);
         console.log('Falling back to creating new suggestion message');
-        
+
         // Fallback to new message if update fails
         const result = await client.chat.postMessage({
           channel: currentDmChannelId!,
@@ -1443,10 +1475,10 @@ async function notifyOtherManagersAboutUpdate(
     // Get workspace ID and managers list
     const workspaceId = await getWorkspaceId(client);
     const managers = await getManagers(workspaceId);
-    
+
     // Filter out the current manager who performed the update
-    const otherManagers = managers.filter(managerId => managerId !== currentManagerId);
-    
+    const otherManagers = managers.filter((managerId) => managerId !== currentManagerId);
+
     if (otherManagers.length === 0) {
       logger.info('No other managers to notify about update');
       return;
@@ -1575,12 +1607,7 @@ async function updateOtherManagerMessages(
 /**
  * Notify the original channel that processing has started and by whom
  */
-async function notifyOriginalChannel(
-  sessionData: any,
-  managerName: string,
-  client: any,
-  logger: any,
-): Promise<void> {
+async function notifyOriginalChannel(sessionData: any, managerName: string, client: any, logger: any): Promise<void> {
   if (!sessionData.originalChannelId) {
     logger.warn('No originalChannelId found in session data - skipping channel notification');
     return;

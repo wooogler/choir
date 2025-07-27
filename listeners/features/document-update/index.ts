@@ -1,7 +1,7 @@
 import type { App } from '@slack/bolt';
 
-import { createNewSectionAction } from './actions/create-new-section';
 import { createFileSubmissionCallback } from './actions/create-file-submission';
+import { createNewSectionAction } from './actions/create-new-section';
 import { fileSelectionForUpdateAction, startFileBasedReviewAction } from './actions/file-selection';
 import { showCreateFileModalCallback } from './actions/show-create-file-modal';
 import { viewAnalyzedMessagesAction } from './actions/view-analyzed-messages';

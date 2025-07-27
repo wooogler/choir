@@ -45,15 +45,17 @@ export async function handleGeneralConversationMessage(
 
     // Check if the message is asking about CHOIR usage
     const lowerMessage = message.toLowerCase();
-    const isUsageQuestion = lowerMessage.includes('how') && 
+    const isUsageQuestion =
+      lowerMessage.includes('how') &&
       (lowerMessage.includes('use') || lowerMessage.includes('work') || lowerMessage.includes('do')) &&
       (lowerMessage.includes('choir') || lowerMessage.includes('you'));
-    
-    const isFeatureQuestion = lowerMessage.includes('what') && 
+
+    const isFeatureQuestion =
+      lowerMessage.includes('what') &&
       (lowerMessage.includes('can') || lowerMessage.includes('feature') || lowerMessage.includes('do'));
 
     let replyText;
-    
+
     if (isUsageQuestion || isFeatureQuestion) {
       // Provide specific CHOIR usage instructions
       replyText = `Hi *${userName}*! 👋 I'm CHOIR, and I'm here to help you with ${organizationName}'s documents and knowledge management.

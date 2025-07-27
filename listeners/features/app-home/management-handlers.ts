@@ -1,4 +1,5 @@
 import type { App } from '@slack/bolt';
+import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
 import {
   addManager,
   getCHOIRUsers,
@@ -8,8 +9,8 @@ import {
   removeManager,
   setCHOIRUsers,
 } from 'services/slack';
+import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
-import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 export const registerManagementHandlers = (app: App) => {
@@ -112,7 +113,7 @@ export const registerManagementHandlers = (app: App) => {
 
   app.view('manager_promotion_modal', async ({ ack, body, client, logger, view }) => {
     const startTime = Date.now();
-    
+
     try {
       const password = view.state.values.password_block.password_input.value;
 
@@ -123,7 +124,7 @@ export const registerManagementHandlers = (app: App) => {
             password_block: 'Please enter the promotion password.',
           },
         });
-        
+
         // Log validation error
         const workspaceId = await getWorkspaceId(client);
         await logModalSubmit(
@@ -379,7 +380,7 @@ export const registerManagementHandlers = (app: App) => {
 
   app.view('choir_users_modal', async ({ ack, body, client, logger, view }) => {
     const startTime = Date.now();
-    
+
     try {
       const selectedUsers = view.state.values.choir_users_select_block.choir_users_select.selected_users || [];
 
@@ -842,6 +843,289 @@ export const registerManagementHandlers = (app: App) => {
             errorStack: error instanceof Error ? error.stack : undefined,
           },
           client,
+        );
+      } catch (logError) {
+        logger.error('Failed to log error:', logError);
+      }
+    }
+  });
+
+  app.action('manage_readonly_files', async ({ ack, body, client, logger }) => {
+    const startTime = Date.now();
+    await ack();
+
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      const workspaceStore = new WorkspaceStore();
+      const readOnlyFiles = await workspaceStore.getReadOnlyFiles(workspaceId);
+      const markdownFiles = await workspaceStore.getCachedMarkdownFiles(workspaceId);
+
+      if (!markdownFiles || markdownFiles.length === 0) {
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '❌ No markdown files found. Please connect to a GitHub repository first.',
+        });
+        return;
+      }
+
+      await client.views.open({
+        trigger_id: (body as any).trigger_id,
+        view: {
+          type: 'modal',
+          callback_id: 'readonly_files_modal',
+          title: {
+            type: 'plain_text',
+            text: 'Manage Read-Only Files',
+          },
+          submit: {
+            type: 'plain_text',
+            text: 'Update Files',
+          },
+          close: {
+            type: 'plain_text',
+            text: 'Cancel',
+          },
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '🔒 *Select Read-Only Files*\n\nRead-only files are excluded from document updates but remain searchable. Choose which files should be protected from automatic updates.',
+              },
+            },
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `📊 *Current Status:* ${readOnlyFiles.length} of ${markdownFiles.length} files are read-only`,
+              },
+            },
+            {
+              type: 'input',
+              block_id: 'readonly_files_select_block',
+              element: {
+                type: 'multi_static_select',
+                action_id: 'readonly_files_select',
+                ...(readOnlyFiles.length > 0 && {
+                  initial_options: readOnlyFiles
+                    .filter((fileName) => markdownFiles.some((file) => file.name === fileName))
+                    .map((fileName) => ({
+                      text: {
+                        type: 'plain_text',
+                        text: fileName,
+                      },
+                      value: fileName,
+                    })),
+                }),
+                options: markdownFiles.map((file) => ({
+                  text: {
+                    type: 'plain_text',
+                    text: file.name,
+                  },
+                  value: file.name,
+                })),
+                placeholder: {
+                  type: 'plain_text',
+                  text: 'Select files to mark as read-only...',
+                },
+              },
+              label: {
+                type: 'plain_text',
+                text: 'Select files to mark as read-only',
+              },
+              optional: true,
+            },
+            {
+              type: 'context',
+              elements: [
+                {
+                  type: 'mrkdwn',
+                  text: "💡 *Tip:* Read-only files can still be searched and referenced, but they won't be modified during document updates.",
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+      // Log success
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        'app_home',
+        'dm',
+        'manage_readonly_files',
+        Date.now() - startTime,
+        true,
+        {
+          currentReadOnlyCount: readOnlyFiles.length,
+          totalFilesCount: markdownFiles.length,
+        },
+        client,
+      );
+    } catch (error) {
+      logger.error('Error opening read-only files management modal:', error);
+
+      if ('user' in body && body.user?.id) {
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '❌ Error opening read-only files management modal. Please try again.',
+        });
+      }
+
+      // Log error
+      try {
+        const workspaceId = await getWorkspaceId(client);
+        await logButtonClick(
+          body.user.id,
+          workspaceId,
+          'app_home',
+          'dm',
+          'manage_readonly_files',
+          Date.now() - startTime,
+          false,
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+          },
+          client,
+        );
+      } catch (logError) {
+        logger.error('Failed to log error:', logError);
+      }
+    }
+  });
+
+  app.view('readonly_files_modal', async ({ ack, body, client, logger, view }) => {
+    const startTime = Date.now();
+
+    try {
+      const selectedFiles =
+        view.state.values.readonly_files_select_block.readonly_files_select.selected_options?.map(
+          (option) => option.value,
+        ) || [];
+
+      const workspaceId = await getWorkspaceId(client);
+      const workspaceStore = new WorkspaceStore();
+
+      const success = await workspaceStore.setReadOnlyFiles(workspaceId, selectedFiles);
+
+      if (success) {
+        await ack();
+
+        // Update writable files index after changing read-only files configuration
+        const vectorStore = VectorStoreService.getInstance();
+        try {
+          await vectorStore.updateReadOnlyFilesConfiguration(workspaceId);
+          logger.info('Successfully updated writable files index after read-only files change');
+        } catch (vectorError) {
+          logger.warn('Failed to update writable files index:', vectorError);
+        }
+
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: `✅ Read-only files updated successfully! ${selectedFiles.length} files are now marked as read-only. Please refresh your app home to see the changes.`,
+        });
+
+        setTimeout(async () => {
+          try {
+            const mockEvent = {
+              type: 'app_home_opened' as const,
+              user: body.user.id,
+              tab: 'home' as const,
+              event_ts: Date.now().toString(),
+            };
+
+            const handlerArgs = {
+              client,
+              event: mockEvent,
+              logger,
+              context: {},
+              payload: mockEvent,
+            };
+
+            await appHomeOpenedCallback(handlerArgs as any);
+            logger.info(`Home screen refreshed for user ${body.user.id} after read-only files update`);
+          } catch (error) {
+            logger.error('Error refreshing home view after read-only files update:', error);
+          }
+        }, 1000);
+
+        logger.info('Read-only files updated via modal', {
+          workspaceId,
+          userId: body.user.id,
+          readOnlyFilesCount: selectedFiles.length,
+          readOnlyFiles: selectedFiles,
+        });
+
+        // Log successful update
+        await logModalSubmit(
+          body.user.id,
+          workspaceId,
+          'readonly_files_modal',
+          Date.now() - startTime,
+          true,
+          {
+            readOnlyFilesCount: selectedFiles.length,
+            readOnlyFiles: selectedFiles,
+          },
+          client,
+          'app_home',
+          'dm',
+        );
+      } else {
+        await ack({
+          response_action: 'errors',
+          errors: {
+            readonly_files_select_block: 'Failed to update read-only files. Please try again.',
+          },
+        });
+
+        // Log update failure
+        await logModalSubmit(
+          body.user.id,
+          workspaceId,
+          'readonly_files_modal',
+          Date.now() - startTime,
+          false,
+          {
+            error: 'Failed to update read-only files',
+            readOnlyFilesCount: selectedFiles.length,
+          },
+          client,
+          'app_home',
+          'dm',
+        );
+      }
+    } catch (error) {
+      logger.error('Error processing read-only files modal:', error);
+
+      await ack({
+        response_action: 'errors',
+        errors: {
+          readonly_files_select_block: 'An error occurred while updating read-only files. Please try again.',
+        },
+      });
+
+      // Log error
+      try {
+        const workspaceId = await getWorkspaceId(client);
+        await logModalSubmit(
+          body.user.id,
+          workspaceId,
+          'readonly_files_modal',
+          Date.now() - startTime,
+          false,
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+          },
+          client,
+          'app_home',
+          'dm',
         );
       } catch (logError) {
         logger.error('Failed to log error:', logError);

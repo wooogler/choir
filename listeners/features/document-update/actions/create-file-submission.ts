@@ -20,7 +20,8 @@ export const createFileSubmissionCallback = async ({
   try {
     // Parse private metadata
     const metadata = JSON.parse(body.view.private_metadata || '{}');
-    const { sessionId, knowledgeContent, knowledgeSourceChannelId, knowledgeSourceThreadTs, userId, channelId } = metadata;
+    const { sessionId, knowledgeContent, knowledgeSourceChannelId, knowledgeSourceThreadTs, userId, channelId } =
+      metadata;
 
     // Extract form values
     const fileName = body.view.state.values.file_name_input.file_name.value;
@@ -55,7 +56,8 @@ export const createFileSubmissionCallback = async ({
       await ack({
         response_action: 'errors',
         errors: {
-          file_name_input: 'File name contains invalid characters. Use only letters, numbers, dots, hyphens, and underscores.',
+          file_name_input:
+            'File name contains invalid characters. Use only letters, numbers, dots, hyphens, and underscores.',
         },
       });
       return;
@@ -93,7 +95,7 @@ export const createFileSubmissionCallback = async ({
 
     // Create the file in GitHub
     const filePath = path ? `${path}/${fileName}` : fileName;
-    
+
     try {
       await githubService.createFile({
         owner,
@@ -131,7 +133,7 @@ export const createFileSubmissionCallback = async ({
 
     // Reload and index the new file
     const vectorStore = VectorStoreService.getInstance();
-    
+
     try {
       // Get the created file and add it to vector store
       const createdFile = await githubService.getFile({
@@ -143,14 +145,14 @@ export const createFileSubmissionCallback = async ({
       });
 
       if (createdFile) {
-                 // Add to vector store
-         await vectorStore.addDocument(filePath, createdFile.content, {
-           fileName: fileName,
-           nodeId: 'root',
-           nodeType: 'root',
-           originalContent: createdFile.content,
-           githubUrl: `https://github.com/${owner}/${repo}/blob/main/${filePath}`,
-         });
+        // Add to vector store
+        await vectorStore.addDocument(filePath, createdFile.content, {
+          fileName: fileName,
+          nodeId: 'root',
+          nodeType: 'root',
+          originalContent: createdFile.content,
+          githubUrl: `https://github.com/${owner}/${repo}/blob/main/${filePath}`,
+        });
 
         logger.info(`Successfully indexed new file ${fileName} in vector store`);
       }
@@ -180,7 +182,7 @@ export const createFileSubmissionCallback = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '🔄 *What\'s next?*\nThe file has been automatically indexed and you can now start your documentation review process.',
+            text: "🔄 *What's next?*\nThe file has been automatically indexed and you can now start your documentation review process.",
           },
         },
         {
@@ -230,7 +232,6 @@ export const createFileSubmissionCallback = async ({
     );
 
     logger.info(`Successfully created and indexed file ${fileName} for user ${userId}`);
-
   } catch (error) {
     logger.error('Error creating file:', error);
 
@@ -286,4 +287,4 @@ export const createFileSubmissionCallback = async ({
       logger.warn('Failed to log error:', logError);
     }
   }
-}; 
+};

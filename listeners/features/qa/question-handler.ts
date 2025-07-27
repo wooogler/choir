@@ -170,10 +170,9 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       SessionType.DOCUMENT_UPDATE,
     );
 
-
     // Get user name for context (without mention to avoid thread notifications)
     const questionerName = await getUserName(event.user, client);
-    
+
     // 응답 메시지 블록 구성 (질문자 정보 컨텍스트 포함)
     const responseBlocks = [
       {
@@ -189,7 +188,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         elements: [
           {
             type: 'mrkdwn',
-            text: answerResult.canAnswer 
+            text: answerResult.canAnswer
               ? `Answered ${questionerName}'s question`
               : `Responded to ${questionerName}'s question`,
           },
@@ -198,7 +197,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       {
         type: 'divider',
         block_id: createCHOIRBlockId(CHOIRMessageType.DIVIDER),
-      }
+      },
     ];
 
     // 답변 가능한 경우에만 참조 문구 추가
@@ -227,7 +226,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       } catch (updateError) {
         logger.warn(`Failed to update loading message ${loadingMessageTs}:`, updateError);
         logger.info('Falling back to creating new answer message');
-        
+
         // Fallback to new message if update fails
         messageResult = await client.chat.postMessage({
           channel: event.channel,
@@ -356,7 +355,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         // Add other relevant fields
         user: undefined, // Bot messages don't have user field
       };
-      
+
       conversationCache.addMessageToCache(event.channel, event.thread_ts, choirMessage);
       logger.info(`Added CHOIR response to cache for channel ${event.channel}`);
     }
@@ -554,7 +553,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       } catch (updateError) {
         logger.warn(`Failed to update loading message ${loadingMessageTs} to error:`, updateError);
         logger.info('Falling back to creating new error message');
-        
+
         // Fallback to new message if update fails
         await client.chat.postMessage({
           channel: event.channel,

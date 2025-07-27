@@ -672,7 +672,7 @@ class GithubService {
           path: params.path,
           ref: defaultBranch,
         });
-        
+
         // If we get here, file exists
         throw new GitHubError('File already exists', {
           code: ErrorCodes.GITHUB_FILE_EXISTS,
@@ -744,7 +744,7 @@ class GithubService {
         Logger.warn(`File not found: ${params.path} in ${params.owner}/${params.repo}`);
         return null;
       }
-      
+
       Logger.error('Failed to get file', error as Error);
       throw new GitHubError('Failed to get file', {
         code: ErrorCodes.GITHUB_CONNECTION_FAILED,

@@ -59,7 +59,7 @@ export const handleAsUpdateRequestCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: "✅ Processed as Update Request",
+          text: '✅ Processed as Update Request',
           blocks: [
             {
               type: 'section',

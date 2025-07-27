@@ -276,7 +276,7 @@ export class VectorStoreService {
 
       // Extract filename for filter (support both full path and basename)
       const fileName = filePath.split('/').pop() || filePath;
-      
+
       // Use FAISS store's built-in file filtering
       const results = await this.storeManager.similaritySearchByFile(cleanedQuery, fileName, k);
 
@@ -302,6 +302,79 @@ export class VectorStoreService {
     } catch (error) {
       Logger.error('Error performing file-specific similarity search', error as Error);
       return [];
+    }
+  }
+
+  /**
+   * 쓰기 가능한 파일들에서만 유사도 검색 수행 (읽기 전용 파일 제외)
+   */
+  public async similaritySearchWritableFiles(
+    query: string,
+    workspaceId: string,
+    k = 5,
+  ): Promise<Document<DocumentMetadata>[]> {
+    try {
+      this.storeManager.checkInitialized();
+
+      const cleanedQuery = query.replace(/<@[A-Z0-9]+>/g, '').trim();
+
+      if (!cleanedQuery) {
+        Logger.warn('Empty query after cleaning');
+        return [];
+      }
+
+      // Get read-only files from workspace config
+      const { WorkspaceStore } = await import('services/workspace/workspace-store');
+      const workspaceStore = new WorkspaceStore();
+      const readOnlyFiles = await workspaceStore.getReadOnlyFiles(workspaceId);
+
+      Logger.info(
+        `Performing writable files similarity search for query: "${cleanedQuery.substring(0, 50)}${cleanedQuery.length > 50 ? '...' : ''}" with k=${k}, excluding ${readOnlyFiles.length} read-only files`,
+      );
+
+      const results = await this.storeManager.similaritySearchWritableFiles(cleanedQuery, readOnlyFiles, k);
+
+      Logger.info(`Writable files search returned ${results.length} results`);
+
+      if (readOnlyFiles.length > 0) {
+        Logger.info(`Excluded read-only files: ${readOnlyFiles.join(', ')}`);
+      }
+
+      return results;
+    } catch (error) {
+      Logger.error('Error performing writable files similarity search', error as Error);
+      return [];
+    }
+  }
+
+  /**
+   * 읽기 전용 파일 설정 변경 시 쓰기 가능한 파일 인덱스 업데이트
+   */
+  public async updateReadOnlyFilesConfiguration(workspaceId: string): Promise<boolean> {
+    try {
+      this.storeManager.checkInitialized();
+
+      // Get read-only files from workspace config
+      const { WorkspaceStore } = await import('services/workspace/workspace-store');
+      const workspaceStore = new WorkspaceStore();
+      const readOnlyFiles = await workspaceStore.getReadOnlyFiles(workspaceId);
+
+      Logger.info(
+        `Updating read-only files configuration for workspace ${workspaceId}, ${readOnlyFiles.length} files set as read-only`,
+      );
+
+      const success = await this.storeManager.updateReadOnlyFiles(readOnlyFiles);
+
+      if (success) {
+        Logger.info('Successfully updated writable files index configuration');
+      } else {
+        Logger.error('Failed to update writable files index configuration');
+      }
+
+      return success;
+    } catch (error) {
+      Logger.error('Error updating read-only files configuration', error as Error);
+      return false;
     }
   }
 
@@ -531,7 +604,9 @@ export class VectorStoreService {
       let addedCount = 0; // Declare at method scope
 
       // Import 함수들
-      const { parseAndSplitContent, appendIndividualContents, removeNodeFromTree } = await import('../document/markdown');
+      const { parseAndSplitContent, appendIndividualContents, removeNodeFromTree } = await import(
+        '../document/markdown'
+      );
 
       // 1. content를 파싱하여 개별 항목들로 분할
       const contentItems = parseAndSplitContent(content);
@@ -547,7 +622,7 @@ export class VectorStoreService {
       await this.removeNodeFromVectorStore(nodeId);
       Logger.info(`Removed existing node ${nodeId} from vector store`);
 
-      // 4. 기존 노드를 문서 트리에서 제거  
+      // 4. 기존 노드를 문서 트리에서 제거
       const originalNode = file.tree.nodeMap.get(nodeId);
       if (originalNode) {
         file.tree = removeNodeFromTree(file.tree, nodeId);
@@ -565,26 +640,26 @@ export class VectorStoreService {
           // 부모가 없으면 root에 추가
           file.tree = appendIndividualContents(file.tree, file.tree.root.id as string, contentItems);
         }
-        
+
         // 6. 새로 추가된 노드들을 벡터 스토어에 추가
         Logger.info('Adding replacement nodes to vector store');
         const { toString } = await import('mdast-util-to-string');
-        
+
         // 새로 추가된 노드들을 정확하게 찾기 (기존 노드 목록과 비교)
         const allNodes = Array.from(file.tree.nodeMap.entries());
         const newNodes = allNodes.filter(([newNodeId, newNode]) => {
           // 기존에 없던 노드들만 선택
           return !existingNodeIds.has(newNodeId);
         });
-        
+
         Logger.info(`Found ${newNodes.length} new nodes to add to vector store`);
-        
+
         for (const [newNodeId, newNode] of newNodes) {
           // 이미 벡터 스토어에 있는 노드는 건너뛰기
           if (this.nodeDocumentMap.has(newNodeId)) {
             continue;
           }
-          
+
           try {
             const newNodeContent = toString(newNode);
             if (newNodeContent && newNodeContent.trim()) {
@@ -600,7 +675,7 @@ export class VectorStoreService {
             Logger.error(`Error adding replacement node ${newNodeId} to vector store:`, error as Error);
           }
         }
-        
+
         Logger.info(`Successfully added ${addedCount}/${newNodes.length} replacement nodes to vector store`);
       } else {
         Logger.warn(`No content items found in enhanced content: "${content}"`);
@@ -939,16 +1014,16 @@ export class VectorStoreService {
         path: metadata.fileName || fileName,
         content: content,
         githubUrl: metadata.githubUrl,
-        tree: {} as any // 임시로 빈 객체, 아래에서 설정
+        tree: {} as any, // 임시로 빈 객체, 아래에서 설정
       };
 
       // parseMarkdownToTree를 사용하여 트리 생성
       const { parseMarkdownToTree } = await import('../document/markdown');
       markdownFile.tree = parseMarkdownToTree(content);
 
-             // createDocumentsFromTree를 사용하여 Document 배열 생성
-       const { createDocumentsFromTree } = await import('../llm');
-       const documents = createDocumentsFromTree(markdownFile.tree, markdownFile.name, markdownFile.githubUrl);
+      // createDocumentsFromTree를 사용하여 Document 배열 생성
+      const { createDocumentsFromTree } = await import('../llm');
+      const documents = createDocumentsFromTree(markdownFile.tree, markdownFile.name, markdownFile.githubUrl);
 
       if (documents.length === 0) {
         Logger.warn(`No content found in document: ${fileName}`);
@@ -957,7 +1032,7 @@ export class VectorStoreService {
 
       // 기존 addDocumentsToVectorStore 메서드 사용
       const success = await this.addDocumentsToVectorStore(documents);
-      
+
       if (success) {
         // markdownFiles 배열에도 추가하여 캐시에 포함
         this.markdownFiles.push(markdownFile);

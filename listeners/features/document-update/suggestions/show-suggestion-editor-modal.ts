@@ -30,9 +30,7 @@ export const showSuggestionEditorModal = async ({
 
     // Get stored document updates to retrieve the actual content
     const storedUpdates = getStoredDocumentUpdates(body.user.id);
-    const currentUpdate = storedUpdates.find(
-      (update) => update.index === index && update.nodeId === nodeId
-    );
+    const currentUpdate = storedUpdates.find((update) => update.index === index && update.nodeId === nodeId);
 
     if (!currentUpdate) {
       throw new Error('Document update not found in stored updates');
@@ -40,9 +38,9 @@ export const showSuggestionEditorModal = async ({
 
     let nodeContent = '';
     let editableContent = '';
-    let modalTitle = 'Edit Update Suggestion';
-    let originalLabel = '*Original Content:*';
-    let editableLabel = 'Updated Content';
+    const modalTitle = 'Edit Update Suggestion';
+    const originalLabel = '*Original Content:*';
+    const editableLabel = 'Updated Content';
 
     // 통일된 UPDATE 방식으로 처리
     nodeContent = currentUpdate.nodeContent || '';
@@ -89,7 +87,7 @@ export const showSuggestionEditorModal = async ({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: (nodeContent && nodeContent.trim()) ? nodeContent : '*Empty section - content will be generated*',
+              text: nodeContent && nodeContent.trim() ? nodeContent : '*Empty section - content will be generated*',
             },
           },
           {

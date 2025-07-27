@@ -140,4 +140,4 @@ export const showCreateFileModalCallback = async ({
       logger.warn('Failed to log error:', logError);
     }
   }
-}; 
+};

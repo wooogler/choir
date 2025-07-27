@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
-import { Logger } from '@slack/bolt';
-import { WebClient } from '@slack/web-api';
+import type { Logger } from '@slack/bolt';
+import type { WebClient } from '@slack/web-api';
 import type { Block, KnownBlock } from '@slack/web-api';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { getUserName } from 'services/slack';
@@ -43,11 +43,11 @@ export const applyExtractedKnowledgeCallback = async ({
 
     // ========== CONCURRENCY CONTROL ==========
     const managerId = body.user.id;
-    
+
     // 1. Check if already being processed by another manager
     if (sessionData.status === 'processing') {
       const processingManagerName = sessionData.processingManagerName || 'Another manager';
-      
+
       // Use response_url to immediately show conflict message
       try {
         if (body.response_url) {
@@ -74,8 +74,10 @@ export const applyExtractedKnowledgeCallback = async ({
       } catch (responseError) {
         logger.warn('Failed to send conflict message via response_url:', responseError);
       }
-      
-      logger.info(`Manager ${managerId} tried to process session ${sessionId} but it's already being processed by ${sessionData.processingBy}`);
+
+      logger.info(
+        `Manager ${managerId} tried to process session ${sessionId} but it's already being processed by ${sessionData.processingBy}`,
+      );
       return;
     }
 
@@ -86,7 +88,7 @@ export const applyExtractedKnowledgeCallback = async ({
     sessionData.processingManagerName = managerName;
     sessionData.processingAt = new Date().toISOString();
     storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
-    
+
     logger.info(`Manager ${managerName} (${managerId}) claimed processing for session ${sessionId}`);
 
     // 3. Update current manager with processing confirmation via response_url
@@ -118,7 +120,7 @@ export const applyExtractedKnowledgeCallback = async ({
 
     // 4. Update other managers' messages to show conflict state
     await updateOtherManagerMessages(sessionData, managerId, managerName, client, logger);
-    
+
     // 5. Notify original channel about who started processing
     await notifyOriginalChannel(sessionData, managerName, client, logger);
     // ========== END CONCURRENCY CONTROL ==========
@@ -195,7 +197,7 @@ export const applyExtractedKnowledgeCallback = async ({
     }
 
     // Use all messages as source messages
-    let sourceMessages = sessionData.messages || [];
+    const sourceMessages = sessionData.messages || [];
 
     // Update session data with source messages for easier access
     sessionData.sourceMessages = sourceMessages;

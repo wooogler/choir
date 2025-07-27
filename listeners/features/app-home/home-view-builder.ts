@@ -64,6 +64,8 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
   const loggingEnabled = await workspaceStore.getLoggingEnabled(workspaceId);
   const loggingToggleBlocks = buildLoggingToggleBlocks(isUserManager, isOwner, loggingEnabled);
 
+  const readOnlyFilesBlocks = await buildReadOnlyFilesBlocks(client, logger, workspaceId, isUserManager, isOwner);
+
   const homeBlocks = [
     {
       type: 'section',
@@ -86,7 +88,7 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
   const authTest = await client.auth.test();
   const teamId = authTest.team_id;
   const botUserId = authTest.user_id;
-  
+
   homeBlocks.push(
     {
       type: 'section',
@@ -122,6 +124,7 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
     ...choirManagementBlocks,
     ...becomeManagerBlocks,
     ...organizationDescriptionBlocks,
+    ...readOnlyFilesBlocks,
     ...loggingToggleBlocks,
   ];
 };
@@ -696,6 +699,73 @@ const buildLoggingToggleBlocks = (isUserManager: boolean, isOwner: boolean, logg
           },
           action_id: 'toggle_logging',
           style: loggingEnabled ? 'danger' : 'primary',
+        },
+      ],
+    },
+    {
+      type: 'divider',
+    },
+  ];
+};
+
+const buildReadOnlyFilesBlocks = async (
+  client: WebClient,
+  logger: Logger,
+  workspaceId: string,
+  isUserManager: boolean,
+  isOwner: boolean,
+) => {
+  // Only show this section for managers and owners
+  if (!isUserManager && !isOwner) {
+    return [];
+  }
+
+  const workspaceStore = new WorkspaceStore();
+  const readOnlyFiles = await workspaceStore.getReadOnlyFiles(workspaceId);
+  const markdownFiles = await workspaceStore.getCachedMarkdownFiles(workspaceId);
+
+  if (!markdownFiles || markdownFiles.length === 0) {
+    return [];
+  }
+
+  return [
+    {
+      type: 'header',
+      text: {
+        type: 'plain_text',
+        text: '🔒 Read-Only Files',
+        emoji: true,
+      },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Read-Only Files:* ${readOnlyFiles.length} of ${markdownFiles.length} files\nRead-only files are excluded from document updates but remain searchable.`,
+      },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text:
+          readOnlyFiles.length > 0
+            ? `*Current read-only files:*\n${readOnlyFiles.map((file) => `• ${file}`).join('\n')}`
+            : '*Current read-only files:* None',
+      },
+    },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: 'Manage Read-Only Files',
+            emoji: true,
+          },
+          style: 'primary',
+          action_id: 'manage_readonly_files',
         },
       ],
     },

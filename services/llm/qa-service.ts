@@ -8,10 +8,12 @@ import { createChatCompletion } from './completions';
 
 // Format context from documents
 const formatContext = (docs: any[]) => {
-  return docs.map((doc, index) => {
-    const title = doc.metadata?.title || doc.metadata?.source || `Document ${index + 1}`;
-    return `--- ${title} ---\n${doc.pageContent}`;
-  }).join('\n\n');
+  return docs
+    .map((doc, index) => {
+      const title = doc.metadata?.title || doc.metadata?.source || `Document ${index + 1}`;
+      return `--- ${title} ---\n${doc.pageContent}`;
+    })
+    .join('\n\n');
 };
 
 // Interface for answer result

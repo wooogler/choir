@@ -8,8 +8,8 @@ import { AppConfig } from '@/config';
 import { Logger } from 'services/common/logger';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { getGithubRepo, getWorkspaceId, setupInitialManager } from 'services/slack';
-import { withRateLimit } from 'services/slack/rate-limit-handler';
 import { HomeScreenService } from 'services/slack/home-screen';
+import { withRateLimit } from 'services/slack/rate-limit-handler';
 import { VectorStoreService } from 'services/vector/main-service';
 
 dotenv.config();
@@ -65,24 +65,21 @@ registerListeners(app);
     const workspaceId = await getWorkspaceId(app.client);
 
     // API 호출 사이에 짧은 지연 (rate limit 방지)
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // 워크스페이스 소유자를 초기 관리자로 설정 (rate limit 처리)
     let workspaceOwner: string | undefined;
     try {
       // 워크스페이스 관리자 찾기 - 사용자 목록에서 is_owner가 true인 사용자
-      const usersList = await withRateLimit(
-        () => app.client.users.list({}),
-        'get users list for workspace owner'
-      );
+      const usersList = await withRateLimit(() => app.client.users.list({}), 'get users list for workspace owner');
       const owner = usersList.members?.find((user) => user.is_owner === true);
 
       if (owner?.id) {
         workspaceOwner = owner.id;
-        
+
         // 또 다른 짧은 지연
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
         await setupInitialManager(workspaceId, owner.id, app.client);
         app.logger.info(`Initialized workspace owner (${owner.id}) as a manager`);
       } else {

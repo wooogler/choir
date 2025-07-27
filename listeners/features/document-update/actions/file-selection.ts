@@ -70,8 +70,8 @@ export const startFileBasedReviewAction = async ({
     // Get the currently selected file from the dropdown or use default
     const messageTs = body.container?.message_ts;
     const selectionKey = `${userId}_${messageTs}`;
-    let selectedFile = fileSelections.get(selectionKey) || parsedValue.selectedFile;
-    
+    const selectedFile = fileSelections.get(selectionKey) || parsedValue.selectedFile;
+
     // Clean up the selection from memory after use
     if (messageTs) {
       fileSelections.delete(selectionKey);
@@ -104,7 +104,7 @@ export const startFileBasedReviewAction = async ({
             unfurl_media: false,
           }),
         });
-        
+
         if (!response.ok) {
           console.error('Failed to send selection response:', await response.text());
         }

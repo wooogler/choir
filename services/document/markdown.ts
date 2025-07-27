@@ -1219,7 +1219,7 @@ export function removeNodeFromTree(tree: DocumentTree, nodeId: string): Document
 
   // 노드맵에서 제거
   tree.nodeMap.delete(nodeId);
-  
+
   // 자식 노드들도 재귀적으로 제거
   if (Array.isArray((nodeToRemove as any).children)) {
     for (const child of (nodeToRemove as any).children) {
@@ -1248,7 +1248,7 @@ export function appendIndividualContents(
   let lastInsertedNodeId = referenceNodeId;
 
   console.log(`[DEBUG] appendIndividualContents: Processing ${contentItems.length} items as individual nodes`);
-  
+
   for (let i = 0; i < contentItems.length; i++) {
     const item = contentItems[i];
     console.log(`[DEBUG] Processing item ${i}: type=${item.type}, content="${item.content.substring(0, 30)}..."`);
@@ -1258,7 +1258,7 @@ export function appendIndividualContents(
         // listItem을 개별 노드로 추가 (list로 감싸지 않음)
         const beforeAppend = Date.now();
         currentTree = appendListItemAsIndividualNode(currentTree, lastInsertedNodeId, item.content);
-        
+
         // 새로 추가된 노드 ID 찾기
         const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(
           (id) =>
@@ -1273,14 +1273,16 @@ export function appendIndividualContents(
             return currentTimestamp > latestTimestamp ? current : latest;
           });
           lastInsertedNodeId = latestNodeId;
-          console.log(`Individual listItem 추가 완료: "${item.content.substring(0, 20)}..." -> 새 노드 ID: ${latestNodeId}`);
+          console.log(
+            `Individual listItem 추가 완료: "${item.content.substring(0, 20)}..." -> 새 노드 ID: ${latestNodeId}`,
+          );
         }
       } else {
         // paragraph인 경우 기존 방식 사용
         const beforeAppend = Date.now();
         currentTree = appendNodeContent(currentTree, lastInsertedNodeId, item.content);
-        
-        // 새로 추가된 노드 ID 찾기  
+
+        // 새로 추가된 노드 ID 찾기
         const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(
           (id) =>
             id.startsWith(`${lastInsertedNodeId}_append_`) &&
@@ -1294,7 +1296,9 @@ export function appendIndividualContents(
             return currentTimestamp > latestTimestamp ? current : latest;
           });
           lastInsertedNodeId = latestNodeId;
-          console.log(`Individual paragraph 추가 완료: "${item.content.substring(0, 20)}..." -> 새 노드 ID: ${latestNodeId}`);
+          console.log(
+            `Individual paragraph 추가 완료: "${item.content.substring(0, 20)}..." -> 새 노드 ID: ${latestNodeId}`,
+          );
         }
       }
     } catch (error) {
@@ -1311,14 +1315,10 @@ export function appendIndividualContents(
 /**
  * listItem을 개별 노드로 추가 (list로 감싸지 않음)
  */
-function appendListItemAsIndividualNode(
-  docTree: DocumentTree,
-  referenceNodeId: string,
-  content: string,
-): DocumentTree {
+function appendListItemAsIndividualNode(docTree: DocumentTree, referenceNodeId: string, content: string): DocumentTree {
   // content를 마크다운으로 파싱하여 listItem 노드 생성
   const tree = unified().use(remarkParse).parse(`- ${content}`);
-  
+
   if (tree.children && tree.children.length > 0) {
     const listNode = tree.children[0];
     if (is(listNode, 'list') && listNode.children && listNode.children.length > 0) {
@@ -1329,7 +1329,7 @@ function appendListItemAsIndividualNode(
       }
     }
   }
-  
+
   throw new Error(`Failed to parse listItem content: ${content}`);
 }
 
@@ -1383,7 +1383,7 @@ function appendParsedNodeToTree(
   const parentNode = parentNodeId ? newTree.nodeMap.get(parentNodeId) : null;
   if (parentNode && Array.isArray((parentNode as any).children)) {
     const parentChildren = (parentNode as any).children;
-    
+
     // 참조 노드 다음 위치에 삽입
     const referenceIndex = parentChildren.findIndex((child: any) => child.id === referenceNodeId);
     if (referenceIndex !== -1) {

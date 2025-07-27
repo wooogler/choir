@@ -65,7 +65,7 @@ export const viewAnalyzedMessagesAction = async ({
           // Handle both processedMessages format and original messages format
           let username = 'Unknown User';
           let text = 'No text';
-          
+
           if (msg.role && msg.content) {
             // processedMessages format: { role: 'CHOIR' | 'user', content: 'Username: message' }
             if (msg.role === 'CHOIR') {

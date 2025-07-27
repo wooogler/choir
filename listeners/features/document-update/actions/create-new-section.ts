@@ -62,11 +62,11 @@ export const createNewSectionAction = async ({
       throw new Error('Workspace configuration or GitHub repository not found');
     }
 
-    // Try to get cached file list first
-    let fileList = await workspaceStore.getCachedMarkdownFiles(workspaceId);
+    // Get writable files for file selection dropdown (excludes read-only files)
+    let fileList = await workspaceStore.getWritableFiles(workspaceId);
 
-    if (!fileList) {
-      // If no cache, load from GitHub and cache the result
+    if (!fileList || fileList.length === 0) {
+      // If no cached writable files, load from GitHub and cache, then filter
       const { owner, repo, path } = config.githubRepo;
       const githubService = GithubService.getInstance();
       const markdownFiles = await githubService.getAllMarkdownFiles({
@@ -77,13 +77,27 @@ export const createNewSectionAction = async ({
         userId: userId,
       });
 
-      fileList = markdownFiles.map((file) => ({
+      // Cache all files
+      await workspaceStore.setMarkdownFilesCache(workspaceId, markdownFiles.map((file) => ({
         name: file.name,
         path: file.path,
-      }));
+      })));
+
+      // Get writable files after caching
+      fileList = await workspaceStore.getWritableFiles(workspaceId);
     }
 
-    // Create file options for dropdown
+    // If no writable files available, show error
+    if (!fileList || fileList.length === 0) {
+      await client.chat.postEphemeral({
+        channel: userId, // Use DM channel
+        user: userId,
+        text: '❌ No writable files available for new sections. All files are marked as read-only.',
+      });
+      return;
+    }
+
+    // Create file options for dropdown (only writable files)
     const fileOptions = fileList.map((file) => ({
       text: {
         type: 'plain_text' as const,
