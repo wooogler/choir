@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
-import { getWorkspaceId } from 'services/slack';
+import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
@@ -84,12 +84,21 @@ export const cancelKnowledgeExtractionCallback = async ({
             return block.type !== 'actions';
           }) : [];
 
+          // Get manager name for declined status
+          let managerName = 'manager';
+          try {
+            const managerUserInfo = await getUserName(userId, client);
+            managerName = managerUserInfo;
+          } catch (error) {
+            logger.warn('Failed to get manager name for DM decline status:', error);
+          }
+
           // Add a declined status section
           const declinedBlock = {
             type: 'section' as const,
             text: {
               type: 'mrkdwn' as const,
-              text: '❌ *Declined by manager* - No further action will be taken.',
+              text: `❌ *Declined by ${managerName}* - No further action will be taken.`,
             },
           };
 
@@ -130,14 +139,22 @@ export const cancelKnowledgeExtractionCallback = async ({
             },
           ];
         } else {
-          // Manager declined the request
-          notificationText = '❌ Update suggestion declined by manager';
+          // Manager declined the request - get manager name
+          let managerName = 'A manager';
+          try {
+            const managerUserInfo = await getUserName(userId, client);
+            managerName = managerUserInfo;
+          } catch (error) {
+            logger.warn('Failed to get manager name for decline notification:', error);
+          }
+          
+          notificationText = `❌ Update suggestion declined by ${managerName}`;
           notificationBlocks = [
             {
               type: 'section' as const,
               text: {
                 type: 'mrkdwn' as const,
-                text: `❌ *${userName}*, your document update suggestion was *declined by a manager*. No changes will be made to the documentation at this time.`,
+                text: `❌ *${userName}*, your document update suggestion was *declined by ${managerName}*. No changes will be made to the documentation at this time.`,
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
             },
@@ -156,6 +173,11 @@ export const cancelKnowledgeExtractionCallback = async ({
         });
         
         logger.info(`Successfully sent notification to ${originalChannelId}`);
+
+        // If this is a manager decline (not user cancellation), notify other managers
+        if (!isUserCancellation) {
+          await notifyOtherManagersAboutDecline(userId, sessionData, client, logger);
+        }
       } catch (notificationError) {
         logger.warn('Failed to send notification:', notificationError);
       }
@@ -227,3 +249,63 @@ export const cancelKnowledgeExtractionCallback = async ({
     }
   }
 };
+
+/**
+ * Notify other managers that one manager declined the suggestion
+ */
+async function notifyOtherManagersAboutDecline(
+  decliningManagerId: string,
+  sessionData: any,
+  client: any,
+  logger: any,
+): Promise<void> {
+  try {
+    // Get workspace ID and managers list
+    const workspaceId = await getWorkspaceId(client);
+    const managers = await getManagers(workspaceId);
+    
+    // Filter out the declining manager
+    const otherManagers = managers.filter(managerId => managerId !== decliningManagerId);
+    
+    if (otherManagers.length === 0) {
+      logger.info('No other managers to notify about decline');
+      return;
+    }
+
+    // Get declining manager name
+    const decliningManagerName = await getUserName(decliningManagerId, client);
+    const userName = sessionData.userName || 'A team member';
+
+    // Send decline notification to each other manager via DM
+    const notificationPromises = otherManagers.map(async (managerId) => {
+      try {
+        const simpleMessage = `${decliningManagerName} declined the document update suggestion from *${userName}*. You can still review this suggestion if you think it has merit.`;
+        
+        await client.chat.postMessage({
+          channel: managerId, // DM to manager
+          text: simpleMessage,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: simpleMessage,
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+            },
+          ],
+          unfurl_links: false,
+          unfurl_media: false,
+        });
+        logger.info(`Notified manager ${managerId} about decline by ${decliningManagerName}`);
+      } catch (error) {
+        logger.warn(`Failed to notify manager ${managerId} about decline:`, error);
+      }
+    });
+
+    await Promise.allSettled(notificationPromises);
+    logger.info(`Decline notification sent to ${otherManagers.length} other managers`);
+  } catch (error) {
+    logger.error('Error notifying other managers about decline:', error);
+  }
+}

@@ -221,6 +221,125 @@ export const suggestUpdatesCallback = async ({
   const messageTsOfButtonClicked = body.container?.message_ts;
   const vectorStore = VectorStoreService.getInstance();
 
+  // ========== CONCURRENCY CONTROL FOR MANAGER START UPDATE PROCESS ==========
+  const value = body.actions?.[0]?.value;
+  if (value) {
+    try {
+      const parsedValue = JSON.parse(value);
+      const sessionId = parsedValue.sessionId;
+      
+      // Check if this is a manager starting the update process (not a continue action)
+      // Only apply concurrency control for initial manager clicks, not subsequent actions
+      if (sessionId && !parsedValue.index && !parsedValue.action && !parsedValue.isFileBasedReview && !parsedValue.selectedFile) {
+        const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
+        
+        if (sessionData) {
+          // Skip concurrency control if this manager is already processing
+          if (sessionData.processingBy === userId) {
+            logger.info(`Manager ${userId} is already processing session ${sessionId}, skipping concurrency check`);
+          } else if (sessionData.status === 'processing') {
+            // Different manager is processing
+            const processingManagerName = sessionData.processingManagerName || 'Another manager';
+            
+            // Use response_url to show original message with disabled buttons + error message
+            try {
+              if (body.response_url) {
+                // Reconstruct original message but with disabled buttons
+                const originalBlocks = [
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `Hi there! I'm CHOIR, your friendly documentation assistant. 👋\n\n*${sessionData.userName || 'A team member'}* has a suggestion for updating our documents, and I'm helping to pass it along for review.`,
+                    },
+                  },
+                  {
+                    type: 'header',
+                    text: {
+                      type: 'plain_text',
+                      text: '📝 Document Update Suggestion',
+                      emoji: true,
+                    },
+                  },
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `*From:* *${sessionData.userName || 'Unknown User'}*`,
+                    },
+                  },
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `*Suggestion:*\n\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
+                    },
+                  },
+                ];
+
+                if (sessionData.originalMessageLink) {
+                  originalBlocks.push({
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+                    },
+                  });
+                }
+
+                // Add error message at the bottom
+                originalBlocks.push({
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `❌ *Already being processed by ${processingManagerName}*`,
+                  },
+                });
+
+                await fetch(body.response_url, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    replace_original: true,
+                    text: `❌ Already being processed by ${processingManagerName}`,
+                    blocks: originalBlocks,
+                  }),
+                });
+              }
+            } catch (responseError) {
+              logger.warn('Failed to send conflict message via response_url:', responseError);
+            }
+            
+            logger.info(`Manager ${userId} tried to process session ${sessionId} but it's already being processed by ${sessionData.processingBy}`);
+            return;
+          } else {
+            // No one is processing yet, claim it
+            const managerName = await getUserName(userId, client);
+            sessionData.status = 'processing';
+            sessionData.processingBy = userId;
+            sessionData.processingManagerName = managerName;
+            sessionData.processingAt = new Date().toISOString();
+            storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+            
+            logger.info(`Manager ${managerName} (${userId}) claimed processing for session ${sessionId}`);
+
+            // Update other managers' messages to show conflict state
+            await updateOtherManagerMessages(sessionData, userId, managerName, client, logger);
+            
+            // Notify original channel about who started processing
+            await notifyOriginalChannel(sessionData, managerName, client, logger);
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn('Error in concurrency control:', error);
+      // Continue with normal processing if concurrency control fails
+    }
+  }
+  // ========== END CONCURRENCY CONTROL ==========
+
   try {
     if (messageTsOfButtonClicked && currentDmChannelId) {
       try {
@@ -699,6 +818,17 @@ export const suggestUpdatesCallback = async ({
                 unfurl_links: false,
                 unfurl_media: false,
               });
+
+              // Also notify other managers about this update
+              await notifyOtherManagersAboutUpdate(
+                currentUpdate, 
+                userId, 
+                updatedBy, 
+                notificationText, 
+                blocks, 
+                client, 
+                logger
+              );
             } catch (channelError) {
               console.error('Failed to post update to original channel:', channelError);
             }
@@ -1296,5 +1426,187 @@ export const suggestUpdatesCallback = async ({
     }
   }
 };
+
+/**
+ * Notify other managers about document update results
+ */
+async function notifyOtherManagersAboutUpdate(
+  _currentUpdate: any,
+  currentManagerId: string,
+  updatedBy: string,
+  notificationText: string,
+  blocks: any[],
+  client: any,
+  logger: any,
+): Promise<void> {
+  try {
+    // Get workspace ID and managers list
+    const workspaceId = await getWorkspaceId(client);
+    const managers = await getManagers(workspaceId);
+    
+    // Filter out the current manager who performed the update
+    const otherManagers = managers.filter(managerId => managerId !== currentManagerId);
+    
+    if (otherManagers.length === 0) {
+      logger.info('No other managers to notify about update');
+      return;
+    }
+
+    // Send update notification to each other manager via DM
+    const notificationPromises = otherManagers.map(async (managerId) => {
+      try {
+        await client.chat.postMessage({
+          channel: managerId, // DM to manager
+          text: `📝 Document Update by ${updatedBy}`,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `📝 *Document Update Notification*\n\n${updatedBy} has updated a document that you were also reviewing.`,
+              },
+            },
+            {
+              type: 'section',
+              text: { type: 'mrkdwn', text: notificationText },
+            },
+            ...blocks.slice(1), // Include diff and other blocks
+          ],
+          unfurl_links: false,
+          unfurl_media: false,
+        });
+        logger.info(`Notified manager ${managerId} about document update by ${updatedBy}`);
+      } catch (error) {
+        logger.warn(`Failed to notify manager ${managerId} about update:`, error);
+      }
+    });
+
+    await Promise.allSettled(notificationPromises);
+    logger.info(`Update notification sent to ${otherManagers.length} other managers`);
+  } catch (error) {
+    logger.error('Error notifying other managers about update:', error);
+  }
+}
+
+/**
+ * Update other managers' messages to show that processing has started by another manager
+ */
+async function updateOtherManagerMessages(
+  sessionData: any,
+  currentManagerId: string,
+  currentManagerName: string,
+  client: any,
+  logger: any,
+): Promise<void> {
+  if (!sessionData.managerMessageInfo) {
+    logger.warn('No managerMessageInfo found in session data');
+    return;
+  }
+
+  const updatePromises = Object.entries(sessionData.managerMessageInfo)
+    .filter(([managerId]) => managerId !== currentManagerId)
+    .map(async ([managerId, messageInfo]: [string, any]) => {
+      try {
+        const blocks: any[] = [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `Hi there! I'm CHOIR, your friendly documentation assistant. 👋\n\n*${sessionData.userName || 'A team member'}* has a suggestion for updating our documents, and I'm helping to pass it along for review.`,
+            },
+          },
+          {
+            type: 'header',
+            text: {
+              type: 'plain_text',
+              text: '📝 Document Update Suggestion',
+              emoji: true,
+            },
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*From:* *${sessionData.userName || 'Unknown User'}*`,
+            },
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*Suggestion:*\n\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
+            },
+          },
+        ];
+
+        if (sessionData.originalMessageLink) {
+          blocks.push({
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+            },
+          });
+        }
+
+        blocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `✅ *Processing started by ${currentManagerName}*`,
+          },
+        });
+
+        await client.chat.update({
+          channel: messageInfo.channel,
+          ts: messageInfo.ts,
+          text: `✅ Processing started by ${currentManagerName}`,
+          blocks,
+        });
+        logger.info(`Updated message for manager ${managerId} - processing started by ${currentManagerName}`);
+      } catch (error) {
+        logger.warn(`Failed to update message for manager ${managerId}:`, error);
+      }
+    });
+
+  await Promise.allSettled(updatePromises);
+}
+
+/**
+ * Notify the original channel that processing has started and by whom
+ */
+async function notifyOriginalChannel(
+  sessionData: any,
+  managerName: string,
+  client: any,
+  logger: any,
+): Promise<void> {
+  if (!sessionData.originalChannelId) {
+    logger.warn('No originalChannelId found in session data - skipping channel notification');
+    return;
+  }
+
+  try {
+    await client.chat.postMessage({
+      channel: sessionData.originalChannelId,
+      thread_ts: sessionData.originalThreadTs,
+      text: `🔄 ${managerName} started processing your document update suggestion.`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `🔄 *${managerName}* started processing your document update suggestion. You'll receive the document suggestions in your DM shortly! 📝`,
+          },
+        },
+      ],
+      unfurl_links: false,
+      unfurl_media: false,
+    });
+    logger.info(`Notified original channel ${sessionData.originalChannelId} that ${managerName} started processing`);
+  } catch (error) {
+    logger.warn(`Failed to notify original channel ${sessionData.originalChannelId}:`, error);
+  }
+}
 
 export default suggestUpdatesCallback;

@@ -1,7 +1,9 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { Logger } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
+import type { Block, KnownBlock } from '@slack/web-api';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
+import { getUserName } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import suggestUpdatesCallback from '../suggestions/suggest-updates';
 
@@ -17,33 +19,6 @@ export const applyExtractedKnowledgeCallback = async ({
   next,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   await ack();
-
-  // response_url을 통해 ephemeral 메시지를 "적용됨" 상태로 업데이트
-  try {
-    if (body.response_url) {
-      await fetch(body.response_url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          replace_original: true,
-          text: '✅ Update started!',
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: '✅ *Update started!*',
-              },
-            },
-          ],
-        }),
-      });
-    }
-  } catch (error) {
-    logger.warn('Failed to update ephemeral message via response_url:', error);
-  }
 
   try {
     const sessionId = body.actions[0].value;
@@ -65,6 +40,88 @@ export const applyExtractedKnowledgeCallback = async ({
       });
       return;
     }
+
+    // ========== CONCURRENCY CONTROL ==========
+    const managerId = body.user.id;
+    
+    // 1. Check if already being processed by another manager
+    if (sessionData.status === 'processing') {
+      const processingManagerName = sessionData.processingManagerName || 'Another manager';
+      
+      // Use response_url to immediately show conflict message
+      try {
+        if (body.response_url) {
+          await fetch(body.response_url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              replace_original: true,
+              text: `❌ Already being processed by ${processingManagerName}`,
+              blocks: [
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `❌ *Already being processed*\n\n${processingManagerName} is currently handling this suggestion. Please wait for them to complete the process.`,
+                  },
+                },
+              ],
+            }),
+          });
+        }
+      } catch (responseError) {
+        logger.warn('Failed to send conflict message via response_url:', responseError);
+      }
+      
+      logger.info(`Manager ${managerId} tried to process session ${sessionId} but it's already being processed by ${sessionData.processingBy}`);
+      return;
+    }
+
+    // 2. Claim processing (atomic operation)
+    const managerName = await getUserName(managerId, client);
+    sessionData.status = 'processing';
+    sessionData.processingBy = managerId;
+    sessionData.processingManagerName = managerName;
+    sessionData.processingAt = new Date().toISOString();
+    storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+    
+    logger.info(`Manager ${managerName} (${managerId}) claimed processing for session ${sessionId}`);
+
+    // 3. Update current manager with processing confirmation via response_url
+    try {
+      if (body.response_url) {
+        await fetch(body.response_url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            replace_original: true,
+            text: '✅ Processing started!',
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: '✅ *Processing started!*\n🔄 Generating document suggestions...',
+                },
+              },
+            ],
+          }),
+        });
+      }
+    } catch (responseError) {
+      logger.warn('Failed to send processing confirmation via response_url:', responseError);
+    }
+
+    // 4. Update other managers' messages to show conflict state
+    await updateOtherManagerMessages(sessionData, managerId, managerName, client, logger);
+    
+    // 5. Notify original channel about who started processing
+    await notifyOriginalChannel(sessionData, managerName, client, logger);
+    // ========== END CONCURRENCY CONTROL ==========
 
     // Get team_id and bot_id for the slack:// URL
     const authInfo = await client.auth.test();
@@ -183,3 +240,124 @@ export const applyExtractedKnowledgeCallback = async ({
     });
   }
 };
+
+/**
+ * Update other managers' messages to show that processing has started by another manager
+ */
+async function updateOtherManagerMessages(
+  sessionData: any,
+  currentManagerId: string,
+  currentManagerName: string,
+  client: WebClient,
+  logger: Logger,
+): Promise<void> {
+  if (!sessionData.managerMessageInfo) {
+    logger.warn('No managerMessageInfo found in session data');
+    return;
+  }
+
+  const updatePromises = Object.entries(sessionData.managerMessageInfo)
+    .filter(([managerId]) => managerId !== currentManagerId)
+    .map(async ([managerId, messageInfo]: [string, any]) => {
+      try {
+        const blocks: (KnownBlock | Block)[] = [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `Hi there! I'm CHOIR, your friendly documentation assistant. 👋\n\n*${sessionData.userName || 'A team member'}* has a suggestion for updating our documents, and I'm helping to pass it along for review.`,
+            },
+          },
+          {
+            type: 'header',
+            text: {
+              type: 'plain_text',
+              text: '📝 Document Update Suggestion',
+              emoji: true,
+            },
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*From:* *${sessionData.userName || 'Unknown User'}*`,
+            },
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*Suggestion:*\n\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
+            },
+          },
+        ];
+
+        if (sessionData.originalMessageLink) {
+          blocks.push({
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+            },
+          });
+        }
+
+        blocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `✅ *Processing started by ${currentManagerName}*\n~~This suggestion is now being processed.~~`,
+          },
+        });
+
+        await client.chat.update({
+          channel: messageInfo.channel,
+          ts: messageInfo.ts,
+          text: `✅ Processing started by ${currentManagerName}`,
+          blocks,
+        });
+        logger.info(`Updated message for manager ${managerId} - processing started by ${currentManagerName}`);
+      } catch (error) {
+        logger.warn(`Failed to update message for manager ${managerId}:`, error);
+      }
+    });
+
+  await Promise.allSettled(updatePromises);
+}
+
+/**
+ * Notify the original channel that processing has started and by whom
+ */
+async function notifyOriginalChannel(
+  sessionData: any,
+  managerName: string,
+  client: WebClient,
+  logger: Logger,
+): Promise<void> {
+  if (!sessionData.originalChannelId) {
+    logger.warn('No originalChannelId found in session data - skipping channel notification');
+    return;
+  }
+
+  try {
+    await client.chat.postMessage({
+      channel: sessionData.originalChannelId,
+      thread_ts: sessionData.originalThreadTs,
+      text: `🔄 ${managerName} started processing your document update suggestion.`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `🔄 *${managerName}* started processing your document update suggestion. You'll receive the document suggestions in your DM shortly! 📝`,
+          },
+        },
+      ],
+      unfurl_links: false,
+      unfurl_media: false,
+    });
+    logger.info(`Notified original channel ${sessionData.originalChannelId} that ${managerName} started processing`);
+  } catch (error) {
+    logger.warn(`Failed to notify original channel ${sessionData.originalChannelId}:`, error);
+  }
+}
