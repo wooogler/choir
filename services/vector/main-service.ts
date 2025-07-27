@@ -605,7 +605,7 @@ export class VectorStoreService {
       let addedCount = 0; // Declare at method scope
 
       // Import 함수들
-      const { parseAndSplitContent, appendIndividualContents, removeNodeFromTree } = await import(
+      const { parseAndSplitContent, appendMultipleContents, removeNodeFromTree } = await import(
         '../document/markdown'
       );
 
@@ -642,11 +642,11 @@ export class VectorStoreService {
         if (insertionInfo.previousSiblingId) {
           // 이전 형제 노드 다음에 삽입
           Logger.info(`Inserting content after previous sibling: ${insertionInfo.previousSiblingId}`);
-          return appendIndividualContents(docTree, insertionInfo.previousSiblingId, contentItems);
+          return appendMultipleContents(docTree, insertionInfo.previousSiblingId, contentItems);
         } else if (insertionInfo.parentId && insertionInfo.parentId !== 'root') {
           // 부모 노드의 첫 번째 자식으로 삽입
           Logger.info(`Inserting content as first child of parent: ${insertionInfo.parentId}`);
-          return appendIndividualContents(docTree, insertionInfo.parentId, contentItems);
+          return appendMultipleContents(docTree, insertionInfo.parentId, contentItems);
         } else {
           // root의 첫 번째 자식으로 삽입
           Logger.info('Inserting content at beginning of root');
@@ -738,6 +738,9 @@ export class VectorStoreService {
       Logger.info(
         `Node replacement completed successfully: removed 1 original node, added ${addedCount} replacement nodes`,
       );
+      
+
+      
       return true;
     } catch (error) {
       Logger.error('Error replacing node with enhanced content', error as Error);

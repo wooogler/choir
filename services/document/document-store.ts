@@ -39,8 +39,7 @@ const selectedNodeIds = new Map<string, Set<string>>();
 // 검색 결과를 저장하기 위한 Map (userId -> Document<DocumentMetadata>[])
 const searchResultsStorage = new Map<string, Document<DocumentMetadata>[]>();
 
-// Store user search results
-const userSearchResults = new Map<string, Document<DocumentMetadata>[]>();
+// 검색 결과 캐시 제거됨 - 항상 최신 벡터 스토어 상태를 반영하기 위해
 
 // 사용자의 documentUpdates 가져오기
 export const getStoredDocumentUpdates = (userId: string): DocumentUpdate[] => {
@@ -142,19 +141,19 @@ export const setSelectedNodeIds = (userId: string, nodeIds: string[]): void => {
   selectedNodeIds.set(userId, new Set<string>(nodeIds));
 };
 
-// 검색 결과 저장하기
+// 검색 결과 캐시 관련 함수들 - 캐시 제거로 빈 구현
 export function storeSearchResults(userId: string, searchResults: Document<DocumentMetadata>[]): void {
-  userSearchResults.set(userId, searchResults);
+  // 캐시 제거됨 - 아무것도 하지 않음
 }
 
-// 검색 결과 가져오기
+// 검색 결과 가져오기 - 항상 빈 배열 반환 (캐시 없음)
 export function getSearchResults(userId: string): Document<DocumentMetadata>[] {
-  return userSearchResults.get(userId) || [];
+  return []; // 캐시 없으므로 항상 빈 배열
 }
 
 // 검색 결과 삭제하기
 export function clearSearchResults(userId: string) {
-  userSearchResults.delete(userId);
+  // 캐시 제거됨 - 아무것도 하지 않음
 }
 
 // 특정 문서 업데이트 삭제하기

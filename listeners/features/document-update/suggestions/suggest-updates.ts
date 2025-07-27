@@ -139,7 +139,7 @@ async function showFileSelectionDropdown(
           text: 'Choose a specific file...',
         },
         options: fileOptions,
-        initial_option: defaultFileOption,
+        // initial_option 제거 - 기본값을 비워둠
       },
     },
     {
@@ -159,8 +159,8 @@ async function showFileSelectionDropdown(
             knowledgeContent,
             knowledgeSourceChannelId,
             knowledgeSourceThreadTs,
-            selectedFile: defaultFilePath,
-            defaultFilePath: defaultFilePath,
+            selectedFile: null, // 기본값을 null로 설정
+            defaultFilePath: defaultFilePath, // Recommended 파일 정보는 유지
           }),
         },
         {
@@ -633,33 +633,27 @@ export const suggestUpdatesCallback = async ({
 
         // Perform search based on file selection - 3 cases
         if (parsedValue.selectedFile === 'ALL_FILES' || parsedValue.isDefaultFile) {
-          // Case 1: ALL_FILES or default file - use stored 5 documents
-          logger.info('Using stored search results (ALL_FILES or default file selected)');
-          searchResults = getSearchResults(userId);
+          // Case 1: ALL_FILES or default file - 항상 새로운 검색 수행
+          logger.info('Performing fresh search (ALL_FILES or default file selected)');
+          
+          const workspaceId = await getWorkspaceId(client);
+          searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
 
-          // If no stored results, search for 5 documents (excluding read-only files)
-          if (!searchResults || searchResults.length === 0) {
-            const workspaceId = await getWorkspaceId(client);
-            const allFilesResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
-            searchResults = allFilesResults;
-            storeSearchResults(userId, searchResults);
-
-            // Log search results details
-            logger.info(`=== SIMILARITY SEARCH RESULTS (ALL_FILES) ===`);
-            logger.info(`Found ${searchResults.length} documents:`);
-            searchResults.forEach((doc, index) => {
-              logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
-              logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
-            });
-            logger.info(`=== END SEARCH RESULTS ===`);
-          }
+          // Log search results details
+          logger.info(`=== SIMILARITY SEARCH RESULTS (ALL_FILES) ===`);
+          logger.info(`Found ${searchResults.length} documents:`);
+          searchResults.forEach((doc, index) => {
+            logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
+            logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
+          });
+          logger.info(`=== END SEARCH RESULTS ===`);
         } else {
-          // Case 2: Different specific file - 심플한 순서 구현
+          // Case 2: Different specific file - 파일별 검색만 수행
           logger.info(`Searching in specific file: ${parsedValue.selectedFile}`);
           const fileSpecificResults = await vectorStore.similaritySearchByFile(
             knowledgeContent,
             parsedValue.selectedFile,
-            1,
+            5, // 파일별 검색에서 최대 5개 결과
           );
 
           // Log file-specific search results
@@ -671,22 +665,10 @@ export const suggestUpdatesCallback = async ({
           });
           logger.info(`=== END FILE-SPECIFIC RESULTS ===`);
 
-          // 심플한 순서 로직: file-specific 결과를 맨 앞에, initial search 결과에서 중복 제거 후 뒤에
-          const initialSearchResults = getSearchResults(userId) || [];
-          const fileSpecificNodeIds = new Set(fileSpecificResults.map(doc => doc.metadata?.nodeId));
+          // 파일별 검색 결과만 사용 (캐시 제거로 단순화)
+          searchResults = fileSpecificResults;
           
-          // Initial search에서 file-specific과 중복되는 것 제거
-          const filteredInitialResults = initialSearchResults.filter(doc => 
-            !fileSpecificNodeIds.has(doc.metadata?.nodeId)
-          );
-          
-          // 최종 순서: [file-specific, ...filtered_initial]
-          searchResults = [...fileSpecificResults, ...filteredInitialResults];
-          
-          // Combined 결과를 저장하여 이후 suggestion들이 올바른 순서를 사용하도록 함
-          storeSearchResults(userId, searchResults);
-          
-          logger.info(`Combined search results: ${fileSpecificResults.length} file-specific + ${filteredInitialResults.length} initial = ${searchResults.length} total`);
+          logger.info(`Using file-specific search results: ${searchResults.length} documents`);
         }
 
         // Check if we found any results
@@ -712,9 +694,11 @@ export const suggestUpdatesCallback = async ({
         isFirstSuggestion = true;
       } else {
         logger.info(
-          `Using cached search results, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}`,
+          `Performing fresh search for continuation, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}`,
         );
-        searchResults = getSearchResults(userId);
+        // 캐시 제거로 항상 새로운 검색 수행
+        const workspaceId = await getWorkspaceId(client);
+        searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
         isFirstSuggestion = false;
       }
 
@@ -860,7 +844,6 @@ export const suggestUpdatesCallback = async ({
     } else {
       isFirstSuggestion = true;
       currentIndex = 0;
-      clearSearchResults(userId);
       storeDocumentUpdates(userId, []);
     }
 
@@ -1030,8 +1013,7 @@ export const suggestUpdatesCallback = async ({
         return;
       }
 
-      // Show file selection dropdown before first suggestion (update progress message)
-      storeSearchResults(userId, searchResults);
+      // Show file selection dropdown before first suggestion (update progress message)  
       const progressTimestamp = getProgressMessageTimestamp(userId);
 
       // Use the actual channel where progress message was created

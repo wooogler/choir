@@ -783,6 +783,80 @@ export function appendNodeContent(docTree: DocumentTree, referenceNodeId: string
 }
 
 /**
+ * 지정된 노드 바로 뒤에 새로운 sibling 노드를 추가 - 파싱된 타입 우선시
+ */
+export function appendNodeContentWithType(
+  docTree: DocumentTree, 
+  referenceNodeId: string, 
+  newContent: string, 
+  nodeType: 'paragraph' | 'listItem'
+): DocumentTree {
+  // 원본 트리의 깊은 복사본 생성
+  const newTree: DocumentTree = {
+    title: docTree.title,
+    nodeMap: new Map(docTree.nodeMap),
+    sectionMap: new Map(docTree.sectionMap),
+    root: JSON.parse(JSON.stringify(docTree.root)),
+  };
+
+  const referenceNode = newTree.nodeMap.get(referenceNodeId);
+  if (!referenceNode) return newTree; // 참조 노드가 없으면 변경되지 않은 복사본 반환
+
+  // 새 노드 생성 - 파싱된 타입 우선시
+  let newNode: ExtendedNode;
+  const newNodeId = `${referenceNodeId}_append_${Date.now()}`;
+
+  if (nodeType === 'paragraph') {
+    // 항상 paragraph 노드 생성
+    newNode = {
+      type: 'paragraph',
+      children: [
+        {
+          type: 'text',
+          value: newContent,
+        },
+      ],
+      id: newNodeId,
+      fileName: (referenceNode as ExtendedNode).fileName,
+      parentId: (referenceNode as ExtendedNode).parentId,
+      sectionId: (referenceNode as ExtendedNode).sectionId,
+    } as Paragraph & ExtendedNode;
+  } else {
+    // listItem 노드 생성
+    newNode = {
+      type: 'listItem',
+      children: [
+        {
+          type: 'paragraph',
+          children: [
+            {
+              type: 'text',
+              value: newContent,
+            },
+          ],
+        },
+      ],
+      id: newNodeId,
+      fileName: (referenceNode as ExtendedNode).fileName,
+      parentId: (referenceNode as ExtendedNode).parentId,
+      sectionId: (referenceNode as ExtendedNode).sectionId,
+      isListItem: true,
+      listItemIndex: 0, // 새로운 listItem의 인덱스
+    } as ListItem & ExtendedNode;
+  }
+
+  // 노드맵에 새 노드 추가
+  newTree.nodeMap.set(newNodeId, newNode);
+
+  // 부모 노드에서 참조 노드 바로 뒤에 새 노드 삽입
+  insertNodeAfterReference(newTree, referenceNodeId, newNode);
+
+  console.log(`새로운 ${newNode.type} 노드 (ID: ${newNodeId})가 ${referenceNodeId} 뒤에 추가되었습니다`);
+
+  return newTree;
+}
+
+/**
  * 부모 노드에서 참조 노드 바로 뒤에 새 노드를 삽입
  */
 function insertNodeAfterReference(tree: DocumentTree, referenceNodeId: string, newNode: ExtendedNode): void {
@@ -1036,12 +1110,38 @@ export function parseAndSplitContent(content: string): Array<{ type: 'listItem' 
       }
     }
 
-    // 만약 파싱된 결과가 없다면 원본 content를 paragraph로 처리
+    // 만약 파싱된 결과가 없다면 원본 content를 줄바꿈 기준으로 분리하여 처리
     if (result.length === 0 && content.trim()) {
-      result.push({
-        type: 'paragraph',
-        content: content.trim(),
-      });
+      // 이중 줄바꿈으로 먼저 분리 (마크다운 paragraph 분리)
+      const paragraphs = content.split(/\n\s*\n/).filter(p => p.trim());
+      
+      if (paragraphs.length > 1) {
+        // 여러 paragraph가 있는 경우 각각을 별도 paragraph로 처리
+        for (const para of paragraphs) {
+          result.push({
+            type: 'paragraph',
+            content: para.trim(),
+          });
+        }
+      } else {
+        // 단일 줄바꿈으로 분리해서 각각을 별도 paragraph로 처리
+        const lines = content.split('\n').filter(line => line.trim());
+        
+        if (lines.length > 1) {
+          for (const line of lines) {
+            result.push({
+              type: 'paragraph',
+              content: line.trim(),
+            });
+          }
+        } else {
+          // 단일 라인인 경우
+          result.push({
+            type: 'paragraph',
+            content: content.trim(),
+          });
+        }
+      }
     }
   } catch (error) {
     console.warn('Content 파싱 실패, 원본을 paragraph로 처리:', error);
@@ -1120,10 +1220,10 @@ export function appendMultipleContents(
         );
       }
     } else {
-      // paragraph인 경우 개별 처리
+      // paragraph인 경우 개별 처리 - 파싱된 타입을 우선시
       try {
         const beforeAppend = Date.now();
-        currentTree = appendNodeContent(currentTree, lastInsertedNodeId, item.content);
+        currentTree = appendNodeContentWithType(currentTree, lastInsertedNodeId, item.content, item.type);
 
         const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(
           (id) =>

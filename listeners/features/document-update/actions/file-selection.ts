@@ -70,7 +70,15 @@ export const startFileBasedReviewAction = async ({
     // Get the currently selected file from the dropdown or use default
     const messageTs = body.container?.message_ts;
     const selectionKey = `${userId}_${messageTs}`;
-    const selectedFile = fileSelections.get(selectionKey) || parsedValue.selectedFile;
+    let selectedFile = fileSelections.get(selectionKey) || parsedValue.selectedFile;
+    let isUsingDefaultFile = false;
+    
+    // If no file is selected (null or undefined), use the default file
+    if (!selectedFile) {
+      selectedFile = defaultFilePath;
+      isUsingDefaultFile = true;
+      logger.info(`No file selected, using default file: ${defaultFilePath}`);
+    }
 
     // Clean up the selection from memory after use
     if (messageTs) {
@@ -83,6 +91,16 @@ export const startFileBasedReviewAction = async ({
     if (responseUrl) {
       try {
         const selectedFileName = selectedFile.split('/').pop() || selectedFile;
+        let messageText, blockText;
+        
+        if (isUsingDefaultFile) {
+          messageText = `📁 Using recommended file: ${selectedFileName}`;
+          blockText = `📁 *Using recommended file:* ${selectedFileName}\n\n_No file was selected, so I'm using the most relevant file based on your content._`;
+        } else {
+          messageText = `📁 Selected file: ${selectedFileName}`;
+          blockText = `📁 *Selected file:* ${selectedFileName}`;
+        }
+        
         const response = await fetch(responseUrl, {
           method: 'POST',
           headers: {
@@ -90,13 +108,13 @@ export const startFileBasedReviewAction = async ({
           },
           body: JSON.stringify({
             replace_original: true,
-            text: `📁 Selected file: ${selectedFileName}`,
+            text: messageText,
             blocks: [
               {
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
-                  text: `📁 *Selected file:* ${selectedFileName}`,
+                  text: blockText,
                 },
               },
             ],
