@@ -46,7 +46,7 @@ export class MultiFileFAISSManager {
   /**
    * 전체 시스템 초기화
    */
-  async initialize(documents: Document<DocumentMetadata>[]): Promise<boolean> {
+  async initialize(documents: Document<DocumentMetadata>[], workspaceId?: string): Promise<boolean> {
     try {
       Logger.info(`Initializing FAISS vector store with ${documents.length} documents (file-based indexing)`);
 
@@ -56,8 +56,19 @@ export class MultiFileFAISSManager {
       // 전역 스토어 생성
       await this.initializeGlobalStore(documents);
 
-      // 쓰기 가능한 파일 스토어 생성 (초기화 시에는 모든 파일이 쓰기 가능)
-      await this.createWritableStore(documents, []);
+      // 쓰기 가능한 파일 스토어 생성 (읽기 전용 파일 정보 활용)
+      let readOnlyFiles: string[] = [];
+      if (workspaceId) {
+        try {
+          const { WorkspaceStore } = await import('services/workspace/workspace-store');
+          const workspaceStore = new WorkspaceStore();
+          readOnlyFiles = await workspaceStore.getReadOnlyFiles(workspaceId);
+          Logger.info(`Found ${readOnlyFiles.length} read-only files for workspace: ${workspaceId}`);
+        } catch (error) {
+          Logger.warn('Failed to get read-only files, using empty list:', error as Error);
+        }
+      }
+      await this.createWritableStore(documents, readOnlyFiles);
 
       // 각 파일별 인덱스 생성
       for (const [fileName, fileDocs] of fileGroups.entries()) {

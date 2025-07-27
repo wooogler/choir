@@ -51,7 +51,7 @@ export class VectorStoreService {
   /**
    * 벡터 스토어 초기화
    */
-  public async initialize(markdownFiles: MarkdownFile[], useCache = true, forceRefresh = false): Promise<boolean> {
+  public async initialize(markdownFiles: MarkdownFile[], useCache = true, forceRefresh = false, workspaceId?: string): Promise<boolean> {
     Logger.info(
       `Initializing Vector Store with ${markdownFiles.length} files (useCache=${useCache}, forceRefresh=${forceRefresh})`,
     );
@@ -61,11 +61,11 @@ export class VectorStoreService {
 
       if (!this.markdownFiles.length) {
         Logger.info('No documents loaded, starting with empty vector store');
-        return await this.storeManager.initializeStore([], []);
+        return await this.storeManager.initializeStore([], [], workspaceId);
       }
 
       this.cacheId = this.cacheManager.generateCacheId();
-      const buildSuccess = await this.buildVectorStore(this.markdownFiles, useCache, forceRefresh);
+      const buildSuccess = await this.buildVectorStore(this.markdownFiles, useCache, forceRefresh, workspaceId);
 
       if (!buildSuccess) {
         Logger.error('Failed to build vector store');
@@ -87,23 +87,24 @@ export class VectorStoreService {
     markdownFiles: MarkdownFile[],
     useCache = true,
     forceRefresh = false,
+    workspaceId?: string,
   ): Promise<boolean> {
     try {
       Logger.info(`Building vector store (useCache=${useCache}, forceRefresh=${forceRefresh})`);
 
       if (!useCache || forceRefresh) {
-        return await this.buildVectorStoreFromFiles(markdownFiles);
+        return await this.buildVectorStoreFromFiles(markdownFiles, workspaceId);
       }
 
       const isCacheValid = await this.cacheManager.validateCache(markdownFiles);
 
       if (isCacheValid) {
         Logger.info('Valid cache found, loading from cache');
-        return await this.restoreFromCache();
+        return await this.restoreFromCache(workspaceId);
       }
 
       Logger.info('No valid cache found, building from files');
-      return await this.buildVectorStoreFromFiles(markdownFiles);
+      return await this.buildVectorStoreFromFiles(markdownFiles, workspaceId);
     } catch (error) {
       Logger.error('Error building vector store', error as Error);
       return false;
@@ -113,7 +114,7 @@ export class VectorStoreService {
   /**
    * 파일로부터 벡터 스토어 구축
    */
-  private async buildVectorStoreFromFiles(markdownFiles: MarkdownFile[]): Promise<boolean> {
+  private async buildVectorStoreFromFiles(markdownFiles: MarkdownFile[], workspaceId?: string): Promise<boolean> {
     try {
       Logger.info(`Building vector store from ${markdownFiles.length} files`);
 
@@ -124,7 +125,7 @@ export class VectorStoreService {
       const documents = await this.documentProcessor.prepareDocuments(markdownFiles);
       if (documents.length === 0) {
         Logger.warn('No valid documents found, initializing empty vector store');
-        return await this.storeManager.initializeStore([], []);
+        return await this.storeManager.initializeStore([], [], workspaceId);
       }
 
       const texts = this.documentProcessor.prepareTextsForEmbedding(documents);
@@ -154,7 +155,7 @@ export class VectorStoreService {
         documentTrees,
       });
 
-      return await this.storeManager.initializeStore(documents, embeddings);
+      return await this.storeManager.initializeStore(documents, embeddings, workspaceId);
     } catch (error) {
       Logger.error('Error building vector store from files', error as Error);
       return false;
@@ -164,7 +165,7 @@ export class VectorStoreService {
   /**
    * 캐시에서 벡터 스토어 복원
    */
-  private async restoreFromCache(): Promise<boolean> {
+  private async restoreFromCache(workspaceId?: string): Promise<boolean> {
     try {
       Logger.info('Attempting to restore vector store from cache');
 
@@ -207,7 +208,7 @@ export class VectorStoreService {
         });
       }
 
-      const success = await this.storeManager.initializeStore(documents, embeddings);
+      const success = await this.storeManager.initializeStore(documents, embeddings, workspaceId);
 
       if (success) {
         Logger.info(`Successfully restored vector store from cache with ${documents.length} documents`);
@@ -381,7 +382,7 @@ export class VectorStoreService {
   /**
    * 캐시에서 벡터 스토어 초기화 시도 (GitHub API 호출 없이)
    */
-  public async initializeFromCacheOnly(owner: string, repo: string): Promise<boolean> {
+  public async initializeFromCacheOnly(owner: string, repo: string, workspaceId?: string): Promise<boolean> {
     try {
       Logger.info(`Attempting to initialize vector store from cache only: ${owner}/${repo}`);
 
@@ -420,7 +421,7 @@ export class VectorStoreService {
       this.markdownFiles = markdownFiles;
 
       // 벡터 스토어 초기화
-      const success = await this.storeManager.initializeStore(cacheData.documents, cacheData.embeddings);
+      const success = await this.storeManager.initializeStore(cacheData.documents, cacheData.embeddings, workspaceId);
 
       if (success) {
         Logger.info(`Successfully initialized vector store from cache with ${cacheData.documents.length} documents`);
@@ -475,11 +476,11 @@ export class VectorStoreService {
    */
   public async setMarkdownFiles(
     markdownFiles: MarkdownFile[],
-    options?: { owner: string; repo: string },
+    options?: { owner: string; repo: string; workspaceId?: string },
   ): Promise<void> {
     Logger.info(`Setting markdown files: ${markdownFiles.length} files found`);
 
-    const success = await this.initialize(markdownFiles);
+    const success = await this.initialize(markdownFiles, true, false, options?.workspaceId);
 
     if (!success) {
       Logger.error('Failed to initialize vector store with markdown files');
@@ -608,6 +609,52 @@ export class VectorStoreService {
         '../document/markdown'
       );
 
+      // 노드의 삽입 위치 정보를 찾는 헬퍼 함수
+      function findNodeInsertionPosition(docTree: any, nodeId: string): { parentId: string | null; previousSiblingId: string | null } | null {
+        const node = docTree.nodeMap.get(nodeId);
+        if (!node) return null;
+
+        const parentId = node.parentId || 'root';
+        const parentNode = parentId === 'root' ? docTree.root : docTree.nodeMap.get(parentId);
+        
+        if (!parentNode || !Array.isArray(parentNode.children)) {
+          return { parentId, previousSiblingId: null };
+        }
+
+        // 현재 노드의 인덱스 찾기
+        const currentIndex = parentNode.children.findIndex((child: any) => child.id === nodeId);
+        if (currentIndex === -1) {
+          return { parentId, previousSiblingId: null };
+        }
+
+        // 이전 형제 노드 찾기
+        const previousSiblingId = currentIndex > 0 ? parentNode.children[currentIndex - 1].id : null;
+        
+        return { parentId, previousSiblingId };
+      }
+
+      // 특정 위치에 콘텐츠를 삽입하는 헬퍼 함수
+      function insertContentAtPosition(
+        docTree: any, 
+        insertionInfo: { parentId: string | null; previousSiblingId: string | null }, 
+        contentItems: Array<{ type: 'listItem' | 'paragraph'; content: string }>
+      ) {
+        if (insertionInfo.previousSiblingId) {
+          // 이전 형제 노드 다음에 삽입
+          Logger.info(`Inserting content after previous sibling: ${insertionInfo.previousSiblingId}`);
+          return appendIndividualContents(docTree, insertionInfo.previousSiblingId, contentItems);
+        } else if (insertionInfo.parentId && insertionInfo.parentId !== 'root') {
+          // 부모 노드의 첫 번째 자식으로 삽입
+          Logger.info(`Inserting content as first child of parent: ${insertionInfo.parentId}`);
+          return appendIndividualContents(docTree, insertionInfo.parentId, contentItems);
+        } else {
+          // root의 첫 번째 자식으로 삽입
+          Logger.info('Inserting content at beginning of root');
+          const { appendContentToRoot } = require('services/document/markdown');
+          return appendContentToRoot(docTree, contentItems);
+        }
+      }
+
       // 1. content를 파싱하여 개별 항목들로 분할
       const contentItems = parseAndSplitContent(content);
       Logger.info(
@@ -618,28 +665,29 @@ export class VectorStoreService {
       // 2. 기존 노드 목록 저장 (새 노드 감지용)
       const existingNodeIds = new Set(file.tree.nodeMap.keys());
 
-      // 3. 기존 노드를 벡터 스토어에서 제거
-      await this.removeNodeFromVectorStore(nodeId);
-      Logger.info(`Removed existing node ${nodeId} from vector store`);
-
-      // 4. 기존 노드를 문서 트리에서 제거
+      // 3. 기존 노드 처리 - 모든 노드를 동일하게 처리
       const originalNode = file.tree.nodeMap.get(nodeId);
+      let insertionInfo: { parentId: string | null; previousSiblingId: string | null } | null = null;
+      
       if (originalNode) {
+        // 제거하기 전에 삽입 위치 정보 저장
+        insertionInfo = findNodeInsertionPosition(file.tree, nodeId);
+        Logger.info(`Saved insertion position for node ${nodeId}: ${JSON.stringify(insertionInfo)}`);
+        
+        // 모든 노드에 대해 벡터 스토어와 문서 트리에서 제거
+        await this.removeNodeFromVectorStore(nodeId);
+        Logger.info(`Removed existing node ${nodeId} from vector store`);
+        
         file.tree = removeNodeFromTree(file.tree, nodeId);
         Logger.info(`Removed existing node ${nodeId} from document tree`);
       }
 
       // 5. 분할된 content들을 새로운 노드로 추가
-      if (contentItems.length > 0 && originalNode) {
+      if (contentItems.length > 0 && originalNode && insertionInfo) {
         Logger.info(`Adding ${contentItems.length} replacement nodes for enhanced content`);
-        // 원래 노드의 부모를 찾아서 그 위치에 새로운 노드들을 개별적으로 추가
-        const parentNode = originalNode.parentId ? file.tree.nodeMap.get(originalNode.parentId) : null;
-        if (parentNode && originalNode.parentId) {
-          file.tree = appendIndividualContents(file.tree, originalNode.parentId, contentItems);
-        } else {
-          // 부모가 없으면 root에 추가
-          file.tree = appendIndividualContents(file.tree, file.tree.root.id as string, contentItems);
-        }
+        
+        // 정확한 위치에 콘텐츠 삽입
+        file.tree = insertContentAtPosition(file.tree, insertionInfo, contentItems);
 
         // 6. 새로 추가된 노드들을 벡터 스토어에 추가
         Logger.info('Adding replacement nodes to vector store');
@@ -677,6 +725,11 @@ export class VectorStoreService {
         }
 
         Logger.info(`Successfully added ${addedCount}/${newNodes.length} replacement nodes to vector store`);
+      } else if (contentItems.length > 0 && originalNode) {
+        // 삽입 정보가 없는 경우 fallback: root에 추가
+        Logger.warn('No insertion info available, adding to root as fallback');
+        const { appendContentToRoot } = await import('services/document/markdown');
+        file.tree = appendContentToRoot(file.tree, contentItems);
       } else {
         Logger.warn(`No content items found in enhanced content: "${content}"`);
         return false;

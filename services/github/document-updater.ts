@@ -80,6 +80,7 @@ export async function applyDocumentUpdatesToGithub({
       const updatedMarkdownForGithub = treeToMarkdown(currentMarkdownFile.tree);
 
       Logger.debug(`Generated final markdown length: ${updatedMarkdownForGithub.length}`);
+      Logger.debug(`Generated markdown content for ${fileName}:\n${updatedMarkdownForGithub}`);
 
       const allMessages = fileUpdates.flatMap((update) => update.messages || []);
       const commitMessage = await githubService.createCommitMessage(

@@ -100,7 +100,7 @@ Analyze the knowledge and suggest a new section with appropriate title, content,
       temperature: 0.3,
       max_tokens: 800,
       function_name: 'createNewSectionFromKnowledge',
-      debug: true,
+      debug: false,
     },
   );
 

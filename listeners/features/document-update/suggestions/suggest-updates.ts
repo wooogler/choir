@@ -128,7 +128,7 @@ async function showFileSelectionDropdown(
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: '📁 *Which file would you like to focus on first?*',
+        text: '📁 *Which file would you like to update?*',
       },
       block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
       accessory: {
@@ -188,7 +188,7 @@ async function showFileSelectionDropdown(
       await client.chat.update({
         channel: currentDmChannelId,
         ts: progressMessageTs,
-        text: '📁 Which file would you like to focus on first?',
+        text: '📁 Which file would you like to update?',
         blocks: fileSelectionBlocks,
       });
       console.log(`Successfully updated progress message ${progressMessageTs} to file selection UI`);
@@ -200,7 +200,7 @@ async function showFileSelectionDropdown(
       // Fallback to new message if update fails
       const message = await client.chat.postMessage({
         channel: currentDmChannelId,
-        text: '📁 Which file would you like to focus on first?',
+        text: '📁 Which file would you like to update?',
         blocks: fileSelectionBlocks,
         unfurl_links: false,
         unfurl_media: false,
@@ -212,7 +212,7 @@ async function showFileSelectionDropdown(
     console.log('No progress message timestamp available, creating new file selection message');
     const message = await client.chat.postMessage({
       channel: currentDmChannelId,
-      text: '📁 Which file would you like to focus on first?',
+      text: '📁 Which file would you like to update?',
       blocks: fileSelectionBlocks,
       unfurl_links: false,
       unfurl_media: false,
@@ -492,10 +492,12 @@ export const suggestUpdatesCallback = async ({
         const responseUrl = (body as any).response_url;
         if (responseUrl) {
           try {
-            // Get current document info for better skip message
-            const currentDoc = searchResults[currentIndex];
-            const suggestionNumber = currentIndex + 1;
+            // Get current document info for better skip message using nodeId
+            const currentDoc = searchResults.find(doc => doc.metadata?.nodeId === parsedValue.currentNodeId);
+            const currentDocIndex = searchResults.findIndex(doc => doc.metadata?.nodeId === parsedValue.currentNodeId);
+            const suggestionNumber = currentDocIndex + 1;
             const fileName = currentDoc?.metadata?.fileName || 'Unknown file';
+            logger.info(`Skip message debug: found doc at index ${currentDocIndex}, suggestionNumber=${suggestionNumber}, fileName=${fileName}`);
 
             const response = await fetch(responseUrl, {
               method: 'POST',
@@ -531,12 +533,7 @@ export const suggestUpdatesCallback = async ({
         }
       }
 
-      // Apply Changes 후 특정 파일에서 전체 검토로 전환
-      if (parsedValue.shouldSwitchToAllFiles) {
-        logger.info('Switching from specific file review to all files review');
-        isFileBasedReview = false; // 파일 기반 검토 종료
-        // 저장된 5개 문서를 사용하도록 설정 (나중에 getSearchResults로 가져옴)
-      }
+      // shouldSwitchToAllFiles 로직 제거 - 이제 file-specific search에서 순서가 이미 정리됨
 
       if (sessionId) {
         const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
@@ -657,25 +654,39 @@ export const suggestUpdatesCallback = async ({
             logger.info(`=== END SEARCH RESULTS ===`);
           }
         } else {
-          // Case 2: Different specific file - search 1 document in that file
+          // Case 2: Different specific file - 심플한 순서 구현
           logger.info(`Searching in specific file: ${parsedValue.selectedFile}`);
           const fileSpecificResults = await vectorStore.similaritySearchByFile(
             knowledgeContent,
             parsedValue.selectedFile,
             1,
           );
-          searchResults = fileSpecificResults;
 
           // Log file-specific search results
           logger.info(`=== FILE-SPECIFIC SEARCH RESULTS (${parsedValue.selectedFile}) ===`);
-          logger.info(`Found ${searchResults.length} documents:`);
-          searchResults.forEach((doc, index) => {
+          logger.info(`Found ${fileSpecificResults.length} documents:`);
+          fileSpecificResults.forEach((doc, index) => {
             logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
             logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
           });
           logger.info(`=== END FILE-SPECIFIC RESULTS ===`);
 
-          // Don't store these results as they're file-specific
+          // 심플한 순서 로직: file-specific 결과를 맨 앞에, initial search 결과에서 중복 제거 후 뒤에
+          const initialSearchResults = getSearchResults(userId) || [];
+          const fileSpecificNodeIds = new Set(fileSpecificResults.map(doc => doc.metadata?.nodeId));
+          
+          // Initial search에서 file-specific과 중복되는 것 제거
+          const filteredInitialResults = initialSearchResults.filter(doc => 
+            !fileSpecificNodeIds.has(doc.metadata?.nodeId)
+          );
+          
+          // 최종 순서: [file-specific, ...filtered_initial]
+          searchResults = [...fileSpecificResults, ...filteredInitialResults];
+          
+          // Combined 결과를 저장하여 이후 suggestion들이 올바른 순서를 사용하도록 함
+          storeSearchResults(userId, searchResults);
+          
+          logger.info(`Combined search results: ${fileSpecificResults.length} file-specific + ${filteredInitialResults.length} initial = ${searchResults.length} total`);
         }
 
         // Check if we found any results
@@ -701,41 +712,22 @@ export const suggestUpdatesCallback = async ({
         isFirstSuggestion = true;
       } else {
         logger.info(
-          `Using cached search results, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}, shouldSwitchToAllFiles: ${parsedValue.shouldSwitchToAllFiles}`,
+          `Using cached search results, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}`,
         );
         searchResults = getSearchResults(userId);
         isFirstSuggestion = false;
       }
 
-      // Apply Changes 후 특정 파일에서 전체 검토로 전환된 경우 처리
-      if (parsedValue.shouldSwitchToAllFiles && (!searchResults || searchResults.length === 0)) {
-        logger.info(
-          'No cached results found after switching to all files, performing new search (excluding read-only files)',
-        );
-        const workspaceId = await getWorkspaceId(client);
-        const allFilesResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
-        searchResults = allFilesResults;
-        storeSearchResults(userId, searchResults);
-
-        // Log search results details
-        logger.info(`=== SIMILARITY SEARCH RESULTS (SWITCH TO ALL FILES) ===`);
-        logger.info(`Found ${searchResults.length} documents:`);
-        searchResults.forEach((doc, index) => {
-          logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
-          logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
-        });
-        logger.info(`=== END SEARCH RESULTS ===`);
-      }
+      // shouldSwitchToAllFiles 로직 제거됨
 
       if (parsedValue.action === 'keep' && parsedValue.currentNodeId) {
         const storedUpdates = getStoredDocumentUpdates(userId);
-        const currentUpdate = storedUpdates.find(
-          (update) => update.index === currentIndex - 1 && update.nodeId === parsedValue.currentNodeId,
-        );
+        // nodeId로 찾기 (index는 file-specific search 후 달라질 수 있음)
+        const currentUpdate = storedUpdates.find((update) => update.nodeId === parsedValue.currentNodeId);
 
         if (!currentUpdate) {
           logger.error(
-            `Could not find stored document update for index ${currentIndex - 1} and nodeId ${parsedValue.currentNodeId}`,
+            `Could not find stored document update for nodeId ${parsedValue.currentNodeId}`,
           );
 
           await client.chat.postMessage({
@@ -1186,9 +1178,6 @@ export const suggestUpdatesCallback = async ({
       action: 'keep',
       sessionId: sessionId,
       currentNodeId: processedDoc.nodeId,
-      // Apply Changes 후 특정 파일에서 전체 검토로 전환하는 로직
-      shouldSwitchToAllFiles:
-        isFileBasedReview && parsedValue.selectedFile !== 'ALL_FILES' && !parsedValue.isDefaultFile,
     };
 
     const skipButtonValue = {
@@ -1196,9 +1185,6 @@ export const suggestUpdatesCallback = async ({
       action: 'skip',
       sessionId: sessionId,
       currentNodeId: processedDoc.nodeId,
-      // Apply Changes 후 특정 파일에서 전체 검토로 전환하는 로직
-      shouldSwitchToAllFiles:
-        isFileBasedReview && parsedValue.selectedFile !== 'ALL_FILES' && !parsedValue.isDefaultFile,
     };
 
     const cancelButtonValue = {

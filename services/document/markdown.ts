@@ -124,6 +124,39 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
 
   const root = processor.runSync(processor.parse(markdown)) as Root;
 
+    // 빈 헤딩 다음에 빈 paragraph 자동 추가
+  if (root.children && Array.isArray(root.children)) {
+    const newChildren: any[] = [];
+    
+    for (let i = 0; i < root.children.length; i++) {
+      const currentNode = root.children[i];
+      newChildren.push(currentNode);
+      
+      // 현재 노드가 헤딩인 경우
+      if (is(currentNode, 'heading')) {
+        const nextNode = i + 1 < root.children.length ? root.children[i + 1] : null;
+        
+        // 다음 노드가 없거나, 다음 노드도 헤딩인 경우 (즉, 현재 헤딩 다음에 콘텐츠가 없음)
+        if (!nextNode || is(nextNode, 'heading')) {
+          // 빈 paragraph 노드 추가
+          const emptyParagraph = {
+            type: 'paragraph',
+            children: [
+              {
+                type: 'text',
+                value: '', // 빈 문자열
+              },
+            ],
+          };
+          newChildren.push(emptyParagraph);
+          console.log(`빈 헤딩 "${(currentNode as any).children?.[0]?.value || 'unknown'}" 다음에 빈 paragraph 추가`);
+        }
+      }
+    }
+    
+    root.children = newChildren;
+  }
+
   // 문서 트리 초기화
   const docTree: DocumentTree = {
     title: '',
@@ -1309,6 +1342,85 @@ export function appendIndividualContents(
     }
   }
 
+  return currentTree;
+}
+
+/**
+ * Root에 content를 직접 추가하는 함수
+ */
+export function appendContentToRoot(
+  docTree: DocumentTree,
+  contentItems: Array<{ type: 'listItem' | 'paragraph'; content: string }>,
+): DocumentTree {
+  let currentTree = docTree;
+
+  console.log(`[DEBUG] appendContentToRoot: Adding ${contentItems.length} items to root`);
+  console.log(`[DEBUG] Root children count before: ${Array.isArray(currentTree.root.children) ? currentTree.root.children.length : 0}`);
+
+  for (let i = 0; i < contentItems.length; i++) {
+    const item = contentItems[i];
+    
+    // 새 노드 ID 생성
+    const timestamp = Date.now() + i;
+    const newNodeId = `root_append_${timestamp}`;
+
+    let newNode: any;
+    if (item.type === 'paragraph') {
+      newNode = {
+        type: 'paragraph',
+        children: [
+          {
+            type: 'text',
+            value: item.content,
+          },
+        ],
+        id: newNodeId,
+        fileName: currentTree.title,
+        parentId: currentTree.root.id,
+        sectionId: 'root',
+      };
+      console.log(`[DEBUG] Created paragraph node: ${newNodeId}, content: "${item.content.substring(0, 50)}..."`);
+    } else if (item.type === 'listItem') {
+      newNode = {
+        type: 'listItem',
+        children: [
+          {
+            type: 'paragraph',
+            children: [
+              {
+                type: 'text',
+                value: item.content,
+              },
+            ],
+          },
+        ],
+        id: newNodeId,
+        fileName: currentTree.title,
+        parentId: currentTree.root.id,
+        sectionId: 'root',
+        isListItem: true,
+        listItemIndex: i,
+      };
+      console.log(`[DEBUG] Created listItem node: ${newNodeId}, content: "${item.content.substring(0, 50)}..."`);
+    }
+
+    if (newNode) {
+      // 노드맵에 추가
+      currentTree.nodeMap.set(newNodeId, newNode);
+      console.log(`[DEBUG] Added node ${newNodeId} to nodeMap`);
+      
+      // root의 children 배열에 추가
+      if (Array.isArray(currentTree.root.children)) {
+        currentTree.root.children.push(newNode);
+        console.log(`[DEBUG] Added node ${newNodeId} to root.children (new length: ${currentTree.root.children.length})`);
+      } else {
+        currentTree.root.children = [newNode];
+        console.log(`[DEBUG] Initialized root.children with node ${newNodeId}`);
+      }
+    }
+  }
+
+  console.log(`[DEBUG] Root children count after: ${Array.isArray(currentTree.root.children) ? currentTree.root.children.length : 0}`);
   return currentTree;
 }
 

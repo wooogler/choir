@@ -23,10 +23,10 @@ export class FAISSStoreManager {
   /**
    * 벡터 스토어 초기화
    */
-  async initializeStore(documents: Document<DocumentMetadata>[], embeddings: number[][]): Promise<boolean> {
+  async initializeStore(documents: Document<DocumentMetadata>[], embeddings: number[][], workspaceId?: string): Promise<boolean> {
     try {
       // 초기화 로그는 MultiFileFAISSManager에서 처리
-      const success = await this.multiFileManager.initialize(documents);
+      const success = await this.multiFileManager.initialize(documents, workspaceId);
       this.isInitialized = success;
 
       if (!success) {

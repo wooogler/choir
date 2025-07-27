@@ -96,7 +96,7 @@ registerListeners(app);
       app.logger.info(`Using saved GitHub repository: ${repoInfo.owner}/${repoInfo.repo}`);
 
       // 먼저 캐시에서 벡터 스토어 초기화 시도
-      const cacheInitialized = await vectorStore.initializeFromCacheOnly(repoInfo.owner, repoInfo.repo);
+      const cacheInitialized = await vectorStore.initializeFromCacheOnly(repoInfo.owner, repoInfo.repo, workspaceId);
 
       if (cacheInitialized) {
         app.logger.info('Vector store successfully initialized from cache. Skipping GitHub API calls.');
@@ -116,6 +116,7 @@ registerListeners(app);
           await vectorStore.setMarkdownFiles(markdownFiles, {
             owner: repoInfo.owner,
             repo: repoInfo.repo,
+            workspaceId: workspaceId,
           });
         } catch (error) {
           app.logger.info('Connected GitHub repository not accessible. Starting with empty vector store.');
