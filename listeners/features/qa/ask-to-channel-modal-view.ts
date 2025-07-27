@@ -21,6 +21,7 @@ export const askToChannelSubmitCallback = async ({
     const { sessionId, qaChannelId } = JSON.parse(view.private_metadata);
     const isAnonymous =
       (view.state.values.anonymous_select?.anonymous_checkbox_channel?.selected_options?.length || 0) > 0;
+    const userComment = view.state.values.user_comment?.comment_text?.value || '';
     const userId = body.user.id;
 
     if (!sessionId || !qaChannelId) {
@@ -87,6 +88,7 @@ export const askToChannelSubmitCallback = async ({
       true, // canAnswer - assume true for channel sharing
       isAnonymous,
       userName,
+      userComment,
     );
 
     // Create comprehensive text that matches the blocks content for conversation history
@@ -98,6 +100,7 @@ export const askToChannelSubmitCallback = async ({
       true, // canAnswer - assume true for channel sharing
       isAnonymous,
       userName,
+      userComment,
     );
 
     // Q&A 채널에 메시지 전달
@@ -157,6 +160,7 @@ export const askToChannelSubmitCallback = async ({
         qaChannelId,
         qaChannelName: channelName,
         isAnonymous,
+        userComment,
         originalChannelId: sessionData.originalChannelId,
         originalThreadTs: sessionData.originalThreadTs,
         question: sessionData.originalQuestion,

@@ -270,9 +270,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `✅ Great news, *${userName}*! Your document update suggestion has been successfully sent to our manager(s): ${managerNamesBold}. They'll review it soon!
-
-I'll let you know if they have any questions or when the document is updated. Thanks for helping keep our docs accurate! 👍`,
+              text: `✅ Great news, *${userName}*! Your document update suggestion has been successfully sent to our manager(s): ${managerNamesBold}. They'll review it soon!`,
             },
           },
         ],

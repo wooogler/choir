@@ -77,15 +77,39 @@ export async function extractKnowledgeFromMessages(
         (originalMsg.blocks && originalMsg.blocks.some((block: any) => 
           block.block_id && block.block_id.includes('qa_share_intro_unanswered')));
       
+      // Check if this is a user comment block
+      const isUserComment = originalMsg.blocks && originalMsg.blocks.some((block: any) => 
+        block.block_id && block.block_id.includes('user_comment'));
+      
+      // Handle Q&A SHARE messages (these should be excluded from conversation)
       if ((isQAShareAnswered || isQAShareUnanswered) && msg.role === 'CHOIR') {
+        // Extract Q&A content for context
         const canAnswer = isQAShareAnswered;
         const extracted = extractQAContent(msg.content, canAnswer);
         if (extracted) {
           qaContent.push(extracted);
-          continue; // Skip adding to conversation
         }
+        
+        // If there's also a user comment in this message, extract it as user input
+        if (isUserComment) {
+          const commentMatch = msg.content.match(/\*(.+?) added:\*\s*([\s\S]*)/);
+          if (commentMatch) {
+            const userName = commentMatch[1];
+            const comment = commentMatch[2].trim();
+            if (comment) { // Only add if comment is not empty
+              conversationMessages.push({
+                role: 'user',
+                content: `${userName}: ${comment}` // Format same as other user messages
+              });
+            }
+          }
+        }
+        
+        // Skip adding the Q&A share message itself to conversation
+        continue;
       }
       
+      // Add all other messages to conversation
       conversationMessages.push(msg);
     }
 
@@ -128,30 +152,19 @@ export async function extractKnowledgeFromMessages(
       }
     }
 
-    const prompt = `You are an experienced knowledge curator named CHOIR analyzing a team conversation to identify what should be documented.
-
-Read this conversation and understand the context and flow. What organizational knowledge is being shared or confirmed that would be valuable to document?
+    const prompt = `Extract organizational knowledge from this team conversation.
 ${contextSection}${qaContextSection}
-
-**Your task:** Extract organizational knowledge in this conversation:
-
-PRIORITIZE organizational knowledge shared by human team members (not CHOIR's responses). Look for decisions, processes, tools, standards, policies, or practices that the organization uses. Include any information about what the team does, how they work, or what tools/methods they use.
-
-**Think about what the requester likely wants documented based on the conversation flow.**
-
-If you find organizational knowledge worth documenting, respond with the complete knowledge statement as plain text. Include all relevant details, examples, and reference URLs to preserve the full context and value of the information.
 
 Conversation:
 ${formattedMessages}
 
-What organizational knowledge should be documented from this conversation?`;
+What specific organizational policies, processes, or practices are discussed here that should be documented?`;
 
     const extractedKnowledge = await createChatCompletion(
       [
         {
           role: 'system',
-          content:
-            'You are CHOIR, a helpful knowledge curator who extracts organizational knowledge from team conversations for documentation purposes. Focus on decisions, processes, and standards that represent what the organization or team does, rather than individual actions.',
+          content: 'You are CHOIR, a knowledge curator. Extract organizational policies, processes, and practices from team conversations for documentation.',
         },
         {
           role: 'user',

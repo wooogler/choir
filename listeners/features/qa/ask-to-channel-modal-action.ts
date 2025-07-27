@@ -127,8 +127,27 @@ export const askToChannelModalCallback = async ({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `📢 *Ready to share this Q&A with #${channelName}?*\n_This will post the question and my response to help others in the channel._`,
+              text: `📢 *Ready to share this Q&A with #${channelName}?*\n_This will post the question and my response to help others in the channel. You can also add your own thoughts or context._`,
             },
+          },
+          {
+            type: 'input',
+            block_id: 'user_comment',
+            element: {
+              type: 'plain_text_input',
+              action_id: 'comment_text',
+              multiline: true,
+              placeholder: {
+                type: 'plain_text',
+                text: 'Add your thoughts or context about this Q&A (optional)',
+              },
+            },
+            label: {
+              type: 'plain_text',
+              text: '💭 Your Comment',
+              emoji: true,
+            },
+            optional: true,
           },
           {
             type: 'input',

@@ -91,11 +91,13 @@ export function createQAChannelMessage(
   canAnswer: boolean,
   isAnonymous?: boolean,
   questionerName?: string,
+  userComment?: string,
 ) {
   const senderIdentity = isAnonymous ? 'A team member' : questionerName || 'A team member';
+  const blocks: any[] = [];
 
   if (!canAnswer) {
-    return [
+    blocks.push(
       {
         type: 'section',
         text: {
@@ -118,9 +120,9 @@ export function createQAChannelMessage(
           text: `However, I was not able to answer the question. Could anyone help?`,
         },
       },
-    ];
+    );
   } else {
-    return [
+    blocks.push(
       {
         type: 'section',
         text: {
@@ -151,8 +153,27 @@ export function createQAChannelMessage(
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
       },
-    ];
+    );
   }
+
+  // Add user comment if provided
+  if (userComment && userComment.trim()) {
+    blocks.push(
+      {
+        type: 'divider',
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*${senderIdentity} added:*\n${userComment}`,
+        },
+        block_id: createCHOIRBlockId(CHOIRMessageType.USER_COMMENT),
+      },
+    );
+  }
+
+  return blocks;
 }
 
 /**
@@ -166,14 +187,23 @@ export function createQAChannelPreview(
   canAnswer: boolean,
   isAnonymous?: boolean,
   questionerName?: string,
+  userComment?: string,
 ): string {
   const senderIdentity = isAnonymous ? 'A team member' : questionerName || 'A team member';
+  let preview = '';
 
   if (!canAnswer) {
-    return `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. Could anyone help?`;
+    preview = `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. Could anyone help?`;
   } else {
-    return `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nHowever, ${senderIdentity} wants to discuss this with others. Could anyone help?`;
+    preview = `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nHowever, ${senderIdentity} wants to discuss this with others. Could anyone help?`;
   }
+
+  // Add user comment if provided
+  if (userComment && userComment.trim()) {
+    preview += `\n\n*${senderIdentity} added:*\n${userComment}`;
+  }
+
+  return preview;
 }
 
 /**
@@ -188,6 +218,7 @@ export function createPrivateMessage(
   isAnonymous?: boolean,
   questionerName?: string,
   sessionId?: string,
+  userComment?: string,
 ) {
   const senderIdentity = isAnonymous ? 'A team member' : questionerName || 'A team member';
 
@@ -252,6 +283,23 @@ export function createPrivateMessage(
     );
   }
 
+  // Add user comment if provided
+  if (userComment && userComment.trim()) {
+    blocks.push(
+      {
+        type: 'divider',
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*${senderIdentity} added:*\n${userComment}`,
+        },
+        block_id: createCHOIRBlockId(CHOIRMessageType.USER_COMMENT),
+      },
+    );
+  }
+
   // Anonymous 질문인 경우 실시간 전달 안내 메시지 추가
   if (isAnonymous && sessionId) {
     blocks.push(
@@ -281,12 +329,21 @@ export function createPrivateMessagePreview(
   response: string,
   canAnswer: boolean,
   isAnonymous?: boolean,
+  userComment?: string,
 ): string {
   const senderIdentity = isAnonymous ? 'A team member' : questionerName;
+  let preview = '';
 
   if (!canAnswer) {
-    return `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. The team member would like your help with this question.`;
+    preview = `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. The team member would like your help with this question.`;
   } else {
-    return `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nThe team member would like to discuss this with you. Could you help them?`;
+    preview = `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nThe team member would like to discuss this with you. Could you help them?`;
   }
+
+  // Add user comment if provided
+  if (userComment && userComment.trim()) {
+    preview += `\n\n*${senderIdentity} added:*\n${userComment}`;
+  }
+
+  return preview;
 }

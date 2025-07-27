@@ -106,6 +106,14 @@ export enum CHOIRMessageType {
    * 대화 히스토리에서 세션 구분점 역할 (이 메시지부터 새로운 세션 시작)
    */
   QA_SHARE_INTRO_UNANSWERED = 'qa_share_intro_unanswered',
+
+  /** 
+   * 사용자 코멘트 블록
+   * Q&A 공유 시 사용자가 추가한 코멘트나 의견
+   * 예: Q&A 메시지 하단에 "user added: ..."
+   * 대화 히스토리에 포함됨 (해당 사용자의 발언으로 처리)
+   */
+  USER_COMMENT = 'user_comment',
   
   // ===== 시스템 관리 메시지 =====
   

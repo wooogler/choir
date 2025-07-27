@@ -22,6 +22,7 @@ export const askToOthersSubmitCallback = async ({
     const selectedUsers = view.state.values.users_select.users.selected_users;
     const isAnonymous =
       (view.state.values.anonymous_select?.anonymous_checkbox_private?.selected_options?.length || 0) > 0;
+    const userComment = view.state.values.user_comment?.comment_text?.value || '';
     const userId = body.user.id;
 
     if (!sessionId || !selectedUsers || selectedUsers.length === 0) {
@@ -117,6 +118,7 @@ export const askToOthersSubmitCallback = async ({
           isAnonymous,
           userName,
           sessionId, // sessionId 전달
+          userComment,
         );
 
         // Create comprehensive text that matches the blocks content for conversation history
@@ -127,6 +129,7 @@ export const askToOthersSubmitCallback = async ({
           sessionData.botResponse,
           true, // canAnswer - assume true for private sharing
           isAnonymous,
+          userComment,
         );
 
         const postedMessage = await client.chat.postMessage({
@@ -267,6 +270,7 @@ export const askToOthersSubmitCallback = async ({
         successCount,
         failCount,
         isAnonymous,
+        userComment,
         originalChannelId: sessionData.originalChannelId,
         originalThreadTs: sessionData.originalThreadTs,
         question: sessionData.originalQuestion,
