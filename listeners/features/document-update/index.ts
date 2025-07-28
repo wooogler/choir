@@ -3,6 +3,7 @@ import type { App } from '@slack/bolt';
 import { createFileSubmissionCallback } from './actions/create-file-submission';
 import { createNewSectionAction } from './actions/create-new-section';
 import { fileSelectionForUpdateAction, startFileBasedReviewAction } from './actions/file-selection';
+import { getEditLinkAction } from './actions/get-edit-link';
 import { showCreateFileModalCallback } from './actions/show-create-file-modal';
 import { viewAnalyzedMessagesAction } from './actions/view-analyzed-messages';
 import { cancelDocumentUpdatesCallback } from './apply-document/cancel-document-updates-action';
@@ -42,6 +43,7 @@ export const registerDocumentUpdateFeature = (app: App) => {
   app.action('file_selection_for_update', fileSelectionForUpdateAction);
   app.action('start_file_based_review', startFileBasedReviewAction);
   app.action('show_create_file_modal', showCreateFileModalCallback);
+  app.action('get_edit_link_for_selected_file', getEditLinkAction);
 
   // Views
   app.view('update_editor_submission', handleSuggestionEditorSubmission);

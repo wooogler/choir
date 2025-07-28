@@ -159,6 +159,8 @@ export const createNewSectionAction = async ({
         recommendedFile,
         owner,
         repo,
+        branch: branch || 'main',
+        fileOptions: fileOptions,
         copyText,
         sectionTitle,
         originalChannelId: originalChannelId,
@@ -246,7 +248,23 @@ export const createNewSectionAction = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `📝 *Alternatively, you can edit the file manually:* <${recommendedFileEditUrl}|Open ${recommendedFile.split('/').pop()} in GitHub>`,
+            text: `📝 *Alternatively, you can edit the selected file manually in GitHub:*`,
+          },
+          accessory: {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '🔗 Get Edit Link',
+              emoji: true,
+            },
+            action_id: 'get_edit_link_for_selected_file',
+            value: JSON.stringify({
+              newSectionSessionId,
+              owner,
+              repo,
+              branch: branch || 'main',
+              fileOptions: fileOptions,
+            }),
           },
         },
       ],

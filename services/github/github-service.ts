@@ -164,7 +164,7 @@ class GithubService {
     return chunks;
   }
 
-  private async getDefaultBranch(owner: string, repo: string, workspaceId?: string, userId?: string): Promise<string> {
+  public async getDefaultBranch(owner: string, repo: string, workspaceId?: string, userId?: string): Promise<string> {
     try {
       const octokit = await this.getOctokit(workspaceId, userId);
       const response = await this.throttledRequest(() =>

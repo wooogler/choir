@@ -107,11 +107,30 @@ export const reloadFromGithubAction = async ({
       return;
     }
 
-    // GitHub에서 최신 마크다운 파일들 가져오기
+    // GitHub에서 현재 기본 브랜치 확인 및 업데이트
+    const currentDefaultBranch = await githubService.getDefaultBranch(
+      repoInfo.owner, 
+      repoInfo.repo, 
+      workspaceId, 
+      body.user.id
+    );
+    
+    // 기존 브랜치와 다르면 워크스페이스 설정 업데이트
+    if (repoInfo.branch !== currentDefaultBranch) {
+      const { storeGithubRepo } = await import('services/slack');
+      await storeGithubRepo(workspaceId, {
+        ...repoInfo,
+        branch: currentDefaultBranch,
+      });
+      logger.info(`Updated repository branch from ${repoInfo.branch || 'undefined'} to ${currentDefaultBranch}`);
+    }
+
+    // GitHub에서 최신 마크다운 파일들 가져오기 (업데이트된 브랜치 사용)
     const markdownFiles = await githubService.getAllMarkdownFiles({
       owner: repoInfo.owner,
       repo: repoInfo.repo,
       path: repoInfo.path || '',
+      ref: currentDefaultBranch,
       workspaceId: workspaceId,
       userId: body.user.id,
     });
@@ -368,11 +387,30 @@ export const normalizeMarkdownFilesAction = async ({
       return;
     }
 
-    // 모든 마크다운 파일 가져오기
+    // GitHub에서 현재 기본 브랜치 확인 및 업데이트
+    const currentDefaultBranch = await githubService.getDefaultBranch(
+      repoInfo.owner, 
+      repoInfo.repo, 
+      workspaceId, 
+      body.user.id
+    );
+    
+    // 기존 브랜치와 다르면 워크스페이스 설정 업데이트
+    if (repoInfo.branch !== currentDefaultBranch) {
+      const { storeGithubRepo } = await import('services/slack');
+      await storeGithubRepo(workspaceId, {
+        ...repoInfo,
+        branch: currentDefaultBranch,
+      });
+      logger.info(`Updated repository branch from ${repoInfo.branch || 'undefined'} to ${currentDefaultBranch}`);
+    }
+
+    // 모든 마크다운 파일 가져오기 (업데이트된 브랜치 사용)
     const markdownFiles = await githubService.getAllMarkdownFiles({
       owner: repoInfo.owner,
       repo: repoInfo.repo,
       path: repoInfo.path || '',
+      ref: currentDefaultBranch,
       workspaceId: workspaceId,
       userId: body.user.id,
     });
