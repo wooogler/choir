@@ -101,7 +101,8 @@ export const sendUpdateSuggestionToManagerCallback = async ({
           if (
             conversationInfo.ok &&
             conversationInfo.channel &&
-            (!conversationInfo.channel.is_private || conversationInfo.channel.is_member)
+            conversationInfo.channel.is_channel &&
+            !conversationInfo.channel.is_private
           ) {
             const authInfo = await client.auth.test();
             const workspaceUrl = authInfo.url;
