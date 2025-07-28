@@ -110,9 +110,10 @@ export const createNewSectionAction = async ({
     const recommendedFileOption = fileOptions.find((option) => option.value === recommendedFile);
 
     // GitHub 편집 URL 생성 함수
-    const { owner, repo, path } = config.githubRepo;
+    const { owner, repo, path, branch } = config.githubRepo;
     const createEditUrl = (filePath: string) => {
-      return `https://github.com/${owner}/${repo}/edit/main/${filePath}`;
+      const branchName = branch || 'main';
+      return `https://github.com/${owner}/${repo}/edit/${branchName}/${filePath}`;
     };
 
     // 추천 파일의 편집 URL
@@ -173,13 +174,6 @@ export const createNewSectionAction = async ({
           text: {
             type: 'mrkdwn',
             text: `👋 I've prepared a new section for your documentation. Review and edit the content below, then click *Submit* to automatically add it to your selected file.`,
-          },
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: `📁 *I recommend adding this to:* ${recommendedFile}\n💭 *Here's why:* ${reasoning}`,
           },
         },
         {

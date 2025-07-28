@@ -41,6 +41,7 @@ CONSTRAINTS:
 - Write as a single paragraph or simple list items (no headings, subheadings, or complex structure)
 - Keep content concise and directly relevant to the section context
 - Never include user names or identifiers
+- Always preserve any URLs from the knowledge as they contain valuable reference information
 - If knowledge is insufficient for this section, return empty string
 
 TASK: Write appropriate content for this section using only the provided knowledge.`,
@@ -90,6 +91,7 @@ Rules:
 - You may add new paragraphs or list items if the knowledge contains independent content
 - Never include headings or section titles in your response
 - Remove any user names or identifiers
+- Always preserve any URLs from the knowledge as they contain valuable reference information
 - Update content that contradicts the knowledge
 - If knowledge adds nothing valuable, return the original
 
