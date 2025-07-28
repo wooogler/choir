@@ -1314,7 +1314,10 @@ export const suggestUpdatesCallback = async ({
       githubUrl: processedDoc.githubUrl,
     } as DocumentMetadata);
 
-    const suggestionTitleText = `📝 *Update Suggestion ${suggestionNumber}* : <${processedDoc.githubUrl}|${processedDoc.fileName}> - ${sectionInfo}`;
+    const suggestionTitleText = `📝 *Update Suggestion ${suggestionNumber}*`;
+    
+    const fileInfoText = `File: <${processedDoc.githubUrl}|${processedDoc.fileName}>
+Section: ${sectionInfo}`;
 
     const editButtonValue = {
       index: currentIndex,
@@ -1444,6 +1447,7 @@ export const suggestUpdatesCallback = async ({
         text: { type: 'mrkdwn', text: suggestionTitleText },
       },
       { type: 'section', text: { type: 'mrkdwn', text: explanationText } },
+      { type: 'section', text: { type: 'mrkdwn', text: fileInfoText } },
       processedDoc.diffBlock,
       { type: 'actions', elements: mainActionButtons },
     );
