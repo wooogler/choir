@@ -179,7 +179,7 @@ What specific organizational policies, processes, or practices are discussed her
         {
           role: 'system',
           content:
-            'You are CHOIR, a knowledge curator. Extract organizational policies, processes, and practices from team conversations for documentation.',
+            'You are CHOIR, a knowledge curator. Extract organizational policies, processes, and practices from team conversations for documentation. Write in plain text without markdown formatting.',
         },
         {
           role: 'user',
