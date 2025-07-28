@@ -4,7 +4,6 @@ import type { Tokens as MarkedTokens } from 'marked';
 import type { Heading, ListItem, Paragraph, Root, Text } from 'mdast';
 import { toString } from 'mdast-util-to-string';
 import remarkParse from 'remark-parse';
-import remarkStringify from 'remark-stringify';
 import { unified } from 'unified';
 import type { Node, Parent } from 'unist';
 import { is } from 'unist-util-is';
@@ -1046,115 +1045,107 @@ function appendSectionToEnd(tree: DocumentTree, headingNode: ExtendedNode, bodyN
 
 /**
  * LLM이 생성한 content를 파싱하여 개별 listItem/paragraph로 분할
+ * 사용자 친화적으로 단일 줄바꿈도 별개 paragraph로 분리하고,
+ * 리스트와 paragraph가 섞인 복잡한 케이스도 처리
  * @param content LLM이 생성한 마크다운 content
  * @returns 분할된 content 항목들의 배열
  */
 export function parseAndSplitContent(content: string): Array<{ type: 'listItem' | 'paragraph'; content: string }> {
   const result: Array<{ type: 'listItem' | 'paragraph'; content: string }> = [];
 
+  if (!content || !content.trim()) {
+    return result;
+  }
+
   try {
-    // content를 마크다운으로 파싱
-    const tree = unified().use(remarkParse).parse(content);
-
-    // root children만 순회하여 중복 방지
-    if (tree.children && Array.isArray(tree.children)) {
-      for (const child of tree.children) {
-        if (is(child, 'paragraph')) {
-          // 직접 paragraph인 경우 - 마크다운 문법 보존
-          const tempRoot = { type: 'root' as const, children: [child] };
-          const markdownContent = unified().use(remarkStringify).stringify(tempRoot).trim();
-          if (markdownContent) {
-            result.push({
-              type: 'paragraph',
-              content: markdownContent,
-            });
-          }
-        } else if (is(child, 'list')) {
-          // list인 경우 내부의 listItem들을 추출
-          if (child.children && Array.isArray(child.children)) {
-            for (const listItem of child.children) {
-              if (is(listItem, 'listItem')) {
-                // listItem의 실제 content만 추출 (paragraph 내용)
-                if (listItem.children && listItem.children.length > 0) {
-                  const paragraph = listItem.children[0];
-                  if (is(paragraph, 'paragraph')) {
-                    const tempRoot = { type: 'root' as const, children: [paragraph] };
-                    const markdownContent = unified().use(remarkStringify).stringify(tempRoot).trim();
-                    if (markdownContent) {
-                      result.push({
-                        type: 'listItem',
-                        content: markdownContent,
-                      });
-                    }
-                  }
-                }
-              }
-            }
-          }
-        } else if (is(child, 'listItem')) {
-          // 직접 listItem인 경우 - paragraph 내용만 추출
-          if (child.children && child.children.length > 0) {
-            const paragraph = child.children[0];
-            if (is(paragraph, 'paragraph')) {
-              const tempRoot = { type: 'root' as const, children: [paragraph] };
-              const markdownContent = unified().use(remarkStringify).stringify(tempRoot).trim();
-              if (markdownContent) {
-                result.push({
-                  type: 'listItem',
-                  content: markdownContent,
-                });
-              }
-            }
-          }
-        }
+    // 먼저 이중 줄바꿈으로 블록 단위 분리 (마크다운의 기본 paragraph 분리)
+    const blocks = content.split(/\n\s*\n/).filter(block => block.trim());
+    
+    if (blocks.length > 1) {
+      // 이중 줄바꿈으로 분리된 블록들이 있는 경우, 각 블록을 개별 처리
+      for (const block of blocks) {
+        result.push(...parseBlock(block.trim()));
       }
-    }
-
-    // 만약 파싱된 결과가 없다면 원본 content를 줄바꿈 기준으로 분리하여 처리
-    if (result.length === 0 && content.trim()) {
-      // 이중 줄바꿈으로 먼저 분리 (마크다운 paragraph 분리)
-      const paragraphs = content.split(/\n\s*\n/).filter(p => p.trim());
-      
-      if (paragraphs.length > 1) {
-        // 여러 paragraph가 있는 경우 각각을 별도 paragraph로 처리
-        for (const para of paragraphs) {
-          result.push({
-            type: 'paragraph',
-            content: para.trim(),
-          });
-        }
-      } else {
-        // 단일 줄바꿈으로 분리해서 각각을 별도 paragraph로 처리
-        const lines = content.split('\n').filter(line => line.trim());
-        
-        if (lines.length > 1) {
-          for (const line of lines) {
-            result.push({
-              type: 'paragraph',
-              content: line.trim(),
-            });
-          }
-        } else {
-          // 단일 라인인 경우
-          result.push({
-            type: 'paragraph',
-            content: content.trim(),
-          });
-        }
-      }
+    } else {
+      // 이중 줄바꿈이 없는 경우, 전체를 하나의 블록으로 처리
+      result.push(...parseBlock(content.trim()));
     }
   } catch (error) {
     console.warn('Content 파싱 실패, 원본을 paragraph로 처리:', error);
     // 파싱 실패 시 원본 content를 paragraph로 처리
-    if (content.trim()) {
-      result.push({
-        type: 'paragraph',
-        content: content.trim(),
-      });
-    }
+    result.push({
+      type: 'paragraph',
+      content: content.trim(),
+    });
   }
 
   return result;
+}
+
+/**
+ * 단일 블록을 파싱하여 리스트와 paragraph를 분리
+ * 사용자 친화적으로 단일 줄바꿈도 별개 paragraph로 처리
+ */
+function parseBlock(block: string): Array<{ type: 'listItem' | 'paragraph'; content: string }> {
+  const result: Array<{ type: 'listItem' | 'paragraph'; content: string }> = [];
+  
+  // 줄 단위로 분리
+  const lines = block.split('\n').map(line => line.trim()).filter(line => line);
+  
+  let currentListItems: string[] = [];
+  
+  for (const line of lines) {
+    if (isListItemLine(line)) {
+      // 리스트 아이템인 경우
+      currentListItems.push(extractListItemContent(line));
+    } else {
+      // 일반 paragraph인 경우
+      // 이전에 수집된 리스트 아이템들이 있다면 먼저 처리
+      if (currentListItems.length > 0) {
+        for (const listContent of currentListItems) {
+          result.push({
+            type: 'listItem',
+            content: listContent,
+          });
+        }
+        currentListItems = [];
+      }
+      
+      // 현재 라인을 paragraph로 추가
+      result.push({
+        type: 'paragraph',
+        content: line,
+      });
+    }
+  }
+  
+  // 마지막에 남은 리스트 아이템들 처리
+  if (currentListItems.length > 0) {
+    for (const listContent of currentListItems) {
+      result.push({
+        type: 'listItem',
+        content: listContent,
+      });
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * 라인이 리스트 아이템인지 확인
+ */
+function isListItemLine(line: string): boolean {
+  // 마크다운 리스트 패턴: -, *, +, 또는 숫자.
+  return /^(\s*[-*+]|\s*\d+\.)\s/.test(line);
+}
+
+/**
+ * 리스트 아이템에서 실제 내용만 추출
+ */
+function extractListItemContent(line: string): string {
+  // 리스트 마커 제거하고 내용만 반환
+  return line.replace(/^(\s*[-*+]|\s*\d+\.)\s*/, '').trim();
 }
 
 /**

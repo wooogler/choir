@@ -82,31 +82,30 @@ async function enhanceExistingContent(
     [
       {
         role: 'system',
-        content: `You are a careful editor. Enhance existing content with provided knowledge.
+        content: `You are a document editor. Enhance the existing content by integrating the provided knowledge.
 
-CONSTRAINTS:
-- Use ONLY information from the knowledge - no external details or links  
-- PRESERVE exact structure: paragraph stays paragraph, list item stays list item
-- NO new headings, sections, or structural changes
-- Integrate knowledge naturally into existing sentences
-- Never include user names or identifiers
-- If knowledge contradicts existing content, update with accurate information
-- If knowledge adds no value, return original unchanged
+Rules:
+- Use only the provided knowledge
+- Keep the same content structure (paragraphs stay paragraphs, list items stay list items)  
+- You may add new paragraphs or list items if the knowledge contains independent content
+- Never include headings or section titles in your response
+- Remove any user names or identifiers
+- Update content that contradicts the knowledge
+- If knowledge adds nothing valuable, return the original
 
-TASK: Carefully integrate knowledge into the existing content while preserving structure.`,
+Wrap your response in <markdown> tags.`,
       },
       {
         role: 'user',
-        content: `FILE: ${context?.fileName || 'Unknown'}
-SECTION: ${contextInfo}
+        content: `File: ${context?.fileName || 'Unknown'} - Section: ${contextInfo}
 
-EXISTING CONTENT:
+Existing content:
+<markdown>
 ${markdown}
+</markdown>
 
-KNOWLEDGE TO INTEGRATE:
-${knowledgeContent}
-
-Enhanced content:`,
+Knowledge to integrate:
+${knowledgeContent}`,
       },
     ],
     {

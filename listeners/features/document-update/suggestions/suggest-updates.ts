@@ -665,10 +665,22 @@ export const suggestUpdatesCallback = async ({
           });
           logger.info(`=== END FILE-SPECIFIC RESULTS ===`);
 
-          // 파일별 검색 결과만 사용 (캐시 제거로 단순화)
-          searchResults = fileSpecificResults;
+          // 심플한 순서 로직: file-specific 결과를 맨 앞에, initial search 결과에서 중복 제거 후 뒤에
+          const initialSearchResults = getSearchResults(userId) || [];
+          const fileSpecificNodeIds = new Set(fileSpecificResults.map(doc => doc.metadata?.nodeId));
           
-          logger.info(`Using file-specific search results: ${searchResults.length} documents`);
+          // Initial search에서 file-specific과 중복되는 것 제거
+          const filteredInitialResults = initialSearchResults.filter(doc => 
+            !fileSpecificNodeIds.has(doc.metadata?.nodeId)
+          );
+          
+          // 최종 순서: [file-specific, ...filtered_initial]
+          searchResults = [...fileSpecificResults, ...filteredInitialResults];
+          
+          // Combined 결과를 저장하여 이후 suggestion들이 올바른 순서를 사용하도록 함
+          storeSearchResults(userId, searchResults);
+          
+          logger.info(`Combined search results: ${fileSpecificResults.length} file-specific + ${filteredInitialResults.length} initial = ${searchResults.length} total`);
         }
 
         // Check if we found any results
@@ -694,11 +706,9 @@ export const suggestUpdatesCallback = async ({
         isFirstSuggestion = true;
       } else {
         logger.info(
-          `Performing fresh search for continuation, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}`,
+          `Using cached search results, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}`,
         );
-        // 캐시 제거로 항상 새로운 검색 수행
-        const workspaceId = await getWorkspaceId(client);
-        searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
+        searchResults = getSearchResults(userId);
         isFirstSuggestion = false;
       }
 
