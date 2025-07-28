@@ -1068,22 +1068,177 @@ export const suggestUpdatesCallback = async ({
 
     logger.info(`Debug: currentIndex=${currentIndex}, searchResults.length=${searchResults.length}`);
     if (currentIndex >= searchResults.length) {
-      await client.chat.postMessage({
-        channel: currentDmChannelId,
-        text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
-        blocks: [
-          {
-            type: 'section',
-            block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
-            text: {
-              type: 'mrkdwn',
-              text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
+      // Try to delete the progress message first, then send completion message
+      const progressTimestamp = getProgressMessageTimestamp(userId);
+      if (progressTimestamp && currentDmChannelId) {
+        try {
+          await client.chat.delete({
+            channel: currentDmChannelId,
+            ts: progressTimestamp,
+          });
+          deleteProgressMessageTimestamp(userId);
+          logger.info('Deleted progress message before showing completion');
+        } catch (deleteError) {
+          logger.warn('Failed to delete progress message:', deleteError);
+        }
+      }
+
+      try {
+          // Get workspace info for new section/file creation
+          const workspaceId = await getWorkspaceId(client);
+          const workspaceStore = new WorkspaceStore();
+          const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+          
+          let fileList = await workspaceStore.getWritableFiles(workspaceId);
+          if ((!fileList || fileList.length === 0) && config?.githubRepo) {
+            // Load files if not cached
+            const { owner, repo, path } = config.githubRepo;
+            const githubService = GithubService.getInstance();
+            const markdownFiles = await githubService.getAllMarkdownFiles({
+              owner,
+              repo,
+              path,
+              workspaceId: workspaceId,
+              userId: userId,
+            });
+            
+            await workspaceStore.setMarkdownFilesCache(workspaceId, markdownFiles.map((file) => ({
+              name: file.name,
+              path: file.path,
+            })));
+            
+            fileList = await workspaceStore.getWritableFiles(workspaceId);
+          }
+
+          // Create new section suggestion for completion
+          let newSectionSessionId = null;
+          let recommendedFileName = '';
+          try {
+            const { createNewSectionFromKnowledge } = await import('services/llm/content-generator');
+            const availableFiles = (fileList || []).map((file) => ({
+              fileName: file.name,
+              githubUrl: `https://github.com/${config?.githubRepo?.owner}/${config?.githubRepo?.repo}/blob/main/${file.path}`,
+              description: `${file.name} - Documentation file`,
+            }));
+
+            if (availableFiles.length > 0) {
+              const newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
+              
+              if (newSectionSuggestion) {
+                // Store new section data in session
+                newSectionSessionId = `new_section_${userId}_${Date.now()}`;
+                recommendedFileName = newSectionSuggestion.recommendedFile;
+                const recommendedFileInfo = availableFiles.find(
+                  (file) => file.fileName === newSectionSuggestion.recommendedFile,
+                );
+                const githubUrl = recommendedFileInfo?.githubUrl || availableFiles[0]?.githubUrl || '';
+
+                storeSessionData(
+                  newSectionSessionId,
+                  {
+                    sectionTitle: newSectionSuggestion.sectionTitle,
+                    sectionContent: newSectionSuggestion.sectionContent,
+                    recommendedFile: newSectionSuggestion.recommendedFile,
+                    reasoning: newSectionSuggestion.reasoning,
+                    githubUrl: githubUrl,
+                    originalChannelId: knowledgeSourceChannelId,
+                    originalThreadTs: knowledgeSourceThreadTs,
+                    sessionId: sessionId,
+                  },
+                  SessionType.NEW_SECTION,
+                );
+              }
+            }
+          } catch (error) {
+            logger.warn('Failed to create new section suggestion for completion:', error);
+          }
+
+          // Create completion blocks with new section and new file options
+          const completionBlocks = [
+            {
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+              text: {
+                type: 'mrkdwn',
+                text: "🎉 *Review Complete!* We've gone through all relevant documents.\n\nWould you like to create new content instead?" + 
+                      (newSectionSessionId ? `\n\n💡 I can create a new section in *${recommendedFileName}*` : ''),
+              },
             },
-          },
-        ],
-        unfurl_links: false,
-        unfurl_media: false,
-      });
+            {
+              type: 'actions',
+              elements: [
+                ...(newSectionSessionId ? [{
+                  type: 'button',
+                  text: {
+                    type: 'plain_text',
+                    text: '💡 Create New Section',
+                    emoji: true,
+                  },
+                  action_id: 'create_new_section',
+                  value: JSON.stringify({
+                    newSectionSessionId,
+                    userId,
+                  }),
+                }] : []),
+                {
+                  type: 'button',
+                  text: {
+                    type: 'plain_text',
+                    text: '📄 Create New File',
+                    emoji: true,
+                  },
+                  action_id: 'show_create_file_modal',
+                  value: JSON.stringify({
+                    sessionId,
+                    knowledgeContent,
+                    knowledgeSourceChannelId,
+                    knowledgeSourceThreadTs,
+                  }),
+                },
+              ],
+            },
+            {
+              type: 'context',
+              elements: [
+                {
+                  type: 'mrkdwn',
+                  text: 'Or mention me anytime with new knowledge to review and update docs! 👋',
+                },
+              ],
+            },
+          ];
+
+        // Send completion message with new options
+        await client.chat.postMessage({
+          channel: currentDmChannelId,
+          text: '🎉 Review Complete! Create new content?',
+          blocks: completionBlocks,
+          unfurl_links: false,
+          unfurl_media: false,
+        });
+
+        logger.info('Successfully sent completion message with new options');
+      } catch (error) {
+        logger.error('Error creating completion message:', error);
+        
+        // Fallback to simple completion message
+        await client.chat.postMessage({
+          channel: currentDmChannelId,
+          text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
+          blocks: [
+            {
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+              text: {
+                type: 'mrkdwn',
+                text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
+              },
+            },
+          ],
+          unfurl_links: false,
+          unfurl_media: false,
+        });
+      }
 
       return;
     }
