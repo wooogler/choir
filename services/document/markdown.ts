@@ -1084,49 +1084,81 @@ export function parseAndSplitContent(content: string): Array<{ type: 'listItem' 
 
 /**
  * 단일 블록을 파싱하여 리스트와 paragraph를 분리
- * 사용자 친화적으로 단일 줄바꿈도 별개 paragraph로 처리
+ * 마크다운 구조를 유지하며 블록 단위로 처리
  */
 function parseBlock(block: string): Array<{ type: 'listItem' | 'paragraph'; content: string }> {
   const result: Array<{ type: 'listItem' | 'paragraph'; content: string }> = [];
   
   // 줄 단위로 분리
-  const lines = block.split('\n').map(line => line.trim()).filter(line => line);
+  const lines = block.split('\n');
   
-  let currentListItems: string[] = [];
+  let currentSection: string[] = [];
+  let currentSectionType: 'list' | 'paragraph' | null = null;
   
-  for (const line of lines) {
-    if (isListItemLine(line)) {
-      // 리스트 아이템인 경우
-      currentListItems.push(extractListItemContent(line));
-    } else {
-      // 일반 paragraph인 경우
-      // 이전에 수집된 리스트 아이템들이 있다면 먼저 처리
-      if (currentListItems.length > 0) {
-        for (const listContent of currentListItems) {
-          result.push({
-            type: 'listItem',
-            content: listContent,
-          });
-        }
-        currentListItems = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    if (!line) {
+      // 빈 줄인 경우 현재 섹션을 처리하고 초기화
+      if (currentSection.length > 0) {
+        flushCurrentSection();
       }
-      
-      // 현재 라인을 paragraph로 추가
-      result.push({
-        type: 'paragraph',
-        content: line,
-      });
+      continue;
+    }
+    
+    const isListLine = isListItemLine(line);
+    
+    if (isListLine) {
+      // 리스트 라인인 경우
+      if (currentSectionType !== 'list') {
+        // 이전 섹션이 있다면 먼저 처리
+        if (currentSection.length > 0) {
+          flushCurrentSection();
+        }
+        currentSectionType = 'list';
+      }
+      currentSection.push(line);
+    } else {
+      // 일반 텍스트 라인인 경우
+      if (currentSectionType !== 'paragraph') {
+        // 이전 섹션이 있다면 먼저 처리
+        if (currentSection.length > 0) {
+          flushCurrentSection();
+        }
+        currentSectionType = 'paragraph';
+      }
+      currentSection.push(line);
     }
   }
   
-  // 마지막에 남은 리스트 아이템들 처리
-  if (currentListItems.length > 0) {
-    for (const listContent of currentListItems) {
-      result.push({
-        type: 'listItem',
-        content: listContent,
-      });
+  // 마지막 섹션 처리
+  if (currentSection.length > 0) {
+    flushCurrentSection();
+  }
+  
+  function flushCurrentSection() {
+    if (currentSectionType === 'list') {
+      // 리스트 항목들을 개별 listItem으로 추가
+      for (const line of currentSection) {
+        result.push({
+          type: 'listItem',
+          content: extractListItemContent(line),
+        });
+      }
+    } else if (currentSectionType === 'paragraph') {
+      // paragraph 내용을 하나로 합치기
+      const paragraphContent = currentSection.join(' ').trim();
+      if (paragraphContent) {
+        result.push({
+          type: 'paragraph',
+          content: paragraphContent,
+        });
+      }
     }
+    
+    // 섹션 초기화
+    currentSection = [];
+    currentSectionType = null;
   }
   
   return result;
@@ -1187,11 +1219,8 @@ export function appendMultipleContents(
         );
 
         // list 노드의 ID를 찾기
-        const beforeAppend = Date.now();
         const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(
-          (id) =>
-            id.startsWith(`${lastInsertedNodeId}_append_`) &&
-            Number.parseInt(id.split('_append_')[1] || '0') >= beforeAppend - 1000, // 1초 여유
+          (id) => id.startsWith(`${lastInsertedNodeId}_append_`)
         );
 
         if (candidateIds.length > 0) {
@@ -1202,6 +1231,8 @@ export function appendMultipleContents(
           });
           lastInsertedNodeId = latestNodeId;
           console.log(`List 항목들 추가 완료: ${listItems.length}개 listItem -> 새 노드 ID: ${latestNodeId}`);
+        } else {
+          console.warn(`List 후보 노드를 찾을 수 없음! lastInsertedNodeId 업데이트 실패`);
         }
       } catch (error) {
         console.error(
@@ -1213,13 +1244,10 @@ export function appendMultipleContents(
     } else {
       // paragraph인 경우 개별 처리 - 파싱된 타입을 우선시
       try {
-        const beforeAppend = Date.now();
         currentTree = appendNodeContentWithType(currentTree, lastInsertedNodeId, item.content, item.type);
 
         const candidateIds = Array.from(currentTree.nodeMap.keys()).filter(
-          (id) =>
-            id.startsWith(`${lastInsertedNodeId}_append_`) &&
-            Number.parseInt(id.split('_append_')[1] || '0') >= beforeAppend,
+          (id) => id.startsWith(`${lastInsertedNodeId}_append_`)
         );
 
         if (candidateIds.length > 0) {
@@ -1230,6 +1258,8 @@ export function appendMultipleContents(
           });
           lastInsertedNodeId = latestNodeId;
           console.log(`Paragraph 항목 추가 완료: "${item.content.substring(0, 50)}..." -> 새 노드 ID: ${latestNodeId}`);
+        } else {
+          console.warn(`Paragraph 후보 노드를 찾을 수 없음! lastInsertedNodeId 업데이트 실패`);
         }
       } catch (error) {
         console.error(`Paragraph 항목 추가 실패: "${item.content}"`, error);

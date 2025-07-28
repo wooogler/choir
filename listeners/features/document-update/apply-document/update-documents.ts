@@ -64,6 +64,9 @@ const applySelectedToGithubAction = async ({
   const startTime = Date.now();
   await ack();
 
+  let dmResult: any = null;
+  let loadingMessage: any = null;
+
   try {
     const rawValue = body.actions[0].value;
     if (!rawValue) {
@@ -93,6 +96,31 @@ const applySelectedToGithubAction = async ({
 
     console.log(`Found ${documentUpdates.length} document updates for user ${userId}`);
 
+    // DM 채널 열기
+    dmResult = await client.conversations.open({
+      users: userId,
+    });
+
+    if (!dmResult.ok || !dmResult.channel?.id) {
+      throw new Error('Failed to open DM channel');
+    }
+
+    // 로딩 메시지 먼저 보내기
+    loadingMessage = await client.chat.postMessage({
+      channel: dmResult.channel.id,
+      text: "⚙️ Applying changes to GitHub...",
+      blocks: [
+        {
+          type: 'section',
+          block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+          text: {
+            type: 'mrkdwn',
+            text: "⚙️ Applying changes to GitHub...",
+          },
+        },
+      ],
+    });
+
     // 모든 업데이트 사용 (선택된 노드 필터링 제거)
     const selectedUpdates = documentUpdates;
 
@@ -107,30 +135,28 @@ const applySelectedToGithubAction = async ({
     const successfulUpdates = results.filter((r) => r.success).map((r) => r.fileName);
     const failedUpdates = results.filter((r) => !r.success).map((r) => r.fileName);
 
-    // DM 채널 열기
-    const dmResult = await client.conversations.open({
-      users: userId,
-    });
-
-    if (dmResult.ok && dmResult.channel?.id) {
-      // 결과 메시지 생성 - CHOIR 페르소나 적용
-      let resultMessage = "I've finished processing the document updates!"; // 기본 메시지
+    // 결과 메시지 생성 - CHOIR 페르소나 적용 및 githubUrl 수정
+    let resultMessage = "I've finished processing the document updates!"; // 기본 메시지
+    if (successfulUpdates.length > 0) {
+      const fileName = successfulUpdates[0]; // 단일 파일 처리 가정
+      // documentUpdates에서 실제 githubUrl 가져오기
+      const actualGithubUrl = selectedUpdates.find(u => u.fileName === fileName)?.githubUrl || githubUrl;
+      resultMessage = `✅ Great news! I've successfully updated the document: <${actualGithubUrl}|*${fileName}*>`;
+    }
+    if (failedUpdates.length > 0) {
+      const fileName = failedUpdates[0]; // 단일 파일 처리 가정
       if (successfulUpdates.length > 0) {
-        const fileName = successfulUpdates[0]; // 단일 파일 처리 가정
-        resultMessage = `✅ Great news! I've successfully updated the document: <${githubUrl}|*${fileName}*>`;
+        resultMessage += `\nHowever, I ran into a little trouble updating *${fileName}*. You might want to check that one manually.`;
+      } else {
+        resultMessage = `Hm, it looks like I couldn't update *${fileName}*. 😕 You might need to take a look and see what went wrong.`;
       }
-      if (failedUpdates.length > 0) {
-        const fileName = failedUpdates[0]; // 단일 파일 처리 가정
-        if (successfulUpdates.length > 0) {
-          resultMessage += `\nHowever, I ran into a little trouble updating *${fileName}*. You might want to check that one manually.`;
-        } else {
-          resultMessage = `Hm, it looks like I couldn't update *${fileName}*. 😕 You might need to take a look and see what went wrong.`;
-        }
-      }
+    }
 
-      // DM으로 결과 메시지 전송
-      await client.chat.postMessage({
+    // 로딩 메시지를 완료 메시지로 업데이트
+    if (loadingMessage.ok && loadingMessage.ts) {
+      await client.chat.update({
         channel: dmResult.channel.id,
+        ts: loadingMessage.ts,
         text: resultMessage || "Document update process completed! If there were any issues, I've noted them above.",
         blocks: [
           {
@@ -150,13 +176,15 @@ const applySelectedToGithubAction = async ({
         try {
           const updatedFileName = successfulUpdates[0]; // 성공한 파일 이름 사용
           const userName = await getUserName(userId, client); // 사용자 이름 가져오기
+          // 실제 githubUrl 사용
+          const actualGithubUrl = selectedUpdates.find(u => u.fileName === updatedFileName)?.githubUrl || githubUrl;
           const sectionInfo = formatSectionPathWithLinks({
             headingPath,
             sectionName,
-            githubUrl,
+            githubUrl: actualGithubUrl,
           } as any);
 
-          const channelUpdateText = `🎉 Good news, everyone! *${userName}* just helped me update a document!\\n\\n*File:* <${githubUrl}|${updatedFileName}>\\n*Section:* ${sectionInfo}\\n\\nI've incorporated the latest insights. Teamwork makes the dream work! ✨`;
+          const channelUpdateText = `🎉 Good news, everyone! *${userName}* just helped me update a document!\\n\\n*File:* <${actualGithubUrl}|${updatedFileName}>\\n*Section:* ${sectionInfo}\\n\\nI've incorporated the latest insights. Teamwork makes the dream work! ✨`;
 
           const updateBlocks = [
             {
@@ -177,11 +205,11 @@ const applySelectedToGithubAction = async ({
             updatedFileName,
             userName,
             sectionInfo,
-            githubUrl,
+            actualGithubUrl,
             diffContent,
             [
               { text: 'View Changes', style: 'primary' },
-              { text: 'View File', url: githubUrl },
+              { text: 'View File', url: actualGithubUrl },
             ],
           );
 
@@ -205,6 +233,8 @@ const applySelectedToGithubAction = async ({
           // 실패해도 DM은 전송되었으므로 계속 진행
         }
       }
+    } else {
+      console.error('Failed to update loading message');
     }
 
     // 로그: GitHub 업데이트 성공
@@ -261,27 +291,71 @@ const applySelectedToGithubAction = async ({
       console.error('Failed to log button click error:', logError);
     }
 
-    // DM 채널 열기 - CHOIR 페르소나 적용
+    // 에러 메시지를 DM으로 전송 - 기존 채널 사용
     try {
-      const dmResult = await client.conversations.open({
-        users: body.user.id,
-      });
-
-      if (dmResult.ok && dmResult.channel?.id) {
-        await client.chat.postMessage({
-          channel: dmResult.channel.id,
-          text: `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : 'Unknown error'}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`,
-          blocks: [
-            {
-              type: 'section',
-              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-              text: {
-                type: 'mrkdwn',
-                text: `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : 'Unknown error'}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`,
+      const errorMessage = `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : 'Unknown error'}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`;
+      
+      // 이미 연 DM 채널이 있으면 재사용, 없으면 새로 열기
+      let targetChannelId: string | undefined;
+      
+      if (dmResult?.ok && dmResult.channel?.id) {
+        targetChannelId = dmResult.channel.id;
+        
+        // 로딩 메시지가 있으면 업데이트, 없으면 새 메시지
+        if (loadingMessage?.ok && loadingMessage.ts) {
+          await client.chat.update({
+            channel: targetChannelId!,
+            ts: loadingMessage.ts,
+            text: errorMessage,
+            blocks: [
+              {
+                type: 'section',
+                block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+                text: {
+                  type: 'mrkdwn',
+                  text: errorMessage,
+                },
               },
-            },
-          ],
+            ],
+          });
+        } else {
+          await client.chat.postMessage({
+            channel: targetChannelId!,
+            text: errorMessage,
+            blocks: [
+              {
+                type: 'section',
+                block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+                text: {
+                  type: 'mrkdwn',
+                  text: errorMessage,
+                },
+              },
+            ],
+          });
+        }
+      } else {
+        // DM 채널을 새로 열기
+        const newDmResult = await client.conversations.open({
+          users: body.user.id,
         });
+        
+        if (newDmResult.ok && newDmResult.channel?.id) {
+          await client.chat.postMessage({
+            channel: newDmResult.channel.id,
+            text: errorMessage,
+            blocks: [
+              {
+                type: 'section',
+                block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+                text: {
+                  type: 'mrkdwn',
+                  text: errorMessage,
+                },
+              },
+            ],
+          });
+        }
       }
     } catch (dmError) {
       console.error('Failed to send error message to DM:', dmError);

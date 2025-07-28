@@ -2,7 +2,7 @@ import type { WebClient } from '@slack/web-api';
 import { Octokit } from 'octokit';
 import { ErrorCodes, GitHubError } from 'services/common/error-handler';
 import { Logger } from 'services/common/logger';
-import { type SlackMessage, convertUserIdsToNames, replaceMentionsInText } from 'services/slack';
+import type { SlackMessage } from 'services/slack';
 
 export interface GithubCommit {
   author: string;
@@ -178,9 +178,9 @@ export class GitHubCommitManager {
   async createCommitMessage(
     fileName: string,
     userId: string,
-    nodeId: string,
-    knowledgeContent: string,
-    sourceMessages: SlackMessage[],
+    _nodeId: string,
+    _knowledgeContent: string,
+    _sourceMessages: SlackMessage[],
     client: WebClient,
   ): Promise<string> {
     let updatedByUserName = 'Unknown User';
@@ -191,28 +191,7 @@ export class GitHubCommitManager {
       Logger.error('Failed to get user info for commit message', error as Error, { userId });
     }
 
-    const messagesWithUsernames = await convertUserIdsToNames(sourceMessages, client);
-
-    const messagesWithReplacedMentions = await Promise.all(
-      messagesWithUsernames.map(async (message) => {
-        const replacedText = await replaceMentionsInText(message.text || '', client);
-        return {
-          ...message,
-          text: replacedText,
-        } as SlackMessage;
-      }),
-    );
-
-    const commitMessageJson = {
-      fileName,
-      updateType: 'document_update',
-      knowledge: knowledgeContent,
-      timestamp: new Date().toISOString(),
-      updatedBy: updatedByUserName,
-      nodeId: nodeId,
-      messages: messagesWithReplacedMentions,
-    };
-
-    return JSON.stringify(commitMessageJson);
+    // 간단한 커밋 메시지 생성
+    return `Update ${fileName} - ${updatedByUserName}`;
   }
 }
