@@ -638,6 +638,9 @@ export const suggestUpdatesCallback = async ({
           
           const workspaceId = await getWorkspaceId(client);
           searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
+          
+          // Store results for later use
+          storeSearchResults(userId, searchResults);
 
           // Log search results details
           logger.info(`=== SIMILARITY SEARCH RESULTS (ALL_FILES) ===`);
@@ -1061,6 +1064,7 @@ export const suggestUpdatesCallback = async ({
       return; // Exit here, wait for user to select file and click "Start Review"
     }
 
+    logger.info(`Debug: currentIndex=${currentIndex}, searchResults.length=${searchResults.length}`);
     if (currentIndex >= searchResults.length) {
       await client.chat.postMessage({
         channel: currentDmChannelId,

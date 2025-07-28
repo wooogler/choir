@@ -141,19 +141,19 @@ export const setSelectedNodeIds = (userId: string, nodeIds: string[]): void => {
   selectedNodeIds.set(userId, new Set<string>(nodeIds));
 };
 
-// 검색 결과 캐시 관련 함수들 - 캐시 제거로 빈 구현
+// 검색 결과 캐시 관련 함수들 - 다시 활성화
 export function storeSearchResults(userId: string, searchResults: Document<DocumentMetadata>[]): void {
-  // 캐시 제거됨 - 아무것도 하지 않음
+  searchResultsStorage.set(userId, searchResults);
 }
 
-// 검색 결과 가져오기 - 항상 빈 배열 반환 (캐시 없음)
+// 검색 결과 가져오기 - 캐시된 결과 반환
 export function getSearchResults(userId: string): Document<DocumentMetadata>[] {
-  return []; // 캐시 없으므로 항상 빈 배열
+  return searchResultsStorage.get(userId) || [];
 }
 
 // 검색 결과 삭제하기
 export function clearSearchResults(userId: string) {
-  // 캐시 제거됨 - 아무것도 하지 않음
+  searchResultsStorage.delete(userId);
 }
 
 // 특정 문서 업데이트 삭제하기
