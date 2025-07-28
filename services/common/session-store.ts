@@ -10,6 +10,7 @@ export enum SessionType {
   DOCUMENT_UPDATE = 'document_update', // 문서 업데이트/지식 추출 세션
   NEW_SECTION = 'new_section', // 새 섹션 생성 세션
   ANONYMOUS_MESSAGE = 'anonymous_message', // Anonymous 질문 메시지 추적
+  CREATE_FILE_MODAL = 'create_file_modal', // Create File Modal 데이터
 }
 
 // 세션 타입별 데이터를 저장할 Map (메모리 기반 저장소)
@@ -17,6 +18,7 @@ const sessionStores = {
   [SessionType.DOCUMENT_UPDATE]: new Map<string, any>(),
   [SessionType.NEW_SECTION]: new Map<string, any>(),
   [SessionType.ANONYMOUS_MESSAGE]: new Map<string, any>(),
+  [SessionType.CREATE_FILE_MODAL]: new Map<string, any>(),
 };
 
 /**

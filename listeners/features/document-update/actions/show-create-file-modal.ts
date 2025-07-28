@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getWorkspaceId } from 'services/slack';
 
@@ -15,12 +16,18 @@ export const showCreateFileModalCallback = async ({
   await ack();
 
   try {
-    const actionValue = body.actions[0].value;
-    if (!actionValue) {
+    const createFileSessionId = body.actions[0].value;
+    if (!createFileSessionId) {
       throw new Error('Action value is missing');
     }
 
-    const { sessionId, knowledgeContent, knowledgeSourceChannelId, knowledgeSourceThreadTs } = JSON.parse(actionValue);
+    // Get data from session store to avoid 2001 character limit
+    const sessionData = getSessionData(createFileSessionId, SessionType.CREATE_FILE_MODAL);
+    if (!sessionData) {
+      throw new Error('Session data not found or expired');
+    }
+
+    const { sessionId, defaultFileName, defaultInitialContent } = sessionData;
 
     const modal = {
       type: 'modal' as const,
@@ -58,7 +65,7 @@ export const showCreateFileModalCallback = async ({
               type: 'plain_text',
               text: 'e.g., new-documentation.md',
             },
-            initial_value: '',
+            initial_value: defaultFileName || '',
           },
           label: {
             type: 'plain_text',
@@ -76,7 +83,7 @@ export const showCreateFileModalCallback = async ({
               type: 'plain_text',
               text: '# New Documentation\n\nAdd your initial content here...',
             },
-            initial_value: '# New Documentation\n\nAdd your initial content here...',
+            initial_value: defaultInitialContent || '# New Documentation\n\nAdd your initial content here...',
           },
           label: {
             type: 'plain_text',
@@ -85,10 +92,7 @@ export const showCreateFileModalCallback = async ({
         },
       ],
       private_metadata: JSON.stringify({
-        sessionId,
-        knowledgeContent,
-        knowledgeSourceChannelId,
-        knowledgeSourceThreadTs,
+        createFileSessionId,
         userId: body.user.id,
         channelId: body.channel?.id,
       }),

@@ -60,7 +60,7 @@ export const getEditLinkAction = async ({
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '✅ The GitHub edit link has been sent to you privately. You can close this modal now.',
+                text: 'The GitHub edit link has been sent to you via Direct Messages.',
               },
             },
           ],

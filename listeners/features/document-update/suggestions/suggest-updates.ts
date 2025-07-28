@@ -8,7 +8,7 @@ import {
   setLastMessageTimestamp,
   setProgressMessageTimestamp,
 } from 'services/common';
-import { SessionType, getSessionData, storeSessionData } from 'services/common';
+import { SessionType, getSessionData, storeSessionData, generateSessionId } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import {
   type DocumentUpdate,
@@ -57,6 +57,7 @@ async function showFileSelectionDropdown(
   knowledgeSourceChannelId?: string,
   knowledgeSourceThreadTs?: string,
   progressMessageTs?: string,
+  newFileDefaults?: { fileName: string; initialContent: string },
 ) {
   const workspaceId = await getWorkspaceId(client);
   const workspaceStore = new WorkspaceStore();
@@ -171,12 +172,26 @@ async function showFileSelectionDropdown(
             emoji: true,
           },
           action_id: 'show_create_file_modal',
-          value: JSON.stringify({
-            sessionId,
-            knowledgeContent,
-            knowledgeSourceChannelId,
-            knowledgeSourceThreadTs,
-          }),
+          value: (() => {
+            // Store large data in session to avoid 2001 character limit
+            const createFileSessionId = generateSessionId('create_file');
+            storeSessionData(
+              createFileSessionId,
+              {
+                sessionId,
+                knowledgeContent,
+                knowledgeSourceChannelId,
+                knowledgeSourceThreadTs,
+                ...(newFileDefaults && {
+                  defaultFileName: newFileDefaults.fileName,
+                  defaultInitialContent: newFileDefaults.initialContent,
+                }),
+              },
+              SessionType.CREATE_FILE_MODAL,
+              24 * 60 * 60 * 1000, // 24시간 후 만료
+            );
+            return createFileSessionId;
+          })(),
         },
       ],
     },
@@ -915,6 +930,43 @@ export const suggestUpdatesCallback = async ({
       });
       logger.info(`=== END SEARCH RESULTS ===`);
 
+      // Generate new file defaults for Create New File button
+      let newFileDefaults: { fileName: string; initialContent: string } | undefined;
+      try {
+        const workspaceStore = new WorkspaceStore();
+        let fileList = await workspaceStore.getWritableFiles(workspaceId);
+        
+        if (!fileList || fileList.length === 0) {
+          const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+          if (config?.githubRepo) {
+            const { owner, repo, path } = config.githubRepo;
+            const githubService = GithubService.getInstance();
+            const markdownFiles = await githubService.getAllMarkdownFiles({
+              owner,
+              repo,
+              path,
+              workspaceId: workspaceId,
+              userId: userId,
+            });
+            
+            await workspaceStore.setMarkdownFilesCache(workspaceId, markdownFiles.map((file) => ({
+              name: file.name,
+              path: file.path,
+            })));
+            
+            fileList = await workspaceStore.getWritableFiles(workspaceId);
+          }
+        }
+
+        if (fileList && fileList.length > 0) {
+          const { generateNewFileDefaults } = await import('services/llm/content-generator');
+          newFileDefaults = await generateNewFileDefaults(knowledgeContent, fileList);
+          logger.info(`Generated new file defaults: ${newFileDefaults.fileName}`);
+        }
+      } catch (error) {
+        logger.warn('Failed to generate new file defaults:', error);
+      }
+
       if (!searchResults || searchResults.length === 0) {
         // No search results, redirect to new section creation
         const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
@@ -1047,6 +1099,7 @@ export const suggestUpdatesCallback = async ({
         knowledgeSourceChannelId,
         knowledgeSourceThreadTs,
         progressTimestamp,
+        newFileDefaults,
       );
 
       console.log(
@@ -1113,8 +1166,10 @@ export const suggestUpdatesCallback = async ({
           // Create new section suggestion for completion
           let newSectionSessionId = null;
           let recommendedFileName = '';
+          let completionNewFileDefaults: { fileName: string; initialContent: string } | undefined;
+          
           try {
-            const { createNewSectionFromKnowledge } = await import('services/llm/content-generator');
+            const { createNewSectionFromKnowledge, generateNewFileDefaults } = await import('services/llm/content-generator');
             const availableFiles = (fileList || []).map((file) => ({
               fileName: file.name,
               githubUrl: `https://github.com/${config?.githubRepo?.owner}/${config?.githubRepo?.repo}/blob/main/${file.path}`,
@@ -1122,6 +1177,7 @@ export const suggestUpdatesCallback = async ({
             }));
 
             if (availableFiles.length > 0) {
+              // Generate new section suggestion
               const newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
               
               if (newSectionSuggestion) {
@@ -1148,6 +1204,10 @@ export const suggestUpdatesCallback = async ({
                   SessionType.NEW_SECTION,
                 );
               }
+
+              // Generate new file defaults for completion Create New File button
+              completionNewFileDefaults = await generateNewFileDefaults(knowledgeContent, fileList || []);
+              logger.info(`Generated completion new file defaults: ${completionNewFileDefaults.fileName}`);
             }
           } catch (error) {
             logger.warn('Failed to create new section suggestion for completion:', error);
@@ -1188,12 +1248,26 @@ export const suggestUpdatesCallback = async ({
                     emoji: true,
                   },
                   action_id: 'show_create_file_modal',
-                  value: JSON.stringify({
-                    sessionId,
-                    knowledgeContent,
-                    knowledgeSourceChannelId,
-                    knowledgeSourceThreadTs,
-                  }),
+                  value: (() => {
+                    // Store large data in session to avoid 2001 character limit
+                    const createFileSessionId = generateSessionId('create_file');
+                    storeSessionData(
+                      createFileSessionId,
+                      {
+                        sessionId,
+                        knowledgeContent,
+                        knowledgeSourceChannelId,
+                        knowledgeSourceThreadTs,
+                        ...(completionNewFileDefaults && {
+                          defaultFileName: completionNewFileDefaults.fileName,
+                          defaultInitialContent: completionNewFileDefaults.initialContent,
+                        }),
+                      },
+                      SessionType.CREATE_FILE_MODAL,
+                      24 * 60 * 60 * 1000, // 24시간 후 만료
+                    );
+                    return createFileSessionId;
+                  })(),
                 },
               ],
             },

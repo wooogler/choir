@@ -175,7 +175,7 @@ export const createNewSectionAction = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `👋 I've prepared a new section for your documentation. Review and edit the content below, then click *Submit* to automatically add it to your selected file.`,
+            text: `👋 I've prepared a new section for your documentation. Review and edit the content below, then click *Submit* to automatically add it to your selected file.\n\n`,
           },
         },
         {

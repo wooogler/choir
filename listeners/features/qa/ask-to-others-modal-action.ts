@@ -119,7 +119,7 @@ export const askToOthersModalCallback = async ({
               multiline: true,
               placeholder: {
                 type: 'plain_text',
-                text: 'Add your thoughts or context about this Q&A (optional)',
+                text: 'Add your thoughts or context about this question and answer (optional)',
               },
             },
             label: {

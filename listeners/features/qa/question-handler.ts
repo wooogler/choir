@@ -360,8 +360,8 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       logger.info(`Added CHOIR response to cache for channel ${event.channel}`);
     }
 
-    // 관련 문서 정보를 응답의 스레드에 추가 (답변 가능한 경우에만)
-    if (messageResult.ts && relevantDocs.length > 0 && answerResult.canAnswer) {
+    // 관련 문서 정보를 응답의 스레드에 추가
+    if (messageResult.ts && relevantDocs.length > 0) {
       // 문서 정보를 스레드용으로 포맷
       const documentInfo = await Promise.all(
         relevantDocs.map(async (doc, index) => {

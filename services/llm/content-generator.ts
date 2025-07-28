@@ -54,6 +54,71 @@ export interface NewSectionSuggestion {
   reasoning: string;
 }
 
+export interface NewFileDefaults {
+  fileName: string;
+  initialContent: string;
+}
+
+export async function generateNewFileDefaults(
+  knowledgeContent: string,
+  existingFiles: Array<{ name: string; path: string }>,
+): Promise<NewFileDefaults> {
+  const existingFileNames = existingFiles.map(file => file.name).join('\n');
+
+  const response = await createChatCompletion(
+    [
+      {
+        role: 'system',
+        content: `You are a documentation file naming expert. Your task is to suggest a good file name and initial markdown content for new documentation based on knowledge content.
+
+Key rules:
+1. Suggest a descriptive but concise file name ending with .md
+2. File name should be in kebab-case (lowercase with hyphens)
+3. Avoid conflicts with existing files
+4. Create initial markdown content with a proper title and the knowledge content
+5. Return ONLY a valid JSON object with this exact structure:
+{
+  "fileName": "string",
+  "initialContent": "string"
+}
+
+The initial content should start with a markdown header and include the knowledge content in a well-structured format.`,
+      },
+      {
+        role: 'user',
+        content: `Knowledge content to create a new file for:
+${knowledgeContent}
+
+Existing files (avoid conflicts):
+${existingFileNames}
+
+Generate a suitable file name and initial markdown content.`,
+      },
+    ],
+    {
+      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
+      temperature: 0.3,
+      max_tokens: 600,
+      function_name: 'generateNewFileDefaults',
+      debug: false,
+    },
+  );
+
+  try {
+    const parsed = JSON.parse(response?.trim() || '{}');
+    return {
+      fileName: parsed.fileName || 'new-document.md',
+      initialContent: parsed.initialContent || `# New Document\n\n${knowledgeContent}`,
+    };
+  } catch (error) {
+    console.error('Failed to parse new file defaults:', error);
+    return {
+      fileName: 'new-document.md',
+      initialContent: `# New Document\n\n${knowledgeContent}`,
+    };
+  }
+}
+
 export async function createNewSectionFromKnowledge(
   knowledgeContent: string,
   availableFiles: Array<{ fileName: string; githubUrl: string; description?: string }>,

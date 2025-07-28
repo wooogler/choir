@@ -1,7 +1,8 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs, ViewSubmitAction } from '@slack/bolt';
+import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { GithubService } from 'services/github';
-import { getWorkspaceId } from 'services/slack';
+import { getUserName, getWorkspaceId } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
@@ -20,8 +21,15 @@ export const createFileSubmissionCallback = async ({
   try {
     // Parse private metadata
     const metadata = JSON.parse(body.view.private_metadata || '{}');
-    const { sessionId, knowledgeContent, knowledgeSourceChannelId, knowledgeSourceThreadTs, userId, channelId } =
-      metadata;
+    const { createFileSessionId, userId, channelId } = metadata;
+
+    // Get data from session store
+    const sessionData = getSessionData(createFileSessionId, SessionType.CREATE_FILE_MODAL);
+    if (!sessionData) {
+      throw new Error('Session data not found or expired');
+    }
+
+    const { sessionId, knowledgeSourceChannelId, knowledgeSourceThreadTs } = sessionData;
 
     // Extract form values
     const fileName = body.view.state.values.file_name_input.file_name.value;
@@ -90,7 +98,7 @@ export const createFileSubmissionCallback = async ({
       throw new Error('Workspace configuration or GitHub repository not found');
     }
 
-    const { owner, repo, path } = config.githubRepo;
+    const { owner, repo, path, branch } = config.githubRepo;
     const githubService = GithubService.getInstance();
 
     // Create the file in GitHub
@@ -161,7 +169,7 @@ export const createFileSubmissionCallback = async ({
       // Continue execution even if indexing fails
     }
 
-    // Update processing message to success
+    // Update processing message to success (without Start Review button - process ends here)
     await client.chat.update({
       channel: channelId,
       ts: processingMessage.ts!,
@@ -172,7 +180,7 @@ export const createFileSubmissionCallback = async ({
           block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
           text: {
             type: 'mrkdwn',
-            text: `✅ *File created successfully!*\n\n📄 **${fileName}** has been created in your GitHub repository and is now available for documentation updates.\n\n<https://github.com/${owner}/${repo}/blob/main/${filePath}|View file on GitHub>`,
+            text: `✅ *File created successfully!*\n\n📄 **${fileName}** has been created in your GitHub repository.\n\n<https://github.com/${owner}/${repo}/blob/main/${filePath}|View file on GitHub>`,
           },
         },
         {
@@ -182,35 +190,70 @@ export const createFileSubmissionCallback = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: "🔄 *What's next?*\nThe file has been automatically indexed and you can now start your documentation review process.",
+            text: "🎉 *Document update process complete!*\nYour new file has been created and is ready for use. You can mention me anytime with new knowledge to review and update docs!",
           },
-        },
-        {
-          type: 'actions',
-          elements: [
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
-                text: 'Start Review with New File',
-                emoji: false,
-              },
-              style: 'primary',
-              action_id: 'start_file_based_review',
-              value: JSON.stringify({
-                sessionId,
-                knowledgeContent,
-                knowledgeSourceChannelId,
-                knowledgeSourceThreadTs,
-                selectedFile: filePath,
-                defaultFilePath: filePath,
-                isFileBasedReview: true,
-              }),
-            },
-          ],
         },
       ],
     });
+
+    // Send notification to original channel if available
+    if (knowledgeSourceChannelId) {
+      try {
+        // Get user name for notification
+        let createdBy = 'User';
+        try {
+          const userInfo = await client.users.info({ user: userId });
+          createdBy = userInfo.user?.real_name || userInfo.user?.name || 'User';
+        } catch (error) {
+          logger.warn('Failed to get user info for notification:', error);
+        }
+
+        const notificationText = `📄 New File Created by ${createdBy}: <https://github.com/${owner}/${repo}/blob/${branch}/${filePath}|${fileName}>`;
+        
+        await client.chat.postMessage({
+          channel: knowledgeSourceChannelId,
+          ...(knowledgeSourceThreadTs ? { thread_ts: knowledgeSourceThreadTs } : {}),
+          text: notificationText,
+          blocks: [
+            {
+              type: 'section',
+              block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+              text: { type: 'mrkdwn', text: notificationText },
+            },
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `*Initial Content:*\n\`\`\`${fileContent.substring(0, 300)}${fileContent.length > 300 ? '...' : ''}\`\`\``,
+              },
+            },
+          ],
+          unfurl_links: false,
+          unfurl_media: false,
+        });
+
+        logger.info(`Sent new file creation notification to channel ${knowledgeSourceChannelId}`);
+      } catch (notificationError) {
+        logger.warn('Failed to send new file creation notification:', notificationError);
+      }
+    }
+
+    // Mark document update session as completed
+    if (sessionId) {
+      try {
+        const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
+        if (sessionData) {
+          sessionData.status = 'completed_with_new_file';
+          sessionData.completedAt = new Date().toISOString();
+          sessionData.newFileName = fileName;
+          sessionData.newFilePath = filePath;
+          storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+          logger.info(`Marked session ${sessionId} as completed with new file creation`);
+        }
+      } catch (sessionError) {
+        logger.warn('Failed to update session status:', sessionError);
+      }
+    }
 
     // 로그 기록
     const workspaceId2 = await getWorkspaceId(client);
