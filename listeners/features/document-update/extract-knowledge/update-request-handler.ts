@@ -216,27 +216,6 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         {
           text: `✅ Analyzed ${filteredMessages.length} message${filteredMessages.length > 1 ? 's' : ''} to extract knowledge`,
           blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: `✅ *Analysis Complete* • 📊 ${filteredMessages.length} message${filteredMessages.length > 1 ? 's' : ''} analyzed`,
-              },
-              block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
-              accessory: {
-                type: 'button',
-                text: {
-                  type: 'plain_text',
-                  text: 'View Messages',
-                  emoji: true,
-                },
-                action_id: 'view_analyzed_messages',
-                value: JSON.stringify({
-                  sessionId,
-                  messageCount: extractionResult.processedMessages.length,
-                }),
-              },
-            },
           ],
         },
         {

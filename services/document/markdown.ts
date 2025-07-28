@@ -1467,6 +1467,85 @@ export function appendIndividualContents(
 }
 
 /**
+ * 리스트 내 특정 인덱스에 listItem들을 삽입하는 함수
+ */
+export function insertListItemsAtIndex(
+  docTree: DocumentTree,
+  listNodeId: string,
+  insertIndex: number,
+  listItems: Array<{ type: 'listItem'; content: string }>,
+): DocumentTree {
+  const newTree: DocumentTree = {
+    title: docTree.title,
+    nodeMap: new Map(docTree.nodeMap),
+    sectionMap: new Map(docTree.sectionMap),
+    root: JSON.parse(JSON.stringify(docTree.root)),
+  };
+
+  const listNode = newTree.nodeMap.get(listNodeId) as any;
+  if (!listNode || listNode.type !== 'list') {
+    console.error(`List node not found or invalid: ${listNodeId}`);
+    return newTree;
+  }
+
+  console.log(`[DEBUG] insertListItemsAtIndex: Inserting ${listItems.length} items at index ${insertIndex} in list ${listNodeId}`);
+
+  // 새 listItem 노드들 생성
+  const newListItemNodes = listItems.map((item, i) => {
+    const timestamp = Date.now() + i;
+    const itemNodeId = `${listNodeId}_insert_${timestamp}`;
+    
+    return {
+      type: 'listItem' as const,
+      children: [
+        {
+          type: 'paragraph' as const,
+          children: [
+            {
+              type: 'text' as const,
+              value: item.content,
+            },
+          ],
+        },
+      ],
+      id: itemNodeId,
+      fileName: (listNode as any).fileName,
+      parentId: listNodeId,
+      sectionId: (listNode as any).sectionId,
+      isListItem: true,
+      listItemIndex: insertIndex + i, // 임시값, 아래에서 재계산
+    };
+  });
+
+  // nodeMap에 새 listItem들 추가
+  newListItemNodes.forEach(item => {
+    newTree.nodeMap.set(item.id, item as any);
+  });
+
+  // 리스트의 children 배열에 정확한 위치에 삽입
+  if (!Array.isArray(listNode.children)) {
+    listNode.children = [];
+  }
+
+  // insertIndex 위치에 새 항목들 삽입
+  listNode.children.splice(insertIndex, 0, ...newListItemNodes);
+
+  // listItemIndex 재계산
+  listNode.children.forEach((child: any, index: number) => {
+    if (child.type === 'listItem') {
+      child.listItemIndex = index;
+    }
+  });
+
+  // nodeMap과 루트 트리 업데이트
+  newTree.nodeMap.set(listNodeId, listNode);
+  updateNodeInRootTree(newTree, listNode);
+
+  console.log(`[DEBUG] insertListItemsAtIndex 완료: ${newListItemNodes.length}개 항목이 인덱스 ${insertIndex}에 삽입됨`);
+  return newTree;
+}
+
+/**
  * Root에 content를 직접 추가하는 함수
  */
 export function appendContentToRoot(

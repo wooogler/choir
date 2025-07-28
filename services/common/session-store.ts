@@ -32,7 +32,7 @@ export function storeSessionData(
   sessionId: string,
   data: any,
   sessionType: SessionType = SessionType.DOCUMENT_UPDATE,
-  expirationMs: number = 60 * 60 * 1000, // 1시간으로 연장
+  expirationMs: number = 24 * 60 * 60 * 1000, // 24시간으로 연장
 ): void {
   const sessionStore = sessionStores[sessionType];
 
@@ -130,7 +130,7 @@ export function trackAnonymousMessage(
       isProcessed: false, // "Send Reply to Questioner" 버튼이 클릭되었는지 여부
     },
     SessionType.ANONYMOUS_MESSAGE,
-    60 * 60 * 1000, // 1시간 후 만료
+    24 * 60 * 60 * 1000, // 24시간 후 만료
   );
 }
 

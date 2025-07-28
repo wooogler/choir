@@ -610,7 +610,7 @@ export class VectorStoreService {
       );
 
       // 노드의 삽입 위치 정보를 찾는 헬퍼 함수
-      function findNodeInsertionPosition(docTree: any, nodeId: string): { parentId: string | null; previousSiblingId: string | null } | null {
+      function findNodeInsertionPosition(docTree: any, nodeId: string): { parentId: string | null; previousSiblingId: string | null; nodeIndex?: number } | null {
         const node = docTree.nodeMap.get(nodeId);
         if (!node) return null;
 
@@ -630,16 +630,34 @@ export class VectorStoreService {
         // 이전 형제 노드 찾기
         const previousSiblingId = currentIndex > 0 ? parentNode.children[currentIndex - 1].id : null;
         
-        return { parentId, previousSiblingId };
+        Logger.info(`findNodeInsertionPosition for ${nodeId}:`, {
+          nodeType: node.type,
+          parentId,
+          parentType: parentNode.type,
+          currentIndex,
+          previousSiblingId,
+          totalSiblings: parentNode.children.length
+        });
+        
+        return { parentId, previousSiblingId, nodeIndex: currentIndex };
       }
 
       // 특정 위치에 콘텐츠를 삽입하는 헬퍼 함수
       function insertContentAtPosition(
         docTree: any, 
         insertionInfo: { parentId: string | null; previousSiblingId: string | null }, 
-        contentItems: Array<{ type: 'listItem' | 'paragraph'; content: string }>
+        contentItems: Array<{ type: 'listItem' | 'paragraph'; content: string }>,
+        originalNodeIndex?: number
       ) {
-        if (insertionInfo.previousSiblingId) {
+        // 특별 처리: listItem들을 리스트 내 정확한 위치에 삽입
+        if (insertionInfo.parentId && 
+            insertionInfo.parentId.startsWith('list-') && 
+            contentItems.every(item => item.type === 'listItem') &&
+            typeof originalNodeIndex === 'number') {
+          Logger.info(`Inserting ${contentItems.length} listItems at index ${originalNodeIndex} in list ${insertionInfo.parentId}`);
+          const { insertListItemsAtIndex } = require('services/document/markdown');
+          return insertListItemsAtIndex(docTree, insertionInfo.parentId, originalNodeIndex, contentItems);
+        } else if (insertionInfo.previousSiblingId) {
           // 이전 형제 노드 다음에 삽입
           Logger.info(`Inserting content after previous sibling: ${insertionInfo.previousSiblingId}`);
           return appendMultipleContents(docTree, insertionInfo.previousSiblingId, contentItems);
@@ -665,9 +683,9 @@ export class VectorStoreService {
       // 2. 기존 노드 목록 저장 (새 노드 감지용)
       const existingNodeIds = new Set(file.tree.nodeMap.keys());
 
-      // 3. 기존 노드 처리 - 모든 노드를 동일하게 처리
+      // 3. 기존 노드 처리 - 통합된 처리 로직
       const originalNode = file.tree.nodeMap.get(nodeId);
-      let insertionInfo: { parentId: string | null; previousSiblingId: string | null } | null = null;
+      let insertionInfo: { parentId: string | null; previousSiblingId: string | null; nodeIndex?: number } | null = null;
       
       if (originalNode) {
         // 제거하기 전에 삽입 위치 정보 저장
@@ -685,9 +703,8 @@ export class VectorStoreService {
       // 5. 분할된 content들을 새로운 노드로 추가
       if (contentItems.length > 0 && originalNode && insertionInfo) {
         Logger.info(`Adding ${contentItems.length} replacement nodes for enhanced content`);
-        
-        // 정확한 위치에 콘텐츠 삽입
-        file.tree = insertContentAtPosition(file.tree, insertionInfo, contentItems);
+        // 정확한 위치에 콘텐츠 삽입 (새로운 통합 로직 사용)
+        file.tree = insertContentAtPosition(file.tree, insertionInfo, contentItems, insertionInfo.nodeIndex);
 
         // 6. 새로 추가된 노드들을 벡터 스토어에 추가
         Logger.info('Adding replacement nodes to vector store');
@@ -695,7 +712,7 @@ export class VectorStoreService {
 
         // 새로 추가된 노드들을 정확하게 찾기 (기존 노드 목록과 비교)
         const allNodes = Array.from(file.tree.nodeMap.entries());
-        const newNodes = allNodes.filter(([newNodeId, newNode]) => {
+        const newNodes = allNodes.filter(([newNodeId]) => {
           // 기존에 없던 노드들만 선택
           return !existingNodeIds.has(newNodeId);
         });

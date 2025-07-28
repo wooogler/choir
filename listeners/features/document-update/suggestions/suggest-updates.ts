@@ -916,7 +916,7 @@ export const suggestUpdatesCallback = async ({
     if (currentIndex === 0 && !isFileBasedReview) {
       logger.info(`[SEARCH DEBUG] Query used for initial search: "${knowledgeContent}"`);
       const workspaceId = await getWorkspaceId(client);
-      searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 10);
+      searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
 
       // Store results for later use (for file-based review)
       storeSearchResults(userId, searchResults);
@@ -1220,8 +1220,7 @@ export const suggestUpdatesCallback = async ({
               block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
               text: {
                 type: 'mrkdwn',
-                text: "🎉 *Review Complete!* We've gone through all relevant documents.\n\nWould you like to create new content instead?" + 
-                      (newSectionSessionId ? `\n\n💡 I can create a new section in *${recommendedFileName}*` : ''),
+                text: "🎉 *Review Complete!* We've gone through all relevant documents. \n\nWould you like to create new content instead?",
               },
             },
             {
