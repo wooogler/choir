@@ -370,7 +370,7 @@ class GithubService {
     message?: string;
     workspaceId?: string;
     userId?: string;
-  }): Promise<void> {
+  }): Promise<{ commitSha: string }> {
     try {
       const octokit = await this.getOctokit(params.workspaceId, params.userId);
       const currentFileResponse = await this.throttledRequest(() =>
@@ -388,7 +388,7 @@ class GithubService {
         });
       }
 
-      await this.throttledRequest(() =>
+      const updateResponse = await this.throttledRequest(() =>
         octokit.rest.repos.createOrUpdateFileContents({
           owner: params.owner,
           repo: params.repo,
@@ -398,6 +398,8 @@ class GithubService {
           sha: currentFile.sha,
         }),
       );
+      
+      const commitSha = (updateResponse as any).data.commit.sha;
 
       // Invalidate cache for this file
       const cacheKeys = Array.from(this.fileContentCache.keys()).filter((key) =>
@@ -406,6 +408,7 @@ class GithubService {
       cacheKeys.forEach((key) => this.fileContentCache.delete(key));
 
       Logger.info(`Successfully updated file: ${params.path}`);
+      return { commitSha };
     } catch (error) {
       Logger.error('Failed to update file', error as Error, {
         owner: params.owner,

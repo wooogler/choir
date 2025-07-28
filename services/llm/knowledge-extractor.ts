@@ -166,20 +166,19 @@ export async function extractKnowledgeFromMessages(
       }
     }
 
-    const prompt = `Extract organizational knowledge from this team conversation.
+    const prompt = `Extract knowledge from this conversation. Base your response directly on what is mentioned in the messages.
 ${contextSection}${qaContextSection}
 
 Conversation:
 ${formattedMessages}
 
-What specific organizational policies, processes, or practices are discussed here that should be documented?`;
+What information is shared in the conversation that should be documented?`;
 
     const extractedKnowledge = await createChatCompletion(
       [
         {
           role: 'system',
-          content:
-            'You are CHOIR, a knowledge curator. Extract organizational policies, processes, and practices from team conversations for documentation. Start with an appropriate markdown section title (# Title) that captures the main topic of the extracted knowledge, then write the content in natural paragraph format below the title. Use plain text without bold formatting (**text**) or other markdown styling except for the section title. Always preserve any URLs mentioned in the conversation as they contain important reference information.',
+          content: `You are CHOIR, a documentation specialist within the organization. Extract organizational knowledge from the conversation messages based on what was explicitly discussed. Document only the facts stated in the conversation without making inferences or connections to organizational background. Start with a descriptive markdown section title (# [Actual Topic Name]) that reflects the content, then write the information in natural paragraph format. Always preserve any URLs mentioned in the conversation.`,
         },
         {
           role: 'user',

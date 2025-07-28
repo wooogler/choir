@@ -132,16 +132,49 @@ const applySelectedToGithubAction = async ({
     });
 
     // 결과 분석
-    const successfulUpdates = results.filter((r) => r.success).map((r) => r.fileName);
+    const successfulUpdates = results.filter((r) => r.success);
     const failedUpdates = results.filter((r) => !r.success).map((r) => r.fileName);
 
     // 결과 메시지 생성 - CHOIR 페르소나 적용 및 githubUrl 수정
     let resultMessage = "I've finished processing the document updates!"; // 기본 메시지
     if (successfulUpdates.length > 0) {
-      const fileName = successfulUpdates[0]; // 단일 파일 처리 가정
+      const successfulUpdate = successfulUpdates[0]; // 단일 파일 처리 가정
+      const fileName = successfulUpdate.fileName;
+      const commitSha = successfulUpdate.commitSha;
+      
       // documentUpdates에서 실제 githubUrl 가져오기
       const actualGithubUrl = selectedUpdates.find(u => u.fileName === fileName)?.githubUrl || githubUrl;
+      
+      // Generate URLs for the updated file
+      const workspaceId = await getWorkspaceId(client);
+      const workspaceStore = new (await import('services/workspace/workspace-store')).WorkspaceStore();
+      const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+      let editUrl = '';
+      let commitDiffUrl = '';
+      
+      if (config?.githubRepo && fileName) {
+        const { owner, repo, branch } = config.githubRepo;
+        const branchName = branch || 'main';
+        // Find the file path from selected updates
+        const updateWithPath = selectedUpdates.find(u => u.fileName === fileName);
+        if (updateWithPath) {
+          // Extract file path from github URL or use fileName directly
+          const filePath = updateWithPath.githubUrl?.split('/blob/')[1]?.split('/').slice(1).join('/') || fileName;
+          editUrl = `https://github.com/${owner}/${repo}/edit/${branchName}/${filePath}`;
+          
+          // Generate commit diff URL if we have commitSha
+          if (commitSha) {
+            commitDiffUrl = `https://github.com/${owner}/${repo}/commit/${commitSha}`;
+          }
+        }
+      }
+      
       resultMessage = `✅ Great news! I've successfully updated the document: <${actualGithubUrl}|*${fileName}*>`;
+      if (commitDiffUrl && editUrl) {
+        resultMessage += `\n\n📝 You can <${commitDiffUrl}|view the changes> or <${editUrl}|edit the file> directly on GitHub.`;
+      } else if (editUrl) {
+        resultMessage += `\n\n📝 You can <${editUrl}|edit the file> directly on GitHub.`;
+      }
     }
     if (failedUpdates.length > 0) {
       const fileName = failedUpdates[0]; // 단일 파일 처리 가정
@@ -174,7 +207,7 @@ const applySelectedToGithubAction = async ({
       // 성공한 경우 원본 채널에도 업데이트 내용 공유 - CHOIR 페르소나 적용
       if (successfulUpdates.length > 0 && originalChannelId && diffBlock) {
         try {
-          const updatedFileName = successfulUpdates[0]; // 성공한 파일 이름 사용
+          const updatedFileName = successfulUpdates[0].fileName; // 성공한 파일 이름 사용
           const userName = await getUserName(userId, client); // 사용자 이름 가져오기
           // 실제 githubUrl 사용
           const actualGithubUrl = selectedUpdates.find(u => u.fileName === updatedFileName)?.githubUrl || githubUrl;
@@ -253,7 +286,7 @@ const applySelectedToGithubAction = async ({
         totalUpdates: selectedUpdates.length,
         originalChannelId,
         originalThreadTs,
-        fileName: successfulUpdates[0] || failedUpdates[0],
+        fileName: successfulUpdates[0]?.fileName || failedUpdates[0],
       },
       client,
     );
@@ -604,7 +637,7 @@ Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''
 
     // 6. GitHub에 파일 업데이트
     const githubService = GithubService.getInstance();
-    await githubService.updateMarkdownFile({
+    const updateResult = await githubService.updateMarkdownFile({
       owner,
       repo,
       path: markdownFile.path, // 실제 파일 경로 사용
@@ -616,13 +649,24 @@ Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''
 
     // 8. Update the original message to show completion
     try {
+      // Generate URLs for the new section
+      const editUrl = `https://github.com/${owner}/${repo}/edit/main/${markdownFile.path}`;
+      const commitDiffUrl = updateResult.commitSha ? `https://github.com/${owner}/${repo}/commit/${updateResult.commitSha}` : '';
+      
       // Use the same UI format as the success message (lines 448-458)
-      const successText = `✅ New section "${sectionTitle}" added successfully to GitHub!
+      let successText = `✅ New section "${sectionTitle}" added successfully to GitHub!
 
 📁 *File:* <${githubUrl}|${targetFile}>
-📝 *Added by:* ${userName}
-
-🔍 *Preview:*
+📝 *Added by:* ${userName}`;
+      
+      // Add URL options if available
+      if (commitDiffUrl && editUrl) {
+        successText += `\n\n📝 You can <${commitDiffUrl}|view the changes> or <${editUrl}|edit the file> directly on GitHub.`;
+      } else if (editUrl) {
+        successText += `\n\n📝 You can <${editUrl}|edit the file> directly on GitHub.`;
+      }
+      
+      successText += `\n\n🔍 *Preview:*
 \`\`\`# ${sectionTitle}
 ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
 

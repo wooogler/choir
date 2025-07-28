@@ -1504,14 +1504,27 @@ Section: ${sectionInfo}`;
       explanationText = `✅ Great news! This section is already well-aligned with your knowledge. I'm showing you the current content so you can verify it covers what you intended.`;
     }
 
+    // Generate GitHub edit URL for direct editing
+    const workspaceStore = new WorkspaceStore();
+    const config = await workspaceStore.getWorkspaceConfig(await getWorkspaceId(client));
+    let directEditUrl = '';
+    if (config?.githubRepo) {
+      const { owner, repo, branch } = config.githubRepo;
+      const branchName = branch || 'main';
+      directEditUrl = `https://github.com/${owner}/${repo}/edit/${branchName}/${processedDoc.fileName}`;
+    }
+
     // 항상 새 섹션 제안 보너스 아이디어 표시
     let bonusIdeaText = '';
     if (processedDoc.newSectionSuggestion) {
       if (processedDoc.hasChanges) {
-        bonusIdeaText = `💡 *Bonus idea:* I also think your knowledge would make a great standalone section! If you'd like, I can suggest creating a completely new section instead of updating the existing one. Just click the "Create New Section" button below to see my recommendation!`;
+        bonusIdeaText = `💡 *Other options:* You can create a new section instead of updating this one, or edit ${processedDoc.fileName} directly in GitHub <${directEditUrl}|here>.`;
       } else {
         bonusIdeaText = `💡 *But here's a thought:* Even though this section is already well-aligned, your knowledge might deserve its own dedicated section! I can suggest where and how to create a new section for your content. Check out the "Create New Section" option below!`;
       }
+    } else if (processedDoc.hasChanges && directEditUrl) {
+      // If no new section suggestion but has changes, still offer direct edit option
+      bonusIdeaText = `💡 *Alternative option:* You can edit ${processedDoc.fileName} document in GitHub directly <${directEditUrl}|here>.`;
     }
 
     blocks.push(

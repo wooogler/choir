@@ -16,8 +16,8 @@ export async function applyDocumentUpdatesToGithub({
   userId: string;
   documentUpdates: DocumentUpdate[];
   client: WebClient;
-}): Promise<{ fileName: string; success: boolean; message: string }[]> {
-  const successfulUpdates: string[] = [];
+}): Promise<{ fileName: string; success: boolean; message: string; commitSha?: string }[]> {
+  const successfulUpdates: { fileName: string; commitSha: string }[] = [];
   const failedUpdates: string[] = [];
 
   const updatesByFile = new Map<string, DocumentUpdate[]>();
@@ -100,7 +100,7 @@ export async function applyDocumentUpdatesToGithub({
       const { owner, repo, path: repoPath } = parsedUrl;
 
       // 3. GitHub에 최종 업데이트
-      await githubService.updateMarkdownFile({
+      const updateResult = await githubService.updateMarkdownFile({
         owner,
         repo,
         path: currentMarkdownFile.path,
@@ -113,19 +113,20 @@ export async function applyDocumentUpdatesToGithub({
       // 벡터 스토어는 이미 appendSpecificNode를 통해 업데이트됨
       Logger.info(`Vector store updates completed during node processing for ${fileName}`);
 
-      successfulUpdates.push(fileName);
+      successfulUpdates.push({ fileName, commitSha: updateResult.commitSha });
     } catch (error) {
       failedUpdates.push(fileName);
       Logger.error(`Error processing updates for ${fileName}`, error as Error);
     }
   }
 
-  const results: { fileName: string; success: boolean; message: string }[] = [];
-  successfulUpdates.forEach((fileName) => {
+  const results: { fileName: string; success: boolean; message: string; commitSha?: string }[] = [];
+  successfulUpdates.forEach(({ fileName, commitSha }) => {
     results.push({
       fileName,
       success: true,
       message: `✅ Successfully updated ${fileName} on GitHub and attempted vector store sync.`,
+      commitSha,
     });
   });
   failedUpdates.forEach((fileName) => {
