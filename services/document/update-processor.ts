@@ -43,18 +43,28 @@ export interface ProcessedDocument {
 export function createAppendSuggestionBlock(originalMarkdown: string, appendedMarkdown: string): any {
   // Create a diff-like display: original content followed by new content (bold)
 
-  // Remove "File:" and "Path:" lines from original content since they're already shown in the title
-  const cleanedOriginalMarkdown = originalMarkdown
-    .split('\n')
-    .filter((line) => !line.startsWith('File:') && !line.startsWith('Path:'))
-    .join('\n')
-    .trim();
+  // Remove markdown headers from original content since they're already shown in the title
+  const lines = originalMarkdown.split('\n');
+  let contentStartIndex = 0;
+  
+  // Skip markdown headers at the beginning (# ## ### etc.)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith('#') || line === '') {
+      contentStartIndex = i + 1;
+    } else {
+      break;
+    }
+  }
+  
+  const cleanedOriginalMarkdown = lines.slice(contentStartIndex).join('\n').trim();
 
   // If content is empty, show section header instead
   if (!cleanedOriginalMarkdown) {
-    // Extract section name from original markdown (Path: line)
-    const pathLine = originalMarkdown.split('\n').find((line) => line.startsWith('Path:'));
-    const sectionName = pathLine ? pathLine.replace('Path:', '').trim() : 'Section';
+    // Extract section name from last markdown header
+    const headerLines = lines.slice(0, contentStartIndex).filter(line => line.trim().startsWith('#'));
+    const lastHeader = headerLines[headerLines.length - 1];
+    const sectionName = lastHeader ? lastHeader.replace(/^#+\s*/, '').trim() : 'Section';
 
     return {
       type: 'rich_text',
@@ -120,14 +130,14 @@ export async function processDocument(
     if (doc.metadata.originalContent) {
       nodeContent = doc.metadata.originalContent;
     } else {
-      // pageContent에서 "File: ... Path: ..." 컨텍스트 제거
+      // pageContent에서 마크다운 헤더 제거
       const lines = doc.pageContent.split('\n');
       let contentStartIndex = 0;
 
-      // "File:" 또는 "Path:"로 시작하는 라인들을 건너뜀
+      // 마크다운 헤더로 시작하는 라인들을 건너뜀
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
-        if (line.startsWith('File:') || line.startsWith('Path:') || line === '') {
+        if (line.startsWith('#') || line === '') {
           contentStartIndex = i + 1;
         } else {
           break;

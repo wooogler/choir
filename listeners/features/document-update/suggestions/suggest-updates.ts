@@ -592,35 +592,31 @@ export const suggestUpdatesCallback = async ({
     if (typeof parsedValue.index === 'number') {
       currentIndex = parsedValue.index;
 
-      // Check if this is a file-based review
+      // Check if this is a file-based review - set this early to avoid duplicate searches
+      isFileBasedReview = parsedValue.isFileBasedReview || false;
+
       if (parsedValue.isFileBasedReview && parsedValue.selectedFile) {
         logger.info(
           `Performing file-based search for file: ${parsedValue.selectedFile}, isFileBasedReview: ${parsedValue.isFileBasedReview}, isDefaultFile: ${parsedValue.isDefaultFile}`,
         );
-        isFileBasedReview = true;
 
-        // Perform search based on file selection - 3 cases
-        if (parsedValue.selectedFile === 'ALL_FILES' || parsedValue.isDefaultFile) {
-          // Case 1: ALL_FILES or default file - 항상 새로운 검색 수행
-          logger.info('Performing fresh search (ALL_FILES or default file selected)');
+        // Perform search based on file selection - 2 cases
+        if (parsedValue.isDefaultFile) {
+          // Case 1: Default/recommended file - use cached initial search results
+          logger.info('Using cached initial search results (default/recommended file selected)');
+          searchResults = getSearchResults(userId) || [];
           
-          const workspaceId = await getWorkspaceId(client);
-          searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
-          
-          // Store results for later use
-          storeSearchResults(userId, searchResults);
-
-          // Log search results details
-          logger.info(`=== SIMILARITY SEARCH RESULTS (ALL_FILES) ===`);
-          logger.info(`Found ${searchResults.length} documents:`);
+          logger.info(`=== USING CACHED SEARCH RESULTS ===`);
+          logger.info(`Found ${searchResults.length} cached documents:`);
           searchResults.forEach((doc, index) => {
             logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
-            logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
+            logger.info(`    Content: "${doc.pageContent}"`);
           });
-          logger.info(`=== END SEARCH RESULTS ===`);
+          logger.info(`=== END CACHED RESULTS ===`);
         } else {
-          // Case 2: Different specific file - 파일별 검색만 수행
+          // Case 2: Specific file selected - perform file-specific search
           logger.info(`Searching in specific file: ${parsedValue.selectedFile}`);
+          logger.info(`[SEARCH DEBUG] Query used for file-specific search: "${knowledgeContent}}"`);
           const fileSpecificResults = await vectorStore.similaritySearchByFile(
             knowledgeContent,
             parsedValue.selectedFile,
@@ -632,7 +628,7 @@ export const suggestUpdatesCallback = async ({
           logger.info(`Found ${fileSpecificResults.length} documents:`);
           fileSpecificResults.forEach((doc, index) => {
             logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
-            logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
+            logger.info(`    Content: "${doc.pageContent}"`);
           });
           logger.info(`=== END FILE-SPECIFIC RESULTS ===`);
 
@@ -918,15 +914,19 @@ export const suggestUpdatesCallback = async ({
     }
 
     if (currentIndex === 0 && !isFileBasedReview) {
+      logger.info(`[SEARCH DEBUG] Query used for initial search: "${knowledgeContent}"`);
       const workspaceId = await getWorkspaceId(client);
-      searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
+      searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 10);
+
+      // Store results for later use (for file-based review)
+      storeSearchResults(userId, searchResults);
 
       // Log search results details
       logger.info(`=== SIMILARITY SEARCH RESULTS (INITIAL SEARCH) ===`);
       logger.info(`Found ${searchResults?.length || 0} documents:`);
       searchResults?.forEach((doc, index) => {
         logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
-        logger.info(`    Content: "${doc.pageContent.substring(0, 100)}..."`);
+        logger.info(`    Content: "${doc.pageContent}"`);
       });
       logger.info(`=== END SEARCH RESULTS ===`);
 

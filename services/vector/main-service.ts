@@ -994,7 +994,7 @@ export class VectorStoreService {
       // 헤딩 경로 구성
       const headingPath = getHeadingPathForNode(node, ancestors, headingMap, sectionToHeadings);
 
-      // 계층적 문맥 구성 (File: ... Path: ... 형태)
+      // 계층적 문맥 구성 (마크다운 헤더 형태: # filename, ## section)
       const contextPrefix = formatHeadingContext(headingPath, file.name);
 
       // 섹션 이름 가져오기

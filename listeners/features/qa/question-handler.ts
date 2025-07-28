@@ -402,8 +402,8 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           // 문서 내용에서 메타데이터 부분 제거
           let contentPreview = doc.pageContent;
 
-          // "File: xxx\nPath: xxx\n\n" 패턴 제거
-          contentPreview = contentPreview.replace(/^File:.*?\n.*?\n\n/, '');
+          // 마크다운 헤더 패턴 제거 (# filename, ## section, etc.)
+          contentPreview = contentPreview.replace(/^(#+\s+.*\n)+\n/, '');
 
           // "(To be continued)" 제거
           contentPreview = contentPreview.replace(/\(To be continued\)/g, '');

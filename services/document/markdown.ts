@@ -123,7 +123,7 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
 
   const root = processor.runSync(processor.parse(markdown)) as Root;
 
-    // 빈 헤딩 다음에 빈 paragraph 자동 추가
+  // 빈 헤딩 다음에 빈 paragraph 자동 추가
   if (root.children && Array.isArray(root.children)) {
     const newChildren: any[] = [];
     

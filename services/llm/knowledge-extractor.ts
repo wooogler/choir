@@ -179,7 +179,7 @@ What specific organizational policies, processes, or practices are discussed her
         {
           role: 'system',
           content:
-            'You are CHOIR, a knowledge curator. Extract organizational policies, processes, and practices from team conversations for documentation. Write in natural paragraph format without markdown formatting. Always preserve any URLs mentioned in the conversation as they contain important reference information.',
+            'You are CHOIR, a knowledge curator. Extract organizational policies, processes, and practices from team conversations for documentation. Start with an appropriate markdown section title (# Title) that captures the main topic of the extracted knowledge, then write the content in natural paragraph format below the title. Use plain text without bold formatting (**text**) or other markdown styling except for the section title. Always preserve any URLs mentioned in the conversation as they contain important reference information.',
         },
         {
           role: 'user',
@@ -188,7 +188,7 @@ What specific organizational policies, processes, or practices are discussed her
       ],
       {
         model: 'gpt-4o',
-        temperature: 0.3,
+        temperature: 0,
         max_tokens: 2000,
         function_name: 'extractKnowledgeFromMessages',
         debug: true,

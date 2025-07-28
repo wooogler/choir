@@ -377,11 +377,20 @@ function buildSectionHierarchy(
  * 이 함수는 계층적 헤딩 정보를 문서 콘텐츠에 추가해 RAG 성능을 향상시킬 수 있습니다.
  */
 export function formatHeadingContext(headingPath: string[], fileName: string): string {
-  // 파일 정보와 헤딩 경로를 포함한 컨텍스트 생성
-  const fileContext = `File: ${fileName}`;
-  const pathContext = headingPath && headingPath.length > 0 ? `Path: ${headingPath.join(' > ')}` : '';
-
-  return [fileContext, pathContext].filter(Boolean).join('\n') + (fileContext || pathContext ? '\n\n' : '');
+  // 마크다운 헤더 형식으로 파일명과 섹션 경로 생성
+  const fileHeader = `# ${fileName}`;
+  
+  if (headingPath && headingPath.length > 0) {
+    // 섹션 경로를 각각 헤더 레벨로 변환 (## 부터 시작)
+    const sectionHeaders = headingPath.map((section, index) => {
+      const headerLevel = '#'.repeat(index + 2); // ##, ###, #### ...
+      return `${headerLevel} ${section}`;
+    }).join('\n');
+    
+    return `${fileHeader}\n${sectionHeaders}\n\n`;
+  }
+  
+  return `${fileHeader}\n\n`;
 }
 
 /**
