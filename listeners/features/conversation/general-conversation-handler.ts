@@ -68,7 +68,7 @@ export async function handleGeneralConversationMessage(
 
 *📝 For Updates:* Share new information that should be documented
 • Example: "We decided to use React for the new project"
-• Example: "The meeting time changed to 3 PM on Fridays"
+• Example: "Our deployment process now includes automated testing"
 
 *🔧 How to reach me:*
 • *In channels:* Mention me with \`@choir\` followed by your message

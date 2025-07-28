@@ -117,7 +117,7 @@ const applySelectedToGithubAction = async ({
       let resultMessage = "I've finished processing the document updates!"; // 기본 메시지
       if (successfulUpdates.length > 0) {
         const fileName = successfulUpdates[0]; // 단일 파일 처리 가정
-        resultMessage = `✅ Great news! I've successfully updated the document: *${fileName}*`;
+        resultMessage = `✅ Great news! I've successfully updated the document: <${githubUrl}|*${fileName}*>`;
       }
       if (failedUpdates.length > 0) {
         const fileName = failedUpdates[0]; // 단일 파일 처리 가정
