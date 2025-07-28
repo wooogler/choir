@@ -30,6 +30,7 @@ export const handleAsUpdateRequestCallback = async ({
       channel: messageData.channelId,
       ts: messageData.threadTs,
       channel_type: messageData.channelType,
+      originalMessage: messageData.originalMessage, // 원본 메시지 텍스트 추가
     };
 
     // Send friendly public notification first
@@ -73,8 +74,8 @@ export const handleAsUpdateRequestCallback = async ({
       });
     }
 
-    // 원본 메시지를 update request로 처리
-    await handleUpdateRequestMessage(client, reconstructedEvent, logger);
+    // 원본 메시지를 update request로 처리 (버튼에서 호출된 것으로 표시)
+    await handleUpdateRequestMessage(client, reconstructedEvent, logger, true);
 
     logger.info(`Message re-processed as update request for user ${messageData.userId}`);
 

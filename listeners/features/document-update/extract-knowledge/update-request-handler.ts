@@ -22,7 +22,7 @@ import { CHOIRMessageType, createCHOIRBlockId, getCHOIRMessageTypeFromBlocks } f
 /**
  * Handle update request message with automatic knowledge extraction
  */
-export async function handleUpdateRequestMessage(client: WebClient, event: any, logger: any) {
+export async function handleUpdateRequestMessage(client: WebClient, event: any, logger: any, isFromButton = false) {
   const startTime = Date.now();
   const userId = event.user;
   const originalChannelId = event.channel;
@@ -67,14 +67,28 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       choirUsersCount: choirUsers.length,
     });
 
-    // Use timeLimit from channel classification, with thread override
-    const timeLimit = event.thread_ts ? 1440 : channelClassification.timeLimit; // 24 hours for threads, otherwise use classification
+    let filteredMessages: SlackMessage[];
 
-    const filteredMessages = await getFilteredConversationHistory(client, event, choirUsers, {
-      timeLimit, // Use classified timeLimit
-      messageLimit: 10, // fetch up to 15 messages
-      maxResults: 5, // return up to 15 messages including bot responses
-    });
+    if (isFromButton) {
+      // 버튼에서 호출된 경우: 원본 메시지만 사용
+      const userName = await getUserName(userId, client);
+      filteredMessages = [{
+        ts: event.ts,
+        user: event.user,
+        text: event.originalMessage,
+        channel: event.channel,
+        username: userName,
+      }];
+    } else {
+      // 일반적인 경우: conversation history 사용
+      const timeLimit = event.thread_ts ? 1440 : channelClassification.timeLimit; // 24 hours for threads, otherwise use classification
+
+      filteredMessages = await getFilteredConversationHistory(client, event, choirUsers, {
+        timeLimit, // Use classified timeLimit
+        messageLimit: 10, // fetch up to 15 messages
+        maxResults: 5, // return up to 15 messages including bot responses
+      });
+    }
 
     if (!filteredMessages?.length) {
       await client.chat.update({
