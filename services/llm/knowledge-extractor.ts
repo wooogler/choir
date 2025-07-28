@@ -120,8 +120,11 @@ export async function extractKnowledgeFromMessages(
         continue;
       }
 
-      // Add all other messages to conversation
-      conversationMessages.push(msg);
+      // Add all other messages to conversation, but exclude CHOIR messages from regular conversation
+      // (Q&A content is already handled separately above)
+      if (msg.role !== 'CHOIR') {
+        conversationMessages.push(msg);
+      }
     }
 
     // Format conversation messages with numbered references for source tracking
