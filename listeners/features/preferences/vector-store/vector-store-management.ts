@@ -135,7 +135,7 @@ export const reloadFromGithubAction = async ({
     }
 
     // 벡터 저장소 업데이트 (캐시 사용 안 함, 강제 새로고침)
-    const success = await vectorStore.initialize(markdownFiles, false, true);
+    const success = await vectorStore.initialize(markdownFiles, false, true, workspaceId);
 
     if (success) {
       // Update workspace markdown files cache

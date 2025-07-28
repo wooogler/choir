@@ -484,54 +484,7 @@ export const suggestUpdatesCallback = async ({
     }
 
     if (parsedValue.action === 'keep' || parsedValue.action === 'skip') {
-      // Handle Skip This button with response_url
-      if (parsedValue.action === 'skip') {
-        logger.info(`User skipped suggestion ${currentIndex} for nodeId: ${parsedValue.currentNodeId}`);
-
-        // Use response_url to replace the current message with skip confirmation
-        const responseUrl = (body as any).response_url;
-        if (responseUrl) {
-          try {
-            // Get current document info for better skip message using nodeId
-            const currentDoc = searchResults.find(doc => doc.metadata?.nodeId === parsedValue.currentNodeId);
-            const currentDocIndex = searchResults.findIndex(doc => doc.metadata?.nodeId === parsedValue.currentNodeId);
-            const suggestionNumber = currentDocIndex + 1;
-            const fileName = currentDoc?.metadata?.fileName || 'Unknown file';
-            logger.info(`Skip message debug: found doc at index ${currentDocIndex}, suggestionNumber=${suggestionNumber}, fileName=${fileName}`);
-
-            const response = await fetch(responseUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                replace_original: true,
-                text: `⏭️ Skipped suggestion ${suggestionNumber} for ${fileName}`,
-                blocks: [
-                  {
-                    type: 'section',
-                    text: {
-                      type: 'mrkdwn',
-                      text: `⏭️ *Skipped* suggestion ${suggestionNumber} for ${fileName}`,
-                    },
-                  },
-                ],
-              }),
-            });
-
-            if (response.ok) {
-              logger.info(`Successfully used response_url to show skip confirmation for suggestion ${currentIndex}`);
-            } else {
-              logger.warn(
-                `Failed to use response_url for skip confirmation: ${response.status} ${response.statusText}`,
-              );
-            }
-          } catch (responseUrlError) {
-            logger.error('Error using response_url for skip confirmation:', responseUrlError);
-            // Continue with normal flow if response_url fails
-          }
-        } else {
-          logger.warn('No response_url available for skip confirmation');
-        }
-      }
+      // Skip message will be handled after searchResults are loaded
 
       // shouldSwitchToAllFiles 로직 제거 - 이제 file-specific search에서 순서가 이미 정리됨
 
@@ -713,6 +666,55 @@ export const suggestUpdatesCallback = async ({
         );
         searchResults = getSearchResults(userId);
         isFirstSuggestion = false;
+      }
+
+      // Handle Skip This button after searchResults are loaded
+      if (parsedValue.action === 'skip') {
+        logger.info(`User skipped suggestion ${currentIndex} for nodeId: ${parsedValue.currentNodeId}`);
+
+        // Use response_url to replace the current message with skip confirmation
+        const responseUrl = (body as any).response_url;
+        if (responseUrl) {
+          try {
+            // Get current document info for better skip message using nodeId
+            const currentDoc = searchResults.find(doc => doc.metadata?.nodeId === parsedValue.currentNodeId);
+            const currentDocIndex = searchResults.findIndex(doc => doc.metadata?.nodeId === parsedValue.currentNodeId);
+            const suggestionNumber = currentDocIndex + 1;
+            const fileName = currentDoc?.metadata?.fileName || 'Unknown file';
+            logger.info(`Skip message debug: found doc at index ${currentDocIndex}, suggestionNumber=${suggestionNumber}, fileName=${fileName}`);
+
+            const response = await fetch(responseUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                replace_original: true,
+                text: `⏭️ Skipped suggestion ${suggestionNumber} for ${fileName}`,
+                blocks: [
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `⏭️ *Skipped* suggestion ${suggestionNumber} for ${fileName}`,
+                    },
+                  },
+                ],
+              }),
+            });
+
+            if (response.ok) {
+              logger.info(`Successfully used response_url to show skip confirmation for suggestion ${currentIndex}`);
+            } else {
+              logger.warn(
+                `Failed to use response_url for skip confirmation: ${response.status} ${response.statusText}`,
+              );
+            }
+          } catch (responseUrlError) {
+            logger.error('Error using response_url for skip confirmation:', responseUrlError);
+            // Continue with normal flow if response_url fails
+          }
+        } else {
+          logger.warn('No response_url available for skip confirmation');
+        }
       }
 
       // shouldSwitchToAllFiles 로직 제거됨
@@ -1265,7 +1267,7 @@ export const suggestUpdatesCallback = async ({
     // CHOIR의 통일된 설명 메시지
     let explanationText = '';
     if (processedDoc.hasChanges) {
-      explanationText = `📝 I found content that could be *enhanced* based on your knowledge. I'm showing you the specific changes I'd recommend - you can see exactly what would be modified or added.`;
+      explanationText = `📝 I found content that could be *updated* based on your knowledge. I'm showing you the specific changes I'd recommend - you can see exactly what would be modified or added.`;
     } else {
       explanationText = `✅ Great news! This section is already well-aligned with your knowledge. I'm showing you the current content so you can verify it covers what you intended.`;
     }
