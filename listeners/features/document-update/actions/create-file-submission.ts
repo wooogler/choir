@@ -139,7 +139,7 @@ export const createFileSubmissionCallback = async ({
       throw githubError;
     }
 
-    // Reload and index the new file
+    // Reload and index the new file with web content enhancement
     const vectorStore = VectorStoreService.getInstance();
 
     try {
@@ -153,16 +153,55 @@ export const createFileSubmissionCallback = async ({
       });
 
       if (createdFile) {
-        // Add to vector store
-        await vectorStore.addDocument(filePath, createdFile.content, {
-          fileName: fileName,
-          nodeId: 'root',
-          nodeType: 'root',
-          originalContent: createdFile.content,
+        // Create MarkdownFile object similar to initial load
+        const { parseMarkdownToTree } = await import('services/document/markdown');
+        const markdownFile: any = {
+          name: fileName,
+          path: filePath,
+          content: createdFile.content,
           githubUrl: `https://github.com/${owner}/${repo}/blob/main/${filePath}`,
-        });
+          tree: parseMarkdownToTree(createdFile.content),
+        };
 
-        logger.info(`Successfully indexed new file ${fileName} in vector store`);
+        // Use DocumentProcessor for web content enhancement (similar to initial load)
+        const { DocumentProcessor } = await import('services/vector/document-processor');
+        const documentProcessor = new DocumentProcessor();
+        const documents = await documentProcessor.prepareDocuments([markdownFile]);
+
+        if (documents.length > 0) {
+          // Add to vector store using the same method as bulk initialization
+          const success = await vectorStore.addDocumentsToVectorStore(documents);
+          
+          if (success) {
+            // Update markdownFiles array to include the new file
+            vectorStore.addToMarkdownFiles(markdownFile);
+            logger.info(`Successfully indexed new file ${fileName} with web content enhancement (${documents.length} documents)`);
+          } else {
+            logger.error(`Failed to add documents to vector store for ${fileName}`);
+          }
+        } else {
+          logger.warn(`No documents generated from new file ${fileName}`);
+        }
+
+        // Update workspace config file list (similar to reload)
+        try {
+          const { WorkspaceStore } = await import('services/workspace/workspace-store');
+          const workspaceStore = new WorkspaceStore();
+          
+          // Get current cached file list
+          const currentFiles = await workspaceStore.getMarkdownFilesCache(workspaceId) || [];
+          
+          // Add the new file to the list if not already present
+          const fileExists = currentFiles.some((f: { name: string; path: string }) => f.name === fileName || f.path === filePath);
+          if (!fileExists) {
+            const updatedFiles = [...currentFiles, { name: fileName, path: filePath }];
+            await workspaceStore.setMarkdownFilesCache(workspaceId, updatedFiles);
+            logger.info(`Updated workspace config with new file: ${fileName}`);
+          }
+        } catch (configError) {
+          logger.warn(`Failed to update workspace config for new file ${fileName}:`, configError);
+          // Continue execution even if config update fails
+        }
       }
     } catch (indexError) {
       logger.warn(`Failed to index new file ${fileName}:`, indexError);

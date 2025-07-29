@@ -277,6 +277,11 @@ export class WorkspaceStore {
   /**
    * 마크다운 파일 목록 캐시 업데이트
    */
+  public async getMarkdownFilesCache(workspaceId: string): Promise<Array<{ name: string; path: string }> | null> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.markdownFiles || null;
+  }
+
   public async setMarkdownFilesCache(workspaceId: string, files: Array<{ name: string; path: string }>): Promise<void> {
     const config = await this.getWorkspaceConfig(workspaceId);
     if (!config) {

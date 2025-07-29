@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { Renderer, marked } from 'marked';
 import type { Tokens as MarkedTokens } from 'marked';
-import type { Heading, ListItem, Paragraph, Root, Text } from 'mdast';
+import type { Heading, List, ListItem, Paragraph, Root, Text } from 'mdast';
 import { toString } from 'mdast-util-to-string';
 import remarkParse from 'remark-parse';
 import { unified } from 'unified';
@@ -929,7 +929,7 @@ export function createNewSectionNode(
   sectionTitle: string,
   sectionBody: string,
   insertAfterNodeId?: string, // 특정 노드 뒤에 삽입 (선택사항)
-): DocumentTree {
+): { tree: DocumentTree; newNodeIds: string[] } {
   // 원본 트리의 깊은 복사본 생성
   const newTree: DocumentTree = {
     title: docTree.title,
@@ -953,20 +953,107 @@ export function createNewSectionNode(
     sectionId: newSectionId,
   };
 
-  // 본문 노드 생성 (섹션 내용)
-  const bodyNodeId = `${newSectionId}_body`;
-  const bodyNode: Paragraph & ExtendedNode = {
-    type: 'paragraph',
-    children: [{ type: 'text', value: sectionBody }],
-    id: bodyNodeId,
-    fileName: docTree.title || 'unknown',
-    parentId: undefined, // 루트 레벨 (헤딩과 동일한 레벨)
-    sectionId: newSectionId,
-  };
+  // 본문을 파싱하여 여러 노드로 분할
+  const contentItems = parseAndSplitContent(sectionBody);
+  const bodyNodeIds: string[] = [];
+  const bodyNodes: ExtendedNode[] = [];
+
+  // 각 contentItem을 별도 노드로 생성
+  for (let i = 0; i < contentItems.length; i++) {
+    const item = contentItems[i];
+    const timestamp = Date.now() + i; // 고유한 ID 보장
+    const nodeId = `${newSectionId}_${item.type}_${timestamp}`;
+    
+    let node: ExtendedNode;
+    
+    if (item.type === 'paragraph') {
+      node = {
+        type: 'paragraph',
+        children: [{ type: 'text', value: item.content }],
+        id: nodeId,
+        fileName: docTree.title || 'unknown',
+        parentId: undefined, // 루트 레벨
+        sectionId: newSectionId,
+      } as Paragraph & ExtendedNode;
+    } else if (item.type === 'listItem') {
+      node = {
+        type: 'listItem',
+        children: [
+          {
+            type: 'paragraph',
+            children: [{ type: 'text', value: item.content }],
+          },
+        ],
+        id: nodeId,
+        fileName: docTree.title || 'unknown',
+        parentId: undefined, // 임시값, 아래에서 리스트와 연결
+        sectionId: newSectionId,
+        isListItem: true,
+        listItemIndex: 0, // 임시값, 아래에서 재계산
+      } as ListItem & ExtendedNode;
+    } else {
+      continue; // 지원하지 않는 타입은 건너뛰기
+    }
+    
+    bodyNodes.push(node);
+    bodyNodeIds.push(nodeId);
+  }
+
+  // 연속된 listItem들을 그룹화하여 list 노드로 감싸기
+  const finalNodes: ExtendedNode[] = [];
+  const finalNodeIds: string[] = [];
+  
+  let i = 0;
+  while (i < bodyNodes.length) {
+    const node = bodyNodes[i];
+    
+    if (node.type === 'listItem') {
+      // 연속된 listItem들을 수집
+      const listItems: (ListItem & ExtendedNode)[] = [];
+      while (i < bodyNodes.length && bodyNodes[i].type === 'listItem') {
+        listItems.push(bodyNodes[i] as ListItem & ExtendedNode);
+        i++;
+      }
+      
+      // list 노드 생성
+      const listNodeId = `${newSectionId}_list_${Date.now()}`;
+      const listNode = {
+        type: 'list',
+        ordered: false,
+        children: listItems,
+        id: listNodeId,
+        fileName: docTree.title || 'unknown',
+        parentId: undefined,
+        sectionId: newSectionId,
+      } as List & ExtendedNode;
+      
+      // listItem들의 parentId와 listItemIndex 설정
+      listItems.forEach((listItem, index) => {
+        listItem.parentId = listNodeId;
+        listItem.listItemIndex = index;
+      });
+      
+      finalNodes.push(listNode);
+      finalNodeIds.push(listNodeId);
+      
+      // listItem들도 개별적으로 nodeMap에 추가되어야 함
+      listItems.forEach(listItem => {
+        finalNodes.push(listItem);
+        finalNodeIds.push(listItem.id!);
+      });
+    } else {
+      // paragraph 노드는 그대로 추가
+      finalNodes.push(node);
+      finalNodeIds.push(node.id!);
+      i++;
+    }
+  }
 
   // 노드맵에 추가
   newTree.nodeMap.set(headingNodeId, headingNode);
-  newTree.nodeMap.set(bodyNodeId, bodyNode);
+  finalNodes.forEach(node => {
+    newTree.nodeMap.set(node.id!, node);
+  });
 
   // 섹션맵에 추가
   newTree.sectionMap.set(newSectionId, headingNode);
@@ -974,15 +1061,16 @@ export function createNewSectionNode(
   // 트리 구조에 삽입
   if (insertAfterNodeId) {
     // 특정 노드 뒤에 삽입
-    insertSectionAfterNode(newTree, insertAfterNodeId, headingNode, bodyNode);
+    insertSectionAfterNode(newTree, insertAfterNodeId, headingNode, finalNodes);
   } else {
     // 문서 끝에 추가
-    appendSectionToEnd(newTree, headingNode, bodyNode);
+    appendSectionToEnd(newTree, headingNode, finalNodes);
   }
 
   console.log(`새로운 섹션 "${sectionTitle}"이 트리에 추가되었습니다 (ID: ${newSectionId})`);
 
-  return newTree;
+  // 새로 생성된 모든 노드 ID들 반환
+  return { tree: newTree, newNodeIds: [headingNodeId, ...finalNodeIds] };
 }
 
 /**
@@ -992,12 +1080,12 @@ function insertSectionAfterNode(
   tree: DocumentTree,
   referenceNodeId: string,
   headingNode: ExtendedNode,
-  bodyNode: ExtendedNode,
+  bodyNodes: ExtendedNode[],
 ): void {
   const referenceNode = tree.nodeMap.get(referenceNodeId);
   if (!referenceNode) {
     console.warn(`참조 노드를 찾을 수 없음: ${referenceNodeId}, 문서 끝에 추가합니다.`);
-    appendSectionToEnd(tree, headingNode, bodyNode);
+    appendSectionToEnd(tree, headingNode, bodyNodes);
     return;
   }
 
@@ -1006,7 +1094,7 @@ function insertSectionAfterNode(
 
   if (!parentNode || !Array.isArray((parentNode as any).children)) {
     console.warn(`부모 노드가 유효하지 않음, 문서 끝에 추가합니다.`);
-    appendSectionToEnd(tree, headingNode, bodyNode);
+    appendSectionToEnd(tree, headingNode, bodyNodes);
     return;
   }
 
@@ -1015,12 +1103,12 @@ function insertSectionAfterNode(
 
   if (referenceIndex === -1) {
     console.warn(`참조 노드를 부모의 children에서 찾을 수 없음, 문서 끝에 추가합니다.`);
-    appendSectionToEnd(tree, headingNode, bodyNode);
+    appendSectionToEnd(tree, headingNode, bodyNodes);
     return;
   }
 
-  // 참조 노드 뒤에 헤딩과 본문 노드 삽입
-  parentChildren.splice(referenceIndex + 1, 0, headingNode, bodyNode);
+  // 참조 노드 뒤에 헤딩과 본문 노드들 삽입
+  parentChildren.splice(referenceIndex + 1, 0, headingNode, ...bodyNodes);
 
   // 부모 노드 업데이트
   if (referenceNode.parentId) {
@@ -1033,13 +1121,14 @@ function insertSectionAfterNode(
 /**
  * 문서 끝에 섹션 추가
  */
-function appendSectionToEnd(tree: DocumentTree, headingNode: ExtendedNode, bodyNode: ExtendedNode): void {
+function appendSectionToEnd(tree: DocumentTree, headingNode: ExtendedNode, bodyNodes: ExtendedNode[]): void {
   // 루트 레벨에 섹션 추가
   if (Array.isArray(tree.root.children)) {
-    tree.root.children.push(headingNode as any, bodyNode as any);
+    tree.root.children.push(headingNode as any, ...(bodyNodes as any[]));
     console.log(`섹션이 문서 끝에 추가되었습니다.`);
   } else {
-    console.error('루트 노드의 children이 배열이 아닙니다.');
+    tree.root.children = [headingNode as any, ...(bodyNodes as any[])];
+    console.log(`루트 children 배열을 초기화하고 섹션을 추가했습니다.`);
   }
 }
 

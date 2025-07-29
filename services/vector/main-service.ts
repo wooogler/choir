@@ -1,7 +1,7 @@
 import { Document } from '@langchain/core/documents';
 import { Logger } from '../common/logger';
 import { DocumentTree } from '../document';
-import { createNewSectionNode, updateNodeContent } from '../document/markdown';
+import { updateNodeContent } from '../document/markdown';
 import type { MarkdownFile } from '../github';
 import type { SlackMessage } from '../slack';
 import { VectorCacheManager } from './cache-manager';
@@ -474,6 +474,14 @@ export class VectorStoreService {
   /**
    * 벡터 스토어 설정 및 초기화 (기존 인터페이스 호환)
    */
+  /**
+   * 마크다운 파일 배열에 새 파일 추가
+   */
+  public addToMarkdownFiles(markdownFile: MarkdownFile): void {
+    this.markdownFiles.push(markdownFile);
+    Logger.info(`Added new file to markdownFiles array: ${markdownFile.name}`);
+  }
+
   public async setMarkdownFiles(
     markdownFiles: MarkdownFile[],
     options?: { owner: string; repo: string; workspaceId?: string },
@@ -545,29 +553,20 @@ export class VectorStoreService {
       }
 
       // 1. 트리에 새 섹션 추가하고 새 노드 ID들 가져오기
-      const beforeNodeCount = file.tree.nodeMap.size;
-      file.tree = createNewSectionNode(file.tree, sectionTitle, sectionBody);
-      const afterNodeCount = file.tree.nodeMap.size;
+      const { createNewSectionNode } = await import('../document/markdown');
+      const result = createNewSectionNode(file.tree, sectionTitle, sectionBody);
+      file.tree = result.tree;
+      const newNodeIds = result.newNodeIds;
 
       Logger.info(`Added new section "${sectionTitle}" to ${fileName}`);
 
-      // 2. 새로 추가된 노드들만 증분 업데이트
-      if (afterNodeCount > beforeNodeCount) {
-        Logger.info(
-          `Performing incremental vector store update for new section: ${afterNodeCount - beforeNodeCount} new nodes`,
-        );
+      // 2. 새로 생성된 노드들만 정확하게 벡터 스토어에 추가
+      Logger.info(`Performing incremental vector store update for new section: ${newNodeIds.length} new nodes`);
 
-        // 새로 추가된 노드들을 찾아서 개별적으로 추가
-        const existingDocuments = this.storeManager.getDocuments().filter((doc) => doc.metadata.fileName === fileName);
-        const existingNodeIds = new Set(existingDocuments.map((doc) => doc.metadata.nodeId));
-
-        // 트리에서 새로운 노드들 찾기
-        const newNodes = Array.from(file.tree.nodeMap.entries()).filter(([nodeId]) => !existingNodeIds.has(nodeId));
-
-        Logger.info(`Found ${newNodes.length} new nodes to add to vector store`);
-
-        let successCount = 0;
-        for (const [nodeId, node] of newNodes) {
+      let successCount = 0;
+      for (const nodeId of newNodeIds) {
+        const node = file.tree.nodeMap.get(nodeId);
+        if (node) {
           // toString을 사용해서 노드 내용 추출
           const { toString } = await import('mdast-util-to-string');
           const nodeContent = toString(node);
@@ -576,11 +575,11 @@ export class VectorStoreService {
             if (success) successCount++;
           }
         }
+      }
 
-        Logger.info(`Successfully added ${successCount}/${newNodes.length} new nodes to vector store`);
-        if (successCount < newNodes.length) {
-          Logger.warn('Some nodes failed to be added to vector store');
-        }
+      Logger.info(`Successfully added ${successCount}/${newNodeIds.length} new nodes to vector store`);
+      if (successCount < newNodeIds.length) {
+        Logger.warn('Some nodes failed to be added to vector store');
       }
 
       return true;
@@ -1124,7 +1123,7 @@ export class VectorStoreService {
   /**
    * Document들을 벡터 스토어에 추가
    */
-  private async addDocumentsToVectorStore(documents: Document<DocumentMetadata>[]): Promise<boolean> {
+  public async addDocumentsToVectorStore(documents: Document<DocumentMetadata>[]): Promise<boolean> {
     try {
       if (documents.length === 0) {
         return true;

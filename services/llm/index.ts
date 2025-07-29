@@ -13,9 +13,6 @@ export {
   classifyMessageIntent,
 } from './document-editor';
 
-// Content generation functions
-export { createNewContentFromKnowledge } from './content-generator';
-
 // LLM configuration (Azure OpenAI and OpenAI)
 export {
   validateAzureOpenAIConfig,

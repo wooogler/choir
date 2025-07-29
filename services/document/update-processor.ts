@@ -2,7 +2,6 @@ import type { Document } from '@langchain/core/documents';
 import type { WebClient } from '@slack/web-api';
 import {
   type NewSectionSuggestion,
-  createNewContentFromKnowledge,
   createNewSectionFromKnowledge,
 } from 'services/llm/content-generator';
 import { editMarkdownWithKnowledge } from 'services/llm/document-editor';

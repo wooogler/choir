@@ -1,51 +1,4 @@
 import { createChatCompletion } from './completions';
-// import { LLMService } from "./llmService"; // Assuming LLMService can be used or adapted
-
-/**
- * Generates content for a new node that follows the existing nodeContent based on new knowledge.
- *
- * @param nodeContent The existing content that the new content should follow
- * @param knowledgeContent The new knowledge to incorporate into a new node
- * @returns A promise that resolves to the generated content for the new node
- */
-export async function createNewContentFromKnowledge(nodeContent: string, knowledgeContent: string): Promise<string> {
-  const response = await createChatCompletion(
-    [
-      {
-        role: 'system',
-        content: `You are a document content generator. Your task is to create NEW content that can be appended to existing content.
-
-Key rules:
-1. Return ONLY the new content to be added - DO NOT include the existing content
-2. Use ONLY the provided knowledge content with minimal reformatting
-3. The new content should complement the existing content without repeating it
-4. Maintain the same style and tone as the existing content
-5. Do NOT hallucinate or create new information beyond what's provided in the knowledge
-6. Keep formatting consistent with the existing content style
-7. Return ONLY the additional content that should be appended`,
-      },
-      {
-        role: 'user',
-        content: `Existing content:
-${nodeContent}
-
-Knowledge to incorporate:
-${knowledgeContent}
-
-Create NEW content to append based on the knowledge. Return ONLY the new content that should be added after the existing content - do NOT include the existing content in your response.`,
-      },
-    ],
-    {
-      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
-      temperature: 0.1,
-      max_tokens: 500,
-      function_name: 'createNewContentFromKnowledge',
-      debug: true,
-    },
-  );
-
-  return response?.trim() || '';
-}
 
 export interface NewSectionSuggestion {
   sectionTitle: string;
@@ -100,7 +53,7 @@ Generate a suitable file name and initial markdown content.`,
       temperature: 0.3,
       max_tokens: 600,
       function_name: 'generateNewFileDefaults',
-      debug: false,
+      debug: true,
     },
   );
 
@@ -133,21 +86,27 @@ export async function createNewSectionFromKnowledge(
         role: 'system',
         content: `You are a documentation structure expert. Your task is to analyze knowledge content and suggest a new section that could be added to existing documentation.
 
-Key rules:
-1. Create a clear, descriptive but GENERAL section title (without # symbol) that could be relevant to many teams/contexts
-2. For section content, use ONLY the provided knowledge content with minimal reformatting - do NOT add extra explanations or examples
-3. Select the most appropriate file from the available files
-4. Provide reasoning for your file selection
-5. Return ONLY a valid JSON object with this exact structure:
+CONSTRAINTS:
+- Use ONLY information from the knowledge - no external details, links, or assumptions
+- Create a clear, descriptive but GENERAL section title (without # symbol) that could be relevant to many teams/contexts
+- For section content, write as one or multiple paragraphs or simple list items (no headings, subheadings, or complex structure)
+- Keep content concise and directly relevant to the section context
+- Never include user names or identifiers
+- Always preserve any URLs from the knowledge as they contain valuable reference information
+- If knowledge is insufficient to create a meaningful section, return empty sectionContent
+- Select the most appropriate file from the available files
+- Provide clear reasoning for your file selection
+
+Return ONLY a valid JSON object with this exact structure:
 {
+  "reasoning": "string",
   "sectionTitle": "string",
   "sectionContent": "string", 
-  "recommendedFile": "string",
-  "reasoning": "string"
+  "recommendedFile": "string"
 }
 
 The section title should be general enough to be applicable across different organizations (e.g., "Online Meeting Platform" rather than "Using Microsoft Teams for Online Meetings").
-The section content should be primarily the knowledge content itself, not an expanded explanation.`,
+The section content should use only the provided knowledge without additional explanations or examples.`,
       },
       {
         role: 'user',
