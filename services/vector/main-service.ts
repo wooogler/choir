@@ -604,73 +604,10 @@ export class VectorStoreService {
       let addedCount = 0; // Declare at method scope
 
       // Import 함수들
-      const { parseAndSplitContent, appendMultipleContents, removeNodeFromTree } = await import(
+      const { parseAndSplitContent, createReplacementNodes, replaceNodeAtomically } = await import(
         '../document/markdown'
       );
 
-      // 노드의 삽입 위치 정보를 찾는 헬퍼 함수
-      function findNodeInsertionPosition(docTree: any, nodeId: string): { parentId: string | null; previousSiblingId: string | null; nodeIndex?: number } | null {
-        const node = docTree.nodeMap.get(nodeId);
-        if (!node) return null;
-
-        const parentId = node.parentId || 'root';
-        const parentNode = parentId === 'root' ? docTree.root : docTree.nodeMap.get(parentId);
-        
-        if (!parentNode || !Array.isArray(parentNode.children)) {
-          return { parentId, previousSiblingId: null };
-        }
-
-        // 현재 노드의 인덱스 찾기
-        const currentIndex = parentNode.children.findIndex((child: any) => child.id === nodeId);
-        if (currentIndex === -1) {
-          return { parentId, previousSiblingId: null };
-        }
-
-        // 이전 형제 노드 찾기
-        const previousSiblingId = currentIndex > 0 ? parentNode.children[currentIndex - 1].id : null;
-        
-        Logger.info(`findNodeInsertionPosition for ${nodeId}:`, {
-          nodeType: node.type,
-          parentId,
-          parentType: parentNode.type,
-          currentIndex,
-          previousSiblingId,
-          totalSiblings: parentNode.children.length
-        });
-        
-        return { parentId, previousSiblingId, nodeIndex: currentIndex };
-      }
-
-      // 특정 위치에 콘텐츠를 삽입하는 헬퍼 함수
-      function insertContentAtPosition(
-        docTree: any, 
-        insertionInfo: { parentId: string | null; previousSiblingId: string | null }, 
-        contentItems: Array<{ type: 'listItem' | 'paragraph'; content: string }>,
-        originalNodeIndex?: number
-      ) {
-        // 특별 처리: listItem들을 리스트 내 정확한 위치에 삽입
-        if (insertionInfo.parentId && 
-            insertionInfo.parentId.startsWith('list-') && 
-            contentItems.every(item => item.type === 'listItem') &&
-            typeof originalNodeIndex === 'number') {
-          Logger.info(`Inserting ${contentItems.length} listItems at index ${originalNodeIndex} in list ${insertionInfo.parentId}`);
-          const { insertListItemsAtIndex } = require('services/document/markdown');
-          return insertListItemsAtIndex(docTree, insertionInfo.parentId, originalNodeIndex, contentItems);
-        } else if (insertionInfo.previousSiblingId) {
-          // 이전 형제 노드 다음에 삽입
-          Logger.info(`Inserting content after previous sibling: ${insertionInfo.previousSiblingId}`);
-          return appendMultipleContents(docTree, insertionInfo.previousSiblingId, contentItems);
-        } else if (insertionInfo.parentId && insertionInfo.parentId !== 'root') {
-          // 부모 노드의 첫 번째 자식으로 삽입
-          Logger.info(`Inserting content as first child of parent: ${insertionInfo.parentId}`);
-          return appendMultipleContents(docTree, insertionInfo.parentId, contentItems);
-        } else {
-          // root의 첫 번째 자식으로 삽입
-          Logger.info('Inserting content at beginning of root');
-          const { appendContentToRoot } = require('services/document/markdown');
-          return appendContentToRoot(docTree, contentItems);
-        }
-      }
 
       // 1. content를 파싱하여 개별 항목들로 분할
       const contentItems = parseAndSplitContent(content);
@@ -682,30 +619,22 @@ export class VectorStoreService {
       // 2. 기존 노드 목록 저장 (새 노드 감지용)
       const existingNodeIds = new Set(file.tree.nodeMap.keys());
 
-      // 3. 기존 노드 처리 - 통합된 처리 로직
+      // 3. Atomic replacement 로직 사용
       const originalNode = file.tree.nodeMap.get(nodeId);
-      let insertionInfo: { parentId: string | null; previousSiblingId: string | null; nodeIndex?: number } | null = null;
       
       if (originalNode) {
-        // 제거하기 전에 삽입 위치 정보 저장
-        insertionInfo = findNodeInsertionPosition(file.tree, nodeId);
-        Logger.info(`Saved insertion position for node ${nodeId}: ${JSON.stringify(insertionInfo)}`);
+        Logger.info(`Using atomic replacement for node ${nodeId}`);
         
-        // 모든 노드에 대해 벡터 스토어와 문서 트리에서 제거
+        // 기존 노드를 벡터 스토어에서 제거
         await this.removeNodeFromVectorStore(nodeId);
         Logger.info(`Removed existing node ${nodeId} from vector store`);
         
-        file.tree = removeNodeFromTree(file.tree, nodeId);
-        Logger.info(`Removed existing node ${nodeId} from document tree`);
-      }
+        // 원자적 노드 교체
+        const replacementNodes = createReplacementNodes(originalNode, contentItems);
+        file.tree = replaceNodeAtomically(file.tree, nodeId, replacementNodes);
+        Logger.info(`Atomically replaced node ${nodeId} with ${replacementNodes.length} replacement nodes`);
 
-      // 5. 분할된 content들을 새로운 노드로 추가
-      if (contentItems.length > 0 && originalNode && insertionInfo) {
-        Logger.info(`Adding ${contentItems.length} replacement nodes for enhanced content`);
-        // 정확한 위치에 콘텐츠 삽입 (새로운 통합 로직 사용)
-        file.tree = insertContentAtPosition(file.tree, insertionInfo, contentItems, insertionInfo.nodeIndex);
-
-        // 6. 새로 추가된 노드들을 벡터 스토어에 추가
+        // 새로 추가된 노드들을 벡터 스토어에 추가
         Logger.info('Adding replacement nodes to vector store');
         const { toString } = await import('mdast-util-to-string');
 
@@ -741,11 +670,6 @@ export class VectorStoreService {
         }
 
         Logger.info(`Successfully added ${addedCount}/${newNodes.length} replacement nodes to vector store`);
-      } else if (contentItems.length > 0 && originalNode) {
-        // 삽입 정보가 없는 경우 fallback: root에 추가
-        Logger.warn('No insertion info available, adding to root as fallback');
-        const { appendContentToRoot } = await import('services/document/markdown');
-        file.tree = appendContentToRoot(file.tree, contentItems);
       } else {
         Logger.warn(`No content items found in enhanced content: "${content}"`);
         return false;

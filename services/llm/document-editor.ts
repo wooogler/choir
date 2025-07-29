@@ -34,18 +34,17 @@ async function createContentForEmptySection(
     [
       {
         role: 'system',
-        content: `You are a documentation writer. Create content for an empty section using ONLY the provided knowledge.
+        content: `You are a documentation writer. Create content for an empty section using only the provided knowledge.
 
-CONSTRAINTS:
-- Use ONLY information from the knowledge - no external details, links, or assumptions
-- Write as one or multiple paragraphs or simple list items (no headings, subheadings, or complex structure)
-- Keep content concise and directly relevant to the section context
-- Never include user names or identifiers
-- Always preserve any URLs from the knowledge as they contain valuable reference information
-- If knowledge is insufficient for this section, return empty string
-- IMPORTANT: Use only single-level bullet points (- item). Never use nested lists or sub-bullets. If you need to include detailed information that would normally be nested, write it as plain text within the same bullet point or create separate bullet points.
+Rules:
+- Use only information from the knowledge (no external details)
+- Write as paragraphs or simple list items (no headings)
+- Keep content concise and relevant to the section
+- Preserve all URLs from the knowledge
+- Use single-level lists only (no nested bullets)
+- Return empty string if knowledge is insufficient
 
-TASK: Write appropriate content for this section using only the provided knowledge.`,
+Write appropriate content for this section.`,
       },
       {
         role: 'user',
@@ -79,24 +78,26 @@ async function enhanceExistingContent(
   context?: { fileName?: string; sectionName?: string; headingPath?: string },
 ) {
   const contextInfo = context?.headingPath || context?.sectionName || 'Unknown section';
+  
+  // 기존 markdown 내용을 분석해서 타입 감지
+  const contentType = markdown.trim().match(/^(\s*[-*+]|\s*\d+\.)\s/) ? 'list' : 'paragraph';
 
   const response = await createChatCompletion(
     [
       {
         role: 'system',
-        content: `You are a document editor. Enhance the existing content by integrating the provided knowledge.
+        content: `You are a document editor. Enhance existing content by adding the provided knowledge.
+
+Existing content type: ${contentType}
 
 Rules:
-- Use only the provided knowledge
-- Keep existing content exactly as provided, do not modify its structure or formatting
-- Add knowledge as new content that matches the existing format: if existing content contains list items, convert ALL knowledge content into additional list items; if paragraphs, add as paragraphs
-- You may add new paragraphs or list items if the knowledge contains independent content
-- Never include headings or section titles in your response
-- Remove any user names or identifiers
-- Always preserve any URLs from the knowledge as they contain valuable reference information
-- Only update existing content if it directly contradicts the knowledge
-- If knowledge adds nothing valuable, return the original unchanged
-- IMPORTANT: Use only single-level bullet points (- item). Never use nested lists or sub-bullets. If you need to include detailed information that would normally be nested, write it as plain text within the same bullet point or create separate bullet points.
+- Keep existing content unchanged
+- Add knowledge in matching format: ${contentType === 'list' ? 'as additional list items (- format)' : 'as additional paragraphs'}
+- Only modify existing content if it directly contradicts the knowledge
+- Preserve all URLs from the knowledge
+- Use single-level lists only (no nested bullets)
+- No headings or section titles
+- Return original if knowledge adds no value
 
 Wrap your response in <markdown> tags.`,
       },

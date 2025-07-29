@@ -237,6 +237,30 @@ export function getFileSelectionState(userId: string): FileSelectionState | null
 }
 
 /**
+ * Apply Changes 후 파일 선택 상태 초기화 (suggestion count 보존)
+ */
+export function resetFileSelectionAfterApply(
+  userId: string,
+  initialSearchResults: Document<DocumentMetadata>[]
+): void {
+  const currentState = getFileSelectionState(userId);
+  if (!currentState) return;
+
+  const state: FileSelectionState = {
+    isFileSelected: false,
+    selectedFile: undefined,
+    initialSearchResults,
+    fileSpecificResults: [],
+    appliedSuggestions: currentState.appliedSuggestions, // 기존 적용된 제안들 유지
+    maxSuggestions: currentState.maxSuggestions,
+    currentSuggestionCount: currentState.currentSuggestionCount, // suggestion count 보존
+  };
+  
+  fileSelectionStateStorage.set(userId, state);
+  console.info(`Reset file selection state after Apply Changes for user ${userId}: preserving count=${state.currentSuggestionCount}`);
+}
+
+/**
  * suggestion을 applied로 마킹
  */
 export function markSuggestionAsApplied(userId: string, nodeId: string): boolean {

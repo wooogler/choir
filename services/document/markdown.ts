@@ -1425,6 +1425,143 @@ function appendListToTree(
 }
 
 /**
+ * content items를 기존 노드의 속성을 상속받는 새 노드들로 변환
+ * @param originalNode 기존 노드 (속성 상속용)
+ * @param contentItems 변환할 content items
+ * @returns 생성된 새 노드들
+ */
+export function createReplacementNodes(
+  originalNode: ExtendedNode, 
+  contentItems: Array<{ type: 'listItem' | 'paragraph'; content: string }>
+): ExtendedNode[] {
+  const timestamp = Date.now();
+  const replacementNodes: ExtendedNode[] = [];
+
+  contentItems.forEach((item, index) => {
+    const newNodeId = `${originalNode.id}_replacement_${timestamp}_${index}`;
+    
+    let newNode: ExtendedNode;
+    
+    if (item.type === 'paragraph') {
+      newNode = {
+        type: 'paragraph',
+        children: [
+          {
+            type: 'text',
+            value: item.content,
+          },
+        ],
+        id: newNodeId,
+        fileName: originalNode.fileName,
+        parentId: originalNode.parentId,
+        sectionId: originalNode.sectionId,
+      } as Paragraph & ExtendedNode;
+    } else if (item.type === 'listItem') {
+      newNode = {
+        type: 'listItem',
+        children: [
+          {
+            type: 'paragraph',
+            children: [
+              {
+                type: 'text',
+                value: item.content,
+              },
+            ],
+          },
+        ],
+        id: newNodeId,
+        fileName: originalNode.fileName,
+        parentId: originalNode.parentId,
+        sectionId: originalNode.sectionId,
+        isListItem: true,
+        listItemIndex: index,
+      } as ListItem & ExtendedNode;
+    } else {
+      return; // 지원하지 않는 타입은 건너뛰기
+    }
+    
+    replacementNodes.push(newNode);
+    console.log(`[DEBUG] createReplacementNodes: Created ${item.type} node ${newNodeId}`);
+  });
+
+  console.log(`[DEBUG] createReplacementNodes: Created ${replacementNodes.length} replacement nodes`);
+  return replacementNodes;
+}
+
+/**
+ * 기존 노드를 새로운 노드들로 원자적으로 교체합니다 (tree 구조 안정성 확보)
+ * @param tree 문서 트리
+ * @param nodeId 교체할 기존 노드 ID
+ * @param replacementNodes 교체할 새 노드들
+ * @returns 업데이트된 문서 트리
+ */
+export function replaceNodeAtomically(
+  tree: DocumentTree, 
+  nodeId: string, 
+  replacementNodes: ExtendedNode[]
+): DocumentTree {
+  const nodeToReplace = tree.nodeMap.get(nodeId);
+  if (!nodeToReplace) {
+    console.warn(`Node ${nodeId} not found in tree for atomic replacement`);
+    return tree;
+  }
+
+  console.log(`[DEBUG] replaceNodeAtomically: Replacing node ${nodeId} with ${replacementNodes.length} new nodes`);
+
+  // 원본 트리의 깊은 복사본 생성
+  const newTree: DocumentTree = {
+    title: tree.title,
+    nodeMap: new Map(tree.nodeMap),
+    sectionMap: new Map(tree.sectionMap),
+    root: JSON.parse(JSON.stringify(tree.root)),
+  };
+
+  // 1. 새 노드들을 nodeMap에 추가
+  replacementNodes.forEach(node => {
+    if (node.id) {
+      newTree.nodeMap.set(node.id, node);
+    }
+  });
+
+  // 2. 기존 노드를 nodeMap에서 제거
+  newTree.nodeMap.delete(nodeId);
+
+  // 3. 부모 노드에서 기존 노드를 새 노드들로 교체
+  if (nodeToReplace.parentId) {
+    const parentNode = newTree.nodeMap.get(nodeToReplace.parentId);
+    if (parentNode && Array.isArray((parentNode as any).children)) {
+      const parentChildren = (parentNode as any).children;
+      const nodeIndex = parentChildren.findIndex((child: any) => child.id === nodeId);
+      
+      if (nodeIndex !== -1) {
+        // 기존 노드를 새 노드들로 교체 (splice 사용)
+        parentChildren.splice(nodeIndex, 1, ...replacementNodes);
+        console.log(`[DEBUG] replaceNodeAtomically: Replaced node ${nodeId} at index ${nodeIndex} in parent ${nodeToReplace.parentId}`);
+        
+        // 부모 노드 업데이트
+        newTree.nodeMap.set(nodeToReplace.parentId, parentNode);
+        updateNodeInRootTree(newTree, parentNode);
+      }
+    }
+  } else {
+    // 루트 레벨에서 교체
+    if (Array.isArray(newTree.root.children)) {
+      const rootChildren = newTree.root.children as any[];
+      const nodeIndex = rootChildren.findIndex((child: any) => child.id === nodeId);
+      
+      if (nodeIndex !== -1) {
+        rootChildren.splice(nodeIndex, 1, ...replacementNodes);
+        console.log(`[DEBUG] replaceNodeAtomically: Replaced node ${nodeId} at index ${nodeIndex} in root`);
+      }
+    }
+  }
+
+  console.log(`[DEBUG] replaceNodeAtomically: Successfully replaced node ${nodeId} with ${replacementNodes.length} replacement nodes`);
+  return newTree;
+}
+
+/**
  * 문서 트리에서 특정 노드를 제거합니다
  * @param tree 문서 트리
  * @param nodeId 제거할 노드 ID

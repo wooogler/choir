@@ -20,6 +20,7 @@ import {
   // 새로운 파일 선택 상태 관리 함수들
   initializeFileSelectionState,
   getFileSelectionState,
+  resetFileSelectionAfterApply,
   markSuggestionAsApplied,
   incrementSuggestionCount,
   isMaxSuggestionsReached,
@@ -910,6 +911,12 @@ export const suggestUpdatesCallback = async ({
             } catch (channelError) {
               console.error('Failed to post update to original channel:', channelError);
             }
+          }
+          // Apply Changes 성공 후 파일 선택 상태 초기화 (suggestion count 보존)
+          const currentFileState = getFileSelectionState(userId);
+          if (currentFileState?.isFileSelected) {
+            // 파일 선택 해제: initial search results로 전환 (suggestion count 보존)
+            resetFileSelectionAfterApply(userId, currentFileState.initialSearchResults);
           }
         } catch (error) {
           console.error('Failed to apply previous suggestion:', error);
