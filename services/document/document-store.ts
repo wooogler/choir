@@ -27,6 +27,17 @@ export interface DocumentUpdate {
   appendedNodeContent?: string; // APPEND 시 새로 생성된/추가될 노드 내용 (마크다운)
 }
 
+// 새로운 파일 선택 상태 관리를 위한 인터페이스
+export interface FileSelectionState {
+  isFileSelected: boolean;
+  selectedFile?: string;
+  initialSearchResults: Document<DocumentMetadata>[];
+  fileSpecificResults: Document<DocumentMetadata>[];
+  appliedSuggestions: Set<string>; // applied된 nodeId들
+  maxSuggestions: number; // 최대 suggestion 수 (기본 5개)
+  currentSuggestionCount: number; // 현재까지 보여준 suggestion 수
+}
+
 // documentUpdates를 저장하기 위한 Map (userId -> { documentUpdates, thread_ts, channel_id })
 const storedDocumentUpdates = new Map<
   string,
@@ -38,6 +49,9 @@ const selectedNodeIds = new Map<string, Set<string>>();
 
 // 검색 결과를 저장하기 위한 Map (userId -> Document<DocumentMetadata>[])
 const searchResultsStorage = new Map<string, Document<DocumentMetadata>[]>();
+
+// 파일 선택 상태를 저장하기 위한 Map (userId -> FileSelectionState)
+const fileSelectionStateStorage = new Map<string, FileSelectionState>();
 
 // 검색 결과 캐시 제거됨 - 항상 최신 벡터 스토어 상태를 반영하기 위해
 
@@ -187,4 +201,146 @@ export function updateSearchResultDocument(userId: string, updatedDocument: Docu
 export function updateSearchResultsForFile(userId: string, updatedFile: any): void {
   // 이 함수는 현재 벡터 스토어 업데이트로 충분하므로 빈 구현
   console.info(`Search results will be updated through vector store for file: ${updatedFile.name}`);
+}
+
+// ===== 새로운 파일 선택 상태 관리 함수들 =====
+
+/**
+ * 파일 선택 상태 초기화
+ */
+export function initializeFileSelectionState(
+  userId: string,
+  isFileSelected: boolean,
+  selectedFile?: string,
+  initialSearchResults: Document<DocumentMetadata>[] = [],
+  fileSpecificResults: Document<DocumentMetadata>[] = []
+): void {
+  const state: FileSelectionState = {
+    isFileSelected,
+    selectedFile,
+    initialSearchResults,
+    fileSpecificResults,
+    appliedSuggestions: new Set(),
+    maxSuggestions: 5,
+    currentSuggestionCount: 0,
+  };
+  
+  fileSelectionStateStorage.set(userId, state);
+  console.info(`Initialized file selection state for user ${userId}: fileSelected=${isFileSelected}, file=${selectedFile}`);
+}
+
+/**
+ * 파일 선택 상태 가져오기
+ */
+export function getFileSelectionState(userId: string): FileSelectionState | null {
+  return fileSelectionStateStorage.get(userId) || null;
+}
+
+/**
+ * suggestion을 applied로 마킹
+ */
+export function markSuggestionAsApplied(userId: string, nodeId: string): boolean {
+  const state = fileSelectionStateStorage.get(userId);
+  if (!state) {
+    console.warn(`No file selection state found for user ${userId}`);
+    return false;
+  }
+  
+  state.appliedSuggestions.add(nodeId);
+  fileSelectionStateStorage.set(userId, state);
+  console.info(`Marked suggestion ${nodeId} as applied for user ${userId}`);
+  return true;
+}
+
+/**
+ * 현재 suggestion 카운트 증가
+ */
+export function incrementSuggestionCount(userId: string): void {
+  const state = fileSelectionStateStorage.get(userId);
+  if (state) {
+    state.currentSuggestionCount++;
+    fileSelectionStateStorage.set(userId, state);
+  }
+}
+
+/**
+ * 최대 suggestion 수에 도달했는지 확인
+ */
+export function isMaxSuggestionsReached(userId: string): boolean {
+  const state = fileSelectionStateStorage.get(userId);
+  if (!state) return false;
+  
+  return state.currentSuggestionCount >= state.maxSuggestions;
+}
+
+/**
+ * 동적 순서 계산 - 새로운 로직의 핵심
+ * Apply된 suggestions에 따라 순서를 동적으로 재계산
+ */
+export function calculateDynamicOrder(userId: string): Document<DocumentMetadata>[] {
+  const state = fileSelectionStateStorage.get(userId);
+  if (!state) {
+    console.warn(`No file selection state found for user ${userId}`);
+    return [];
+  }
+  
+  // 파일이 선택되지 않은 경우: initial search 결과만 사용
+  if (!state.isFileSelected) {
+    return state.initialSearchResults;
+  }
+  
+  // 파일이 선택된 경우: 동적 순서 계산
+  const result: Document<DocumentMetadata>[] = [];
+  
+  // file-specific 결과에서 아직 applied되지 않은 것들을 순서대로 추가
+  for (const doc of state.fileSpecificResults) {
+    if (!state.appliedSuggestions.has(doc.metadata?.nodeId || '')) {
+      result.push(doc);
+    }
+  }
+  
+  // initial search 결과에서 중복 제거하고 추가
+  const fileSpecificNodeIds = new Set(state.fileSpecificResults.map(doc => doc.metadata?.nodeId));
+  const filteredInitialResults = state.initialSearchResults.filter(doc => 
+    !fileSpecificNodeIds.has(doc.metadata?.nodeId) && 
+    !state.appliedSuggestions.has(doc.metadata?.nodeId || '')
+  );
+  
+  result.push(...filteredInitialResults);
+  
+  console.info(`Calculated dynamic order for user ${userId}: ${result.length} documents, ${state.appliedSuggestions.size} applied`);
+  return result;
+}
+
+/**
+ * 다음 suggestion 가져오기
+ */
+export function getNextSuggestion(userId: string): Document<DocumentMetadata> | null {
+  const dynamicOrder = calculateDynamicOrder(userId);
+  const state = fileSelectionStateStorage.get(userId);
+  
+  if (!state || dynamicOrder.length === 0) {
+    return null;
+  }
+  
+  // 최대 suggestion 수 체크 (파일 선택된 경우만)
+  if (state.isFileSelected && state.currentSuggestionCount >= state.maxSuggestions) {
+    return null;
+  }
+  
+  // 현재 suggestion 카운트에 맞는 document 반환 (0-based index)
+  const currentIndex = state.currentSuggestionCount;
+  if (currentIndex >= dynamicOrder.length) {
+    return null;
+  }
+  
+  return dynamicOrder[currentIndex] || null;
+}
+
+/**
+ * 파일 선택 상태 정리
+ */
+export function clearFileSelectionState(userId: string): void {
+  fileSelectionStateStorage.delete(userId);
+  console.info(`Cleared file selection state for user ${userId}`);
 }

@@ -87,7 +87,7 @@ async function enhanceExistingContent(
 
 Rules:
 - Use only the provided knowledge
-- Keep the same content structure (paragraphs stay paragraphs, list items stay list items)  
+- Match the existing content format: if existing content contains list items, convert knowledge into additional list items; if paragraphs, keep as paragraphs
 - You may add new paragraphs or list items if the knowledge contains independent content
 - Never include headings or section titles in your response
 - Remove any user names or identifiers

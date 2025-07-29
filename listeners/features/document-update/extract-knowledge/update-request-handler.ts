@@ -211,25 +211,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       // Extract knowledge from messages with organizational context
       const extractionResult = await extractKnowledgeFromMessages(filteredMessages, organizationalContext, client);
 
-      // Update loading message with compact analysis summary
-      const statusUpdateData = createEnhancedMessage(
-        {
-          text: `✅ Analyzed ${filteredMessages.length} message${filteredMessages.length > 1 ? 's' : ''} to extract knowledge`,
-          blocks: [
-          ],
-        },
-        {
-          buttons: [{ text: 'View Messages', style: 'primary' }],
-        },
-      );
-
-      await client.chat.update({
-        channel: originalChannelId,
-        ts: loadingMessage.ts,
-        ...statusUpdateData,
-      });
-
-      // First: Send public message with the suggested update content
+      // Update loading message with the suggested update content (remove intermediate "Analyzed X messages" step)
       const blocks = [
         {
           type: 'rich_text',
@@ -265,19 +247,17 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         },
       ];
 
-      const publicMessage = await client.chat.postMessage({
+      // Update the loading message directly with the final content
+      await client.chat.update({
         channel: originalChannelId,
-        ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
+        ts: loadingMessage.ts,
         ...createEnhancedMessage({
           text: `Sure! I'll suggest the following update to ${managerText}.`,
           blocks: blocks,
         }),
       });
 
-      // Wait 1 second to ensure the public message appears first
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Second: Send ephemeral message with buttons for the requester only
+      // Send ephemeral message with buttons for the requester only
       await client.chat.postEphemeral({
         channel: originalChannelId,
         ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
@@ -353,7 +333,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           extractedKnowledge: extractionResult.cleanContent, // Store clean content for editing
           messages: filteredMessages,
           processedMessages: extractionResult.processedMessages, // Store processed messages for View Messages
-          publicMessageTs: publicMessage.ts, // Store public message timestamp for updates
+          publicMessageTs: loadingMessage.ts, // Store public message timestamp for updates
           lastEditedBy: userId, // Track who initially extracted the knowledge
           lastEditedAt: new Date().toISOString(), // Track when it was initially extracted
         },

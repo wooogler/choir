@@ -17,6 +17,15 @@ import {
   getStoredDocumentUpdates,
   storeDocumentUpdates,
   storeSearchResults,
+  // 새로운 파일 선택 상태 관리 함수들
+  initializeFileSelectionState,
+  getFileSelectionState,
+  markSuggestionAsApplied,
+  incrementSuggestionCount,
+  isMaxSuggestionsReached,
+  calculateDynamicOrder,
+  getNextSuggestion,
+  clearFileSelectionState,
 } from 'services/document/document-store';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { type ProcessedDocument, processDocument } from 'services/document/update-processor';
@@ -600,55 +609,52 @@ export const suggestUpdatesCallback = async ({
           `Performing file-based search for file: ${parsedValue.selectedFile}, isFileBasedReview: ${parsedValue.isFileBasedReview}, isDefaultFile: ${parsedValue.isDefaultFile}`,
         );
 
-        // Perform search based on file selection - 2 cases
+        // 새로운 로직: 모든 파일 선택 (Recommended 포함)은 동일하게 처리
+        const initialSearchResults = getSearchResults(userId) || [];
+        let fileSpecificResults: Document<DocumentMetadata>[] = [];
+        
         if (parsedValue.isDefaultFile) {
-          // Case 1: Default/recommended file - use cached initial search results
-          logger.info('Using cached initial search results (default/recommended file selected)');
-          searchResults = getSearchResults(userId) || [];
-          
-          logger.info(`=== USING CACHED SEARCH RESULTS ===`);
-          logger.info(`Found ${searchResults.length} cached documents:`);
-          searchResults.forEach((doc, index) => {
-            logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
-            logger.info(`    Content: "${doc.pageContent}"`);
-          });
-          logger.info(`=== END CACHED RESULTS ===`);
-        } else {
-          // Case 2: Specific file selected - perform file-specific search
-          logger.info(`Searching in specific file: ${parsedValue.selectedFile}`);
-          logger.info(`[SEARCH DEBUG] Query used for file-specific search: "${knowledgeContent}}"`);
-          const fileSpecificResults = await vectorStore.similaritySearchByFile(
+          // Case 1: Default/recommended file selected
+          logger.info('Default/recommended file selected - performing file-specific search');
+          logger.info(`[SEARCH DEBUG] Query used for default file search: "${knowledgeContent}"`);
+          fileSpecificResults = await vectorStore.similaritySearchByFile(
             knowledgeContent,
             parsedValue.selectedFile,
             5, // 파일별 검색에서 최대 5개 결과
           );
-
-          // Log file-specific search results
-          logger.info(`=== FILE-SPECIFIC SEARCH RESULTS (${parsedValue.selectedFile}) ===`);
-          logger.info(`Found ${fileSpecificResults.length} documents:`);
-          fileSpecificResults.forEach((doc, index) => {
-            logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
-            logger.info(`    Content: "${doc.pageContent}"`);
-          });
-          logger.info(`=== END FILE-SPECIFIC RESULTS ===`);
-
-          // 심플한 순서 로직: file-specific 결과를 맨 앞에, initial search 결과에서 중복 제거 후 뒤에
-          const initialSearchResults = getSearchResults(userId) || [];
-          const fileSpecificNodeIds = new Set(fileSpecificResults.map(doc => doc.metadata?.nodeId));
-          
-          // Initial search에서 file-specific과 중복되는 것 제거
-          const filteredInitialResults = initialSearchResults.filter(doc => 
-            !fileSpecificNodeIds.has(doc.metadata?.nodeId)
+        } else {
+          // Case 2: Specific file selected  
+          logger.info(`Searching in specific file: ${parsedValue.selectedFile}`);
+          logger.info(`[SEARCH DEBUG] Query used for file-specific search: "${knowledgeContent}"`);
+          fileSpecificResults = await vectorStore.similaritySearchByFile(
+            knowledgeContent,
+            parsedValue.selectedFile,
+            5, // 파일별 검색에서 최대 5개 결과
           );
-          
-          // 최종 순서: [file-specific, ...filtered_initial]
-          searchResults = [...fileSpecificResults, ...filteredInitialResults];
-          
-          // Combined 결과를 저장하여 이후 suggestion들이 올바른 순서를 사용하도록 함
-          storeSearchResults(userId, searchResults);
-          
-          logger.info(`Combined search results: ${fileSpecificResults.length} file-specific + ${filteredInitialResults.length} initial = ${searchResults.length} total`);
         }
+
+        // Log file-specific search results
+        logger.info(`=== FILE-SPECIFIC SEARCH RESULTS (${parsedValue.selectedFile}) ===`);
+        logger.info(`Found ${fileSpecificResults.length} documents:`);
+        fileSpecificResults.forEach((doc, index) => {
+          logger.info(`[${index + 1}] File: ${doc.metadata?.fileName}, NodeId: ${doc.metadata?.nodeId}`);
+          logger.info(`    Content: "${doc.pageContent}"`);
+        });
+        logger.info(`=== END FILE-SPECIFIC RESULTS ===`);
+
+        // 새로운 로직: 파일 선택 상태 초기화 (파일 선택됨)
+        initializeFileSelectionState(
+          userId,
+          true, // isFileSelected = true
+          parsedValue.selectedFile, // selectedFile
+          initialSearchResults, // initialSearchResults
+          fileSpecificResults // fileSpecificResults
+        );
+        
+        // 동적 순서 계산하여 첫 번째 suggestion 가져오기
+        searchResults = calculateDynamicOrder(userId);
+        
+        logger.info(`Dynamic order calculated: ${searchResults.length} total documents available`);
 
         // Check if we found any results
         if (searchResults.length === 0) {
@@ -675,7 +681,8 @@ export const suggestUpdatesCallback = async ({
         logger.info(
           `Using cached search results, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}`,
         );
-        searchResults = getSearchResults(userId);
+        // 새로운 로직: 동적 순서 계산 (파일 미선택인 경우 initial search 결과와 동일)
+        searchResults = calculateDynamicOrder(userId);
         isFirstSuggestion = false;
       }
 
@@ -683,16 +690,20 @@ export const suggestUpdatesCallback = async ({
       if (parsedValue.action === 'skip') {
         logger.info(`User skipped suggestion ${currentIndex} for nodeId: ${parsedValue.currentNodeId}`);
 
+        // 새로운 로직: Skip 시에는 카운트 증가하지 않음 (다음 suggestion에서 증가함)
+        
         // Use response_url to replace the current message with skip confirmation
         const responseUrl = (body as any).response_url;
         if (responseUrl) {
           try {
-            // Get current document info for better skip message using nodeId
-            const currentDoc = searchResults.find(doc => doc.metadata?.nodeId === parsedValue.currentNodeId);
-            const currentDocIndex = searchResults.findIndex(doc => doc.metadata?.nodeId === parsedValue.currentNodeId);
-            const suggestionNumber = currentDocIndex + 1;
-            const fileName = currentDoc?.metadata?.fileName || 'Unknown file';
-            logger.info(`Skip message debug: found doc at index ${currentDocIndex}, suggestionNumber=${suggestionNumber}, fileName=${fileName}`);
+            // 새로운 로직: 현재 suggestion 번호 계산 (skip할 때는 현재 카운트 그대로 사용)
+            const currentFileState = getFileSelectionState(userId);
+            const suggestionNumber = currentFileState?.currentSuggestionCount || 1;
+            const fileName = parsedValue.currentNodeId ? 
+              searchResults.find(doc => doc.metadata?.nodeId === parsedValue.currentNodeId)?.metadata?.fileName || 'Unknown file'
+              : 'Unknown file';
+            
+            logger.info(`Skip message: suggestionNumber=${suggestionNumber}, fileName=${fileName}, nodeId=${parsedValue.currentNodeId}`);
 
             const response = await fetch(responseUrl, {
               method: 'POST',
@@ -713,7 +724,7 @@ export const suggestUpdatesCallback = async ({
             });
 
             if (response.ok) {
-              logger.info(`Successfully used response_url to show skip confirmation for suggestion ${currentIndex}`);
+              logger.info(`Successfully used response_url to show skip confirmation for suggestion ${suggestionNumber}`);
             } else {
               logger.warn(
                 `Failed to use response_url for skip confirmation: ${response.status} ${response.statusText}`,
@@ -726,11 +737,48 @@ export const suggestUpdatesCallback = async ({
         } else {
           logger.warn('No response_url available for skip confirmation');
         }
+        
+        // 새로운 로직: Skip 후 다음 suggestion으로 자동 진행
+        // 다음 suggestion을 위해 index를 증가시키고 재귀 호출
+        const nextButtonValue = {
+          index: currentIndex + 1,
+          sessionId: sessionId,
+          isFileBasedReview: parsedValue.isFileBasedReview,
+          selectedFile: parsedValue.selectedFile,
+          isDefaultFile: parsedValue.isDefaultFile,
+        };
+        
+        // 다음 suggestion 처리를 위해 현재 함수를 재귀 호출
+        setTimeout(async () => {
+          try {
+            await suggestUpdatesCallback({
+              ack: async () => {},
+              body: {
+                ...body,
+                actions: [
+                  {
+                    value: JSON.stringify(nextButtonValue),
+                  },
+                ],
+              },
+              client,
+              logger,
+            } as any);
+          } catch (nextError) {
+            logger.error('Error processing next suggestion after skip:', nextError);
+          }
+        }, 500); // 500ms 딜레이로 안정성 확보
+        
+        return; // Skip 처리 완료
       }
 
       // shouldSwitchToAllFiles 로직 제거됨
 
       if (parsedValue.action === 'keep' && parsedValue.currentNodeId) {
+        // 새로운 로직: suggestion을 applied로 마킹
+        markSuggestionAsApplied(userId, parsedValue.currentNodeId);
+        logger.info(`Marked suggestion ${parsedValue.currentNodeId} as applied for user ${userId}`);
+        
         const storedUpdates = getStoredDocumentUpdates(userId);
         // nodeId로 찾기 (index는 file-specific search 후 달라질 수 있음)
         const currentUpdate = storedUpdates.find((update) => update.nodeId === parsedValue.currentNodeId);
@@ -889,10 +937,13 @@ export const suggestUpdatesCallback = async ({
     }
 
     // Show appropriate loading message based on the stage
-    const loadingText =
+    const loadingFileState = getFileSelectionState(userId);
+    const loadingText = 
       currentIndex === 0 && !isFileBasedReview
-        ? '🔍 Finding relevant documents to update...'
-        : '📝 Generating update suggestions...';
+        ? '🔍 Finding relevant documents across all files...'
+        : loadingFileState?.isFileSelected 
+          ? `📝 Generating suggestions for ${loadingFileState.selectedFile}...`
+          : '📝 Generating update suggestions...';
 
     const progressMessage = await client.chat.postMessage({
       channel: currentDmChannelId,
@@ -920,6 +971,15 @@ export const suggestUpdatesCallback = async ({
 
       // Store results for later use (for file-based review)
       storeSearchResults(userId, searchResults);
+      
+      // 새로운 로직: 파일 선택 상태 초기화 (파일 미선택)
+      initializeFileSelectionState(
+        userId,
+        false, // isFileSelected = false
+        undefined, // selectedFile = undefined
+        searchResults, // initialSearchResults
+        [] // fileSpecificResults = empty
+      );
 
       // Log search results details
       logger.info(`=== SIMILARITY SEARCH RESULTS (INITIAL SEARCH) ===`);
@@ -1120,7 +1180,16 @@ export const suggestUpdatesCallback = async ({
     }
 
     logger.info(`Debug: currentIndex=${currentIndex}, searchResults.length=${searchResults.length}`);
-    if (currentIndex >= searchResults.length) {
+    
+    // 새로운 로직: completion 체크
+    const fileSelectionState = getFileSelectionState(userId);
+    const shouldComplete = fileSelectionState?.isFileSelected 
+      ? isMaxSuggestionsReached(userId)
+      : currentIndex >= searchResults.length;
+    
+    logger.info(`Completion check: fileSelected=${fileSelectionState?.isFileSelected}, maxReached=${fileSelectionState?.isFileSelected ? isMaxSuggestionsReached(userId) : 'N/A'}, shouldComplete=${shouldComplete}`);
+    
+    if (shouldComplete) {
       // Try to delete the progress message first, then send completion message
       const progressTimestamp = getProgressMessageTimestamp(userId);
       if (progressTimestamp && currentDmChannelId) {
@@ -1313,10 +1382,29 @@ export const suggestUpdatesCallback = async ({
         });
       }
 
+      // 새로운 로직: completion 시 상태 정리
+      clearFileSelectionState(userId);
+      logger.info(`Cleared file selection state for user ${userId} after completion`);
+
       return;
     }
 
-    const currentDoc = searchResults[currentIndex];
+    // 새로운 로직: 다음 suggestion 가져오기 및 카운트 증가
+    const nextSuggestion = getNextSuggestion(userId);
+    if (!nextSuggestion) {
+      logger.warn(`No next suggestion available for user ${userId}`);
+      // 다시 completion 체크 후 completion 처리
+      return;
+    }
+    
+    const currentDoc = nextSuggestion;
+    
+    // suggestion 번호 계산 (카운트 증가 전에)
+    const currentFileState = getFileSelectionState(userId);
+    const suggestionDisplayNumber = (currentFileState?.currentSuggestionCount || 0) + 1;
+    
+    // suggestion 카운트 증가 (표시 후)
+    incrementSuggestionCount(userId);
     const processedDoc: ProcessedDocument | null = await processDocument(
       currentDoc,
       knowledgeContent,
@@ -1380,7 +1468,8 @@ export const suggestUpdatesCallback = async ({
       // Original discussion link is handled by ui-builder.ts to avoid duplication
     }
 
-    const suggestionNumber = currentIndex + 1;
+    // 새로운 로직: 미리 계산된 suggestion 번호 사용
+    const suggestionNumber = suggestionDisplayNumber;
     const sectionInfo = formatSectionPathWithLinks({
       headingPath: processedDoc.headingPath,
       sectionName: processedDoc.sectionName,
@@ -1685,6 +1774,10 @@ Section: ${sectionInfo}`;
         console.error('DM 전송 오류:', dmError);
       }
     }
+    
+    // 새로운 로직: 에러 발생 시에도 상태 정리
+    clearFileSelectionState(userId);
+    logger.info(`Cleared file selection state for user ${userId} after error`);
   }
 };
 
