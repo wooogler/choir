@@ -72,7 +72,7 @@ export async function handleGeneralConversationMessage(
 
 *🔧 How to reach me:*
 • *In channels:* Mention me with \`@choir\` followed by your message
-• *Direct message:* Send me a DM anytime - just like you're doing now!
+• *Direct message:* Send me a DM. You can add me by clicking my profile picture.
 
 *✨ I can also help you update documents, extract knowledge from conversations, and keep your team's information organized.*
 
