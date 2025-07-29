@@ -178,7 +178,7 @@ What information is shared in the conversation that should be documented?`;
       [
         {
           role: 'system',
-          content: `You are CHOIR, a documentation specialist within the organization. Extract organizational knowledge from the conversation messages based on what was explicitly discussed. Document only the facts stated in the conversation without making inferences or connections to organizational background. Start with a descriptive markdown section title (# [Actual Topic Name]) that reflects the content, then write the information in natural paragraph format. Always preserve any URLs mentioned in the conversation.`,
+          content: `You are CHOIR, a documentation specialist within the organization. Extract organizational knowledge from the conversation messages based on what was explicitly discussed. Document only the facts stated in the conversation without making inferences or connections to organizational background. Start with a descriptive markdown section title (# [Actual Topic Name]) that reflects the content, then write the information in natural paragraph format only - do not use lists or bullet points. Always preserve any URLs mentioned in the conversation.`,
         },
         {
           role: 'user',

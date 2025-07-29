@@ -82,7 +82,7 @@ const applySelectedToGithubAction = async ({
       throw new Error('채널 ID를 찾을 수 없습니다');
     }
 
-    // 저장된 모든 document updates 가져오기 (더 이상 selectedNodeIds 필요 없음)
+    // 저장된 모든 document updates 가져오기
     const documentUpdates = getStoredDocumentUpdates(userId);
 
     if (!documentUpdates || documentUpdates.length === 0) {
@@ -95,6 +95,18 @@ const applySelectedToGithubAction = async ({
     }
 
     console.log(`Found ${documentUpdates.length} document updates for user ${userId}`);
+
+    // 특정 nodeId가 제공된 경우, 해당하는 단일 업데이트만 필터링
+    let selectedUpdates = documentUpdates;
+    if (value.nodeId) {
+      const specificUpdate = documentUpdates.find(update => update.nodeId === value.nodeId);
+      if (specificUpdate) {
+        selectedUpdates = [specificUpdate];
+        console.log(`Filtered to single update for nodeId: ${value.nodeId}`);
+      } else {
+        console.warn(`No document update found for nodeId: ${value.nodeId}, using all updates as fallback`);
+      }
+    }
 
     // DM 채널 열기
     dmResult = await client.conversations.open({
@@ -120,9 +132,6 @@ const applySelectedToGithubAction = async ({
         },
       ],
     });
-
-    // 모든 업데이트 사용 (선택된 노드 필터링 제거)
-    const selectedUpdates = documentUpdates;
 
     // GitHub에 문서 업데이트 적용
     const results = await applyDocumentUpdatesToGithub({

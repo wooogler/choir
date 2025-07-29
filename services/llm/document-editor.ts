@@ -43,6 +43,7 @@ CONSTRAINTS:
 - Never include user names or identifiers
 - Always preserve any URLs from the knowledge as they contain valuable reference information
 - If knowledge is insufficient for this section, return empty string
+- IMPORTANT: Use only single-level bullet points (- item). Never use nested lists or sub-bullets. If you need to include detailed information that would normally be nested, write it as plain text within the same bullet point or create separate bullet points.
 
 TASK: Write appropriate content for this section using only the provided knowledge.`,
       },
@@ -95,6 +96,7 @@ Rules:
 - Always preserve any URLs from the knowledge as they contain valuable reference information
 - Only update existing content if it directly contradicts the knowledge
 - If knowledge adds nothing valuable, return the original unchanged
+- IMPORTANT: Use only single-level bullet points (- item). Never use nested lists or sub-bullets. If you need to include detailed information that would normally be nested, write it as plain text within the same bullet point or create separate bullet points.
 
 Wrap your response in <markdown> tags.`,
       },
