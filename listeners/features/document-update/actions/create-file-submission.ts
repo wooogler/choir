@@ -306,9 +306,20 @@ export const createFileSubmissionCallback = async ({
       true,
       {
         sessionId,
+        createFileSessionId,
         fileName,
         filePath,
+        fileContent,
         fileContentLength: fileContent.length,
+        knowledgeSourceChannelId,
+        knowledgeSourceThreadTs,
+        owner,
+        repo,
+        githubPath: path,
+        branch: branch || 'main',
+        fullGithubUrl: `https://github.com/${owner}/${repo}/blob/main/${filePath}`,
+        fileIndexed: true, // Since we successfully indexed it
+        sessionCompleted: !!sessionId,
       },
       client,
     );

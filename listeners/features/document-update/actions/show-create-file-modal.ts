@@ -115,6 +115,13 @@ export const showCreateFileModalCallback = async ({
       true,
       {
         sessionId,
+        createFileSessionId,
+        defaultFileName: defaultFileName || '',
+        defaultInitialContent: defaultInitialContent || '',
+        defaultFileNameLength: (defaultFileName || '').length,
+        defaultInitialContentLength: (defaultInitialContent || '').length,
+        hasDefaultFileName: !!defaultFileName,
+        hasDefaultInitialContent: !!defaultInitialContent,
       },
       client,
     );

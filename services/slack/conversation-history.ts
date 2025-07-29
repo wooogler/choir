@@ -27,6 +27,7 @@ export interface SlackMessage {
   [key: string]: any;
 }
 
+
 // Process message text to handle user and bot mentions
 export async function processMessageText(text: string, client: WebClient): Promise<string> {
   // Regular expression to find all user/bot mentions like <@U089Q1VAB3J>

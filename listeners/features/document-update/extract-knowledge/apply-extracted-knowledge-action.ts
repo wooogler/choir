@@ -262,14 +262,33 @@ async function updateOtherManagerMessages(
     .filter(([managerId]) => managerId !== currentManagerId)
     .map(async ([managerId, messageInfo]: [string, any]) => {
       try {
-        const blocks: (KnownBlock | Block)[] = [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `Hi there! I'm CHOIR, your friendly documentation assistant. 👋\n\n*${sessionData.userName || 'A team member'}* has a suggestion for updating our documents, and I'm helping to pass it along for review.`,
-            },
+        // Create intro block with user profile image
+        const introBlock: any = {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `Hi! I'm CHOIR, your documentation assistant.\n \n \n*${sessionData.userName || 'A team member'}* has a document update suggestion:`,
           },
+        };
+
+        // Add user profile image if available
+        if (sessionData.userId) {
+          try {
+            const userInfo = await client.users.info({ user: sessionData.userId });
+            if (userInfo.user?.profile?.image_192) {
+              introBlock.accessory = {
+                type: 'image',
+                image_url: userInfo.user.profile.image_192,
+                alt_text: sessionData.userName || 'User profile',
+              };
+            }
+          } catch (error) {
+            console.error('Error fetching user profile image:', error);
+          }
+        }
+
+        const blocks: (KnownBlock | Block)[] = [
+          introBlock,
           {
             type: 'header',
             text: {
@@ -289,7 +308,7 @@ async function updateOtherManagerMessages(
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*Suggestion:*\n\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
+              text: `\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
             },
           },
         ];

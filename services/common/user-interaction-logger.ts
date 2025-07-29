@@ -97,12 +97,12 @@ class UserInteractionLogger {
 
       const logEntry: UserInteractionLog = {
         timestamp: new Date().toISOString(),
+        interactionType,
+        action,
         userId,
         userName: names?.userName,
         workspaceId,
         workspaceName: names?.workspaceName,
-        interactionType,
-        action,
         channelId,
         channelName: names?.channelName,
         channelType,

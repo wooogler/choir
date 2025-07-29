@@ -175,6 +175,9 @@ export const startFileBasedReviewAction = async ({
       {
         sessionId,
         selectedFile,
+        defaultFilePath,
+        isUsingDefaultFile,
+        fileSelectionMethod: isUsingDefaultFile ? 'automatic' : 'manual',
         knowledgeContentLength: knowledgeContent?.length || 0,
         originalChannelId: knowledgeSourceChannelId,
         originalThreadTs: knowledgeSourceThreadTs,

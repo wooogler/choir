@@ -281,6 +281,7 @@ const applySelectedToGithubAction = async ({
 
     // 로그: GitHub 업데이트 성공
     const workspaceId = await getWorkspaceId(client);
+    
     await logButtonClick(
       userId,
       workspaceId,
@@ -326,6 +327,7 @@ const applySelectedToGithubAction = async ({
           userId: parsedValue?.userId || body.user.id,
           originalChannelId: parsedValue?.originalChannelId,
           originalThreadTs: parsedValue?.originalThreadTs,
+          fileName: parsedValue?.fileName,
         },
         client,
       );

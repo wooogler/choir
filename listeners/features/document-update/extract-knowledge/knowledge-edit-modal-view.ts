@@ -179,7 +179,6 @@ export async function handleKnowledgeEditModal({
         sessionId,
         originalChannelId: sessionData.originalChannelId,
         originalThreadTs: sessionData.originalThreadTs,
-        originalKnowledge: sessionData.extractedKnowledge || '',
         editedKnowledge: editedKnowledge.trim(),
         editedKnowledgeLength: editedKnowledge.trim().length,
         publicMessageUpdated: !!sessionData.publicMessageTs,

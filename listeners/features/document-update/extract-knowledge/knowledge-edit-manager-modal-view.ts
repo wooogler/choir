@@ -177,16 +177,35 @@ export async function handleKnowledgeEditManagerModal({
         });
 
         // Step 2: Create new message with updated content (complete message with greeting and buttons)
-        const choirGreeting = `Hi there! I'm CHOIR, your friendly documentation assistant. 👋\n\n*${sessionData.userName || 'Unknown User'}* has a suggestion for updating our documents, and I'm helping to pass it along for review.`;
+        const choirGreeting = `Hi! I'm CHOIR, your documentation assistant.\n \n \n*${sessionData.userName || 'Unknown User'}* has a document update suggestion:`;
+
+        // Create intro block with user profile image
+        const introBlock: any = {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: choirGreeting,
+          },
+        };
+
+        // Add user profile image if available
+        if (sessionData.userId) {
+          try {
+            const userInfo = await client.users.info({ user: sessionData.userId });
+            if (userInfo.user?.profile?.image_192) {
+              introBlock.accessory = {
+                type: 'image',
+                image_url: userInfo.user.profile.image_192,
+                alt_text: sessionData.userName || 'User profile',
+              };
+            }
+          } catch (error) {
+            console.error('Error fetching user profile image:', error);
+          }
+        }
 
         const completeBlocks: any[] = [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: choirGreeting,
-            },
-          },
+          introBlock,
           {
             type: 'header',
             text: {
@@ -206,7 +225,7 @@ export async function handleKnowledgeEditManagerModal({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*Suggestion:*\n\`\`\`${editedKnowledge.trim()}\`\`\``,
+              text: `\`\`\`${editedKnowledge.trim()}\`\`\``,
             },
           },
         ];
@@ -464,6 +483,9 @@ export async function handleKnowledgeEditManagerModal({
         originalUserId: sessionData.userId,
         originalChannelId: sessionData.originalChannelId,
         originalThreadTs: sessionData.originalThreadTs,
+        originalKnowledge: sessionData.extractedKnowledge || '',
+        editedKnowledge: editedKnowledge.trim(),
+        originalKnowledgeLength: (sessionData.extractedKnowledge || '').length,
         editedKnowledgeLength: editedKnowledge.trim().length,
         messageUpdated: !!(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),
         fallbackMessageSent: !(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),

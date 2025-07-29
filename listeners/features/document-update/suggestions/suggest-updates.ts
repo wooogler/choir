@@ -290,34 +290,38 @@ export const suggestUpdatesCallback = async ({
             try {
               if (body.response_url) {
                 // Reconstruct original message but with disabled buttons
+                // Create intro block with user profile image
+                const introBlock: any = {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `Hi! I'm CHOIR, your documentation assistant.\n*${sessionData.userName || 'A team member'}* has a document update suggestion:`,
+                  },
+                };
+
+                // Add user profile image if available
+                if (sessionData.userId) {
+                  try {
+                    const userInfo = await client.users.info({ user: sessionData.userId });
+                    if (userInfo.user?.profile?.image_192) {
+                      introBlock.accessory = {
+                        type: 'image',
+                        image_url: userInfo.user.profile.image_192,
+                        alt_text: sessionData.userName || 'User profile',
+                      };
+                    }
+                  } catch (error) {
+                    console.error('Error fetching user profile image:', error);
+                  }
+                }
+
                 const originalBlocks = [
+                  introBlock,
                   {
                     type: 'section',
                     text: {
                       type: 'mrkdwn',
-                      text: `Hi there! I'm CHOIR, your friendly documentation assistant. 👋\n\n*${sessionData.userName || 'A team member'}* has a suggestion for updating our documents, and I'm helping to pass it along for review.`,
-                    },
-                  },
-                  {
-                    type: 'header',
-                    text: {
-                      type: 'plain_text',
-                      text: '📝 Document Update Suggestion',
-                      emoji: true,
-                    },
-                  },
-                  {
-                    type: 'section',
-                    text: {
-                      type: 'mrkdwn',
-                      text: `*From:* *${sessionData.userName || 'Unknown User'}*`,
-                    },
-                  },
-                  {
-                    type: 'section',
-                    text: {
-                      type: 'mrkdwn',
-                      text: `*Suggestion:*\n\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
+                      text: `\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
                     },
                   },
                 ];
@@ -693,17 +697,43 @@ export const suggestUpdatesCallback = async ({
 
         // 새로운 로직: Skip 시에는 카운트 증가하지 않음 (다음 suggestion에서 증가함)
         
+        const currentFileState = getFileSelectionState(userId);
+        const suggestionNumber = currentFileState?.currentSuggestionCount || 1;
+        const fileName = parsedValue.currentNodeId ? 
+          searchResults.find(doc => doc.metadata?.nodeId === parsedValue.currentNodeId)?.metadata?.fileName || 'Unknown file'
+          : 'Unknown file';
+        
+        // 로그: Skip 버튼 클릭
+        try {
+          const workspaceId = await getWorkspaceId(client);
+          const { logButtonClick } = await import('services/common/user-interaction-logger');
+          await logButtonClick(
+            userId,
+            workspaceId,
+            currentDmChannelId || 'dm',
+            'dm',
+            'skip_suggestion',
+            Date.now() - startTime,
+            true,
+            {
+              sessionId,
+              currentIndex,
+              suggestionNumber,
+              nodeId: parsedValue.currentNodeId,
+              fileName,
+              originalChannelId: knowledgeSourceChannelId,
+              originalThreadTs: knowledgeSourceThreadTs,
+            },
+            client,
+          );
+        } catch (logError) {
+          logger.error('Failed to log skip suggestion:', logError);
+        }
+        
         // Use response_url to replace the current message with skip confirmation
         const responseUrl = (body as any).response_url;
         if (responseUrl) {
           try {
-            // 새로운 로직: 현재 suggestion 번호 계산 (skip할 때는 현재 카운트 그대로 사용)
-            const currentFileState = getFileSelectionState(userId);
-            const suggestionNumber = currentFileState?.currentSuggestionCount || 1;
-            const fileName = parsedValue.currentNodeId ? 
-              searchResults.find(doc => doc.metadata?.nodeId === parsedValue.currentNodeId)?.metadata?.fileName || 'Unknown file'
-              : 'Unknown file';
-            
             logger.info(`Skip message: suggestionNumber=${suggestionNumber}, fileName=${fileName}, nodeId=${parsedValue.currentNodeId}`);
 
             const response = await fetch(responseUrl, {
@@ -1714,29 +1744,63 @@ Section: ${sectionInfo}`;
 
     // 로그: 문서 업데이트 제안 성공
     const workspaceId = await getWorkspaceId(client);
-    await logButtonClick(
-      userId,
-      workspaceId,
-      currentDmChannelId || 'dm',
-      'dm',
-      'suggest_updates',
-      Date.now() - startTime,
-      true,
-      {
-        sessionId,
-        currentIndex,
-        isFirstSuggestion,
-        suggestionType: processedDoc.suggestionType,
-        fileName: processedDoc.fileName,
-        hasChanges: processedDoc.hasChanges,
-        searchResultsCount: searchResults.length,
-        knowledgeContent: knowledgeContent || '',
-        knowledgeContentLength: knowledgeContent?.length || 0,
-        originalChannelId: knowledgeSourceChannelId,
-        originalThreadTs: knowledgeSourceThreadTs,
-      },
-      client,
-    );
+    
+    // 매니저가 처음 문서 업데이트 프로세스를 시작하는 경우와 실제 제안을 표시하는 경우 구분
+    const isInitialProcessStart = currentIndex === 0 && isFirstSuggestion && 
+      !parsedValue?.isFileBasedReview && !parsedValue?.selectedFile;
+      
+    if (isInitialProcessStart) {
+      // 매니저가 처음 "🚀 Start Update Process" 버튼을 클릭한 경우
+      await logButtonClick(
+        userId,
+        workspaceId,
+        currentDmChannelId || 'dm',
+        'dm',
+        'start_document_update_process',
+        Date.now() - startTime,
+        true,
+        {
+          sessionId,
+          knowledgeContent: knowledgeContent || '',
+          knowledgeContentLength: knowledgeContent?.length || 0,
+          originalChannelId: knowledgeSourceChannelId,
+          originalThreadTs: knowledgeSourceThreadTs,
+          searchResultsCount: searchResults.length,
+        },
+        client,
+      );
+    } else {
+      // CHOIR가 실제 제안을 표시하는 경우
+      const { logMessageProcessing } = await import('services/common/user-interaction-logger');
+      await logMessageProcessing(
+        userId,
+        workspaceId,
+        currentDmChannelId || 'dm',
+        'dm',
+        false, // isThread
+        Date.now() - startTime,
+        true,
+        `Suggestion ${currentIndex + 1}: ${processedDoc.fileName} - ${processedDoc.suggestionType}`,
+        'suggest_updates',
+        {
+          sessionId,
+          currentIndex,
+          suggestionType: processedDoc.suggestionType,
+          fileName: processedDoc.fileName,
+          hasChanges: processedDoc.hasChanges,
+          originalContent: processedDoc.nodeContent,
+          suggestedContent: processedDoc.updatedNodeContent,
+          originalContentLength: processedDoc.nodeContent?.length || 0,
+          suggestedContentLength: processedDoc.updatedNodeContent?.length || 0,
+          knowledgeContent: knowledgeContent || '',
+          knowledgeContentLength: knowledgeContent?.length || 0,
+          originalChannelId: knowledgeSourceChannelId,
+          originalThreadTs: knowledgeSourceThreadTs,
+          searchResultsCount: searchResults.length,
+        },
+        client,
+      );
+    }
 
     logger.info(`Document update suggestion ${currentIndex + 1} sent to user ${userId} for session ${sessionId}`);
   } catch (error) {
@@ -1747,26 +1811,50 @@ Section: ${sectionInfo}`;
       const workspaceId = await getWorkspaceId(client);
       const value = body.actions?.[0]?.value;
       const parsedValue = value ? JSON.parse(value) : {};
+      
+      // 매니저가 처음 시작하는 경우와 실제 제안 표시 실패 구분
+      const isInitialProcessStart = (parsedValue?.index || 0) === 0 && 
+        !parsedValue?.isFileBasedReview && !parsedValue?.selectedFile;
 
-      await logButtonClick(
-        userId,
-        workspaceId,
-        currentDmChannelId || 'dm',
-        'dm',
-        'suggest_updates',
-        Date.now() - startTime,
-        false,
-        {
-          error: error instanceof Error ? error.message : 'Unknown error',
-          errorStack: error instanceof Error ? error.stack : undefined,
-          sessionId: parsedValue?.sessionId,
-          currentIndex: parsedValue?.index || 0,
-          isFirstSuggestion: parsedValue?.isFirstSuggestion || false,
-        },
-        client,
-      );
+      if (isInitialProcessStart) {
+        await logButtonClick(
+          userId,
+          workspaceId,
+          currentDmChannelId || 'dm',
+          'dm',
+          'start_document_update_process',
+          Date.now() - startTime,
+          false,
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+            sessionId: parsedValue?.sessionId,
+          },
+          client,
+        );
+      } else {
+        const { logMessageProcessing } = await import('services/common/user-interaction-logger');
+        await logMessageProcessing(
+          userId,
+          workspaceId,
+          currentDmChannelId || 'dm',
+          'dm',
+          false,
+          Date.now() - startTime,
+          false,
+          'Failed to generate suggestion',
+          'suggest_updates',
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+            sessionId: parsedValue?.sessionId,
+            currentIndex: parsedValue?.index || 0,
+          },
+          client,
+        );
+      }
     } catch (logError) {
-      logger.error('Failed to log button click error:', logError);
+      logger.error('Failed to log error:', logError);
     }
 
     if (currentDmChannelId) {
@@ -1881,29 +1969,14 @@ async function updateOtherManagerMessages(
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `Hi there! I'm CHOIR, your friendly documentation assistant. 👋\n\n*${sessionData.userName || 'A team member'}* has a suggestion for updating our documents, and I'm helping to pass it along for review.`,
-            },
-          },
-          {
-            type: 'header',
-            text: {
-              type: 'plain_text',
-              text: '📝 Document Update Suggestion',
-              emoji: true,
+              text: `Hi! I'm CHOIR, your documentation assistant.\n*${sessionData.userName || 'A team member'}* has a document update suggestion:`,
             },
           },
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*From:* *${sessionData.userName || 'Unknown User'}*`,
-            },
-          },
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `*Suggestion:*\n\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
+              text: `\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
             },
           },
         ];

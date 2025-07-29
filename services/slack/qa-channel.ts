@@ -83,7 +83,7 @@ export async function getChannelName(channelId: string, client: WebClient): Prom
 /**
  * Q&A 채널용 메시지를 생성합니다
  */
-export function createQAChannelMessage(
+export async function createQAChannelMessage(
   channelName: string,
   questionerId: string,
   question: string,
@@ -92,27 +92,46 @@ export function createQAChannelMessage(
   isAnonymous?: boolean,
   questionerName?: string,
   userComment?: string,
+  client?: WebClient,
 ) {
-  const senderIdentity = isAnonymous ? 'A team member' : questionerName || 'A team member';
+  const senderIdentity = isAnonymous ? 'A team member' : (questionerName ? `*${questionerName}*` : 'A team member');
   const blocks: any[] = [];
 
   if (!canAnswer) {
+    const introBlock: any = {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `Hi, #${channelName} - ${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n${question}`,
+      },
+      block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO_UNANSWERED),
+    };
+
+    // Add user profile image (real profile for non-anonymous, default for anonymous)
+    if (!isAnonymous && questionerId && client) {
+      try {
+        const userInfo = await client.users.info({ user: questionerId });
+        if (userInfo.user?.profile?.image_192) {
+          introBlock.accessory = {
+            type: 'image',
+            image_url: userInfo.user.profile.image_192,
+            alt_text: questionerName || 'User profile',
+          };
+        }
+      } catch (error) {
+        Logger.error('Error fetching user profile image', error as Error, { questionerId });
+      }
+    } else if (isAnonymous) {
+      // Add default anonymous profile image
+      introBlock.accessory = {
+        type: 'image',
+        image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
+        alt_text: 'Anonymous user',
+      };
+    }
+
     blocks.push(
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.`,
-        },
-        block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO_UNANSWERED),
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*Question:*\n\`\`\`${question}\`\`\``,
-        },
-      },
+      introBlock,
       {
         type: 'section',
         text: {
@@ -122,34 +141,52 @@ export function createQAChannelMessage(
       },
     );
   } else {
+    const introBlock: any = {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `Hi, #${channelName} - ${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n${question}`,
+      },
+      block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO_ANSWERED),
+    };
+
+    // Add user profile image (real profile for non-anonymous, default for anonymous)
+    if (!isAnonymous && questionerId && client) {
+      try {
+        const userInfo = await client.users.info({ user: questionerId });
+        if (userInfo.user?.profile?.image_192) {
+          introBlock.accessory = {
+            type: 'image',
+            image_url: userInfo.user.profile.image_192,
+            alt_text: questionerName || 'User profile',
+          };
+        }
+      } catch (error) {
+        Logger.error('Error fetching user profile image', error as Error, { questionerId });
+      }
+    } else if (isAnonymous) {
+      // Add default anonymous profile image
+      introBlock.accessory = {
+        type: 'image',
+        image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
+        alt_text: 'Anonymous user',
+      };
+    }
+
     blocks.push(
+      introBlock,
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.`,
-        },
-        block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO_ANSWERED),
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*Question:*\n\`\`\`${question}\`\`\``,
+          text: `*My response:*\n${response}`,
         },
       },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*My response:*\n\`\`\`${response}\`\`\``,
-        },
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `${senderIdentity} would like to discuss this response with others. Could anyone help?`,
+          text: `${isAnonymous ? 'The team member' : senderIdentity} would like to discuss this response with others. Could anyone help?`,
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
       },
@@ -166,7 +203,7 @@ export function createQAChannelMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${senderIdentity} added:*\n${userComment}`,
+          text: `*${isAnonymous ? 'The team member' : (questionerName || 'A team member')} added:*\n${userComment}`,
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.USER_COMMENT),
       },
@@ -189,7 +226,7 @@ export function createQAChannelPreview(
   questionerName?: string,
   userComment?: string,
 ): string {
-  const senderIdentity = isAnonymous ? 'A team member' : questionerName || 'A team member';
+  const senderIdentity = isAnonymous ? 'Anonymous user' : questionerName || 'A team member';
   let preview = '';
 
   if (!canAnswer) {
@@ -238,7 +275,7 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Question:*\n\`\`\`${question}\`\`\``,
+          text: `*Question:*\n${question}`,
         },
       },
       {
@@ -263,14 +300,14 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Question:*\n\`\`\`${question}\`\`\``,
+          text: `*Question:*\n${question}`,
         },
       },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*My response:*\n\`\`\`${response}\`\`\``,
+          text: `*My response:*\n${response}`,
         },
       },
       {
@@ -293,7 +330,7 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${senderIdentity} added:*\n${userComment}`,
+          text: `*${isAnonymous ? 'The team member' : (questionerName || 'A team member')} added:*\n${userComment}`,
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.USER_COMMENT),
       },
@@ -331,7 +368,7 @@ export function createPrivateMessagePreview(
   isAnonymous?: boolean,
   userComment?: string,
 ): string {
-  const senderIdentity = isAnonymous ? 'A team member' : questionerName;
+  const senderIdentity = isAnonymous ? 'Anonymous user' : questionerName;
   let preview = '';
 
   if (!canAnswer) {

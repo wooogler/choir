@@ -90,7 +90,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
     }
 
     // CHOIR의 메시지 템플릿
-    const choirGreeting = `Hi there! I'm CHOIR, your friendly documentation assistant. 👋\n\n*${userName}* has a suggestion for updating our documents, and I'm helping to pass it along for review.`;
+    const choirGreeting = `Hi! I'm CHOIR, your documentation assistant.\n \n \n*${userName}* has a document update suggestion:`;
 
     for (const managerId of managers) {
       try {
@@ -132,35 +132,39 @@ export const sendUpdateSuggestionToManagerCallback = async ({
           sessionData.originalMessageLink = messageLink;
         }
 
+        // Create intro block with user profile image
+        const introBlock: any = {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: choirGreeting,
+          },
+        };
+
+        // Add user profile image if available
+        if (sessionData.userId) {
+          try {
+            const userInfo = await client.users.info({ user: sessionData.userId });
+            if (userInfo.user?.profile?.image_192) {
+              introBlock.accessory = {
+                type: 'image',
+                image_url: userInfo.user.profile.image_192,
+                alt_text: userName || 'User profile',
+              };
+            }
+          } catch (error) {
+            console.error('Error fetching user profile image:', error);
+          }
+        }
+
         // Combined message: Suggestion content + Action buttons
         const blocks: any[] = [
+          introBlock,
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: choirGreeting,
-            },
-          },
-          {
-            type: 'header',
-            text: {
-              type: 'plain_text',
-              text: '📝 Document Update Suggestion',
-              emoji: true,
-            },
-          },
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `*From:* *${userName}*`,
-            },
-          },
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `*Suggestion:*\n\`\`\`${sessionData.extractedKnowledge}\`\`\``,
+              text: `\`\`\`${sessionData.extractedKnowledge}\`\`\``,
             },
           },
         ];

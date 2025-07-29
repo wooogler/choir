@@ -21,23 +21,39 @@ interface OrganizationalContext {
 /**
  * Extract knowledge from a collection of Slack messages
  */
+
+// Extract user comment text from USER_COMMENT blocks
+function extractUserCommentFromBlocks(blocks: any[]): string | null {
+  if (!blocks || blocks.length === 0) return null;
+  
+  for (const block of blocks) {
+    if (block.block_id && block.block_id.includes('user_comment') && 
+        block.type === 'section' && block.text?.text) {
+      return block.text.text;
+    }
+  }
+  
+  return null;
+}
+
 // Helper function to extract Q&A content from QA_SHARE_INTRO messages
 function extractQAContent(
   messageText: string,
   canAnswer: boolean,
 ): { question: string; answer: string | null; canAnswer: boolean } | null {
-  const questionMatch = messageText.match(/\*Question:\*\s*```([^`]+)```/);
+  // Updated regex to handle both old format (with ```) and new format (without ```)
+  const questionMatch = messageText.match(/\*Question:\*\s*(?:```([^`]+)```|([^\n]+(?:\n(?!\*)[^\n]*)*?))/);
 
   if (questionMatch) {
-    const question = questionMatch[1].trim();
+    const question = (questionMatch[1] || questionMatch[2] || '').trim();
 
     if (canAnswer) {
-      // For answered questions, extract the response
-      const responseMatch = messageText.match(/\*My response:\*\s*```([^`]+)```/);
+      // For answered questions, extract the response - also handle both formats
+      const responseMatch = messageText.match(/\*My response:\*\s*(?:```([^`]+)```|([^\n]+(?:\n(?!\*)[^\n]*)*?))/);
       if (responseMatch) {
         return {
           question,
-          answer: responseMatch[1].trim(),
+          answer: (responseMatch[1] || responseMatch[2] || '').trim(),
           canAnswer: true,
         };
       }
@@ -86,10 +102,10 @@ export async function extractKnowledgeFromMessages(
             (block: any) => block.block_id && block.block_id.includes('qa_share_intro_unanswered'),
           ));
 
-      // Check if this is a user comment block
-      const isUserComment =
-        originalMsg.blocks &&
-        originalMsg.blocks.some((block: any) => block.block_id && block.block_id.includes('user_comment'));
+      // Check if this message has a USER_COMMENT block
+      const hasUserComment = originalMsg.blocks && 
+        originalMsg.blocks.some((block: any) => 
+          block.block_id && block.block_id.includes('user_comment'));
 
       // Handle Q&A SHARE messages (these should be excluded from conversation)
       if ((isQAShareAnswered || isQAShareUnanswered) && msg.role === 'CHOIR') {
@@ -100,18 +116,26 @@ export async function extractKnowledgeFromMessages(
           qaContent.push(extracted);
         }
 
-        // If there's also a user comment in this message, extract it as user input
-        if (isUserComment) {
-          const commentMatch = msg.content.match(/\*(.+?) added:\*\s*([\s\S]*)/);
-          if (commentMatch) {
-            const userName = commentMatch[1];
-            const comment = commentMatch[2].trim();
-            if (comment) {
-              // Only add if comment is not empty
-              conversationMessages.push({
-                role: 'user',
-                content: `${userName}: ${comment}`, // Format same as other user messages
-              });
+        // If there's also a user comment in this message, extract it using block content
+        if (hasUserComment && originalMsg.blocks) {
+          const userCommentText = extractUserCommentFromBlocks(originalMsg.blocks);
+          if (userCommentText) {
+            const commentMatch = userCommentText.match(/\*(.+?) added:\*\n([\s\S]*)/);
+            if (commentMatch) {
+              // Remove any markdown formatting from username (e.g., *Bob* -> Bob)
+              const userName = commentMatch[1].replace(/^\*|\*$/g, '');
+              const comment = commentMatch[2].trim();
+              if (comment) {
+                // Only add if comment is not empty
+                conversationMessages.push({
+                  role: 'user',
+                  content: `${userName}: ${comment}`, // Format same as other user messages
+                });
+              }
+            } else {
+              // Debug: log when comment pattern doesn't match
+              console.log('DEBUG: User comment block found but pattern did not match');
+              console.log('User comment block text:', userCommentText);
             }
           }
         }
@@ -160,9 +184,9 @@ export async function extractKnowledgeFromMessages(
       const qa = qaContent[0]; // Only one Q&A possible
 
       if (qa.canAnswer) {
-        qaContextSection += `\n\n**Existing Q&A from Current Documentation**:\nQ: ${qa.question}\nA: ${qa.answer}\n\nFocus on identifying NEW information that goes beyond what's already documented in the Q&A above.`;
+        qaContextSection += `\n\n**Existing Q&A from Current Documentation**:\n**Team Member Question:** ${qa.question}\n**CHOIR Response:** ${qa.answer}\n\nFocus on identifying NEW information that goes beyond what's already documented in the Q&A above.`;
       } else {
-        qaContextSection += `\n\n**Question Not Covered by Current Documentation**:\n- ${qa.question}\n\nLook for team knowledge that could help answer this question or establish relevant policies.`;
+        qaContextSection += `\n\n**Question Not Covered by Current Documentation**:\n**Team Member Question:** ${qa.question}\n\nLook for team knowledge that could help answer this question or establish relevant policies.`;
       }
     }
 
@@ -178,7 +202,7 @@ What information is shared in the conversation that should be documented?`;
       [
         {
           role: 'system',
-          content: `You are CHOIR, a documentation specialist within the organization. Extract organizational knowledge from the conversation messages based on what was explicitly discussed. Document only the facts stated in the conversation without making inferences or connections to organizational background. Start with a descriptive markdown section title (# [Actual Topic Name]) that reflects the content, then write the information in natural paragraph format only - do not use lists or bullet points. Always preserve any URLs mentioned in the conversation.`,
+          content: `You are CHOIR, a documentation specialist. Extract organizational knowledge and policies from the conversation that would be valuable for future reference. Focus on actionable information, procedures, policies, or insights that go beyond personal opinions or individual experiences. Start with a descriptive markdown section title (# [Topic Name]) that reflects the organizational knowledge, then write the information in natural paragraph format - avoid lists or bullet points. Do not include personal conversation details like who said what. Always preserve any URLs mentioned.`,
         },
         {
           role: 'user',

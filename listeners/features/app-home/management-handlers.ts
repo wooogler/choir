@@ -592,6 +592,12 @@ export const registerManagementHandlers = (app: App) => {
         true,
         {
           managersCount: managers.length,
+          managerIds: managers,
+          managerInfos: managerInfos.map(info => ({
+            id: info.id,
+            name: info.name,
+            displayName: info.displayName
+          })),
         },
         client,
       );

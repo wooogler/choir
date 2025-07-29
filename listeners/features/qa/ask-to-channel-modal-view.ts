@@ -80,7 +80,7 @@ export const askToChannelSubmitCallback = async ({
     }
 
     // 공통 함수를 사용해 메시지 블록 생성 (anonymous 옵션 포함)
-    const messageBlocks = createQAChannelMessage(
+    const messageBlocks = await createQAChannelMessage(
       channelName,
       userId,
       sessionData.originalQuestion,
@@ -89,6 +89,7 @@ export const askToChannelSubmitCallback = async ({
       isAnonymous,
       userName,
       userComment,
+      client,
     );
 
     // Create comprehensive text that matches the blocks content for conversation history
