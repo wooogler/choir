@@ -898,16 +898,24 @@ export const suggestUpdatesCallback = async ({
                 unfurl_media: false,
               });
 
-              // Also notify other managers about this update
-              await notifyOtherManagersAboutUpdate(
-                currentUpdate,
-                userId,
-                updatedBy,
-                notificationText,
-                blocks,
-                client,
-                logger,
-              );
+              // Only notify other managers if this update came from a user suggestion (not manager's own work)
+              const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
+              const isFromUserSuggestion = sessionData?.userId && sessionData.userId !== userId;
+              
+              if (isFromUserSuggestion) {
+                await notifyOtherManagersAboutUpdate(
+                  currentUpdate,
+                  userId,
+                  updatedBy,
+                  notificationText,
+                  blocks,
+                  client,
+                  logger,
+                );
+                logger.info(`Notified other managers about update from user suggestion (original user: ${sessionData.userId})`);
+              } else {
+                logger.info(`Skipped notifying other managers - this is manager's own work (manager: ${userId})`);
+              }
             } catch (channelError) {
               console.error('Failed to post update to original channel:', channelError);
             }
