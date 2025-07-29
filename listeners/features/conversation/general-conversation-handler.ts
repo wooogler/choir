@@ -114,7 +114,7 @@ What would you like to try first?`;
             type: 'mrkdwn',
             text: fullReplyText,
           },
-          block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
+          block_id: createCHOIRBlockId(CHOIRMessageType.GENERAL_RESPONSE),
         },
       ],
       unfurl_links: false,

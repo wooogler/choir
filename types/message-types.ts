@@ -26,12 +26,19 @@ export enum CHOIRMessageType {
   // ===== 핵심 응답 메시지 =====
   
   /** 
+   * 대화 응답 메시지
+   * 예: 질문에 대한 답변, 확인 메시지
+   * 대화 히스토리에 포함됨
+   */
+  RESPONSE = 'response',
+
+  /** 
    * 일반 대화 응답 메시지
    * 질문이 아닌 일반 대화, 인사, 확인 등의 응답
    * 예: 일반 대화 응답, 확인 메시지
    * 대화 히스토리에 포함됨
    */
-  RESPONSE = 'response',
+  GENERAL_RESPONSE = 'general_response',
   
   /**
    * 질문에 대한 답변 메시지
@@ -171,6 +178,7 @@ export const EXCLUDE_FROM_HISTORY: CHOIRMessageType[] = [
   CHOIRMessageType.NOTIFICATION, // 공유/알림 메시지도 제외
   CHOIRMessageType.ERROR,
   CHOIRMessageType.DIVIDER,
+  CHOIRMessageType.GENERAL_RESPONSE,
 ];
 
 /**

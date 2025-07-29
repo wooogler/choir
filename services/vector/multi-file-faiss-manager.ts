@@ -307,11 +307,55 @@ export class MultiFileFAISSManager {
         await this.recreateFileIndex(fileName, filteredDocs);
       }
 
+      // 글로벌 스토어에서도 제거 (글로벌 인덱스 재구축)
+      if (this.globalStore) {
+        Logger.info('Updating global index after document removal');
+        await this.recreateGlobalIndex();
+      }
+
       Logger.info(`Successfully removed documents from file: ${fileName}`);
       return true;
     } catch (error) {
       Logger.error(`Failed to remove documents from file ${fileName}`, error as Error);
       return false;
+    }
+  }
+
+  /**
+   * 글로벌 인덱스 재구축 (모든 파일의 documents로 새로 생성)
+   */
+  private async recreateGlobalIndex(): Promise<void> {
+    try {
+      Logger.info('Recreating global index from all file documents');
+      
+      // 모든 파일의 documents 수집
+      const allDocuments: Document<DocumentMetadata>[] = [];
+      for (const [fileName, documents] of this.fileDocuments.entries()) {
+        allDocuments.push(...documents);
+      }
+      
+      Logger.info(`Collected ${allDocuments.length} documents from ${this.fileDocuments.size} files for global index recreation`);
+      
+      if (allDocuments.length === 0) {
+        // 문서가 없으면 빈 store 생성
+        const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
+        this.globalStore = new FaissStore(openAIEmbeddings, {});
+        Logger.info('Created empty global store (no documents)');
+      } else {
+        // 새로운 global store 생성
+        const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
+        const serializedDocs = this.serializeDocumentsMetadata(allDocuments);
+        this.globalStore = await FaissStore.fromDocuments(serializedDocs, openAIEmbeddings);
+        Logger.info(`Successfully recreated global index with ${allDocuments.length} documents`);
+      }
+      
+      // 글로벌 인덱스 저장
+      await this.saveGlobalIndex();
+      Logger.info('Global index saved after recreation');
+      
+    } catch (error) {
+      Logger.error('Failed to recreate global index', error as Error);
+      throw error;
     }
   }
 
