@@ -1,15 +1,22 @@
 import { Logger } from 'services/common/logger';
+import { clearFileSelectionState } from 'services/document/document-store';
 import { answerQuestion } from 'services/llm/qa-service';
 import { getOrganizationDescription, getOrganizationName, getWorkspaceId } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
 import { DocumentEnhancer } from 'services/web-content/document-enhancer';
 
 export class QuestionProcessor {
-  async processQuestion(userMessage: string, historyMessages: any[], client: any, logger: any) {
+  async processQuestion(userMessage: string, historyMessages: any[], client: any, logger: any, userId?: string) {
     try {
       Logger.info(
         `QuestionProcessor: Starting to process question: "${userMessage.substring(0, 50)}${userMessage.length > 50 ? '...' : ''}"`,
       );
+
+      // Q&A 답변 전 document update 캐시 무효화 (최신 정보로 답변하기 위해)
+      if (userId) {
+        Logger.info(`QuestionProcessor: Clearing document update cache for user ${userId} to ensure fresh search results`);
+        clearFileSelectionState(userId);
+      }
 
       // 벡터 스토어에서 관련 문서 가져오기
       const vectorStore = VectorStoreService.getInstance();

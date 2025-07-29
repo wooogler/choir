@@ -790,13 +790,58 @@ export class VectorStoreService {
     fileName: string,
     nodeId: string,
     nodeContent: string,
-    nodeType: 'paragraph' | 'listItem' | 'code' | 'blockquote' = 'paragraph',
+    nodeType: 'paragraph' | 'listItem' | 'code' | 'blockquote' | 'list' = 'paragraph',
   ): Promise<boolean> {
     try {
       const file = this.getMarkdownFile(fileName);
       if (!file) {
         Logger.error(`File not found: ${fileName}`);
         return false;
+      }
+
+      // list 타입 노드의 경우 children을 개별 listItem Document로 분할 처리
+      if (nodeType === 'list') {
+        const listNode = file.tree.nodeMap.get(nodeId) as any;
+        if (listNode && listNode.children) {
+          Logger.info(`Processing list node ${nodeId} with ${listNode.children.length} children as individual listItem documents`);
+          
+          let successCount = 0;
+          const { toString } = await import('mdast-util-to-string');
+          
+          for (let i = 0; i < listNode.children.length; i++) {
+            const childNode = listNode.children[i];
+            if (childNode.type === 'listItem') {
+              const childContent = toString(childNode);
+              if (childContent && childContent.trim()) {
+                Logger.info(`Processing listItem ${i}: "${childContent.substring(0, 50)}..."`);
+                
+                // 직접 Document 생성하여 벡터 스토어에 추가
+                const documents = await this.createListItemDocument(file, nodeId, childContent, i);
+                if (documents.length > 0) {
+                  const enhancedDocuments = await this.enhanceNewDocuments(documents);
+                  const success = await this.addDocumentsToVectorStore(enhancedDocuments);
+                  if (success) {
+                    // listItem의 가상 nodeId를 nodeDocumentMap에 추가
+                    const virtualNodeId = `${nodeId}_item_${i}`;
+                    this.nodeDocumentMap.set(virtualNodeId, enhancedDocuments);
+                    successCount++;
+                    Logger.info(`Successfully added listItem ${i} document to vector store and nodeDocumentMap`);
+                  } else {
+                    Logger.warn(`Failed to add listItem ${i} document to vector store`);
+                  }
+                } else {
+                  Logger.warn(`No documents generated for listItem ${i}`);
+                }
+              }
+            }
+          }
+          
+          Logger.info(`Successfully processed ${successCount}/${listNode.children.length} listItem documents for list ${nodeId}`);
+          return successCount > 0;
+        } else {
+          Logger.warn(`List node ${nodeId} not found or has no children`);
+          return false;
+        }
       }
 
       // 1. 노드에서 Document 생성
@@ -853,8 +898,18 @@ export class VectorStoreService {
    */
   private async removeNodeFromVectorStore(nodeId: string): Promise<void> {
     try {
+      Logger.info(`🗑️  Attempting to remove node ${nodeId} from vector store`);
+      Logger.info(`📊 Current nodeDocumentMap has ${this.nodeDocumentMap.size} entries`);
+      
       const existingDocuments = this.nodeDocumentMap.get(nodeId);
+      Logger.info(`🔍 Found ${existingDocuments?.length || 0} existing documents for node ${nodeId}`);
+      
       if (existingDocuments && existingDocuments.length > 0) {
+        // Debug: 제거할 document들의 정보 로그
+        existingDocuments.forEach((doc, index) => {
+          Logger.info(`   [${index}] Document nodeId: ${doc.metadata.nodeId}, content preview: "${doc.pageContent.substring(0, 50)}..."`);
+        });
+        
         // 실제 벡터 스토어에서 Document 제거
         const success = await this.storeManager.removeDocuments(existingDocuments);
         if (!success) {
@@ -865,7 +920,35 @@ export class VectorStoreService {
         // 맵에서도 제거
         this.nodeDocumentMap.delete(nodeId);
 
-        Logger.info(`Successfully removed ${existingDocuments.length} documents for node ${nodeId} from vector store`);
+        Logger.info(`✅ Successfully removed ${existingDocuments.length} documents for node ${nodeId} from vector store`);
+      } else {
+        Logger.warn(`⚠️  No existing documents found for node ${nodeId} in nodeDocumentMap`);
+        
+        // Debug: nodeDocumentMap의 모든 키 출력
+        const allKeys = Array.from(this.nodeDocumentMap.keys());
+        Logger.info(`🔑 All keys in nodeDocumentMap: [${allKeys.join(', ')}]`);
+        
+        // nodeDocumentMap이 비어있을 때 대안: vector store에서 직접 찾아서 제거
+        Logger.info(`🔍 Attempting alternative removal: searching vector store for nodeId ${nodeId}`);
+        const allDocuments = this.storeManager.getDocuments();
+        const documentsToRemove = allDocuments.filter(doc => doc.metadata.nodeId === nodeId);
+        
+        if (documentsToRemove.length > 0) {
+          Logger.info(`📋 Found ${documentsToRemove.length} documents with nodeId ${nodeId} in vector store`);
+          documentsToRemove.forEach((doc, index) => {
+            Logger.info(`   [${index}] Document content preview: "${doc.pageContent.substring(0, 50)}..."`);
+          });
+          
+          const success = await this.storeManager.removeDocuments(documentsToRemove);
+          if (success) {
+            Logger.info(`✅ Successfully removed ${documentsToRemove.length} documents for node ${nodeId} using alternative method`);
+          } else {
+            Logger.error(`❌ Failed to remove documents for node ${nodeId} using alternative method`);
+            throw new Error(`Failed to remove documents for node ${nodeId}`);
+          }
+        } else {
+          Logger.warn(`⚠️  No documents found with nodeId ${nodeId} in vector store either`);
+        }
       }
     } catch (error) {
       Logger.error(`Error removing node ${nodeId} from vector store`, error as Error);
@@ -971,6 +1054,104 @@ export class VectorStoreService {
       return [document];
     } catch (error) {
       Logger.error(`Error creating documents from single node ${nodeId}`, error as Error);
+      return [];
+    }
+  }
+
+  /**
+   * list 노드의 개별 listItem을 위한 Document 생성
+   */
+  private async createListItemDocument(
+    file: MarkdownFile,
+    listNodeId: string,
+    listItemContent: string,
+    itemIndex: number,
+  ): Promise<Document<DocumentMetadata>[]> {
+    try {
+      Logger.info(`Creating document for listItem ${itemIndex} in list ${listNodeId}`);
+
+      // list 노드 찾기
+      const listNode = file.tree.nodeMap.get(listNodeId);
+      if (!listNode) {
+        Logger.warn(`List node ${listNodeId} not found in tree for ${file.name}`);
+        return [];
+      }
+
+      // 헤딩 경로와 섹션 정보 구하기
+      const { formatHeadingContext, getHeadingPathForNode, getSectionName, buildParentChildMap, getAncestorNodes } =
+        await import('../llm/langchain');
+
+      // 부모-자식 관계 맵 구축
+      const nodeParentMap = buildParentChildMap(file.tree);
+
+      // 헤딩 맵 구축
+      const headingMap = new Map<string, string>();
+      const { visit } = await import('unist-util-visit');
+      const { toString } = await import('mdast-util-to-string');
+
+      visit(file.tree.root, 'heading', (headingNode: any) => {
+        if (headingNode.sectionId && headingNode.id) {
+          const headingText = toString(headingNode);
+          headingMap.set(headingNode.sectionId, headingText);
+        }
+      });
+
+      // 섹션별 헤딩 노드 수집
+      const sectionToHeadings = new Map<string, any[]>();
+      visit(file.tree.root, 'heading', (headingNode: any) => {
+        if (headingNode.sectionId && headingNode.id) {
+          if (!sectionToHeadings.has(headingNode.sectionId)) {
+            sectionToHeadings.set(headingNode.sectionId, []);
+          }
+          sectionToHeadings.get(headingNode.sectionId)!.push(headingNode);
+        }
+      });
+
+      // 노드의 조상 노드들 찾기
+      const ancestors = getAncestorNodes(listNode, nodeParentMap);
+
+      // 헤딩 경로 구성
+      const headingPath = getHeadingPathForNode(listNode, ancestors, headingMap, sectionToHeadings);
+
+      // 계층적 문맥 구성 (마크다운 헤더 형태: # filename, ## section)
+      const contextPrefix = formatHeadingContext(headingPath, file.name);
+
+      // 섹션 이름 가져오기
+      const { sectionName } = getSectionName(listNode, headingMap);
+
+      // 올바른 형태의 pageContent 구성
+      const fullContent = `${contextPrefix}${listItemContent}`;
+
+      // 가상의 nodeId 생성 (listNodeId + item index)
+      const virtualNodeId = `${listNodeId}_item_${itemIndex}`;
+
+      const document = new Document({
+        pageContent: fullContent,
+        metadata: {
+          fileName: file.name,
+          nodeId: virtualNodeId,
+          sectionId: listNode.sectionId,
+          sectionName: sectionName,
+          nodeType: 'listItem',
+          githubUrl: file.githubUrl || '',
+          headingPath: headingPath.join(' > '), // 배열을 문자열로 변환
+          originalContent: listItemContent, // 컨텍스트 제외한 원본 내용 저장
+        },
+      });
+
+      // DEBUG: Document 내용 로그 출력
+      Logger.info(`📄 Created listItem document for item ${itemIndex}:`);
+      Logger.info(`   📝 PageContent: "${fullContent.substring(0, 200)}..."`);
+      Logger.info(`   🏷️  FileName: ${file.name}`);
+      Logger.info(`   🆔 NodeId: ${virtualNodeId}`);
+      Logger.info(`   📂 SectionName: ${sectionName || 'undefined'}`);
+      Logger.info(`   🧭 HeadingPath: ${headingPath.join(' > ')}`);
+      Logger.info(`   🔗 NodeType: listItem`);
+
+      Logger.info(`Successfully created listItem document for item ${itemIndex}`);
+      return [document];
+    } catch (error) {
+      Logger.error(`Error creating listItem document for item ${itemIndex}`, error as Error);
       return [];
     }
   }

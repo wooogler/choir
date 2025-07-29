@@ -1139,8 +1139,8 @@ function appendSectionToEnd(tree: DocumentTree, headingNode: ExtendedNode, bodyN
  * @param content LLM이 생성한 마크다운 content
  * @returns 분할된 content 항목들의 배열
  */
-export function parseAndSplitContent(content: string): Array<{ type: 'listItem' | 'paragraph'; content: string }> {
-  const result: Array<{ type: 'listItem' | 'paragraph'; content: string }> = [];
+export function parseAndSplitContent(content: string): Array<{ type: 'listItem' | 'paragraph' | 'list'; content: string }> {
+  const result: Array<{ type: 'listItem' | 'paragraph' | 'list'; content: string }> = [];
 
   if (!content || !content.trim()) {
     return result;
@@ -1175,8 +1175,8 @@ export function parseAndSplitContent(content: string): Array<{ type: 'listItem' 
  * 단일 블록을 파싱하여 리스트와 paragraph를 분리
  * 마크다운 구조를 유지하며 블록 단위로 처리
  */
-function parseBlock(block: string): Array<{ type: 'listItem' | 'paragraph'; content: string }> {
-  const result: Array<{ type: 'listItem' | 'paragraph'; content: string }> = [];
+function parseBlock(block: string): Array<{ type: 'listItem' | 'paragraph' | 'list'; content: string }> {
+  const result: Array<{ type: 'listItem' | 'paragraph' | 'list'; content: string }> = [];
   
   // 줄 단위로 분리
   const lines = block.split('\n');
@@ -1227,13 +1227,12 @@ function parseBlock(block: string): Array<{ type: 'listItem' | 'paragraph'; cont
   
   function flushCurrentSection() {
     if (currentSectionType === 'list') {
-      // 리스트 항목들을 개별 listItem으로 추가
-      for (const line of currentSection) {
-        result.push({
-          type: 'listItem',
-          content: extractListItemContent(line),
-        });
-      }
+      // 연속된 리스트 항목들을 하나의 list로 그룹핑
+      const listContent = currentSection.join('\n');
+      result.push({
+        type: 'list',
+        content: listContent,
+      });
     } else if (currentSectionType === 'paragraph') {
       // paragraph 내용을 하나로 합치기
       const paragraphContent = currentSection.join(' ').trim();
@@ -1432,7 +1431,7 @@ function appendListToTree(
  */
 export function createReplacementNodes(
   originalNode: ExtendedNode, 
-  contentItems: Array<{ type: 'listItem' | 'paragraph'; content: string }>
+  contentItems: Array<{ type: 'listItem' | 'paragraph' | 'list'; content: string }>
 ): ExtendedNode[] {
   const timestamp = Date.now();
   const replacementNodes: ExtendedNode[] = [];
@@ -1477,6 +1476,76 @@ export function createReplacementNodes(
         isListItem: true,
         listItemIndex: index,
       } as ListItem & ExtendedNode;
+    } else if (item.type === 'list') {
+      // list 타입의 경우 마크다운 파싱해서 list 노드 생성
+      try {
+        const processor = unified()
+          .use(remarkParse);
+        
+        const parsedMarkdown = processor.parse(item.content) as Root;
+        
+        if (parsedMarkdown.children && parsedMarkdown.children.length > 0) {
+          const listNode = parsedMarkdown.children[0] as any;
+          if (listNode && listNode.type === 'list') {
+            // list 노드의 children들을 처리해서 ExtendedNode로 변환
+            const listChildren = listNode.children.map((child: any, childIndex: number) => {
+              const childNodeId = `${newNodeId}_item_${childIndex}`;
+              return {
+                ...child,
+                id: childNodeId,
+                fileName: originalNode.fileName,
+                parentId: newNodeId,
+                sectionId: originalNode.sectionId,
+                isListItem: true,
+                listItemIndex: childIndex,
+              };
+            });
+            
+            newNode = {
+              type: 'list',
+              ordered: listNode.ordered || false,
+              spread: listNode.spread || false,
+              children: listChildren,
+              id: newNodeId,
+              fileName: originalNode.fileName,
+              parentId: originalNode.parentId,
+              sectionId: originalNode.sectionId,
+            } as List & ExtendedNode;
+          } else {
+            // list가 아닌 경우 paragraph로 처리
+            newNode = {
+              type: 'paragraph',
+              children: [
+                {
+                  type: 'text',
+                  value: item.content,
+                },
+              ],
+              id: newNodeId,
+              fileName: originalNode.fileName,
+              parentId: originalNode.parentId,
+              sectionId: originalNode.sectionId,
+            } as Paragraph & ExtendedNode;
+          }
+        } else {
+          return; // 빈 내용은 건너뛰기
+        }
+      } catch (error) {
+        console.warn('List 파싱 실패, paragraph로 처리:', error);
+        newNode = {
+          type: 'paragraph',
+          children: [
+            {
+              type: 'text',
+              value: item.content,
+            },
+          ],
+          id: newNodeId,
+          fileName: originalNode.fileName,
+          parentId: originalNode.parentId,
+          sectionId: originalNode.sectionId,
+        } as Paragraph & ExtendedNode;
+      }
     } else {
       return; // 지원하지 않는 타입은 건너뛰기
     }

@@ -70,6 +70,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       historyResult.messages || [],
       client,
       logger,
+      event.user, // 사용자 ID 전달
     );
 
     const {
