@@ -161,12 +161,6 @@ export async function extractKnowledgeFromMessages(
       if (context.organizationName) {
         contextSection += `- Organization: ${context.organizationName}\n`;
       }
-      if (context.organizationDescription) {
-        contextSection += `- About: ${context.organizationDescription}\n`;
-      }
-      if (context.channelType) {
-        contextSection += `- Channel Type: ${context.channelType}\n`;
-      }
       if (context.managerText) {
         // Anonymize manager names and format properly
         const anonymizedManagerText = anonymizeText(context.managerText);
