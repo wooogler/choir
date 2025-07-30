@@ -1,4 +1,4 @@
-import { App, LogLevel } from '@slack/bolt';
+import { App, LogLevel, ExpressReceiver } from '@slack/bolt';
 import * as dotenv from 'dotenv';
 import registerListeners from './listeners';
 
@@ -17,12 +17,22 @@ dotenv.config();
 
 /** Initialization */
 const slackConfig = AppConfig.getSlackConfig();
+
+// Create receiver based on mode
+let receiver: ExpressReceiver | undefined;
+if (!slackConfig.socketMode) {
+  receiver = new ExpressReceiver({
+    signingSecret: slackConfig.signingSecret,
+  });
+}
+
 const app = new App({
   token: slackConfig.botToken,
   socketMode: slackConfig.socketMode,
   signingSecret: slackConfig.signingSecret,
   logLevel: LogLevel.INFO,
-  appToken: slackConfig.appToken,
+  appToken: slackConfig.socketMode ? slackConfig.appToken : undefined,
+  receiver: receiver,
   clientOptions: {
     retryConfig: {
       retries: 3,
@@ -60,57 +70,65 @@ const setupGitHubWebhook = () => {
       return;
     }
 
-    // Access the Express app through the receiver
-    const expressApp = (app as any).receiver?.app;
-    
-    if (!expressApp || typeof expressApp.post !== 'function') {
-      app.logger.warn('Express app not available or not properly initialized. GitHub webhook endpoint cannot be configured.');
+    if (!receiver) {
+      app.logger.warn('ExpressReceiver not available. GitHub webhook endpoint cannot be configured.');
       return;
     }
 
-    // GitHub webhook endpoint with built-in body parsing
-    expressApp.post('/webhook/github', (req: any, res: any) => {
+    // Add raw body parser middleware for webhook endpoint (for signature verification)
+    receiver.router.use('/webhook/github', (req: any, res: any, next: any) => {
       let body = '';
-      
+      req.setEncoding('utf8');
       req.on('data', (chunk: any) => {
-        body += chunk.toString();
+        body += chunk;
       });
-      
-      req.on('end', async () => {
+      req.on('end', () => {
+        req.rawBody = body;
         try {
-          const signature = req.get('X-Hub-Signature-256') || '';
-          
-          // Verify webhook signature if secret is configured
-          if (githubWebhookSecret && signature) {
-            const isValid = verifyGitHubSignature(body, signature, githubWebhookSecret);
-            if (!isValid) {
-              app.logger.warn('Invalid GitHub webhook signature');
-              return res.status(401).send('Unauthorized');
-            }
-          }
-
-          const webhookPayload = JSON.parse(body);
-          const eventType = req.get('X-GitHub-Event');
-
-          app.logger.info(`GitHub webhook received: ${eventType}`);
-
-          // Handle push events
-          if (eventType === 'push') {
-            await handleGitHubPushEvent(webhookPayload, app.client, app.logger);
-            app.logger.info('GitHub push event processed successfully');
-          } else {
-            app.logger.info(`Ignoring GitHub event: ${eventType}`);
-          }
-
-          res.status(200).send('OK');
-        } catch (error) {
-          app.logger.error('Error processing GitHub webhook:', error);
-          res.status(500).send('Internal Server Error');
+          req.body = JSON.parse(body);
+        } catch (e) {
+          req.body = {};
         }
+        next();
       });
     });
 
-    app.logger.info('GitHub webhook endpoint configured at /webhook/github (HTTP Mode)');
+    // GitHub webhook endpoint using ExpressReceiver router
+    receiver.router.post('/webhook/github', async (req: any, res: any) => {
+      try {
+        const body = req.rawBody || JSON.stringify(req.body);
+        const signature = req.get('X-Hub-Signature-256') || '';
+        
+        // Verify webhook signature if secret is configured
+        if (githubWebhookSecret && signature) {
+          const isValid = verifyGitHubSignature(body, signature, githubWebhookSecret);
+          if (!isValid) {
+            app.logger.warn('Invalid GitHub webhook signature');
+            return res.status(401).send('Unauthorized');
+          }
+        }
+
+        const webhookPayload = req.body;
+        const eventType = req.get('X-GitHub-Event');
+
+        app.logger.info(`GitHub webhook received: ${eventType}`);
+
+        // Handle push events
+        if (eventType === 'push') {
+          await handleGitHubPushEvent(webhookPayload, app.client, app.logger);
+          app.logger.info('GitHub push event processed successfully');
+        } else {
+          app.logger.info(`Ignoring GitHub event: ${eventType}`);
+        }
+
+        res.status(200).send('OK');
+      } catch (error) {
+        app.logger.error('Error processing GitHub webhook:', error);
+        res.status(500).send('Internal Server Error');
+      }
+    });
+
+    app.logger.info('GitHub webhook endpoint configured at /webhook/github using ExpressReceiver router');
   } catch (error) {
     app.logger.error('Failed to setup GitHub webhook endpoint:', error);
   }
