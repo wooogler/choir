@@ -89,7 +89,7 @@ export async function createNewSectionFromKnowledge(
 CONSTRAINTS:
 - Use ONLY information from the knowledge - no external details, links, or assumptions
 - Create a clear, descriptive but GENERAL section title (without # symbol) that could be relevant to many teams/contexts
-- For section content, write as one or multiple paragraphs or simple list items (no headings, subheadings, or complex structure)
+- For section content, write as multiple paragraphs or multiple list items (no headings, subheadings, or complex structure)
 - Keep content concise and directly relevant to the section context
 - Never include user names or identifiers
 - Always preserve any URLs from the knowledge as they contain valuable reference information
