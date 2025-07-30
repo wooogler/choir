@@ -91,7 +91,6 @@ async function enhanceExistingContent(
 Existing content type: ${contentType}
 
 Rules:
-- Keep existing content unchanged
 - Add knowledge in matching format: ${contentType === 'list' ? 'as additional list items (- format)' : 'as additional paragraphs'}
 - Only modify existing content if it directly contradicts the knowledge
 - Preserve all URLs from the knowledge
