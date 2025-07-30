@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { deleteProgressMessageTimestamp, getLastMessageTimestamp, getProgressMessageTimestamp } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
+import { getFileSelectionState } from 'services/document/document-store';
 import { getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -28,13 +29,20 @@ export const cancelDocumentUpdatesCallback = async ({
     const parsedValue = JSON.parse(value);
     const { originalChannelId, originalThreadTs, index, isFirstSuggestion } = parsedValue;
 
-    // 메시지 텍스트 결정
-    const isFirstCancel = isFirstSuggestion || index === 0;
-    const cancelText = isFirstCancel ? '❌ Cancelled' : '✅ Completed';
-
-    const cancelMessage = isFirstCancel
-      ? 'The document update process has been cancelled.'
-      : 'Document update process completed.';
+    // Apply된 suggestion 수를 확인해서 cancel vs stop 결정
+    const fileSelectionState = getFileSelectionState(userId);
+    const appliedCount = fileSelectionState?.appliedSuggestions.size || 0;
+    
+    // 메시지 텍스트 결정: Apply된 것이 없으면 cancel, 있으면 stop
+    const isCancel = appliedCount === 0;
+    
+    const cancelMessage = isCancel
+      ? '👋 Review cancelled'
+      : `✅ Review stopped! We've applied ${appliedCount} suggestion${appliedCount > 1 ? 's' : ''} to the documentation.`;
+    
+    const notificationMessage = isCancel
+      ? 'cancelled their document update review'
+      : `stopped their document update review after applying ${appliedCount} suggestion${appliedCount > 1 ? 's' : ''}`;
 
     // Use response_url to replace the current message with cancellation status
     if (responseUrl) {
@@ -52,7 +60,7 @@ export const cancelDocumentUpdatesCallback = async ({
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
-                  text: `${cancelText} ${cancelMessage}`,
+                  text: cancelMessage,
                 },
               },
             ],
@@ -84,7 +92,7 @@ export const cancelDocumentUpdatesCallback = async ({
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
-                  text: `${cancelText} ${cancelMessage}`,
+                  text: cancelMessage,
                 },
               },
             ],
@@ -109,7 +117,7 @@ export const cancelDocumentUpdatesCallback = async ({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `${cancelText} ${cancelMessage}`,
+              text: cancelMessage,
             },
           },
         ],
@@ -135,7 +143,8 @@ export const cancelDocumentUpdatesCallback = async ({
         Date.now() - startTime,
         true,
         {
-          isFirstCancel,
+          isCancel,
+          appliedCount,
           originalChannelId,
           originalThreadTs,
         },
@@ -145,19 +154,20 @@ export const cancelDocumentUpdatesCallback = async ({
       logger.error('Failed to log button click error:', logError);
     }
 
-    // 원본 채널에 취소 알림 (옵션)
-    if (originalChannelId) {
+    // 원본 채널에 취소 알림 (현재 DM과 다른 채널에서 온 경우)
+    const currentDmChannelId = body.channel?.id;
+    if (originalChannelId && originalChannelId !== currentDmChannelId) {
       try {
         await client.chat.postMessage({
           channel: originalChannelId,
           ...(originalThreadTs ? { thread_ts: originalThreadTs } : {}),
-          text: `📋 ${cancelMessage}`,
+          text: `📋 <@${userId}> ${notificationMessage}.`,
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `📋 ${cancelMessage}`,
+                text: `📋 <@${userId}> ${notificationMessage}.`,
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
             },
@@ -168,7 +178,7 @@ export const cancelDocumentUpdatesCallback = async ({
       }
     }
 
-    logger.info(`Document update ${isFirstCancel ? 'cancelled' : 'completed'} by user ${userId}`);
+    logger.info(`Document update ${isCancel ? 'cancelled' : 'stopped'} by user ${userId} (applied ${appliedCount} suggestions)`);
   } catch (error) {
     logger.error('Error cancelling document updates:', error);
 

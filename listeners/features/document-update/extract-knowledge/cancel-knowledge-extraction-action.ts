@@ -26,13 +26,13 @@ export const cancelKnowledgeExtractionCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: '❌ Knowledge extraction cancelled',
+          text: '✅ Got it!',
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '❌ *Knowledge extraction cancelled*\nThe suggested update has been discarded.',
+                text: '✅ *Processing your decision...*',
               },
             },
           ],

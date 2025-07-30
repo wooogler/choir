@@ -223,6 +223,13 @@ export const createFileSubmissionCallback = async ({
           },
         },
         {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Initial Content:*\n\`\`\`${fileContent.substring(0, 300)}${fileContent.length > 300 ? '...' : ''}\`\`\``,
+          },
+        },
+        {
           type: 'divider',
         },
         {
@@ -235,8 +242,8 @@ export const createFileSubmissionCallback = async ({
       ],
     });
 
-    // Send notification to original channel if available
-    if (knowledgeSourceChannelId) {
+    // Send notification to original channel if available (and different from current DM)
+    if (knowledgeSourceChannelId && knowledgeSourceChannelId !== channelId) {
       try {
         // Get user name for notification
         let createdBy = 'User';

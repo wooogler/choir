@@ -137,7 +137,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
         ) {
           userCancellationText = `Okay, I've marked the suggestion (ID: ${shortSessionId}) from *${sessionData.userName || 'the user'}* as cancelled. No further action from you is needed on this.`;
         } else if (sessionData?.userId === userId) {
-          userCancellationText = `Okay, *${userName}*, I've cancelled your update suggestion (ID: ${shortSessionId}). No problem at all! If you want to suggest something else, just let me know.`;
+          userCancellationText = `Okay, *${userName}*, I've cancelled your update suggestion (ID: ${shortSessionId}). If you want to suggest something else, just let me know.`;
         } else {
           userCancellationText = `The update suggestion (ID: ${shortSessionId}) has been cancelled by *${userName}*.`;
         }

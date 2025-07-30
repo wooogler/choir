@@ -44,7 +44,7 @@ export const showSuggestionEditorModal = async ({
 
     // 통일된 UPDATE 방식으로 처리
     nodeContent = currentUpdate.nodeContent || '';
-    editableContent = currentUpdate.updatedNodeContent || '';
+    editableContent = (currentUpdate.updatedNodeContent || '').trim();
 
     // 필수 값 확인 (빈 섹션의 경우 nodeContent가 빈 문자열일 수 있음)
     if (editableContent === undefined || editableContent === null || !editableContent.trim()) {

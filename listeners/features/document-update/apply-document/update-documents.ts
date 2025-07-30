@@ -445,6 +445,9 @@ export const handleNewSectionModalSubmission = async ({
 
     // Use selected file if available, otherwise fall back to recommended file
     const targetFile = selectedFile || recommendedFile;
+    
+    // Get current DM channel ID for consistency with other similar functions
+    const currentDmChannelId = user.id;
 
     logger.info(`New section modal submitted by user ${user.id}`);
     logger.info(`Section title: "${sectionTitle}"`);
@@ -746,7 +749,8 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
     }
 
     // 9. Post success message to original channel (similar to document updates)
-    if (originalChannelId) {
+    // Only notify if original channel is different from current DM
+    if (originalChannelId && originalChannelId !== currentDmChannelId) {
       try {
         const channelUpdateText = `🎉 Good news, everyone! *${userName}* just added a new section to our documentation!
 

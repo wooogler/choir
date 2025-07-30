@@ -121,8 +121,13 @@ export const applyExtractedKnowledgeCallback = async ({
     // 4. Update other managers' messages to show conflict state
     await updateOtherManagerMessages(sessionData, managerId, managerName, client, logger);
 
-    // 5. Notify original channel about who started processing
-    await notifyOriginalChannel(sessionData, managerName, client, logger);
+    // 5. Notify original channel about who started processing (skip if manager's own work)
+    const isManagerOwnWork = sessionData.userId === managerId; // Manager processing their own suggestion
+    if (!isManagerOwnWork) {
+      await notifyOriginalChannel(sessionData, managerName, client, logger);
+    } else {
+      logger.info(`[DEBUG] Skipping notification - manager processing their own suggestion`);
+    }
     // ========== END CONCURRENCY CONTROL ==========
 
     // Get team_id and bot_id for the slack:// URL

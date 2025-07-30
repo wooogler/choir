@@ -393,7 +393,21 @@ export const suggestUpdatesCallback = async ({
             await updateOtherManagerMessages(sessionData, userId, managerName, client, logger);
 
             // Notify original channel about who started processing
-            await notifyOriginalChannel(sessionData, managerName, client, logger);
+            // Skip if: 1) no original channel, 2) same as current DM, 3) processing manager is same as original user (manager's own work)
+            const isManagerOwnWork = sessionData.userId === userId; // Manager processing their own suggestion
+            const isSameChannel = sessionData.originalChannelId === currentDmChannelId;
+            const shouldNotify = sessionData.originalChannelId && 
+                                !isSameChannel && 
+                                !isManagerOwnWork;
+                                
+            logger.info(`[DEBUG] Notification check: originalChannelId=${sessionData.originalChannelId}, currentDmChannelId=${currentDmChannelId}, userId=${sessionData.userId}, managerId=${userId}, isManagerOwnWork=${isManagerOwnWork}, isSameChannel=${isSameChannel}, shouldNotify=${shouldNotify}`);
+            
+            if (shouldNotify) {
+              logger.info(`[DEBUG] Sending notification to original channel: ${sessionData.originalChannelId}`);
+              await notifyOriginalChannel(sessionData, managerName, client, logger);
+            } else {
+              logger.info(`[DEBUG] Skipping notification - manager's own work or same channel`);
+            }
           }
         }
       }
@@ -991,7 +1005,11 @@ export const suggestUpdatesCallback = async ({
       // If so, show the suggestion review screen first (unless continuing from review)
       if (sessionId && !parsedValue.continueToFileSelection) {
         const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
-        if (sessionData?.originalChannelId && sessionData.originalChannelId !== currentDmChannelId) {
+        // Only show review screen if this came from a different channel (not DM)
+        // Skip if originalChannelId is same as currentDmChannelId (DM suggestion) or if originalChannelId is missing
+        if (sessionData?.originalChannelId && 
+            sessionData.originalChannelId !== currentDmChannelId && 
+            !sessionData.originalChannelId.startsWith('D')) {
           // This is a channel suggestion - show review screen first
           logger.info(`Showing suggestion review for channel suggestion from ${sessionData.originalChannelId}`);
           
