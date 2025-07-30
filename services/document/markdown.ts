@@ -1577,6 +1577,7 @@ export function replaceNodeAtomically(
   }
 
   console.log(`[DEBUG] replaceNodeAtomically: Replacing node ${nodeId} with ${replacementNodes.length} new nodes`);
+  console.log(`[DEBUG] replaceNodeAtomically: Original nodeMap size: ${tree.nodeMap.size}`);
 
   // 원본 트리의 깊은 복사본 생성
   const newTree: DocumentTree = {
@@ -1585,16 +1586,23 @@ export function replaceNodeAtomically(
     sectionMap: new Map(tree.sectionMap),
     root: JSON.parse(JSON.stringify(tree.root)),
   };
+  
+  console.log(`[DEBUG] replaceNodeAtomically: Copied nodeMap size: ${newTree.nodeMap.size}`);
 
   // 1. 새 노드들을 nodeMap에 추가
-  replacementNodes.forEach(node => {
+  console.log(`[DEBUG] replaceNodeAtomically: Adding ${replacementNodes.length} nodes to nodeMap`);
+  replacementNodes.forEach((node, index) => {
     if (node.id) {
       newTree.nodeMap.set(node.id, node);
+      console.log(`[DEBUG] replaceNodeAtomically: Added node ${node.id} (${index + 1}/${replacementNodes.length})`);
+    } else {
+      console.warn(`[DEBUG] replaceNodeAtomically: Node at index ${index} has no ID`);
     }
   });
 
   // 2. 기존 노드를 nodeMap에서 제거
-  newTree.nodeMap.delete(nodeId);
+  const wasDeleted = newTree.nodeMap.delete(nodeId);
+  console.log(`[DEBUG] replaceNodeAtomically: Deleted original node ${nodeId}: ${wasDeleted}`);
 
   // 3. 부모 노드에서 기존 노드를 새 노드들로 교체
   if (nodeToReplace.parentId) {
@@ -1626,6 +1634,8 @@ export function replaceNodeAtomically(
     }
   }
 
+  console.log(`[DEBUG] replaceNodeAtomically: Final nodeMap size: ${newTree.nodeMap.size}`);
+  console.log(`[DEBUG] replaceNodeAtomically: Final nodeMap keys: ${Array.from(newTree.nodeMap.keys()).join(', ')}`);
   console.log(`[DEBUG] replaceNodeAtomically: Successfully replaced node ${nodeId} with ${replacementNodes.length} replacement nodes`);
   return newTree;
 }

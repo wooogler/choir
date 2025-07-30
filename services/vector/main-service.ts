@@ -631,7 +631,11 @@ export class VectorStoreService {
         
         // 원자적 노드 교체
         const replacementNodes = createReplacementNodes(originalNode, contentItems);
+        Logger.info(`DEBUG: Before replaceNodeAtomically - nodeMap size: ${file.tree.nodeMap.size}`);
+        Logger.info(`DEBUG: Replacement nodes to add: ${replacementNodes.map(n => n.id).join(', ')}`);
+        
         file.tree = replaceNodeAtomically(file.tree, nodeId, replacementNodes);
+        Logger.info(`DEBUG: After replaceNodeAtomically - nodeMap size: ${file.tree.nodeMap.size}`);
         Logger.info(`Atomically replaced node ${nodeId} with ${replacementNodes.length} replacement nodes`);
 
         // 새로 추가된 노드들을 벡터 스토어에 추가
@@ -645,6 +649,8 @@ export class VectorStoreService {
           return !existingNodeIds.has(newNodeId);
         });
 
+        Logger.info(`DEBUG: All nodes after replacement: ${Array.from(file.tree.nodeMap.keys()).join(', ')}`);
+        Logger.info(`DEBUG: Existing node IDs: ${Array.from(existingNodeIds).join(', ')}`);
         Logger.info(`Found ${newNodes.length} new nodes to add to vector store`);
 
         for (const [newNodeId, newNode] of newNodes) {

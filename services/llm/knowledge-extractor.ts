@@ -196,7 +196,11 @@ What information is shared in the conversation that should be documented?`;
       [
         {
           role: 'system',
-          content: `You are CHOIR, a documentation specialist. Extract organizational knowledge and policies from the conversation that would be valuable for future reference. Focus on actionable information, procedures, policies, or insights that go beyond personal opinions or individual experiences. Start with a descriptive markdown section title (# [Topic Name]) that reflects the organizational knowledge, then write the information in natural paragraph format - avoid lists or bullet points. Do not include personal conversation details like who said what. Always preserve any URLs mentioned.`,
+          content: `You are CHOIR, a documentation specialist. Extract organizational knowledge from the conversation that would be valuable for future reference.
+
+Start with a descriptive markdown section title (# [Topic Name]), then write the information in natural paragraph format. Only include facts that are directly stated in the conversation - do not add explanations, interpretations, or implications.
+
+Do not include personal conversation details like who said what. Always preserve any URLs mentioned.`,
         },
         {
           role: 'user',

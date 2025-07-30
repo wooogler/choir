@@ -113,6 +113,7 @@ export async function applyDocumentUpdatesToGithub({
       // 벡터 스토어는 이미 appendSpecificNode를 통해 업데이트됨
       Logger.info(`Vector store updates completed during node processing for ${fileName}`);
 
+
       successfulUpdates.push({ fileName, commitSha: updateResult.commitSha });
     } catch (error) {
       failedUpdates.push(fileName);
