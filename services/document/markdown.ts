@@ -991,6 +991,64 @@ export function createNewSectionNode(
         isListItem: true,
         listItemIndex: 0, // 임시값, 아래에서 재계산
       } as ListItem & ExtendedNode;
+    } else if (item.type === 'list') {
+      // list 타입의 경우 마크다운을 파싱해서 list 노드 생성
+      try {
+        const processor = unified().use(remarkParse);
+        const parsedMarkdown = processor.parse(item.content) as Root;
+        
+        if (parsedMarkdown.children && parsedMarkdown.children.length > 0) {
+          const listNode = parsedMarkdown.children[0] as any;
+          if (listNode && listNode.type === 'list') {
+            // list 노드의 children들을 처리해서 ExtendedNode로 변환
+            const listChildren = listNode.children.map((child: any, childIndex: number) => {
+              const childNodeId = `${nodeId}_item_${childIndex}`;
+              return {
+                ...child,
+                id: childNodeId,
+                fileName: docTree.title || 'unknown',
+                parentId: nodeId,
+                sectionId: newSectionId,
+                isListItem: true,
+                listItemIndex: childIndex,
+              };
+            });
+            
+            node = {
+              type: 'list',
+              ordered: listNode.ordered || false,
+              spread: listNode.spread || false,
+              children: listChildren,
+              id: nodeId,
+              fileName: docTree.title || 'unknown',
+              parentId: undefined,
+              sectionId: newSectionId,
+            } as List & ExtendedNode;
+          } else {
+            // list가 아닌 경우 paragraph로 처리
+            node = {
+              type: 'paragraph',
+              children: [{ type: 'text', value: item.content }],
+              id: nodeId,
+              fileName: docTree.title || 'unknown',
+              parentId: undefined,
+              sectionId: newSectionId,
+            } as Paragraph & ExtendedNode;
+          }
+        } else {
+          continue; // 빈 내용은 건너뛰기
+        }
+      } catch (error) {
+        console.warn('List 파싱 실패, paragraph로 처리:', error);
+        node = {
+          type: 'paragraph',
+          children: [{ type: 'text', value: item.content }],
+          id: nodeId,
+          fileName: docTree.title || 'unknown',
+          parentId: undefined,
+          sectionId: newSectionId,
+        } as Paragraph & ExtendedNode;
+      }
     } else {
       continue; // 지원하지 않는 타입은 건너뛰기
     }
@@ -1041,18 +1099,39 @@ export function createNewSectionNode(
         finalNodes.push(listItem);
         finalNodeIds.push(listItem.id!);
       });
+    } else if (node.type === 'list') {
+      // list 노드는 이미 완성된 형태이므로 그대로 추가
+      finalNodes.push(node);
+      finalNodeIds.push(node.id!);
+      i++;
     } else {
-      // paragraph 노드는 그대로 추가
+      // paragraph 등 다른 노드는 그대로 추가
       finalNodes.push(node);
       finalNodeIds.push(node.id!);
       i++;
     }
   }
 
-  // 노드맵에 추가
-  newTree.nodeMap.set(headingNodeId, headingNode);
+  // 노드맵에 추가 (재귀적으로 자식 노드들도 포함)
+  const addNodeToMapRecursively = (node: ExtendedNode): void => {
+    if (node.id) {
+      newTree.nodeMap.set(node.id, node);
+      
+      // 자식 노드들도 재귀적으로 추가 (list의 listItem들 포함)
+      const nodeWithChildren = node as any;
+      if (nodeWithChildren.children && Array.isArray(nodeWithChildren.children)) {
+        nodeWithChildren.children.forEach((child: any) => {
+          if (child.id) {
+            addNodeToMapRecursively(child);
+          }
+        });
+      }
+    }
+  };
+
+  addNodeToMapRecursively(headingNode);
   finalNodes.forEach(node => {
-    newTree.nodeMap.set(node.id!, node);
+    addNodeToMapRecursively(node);
   });
 
   // 섹션맵에 추가
@@ -1124,11 +1203,30 @@ function insertSectionAfterNode(
 function appendSectionToEnd(tree: DocumentTree, headingNode: ExtendedNode, bodyNodes: ExtendedNode[]): void {
   // 루트 레벨에 섹션 추가
   if (Array.isArray(tree.root.children)) {
-    tree.root.children.push(headingNode as any, ...(bodyNodes as any[]));
-    console.log(`섹션이 문서 끝에 추가되었습니다.`);
+    // 헤딩 노드 추가
+    tree.root.children.push(headingNode as any);
+    
+    // 본문 노드들 추가
+    bodyNodes.forEach(bodyNode => {
+      tree.root.children.push(bodyNode as any);
+    });
+    
+    console.log(`섹션이 문서 끝에 추가되었습니다: 헤딩 + ${bodyNodes.length}개 본문 노드`);
   } else {
+    // children 배열 초기화하고 모든 노드 추가
     tree.root.children = [headingNode as any, ...(bodyNodes as any[])];
-    console.log(`루트 children 배열을 초기화하고 섹션을 추가했습니다.`);
+    console.log(`루트 children 배열을 초기화하고 섹션을 추가했습니다: 헤딩 + ${bodyNodes.length}개 본문 노드`);
+  }
+  
+  // 디버깅: children 배열의 실제 내용 확인
+  console.log(`트리의 children 개수: ${tree.root.children?.length || 0}`);
+  if (tree.root.children && tree.root.children.length > 0) {
+    const lastFewNodes = tree.root.children.slice(-3).map((node: any) => ({
+      type: node.type,
+      id: node.id,
+      hasChildren: !!node.children
+    }));
+    console.log(`마지막 3개 노드:`, lastFewNodes);
   }
 }
 

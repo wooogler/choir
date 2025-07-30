@@ -51,6 +51,11 @@ export const createNewSectionAction = async ({
       originalThreadTs,
       sessionId,
     } = newSectionData;
+    
+    // 디버깅: 세션에서 가져온 데이터 확인
+    console.log(`[DEBUG] 세션에서 가져온 sectionTitle: "${sectionTitle}"`);
+    console.log(`[DEBUG] 세션에서 가져온 sectionContent: "${sectionContent}"`);
+    console.log(`[DEBUG] sectionContent 길이: ${sectionContent?.length || 0}`);
 
     // Assign to outer scope variable for error logging
     originalChannelId = originalChannelIdFromSession;

@@ -447,9 +447,13 @@ export const handleNewSectionModalSubmission = async ({
     const targetFile = selectedFile || recommendedFile;
 
     logger.info(`New section modal submitted by user ${user.id}`);
-    logger.info(`Section title: ${sectionTitle}`);
+    logger.info(`Section title: "${sectionTitle}"`);
+    logger.info(`Section body: "${sectionBody}"`);
     logger.info(`Section body length: ${sectionBody.length}`);
     logger.info(`Recommended file: ${recommendedFile}`);
+    
+    // 디버깅: 모달 values 전체 구조 확인
+    logger.info(`Modal values structure:`, JSON.stringify(values, null, 2));
 
     if (!sectionTitle || !sectionBody) {
       await client.chat.postMessage({
