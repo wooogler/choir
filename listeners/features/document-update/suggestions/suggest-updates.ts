@@ -699,8 +699,16 @@ export const suggestUpdatesCallback = async ({
         logger.info(
           `Using cached search results, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}`,
         );
-        // 새로운 로직: 동적 순서 계산 (파일 미선택인 경우 initial search 결과와 동일)
-        searchResults = calculateDynamicOrder(userId);
+        
+        // 파일 선택 안함: initial search 결과만 사용 (calculateDynamicOrder는 파일 선택시에만 사용)
+        if (!parsedValue.isFileBasedReview) {
+          searchResults = getSearchResults(userId) || [];
+          logger.info(`Using initial search results only (no file selected): ${searchResults.length} documents`);
+        } else {
+          // 파일 선택함: 동적 순서 계산 (file-specific + initial search 조합)
+          searchResults = calculateDynamicOrder(userId);
+          logger.info(`Using dynamic order (file selected): ${searchResults.length} documents`);
+        }
         isFirstSuggestion = false;
       }
 
@@ -1022,7 +1030,8 @@ export const suggestUpdatesCallback = async ({
       );
     }
 
-    if (currentIndex === 0 && !isFileBasedReview) {
+    // Only perform initial search if we don't already have search results from file-selection flow
+    if (currentIndex === 0 && !isFileBasedReview && (!searchResults || searchResults.length === 0)) {
       logger.info(`[SEARCH DEBUG] Query used for initial search: "${knowledgeContent}"`);
       const workspaceId = await getWorkspaceId(client);
       searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);

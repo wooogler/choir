@@ -73,11 +73,15 @@ export const startFileBasedReviewAction = async ({
     let selectedFile = fileSelections.get(selectionKey) || parsedValue.selectedFile;
     let isUsingDefaultFile = false;
     
-    // If no file is selected (null or undefined), use the default file
+    // Check if a file was actually selected
+    let shouldUseFileBasedReview = true;
     if (!selectedFile) {
-      selectedFile = defaultFilePath;
+      // No file selected - use initial search only
+      shouldUseFileBasedReview = false;
+      logger.info(`No file selected, using initial search results only`);
+    } else if (selectedFile === defaultFilePath) {
+      // Default/recommended file explicitly selected
       isUsingDefaultFile = true;
-      logger.info(`No file selected, using default file: ${defaultFilePath}`);
     }
 
     // Clean up the selection from memory after use
@@ -85,20 +89,25 @@ export const startFileBasedReviewAction = async ({
       fileSelections.delete(selectionKey);
     }
 
-    logger.info(`Starting file-based review with selectedFile: ${selectedFile}, sessionId: ${sessionId}`);
+    logger.info(`Starting review with selectedFile: ${selectedFile}, shouldUseFileBasedReview: ${shouldUseFileBasedReview}, sessionId: ${sessionId}`);
 
     // Show user's selection using response_url instead of deleting message
     if (responseUrl) {
       try {
-        const selectedFileName = selectedFile.split('/').pop() || selectedFile;
         let messageText, blockText;
         
-        if (isUsingDefaultFile) {
-          messageText = `📁 Using recommended file: ${selectedFileName}`;
-          blockText = `📁 *Using recommended file:* ${selectedFileName}\n\n_No file was selected, so I'm using the most relevant file based on your content._`;
+        if (!shouldUseFileBasedReview) {
+          messageText = `📄 Using initial search results from all files`;
+          blockText = `📄 *Using initial search results from all files*\n\n_No specific file was selected, so I'll review content from the most relevant files based on your knowledge._`;
         } else {
-          messageText = `📁 Selected file: ${selectedFileName}`;
-          blockText = `📁 *Selected file:* ${selectedFileName}`;
+          const selectedFileName = selectedFile.split('/').pop() || selectedFile;
+          if (isUsingDefaultFile) {
+            messageText = `📁 Using recommended file: ${selectedFileName}`;
+            blockText = `📁 *Using recommended file:* ${selectedFileName}\n\n_This file was recommended as the most relevant for your content._`;
+          } else {
+            messageText = `📁 Selected file: ${selectedFileName}`;
+            blockText = `📁 *Selected file:* ${selectedFileName}`;
+          }
         }
         
         const response = await fetch(responseUrl, {
@@ -146,9 +155,9 @@ export const startFileBasedReviewAction = async ({
             knowledgeContent,
             originalChannelId: knowledgeSourceChannelId,
             originalThreadTs: knowledgeSourceThreadTs,
-            selectedFile, // Pass the selected file
+            selectedFile: shouldUseFileBasedReview ? selectedFile : undefined, // Pass selected file only if file-based review
             defaultFilePath, // Pass default file path
-            isFileBasedReview: true, // Flag to indicate this is file-based review
+            isFileBasedReview: shouldUseFileBasedReview, // Flag based on whether file was selected
             isDefaultFile, // Flag to indicate if selected file is the default file
           }),
         },
