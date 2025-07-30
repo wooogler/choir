@@ -123,37 +123,62 @@ export function parseMarkdownToTree(markdown: string, fileName?: string): Docume
 
   const root = processor.runSync(processor.parse(markdown)) as Root;
 
-  // 빈 헤딩 다음에 빈 paragraph 자동 추가
+  // 빈 헤딩 다음에 빈 paragraph 자동 추가 + 완전히 빈 파일에 빈 paragraph 추가
   if (root.children && Array.isArray(root.children)) {
-    const newChildren: any[] = [];
-    
-    for (let i = 0; i < root.children.length; i++) {
-      const currentNode = root.children[i];
-      newChildren.push(currentNode);
+    // 완전히 빈 파일인 경우 (자식 노드가 없거나 모두 빈 텍스트인 경우)
+    const hasContent = root.children.some(child => {
+      if (is(child, 'paragraph')) {
+        const textContent = toString(child).trim();
+        return textContent.length > 0;
+      }
+      return is(child, 'heading') || is(child, 'list') || is(child, 'code') || is(child, 'blockquote');
+    });
+
+    if (!hasContent && root.children.length === 0) {
+      // 완전히 빈 파일에 빈 paragraph 노드 추가
+      const emptyParagraph: Paragraph = {
+        type: 'paragraph',
+        children: [
+          {
+            type: 'text',
+            value: '', // 빈 문자열
+          } as Text,
+        ],
+      };
+      root.children = [emptyParagraph];
+      console.log(`완전히 빈 파일에 빈 paragraph 추가`);
+    } else {
+      // 기존 로직: 빈 헤딩 다음에 빈 paragraph 추가
+      const newChildren: any[] = [];
       
-      // 현재 노드가 헤딩인 경우
-      if (is(currentNode, 'heading')) {
-        const nextNode = i + 1 < root.children.length ? root.children[i + 1] : null;
+      for (let i = 0; i < root.children.length; i++) {
+        const currentNode = root.children[i];
+        newChildren.push(currentNode);
         
-        // 다음 노드가 없거나, 다음 노드도 헤딩인 경우 (즉, 현재 헤딩 다음에 콘텐츠가 없음)
-        if (!nextNode || is(nextNode, 'heading')) {
-          // 빈 paragraph 노드 추가
-          const emptyParagraph = {
-            type: 'paragraph',
-            children: [
-              {
-                type: 'text',
-                value: '', // 빈 문자열
-              },
-            ],
-          };
-          newChildren.push(emptyParagraph);
-          console.log(`빈 헤딩 "${(currentNode as any).children?.[0]?.value || 'unknown'}" 다음에 빈 paragraph 추가`);
+        // 현재 노드가 헤딩인 경우
+        if (is(currentNode, 'heading')) {
+          const nextNode = i + 1 < root.children.length ? root.children[i + 1] : null;
+          
+          // 다음 노드가 없거나, 다음 노드도 헤딩인 경우 (즉, 현재 헤딩 다음에 콘텐츠가 없음)
+          if (!nextNode || is(nextNode, 'heading')) {
+            // 빈 paragraph 노드 추가
+            const emptyParagraph: Paragraph = {
+              type: 'paragraph',
+              children: [
+                {
+                  type: 'text',
+                  value: '', // 빈 문자열
+                } as Text,
+              ],
+            };
+            newChildren.push(emptyParagraph);
+            console.log(`빈 헤딩 "${(currentNode as any).children?.[0]?.value || 'unknown'}" 다음에 빈 paragraph 추가`);
+          }
         }
       }
+      
+      root.children = newChildren;
     }
-    
-    root.children = newChildren;
   }
 
   // 문서 트리 초기화

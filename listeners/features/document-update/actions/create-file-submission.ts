@@ -219,7 +219,7 @@ export const createFileSubmissionCallback = async ({
           block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
           text: {
             type: 'mrkdwn',
-            text: `✅ *File created successfully!*\n\n📄 **${fileName}** has been created in your GitHub repository.\n\n<https://github.com/${owner}/${repo}/blob/main/${filePath}|View file on GitHub>`,
+            text: `✅ *File created successfully!*\n\n📄 <https://github.com/${owner}/${repo}/blob/${branch || 'main'}/${filePath}|*${fileName}*> has been created in your GitHub repository.`,
           },
         },
         {

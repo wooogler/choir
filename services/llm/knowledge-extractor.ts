@@ -3,6 +3,7 @@ import { anonymizeText } from 'services/common/name-cache';
 import type { SlackMessage } from 'services/slack';
 import { processMessageHistory } from 'services/slack/conversation-history';
 import { type ChatCompletionOptions, createChatCompletion } from './completions';
+import { CHOIRMessageType, getCHOIRMessageTypeFromBlocks } from 'types/message-types';
 
 interface KnowledgeExtractionResult {
   cleanContent: string;
@@ -30,6 +31,42 @@ function extractUserCommentFromBlocks(blocks: any[]): string | null {
     if (block.block_id && block.block_id.includes('user_comment') && 
         block.type === 'section' && block.text?.text) {
       return block.text.text;
+    }
+  }
+  
+  return null;
+}
+
+// Helper function to extract the most recent Q&A pair from regular CHOIR answers
+function extractLatestCHOIRAnswer(
+  messages: SlackMessage[], 
+  processedMessages: Array<{ role: string; content: string }>
+): { question: string; answer: string; source: 'choir_answer' } | null {
+  // Search from the end to find the most recent CHOIR answer
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const originalMsg = messages[i];
+    const processedMsg = processedMessages[i];
+    
+    // Check if this is a CHOIR answer message
+    const messageType = getCHOIRMessageTypeFromBlocks(originalMsg.blocks || []) || 
+                       originalMsg.metadata?.messageType;
+    
+    if (messageType === CHOIRMessageType.ANSWER && processedMsg.role === 'CHOIR') {
+      // Look for the preceding user question
+      for (let j = i - 1; j >= 0; j--) {
+        const prevProcessedMsg = processedMessages[j];
+        if (prevProcessedMsg.role !== 'CHOIR') {
+          // Found a user message before the CHOIR answer
+          const question = prevProcessedMsg.content.replace('@CHOIR', '').trim();
+          const answer = processedMsg.content.trim();
+          
+          return {
+            question,
+            answer,
+            source: 'choir_answer'
+          };
+        }
+      }
     }
   }
   
@@ -82,6 +119,25 @@ export async function extractKnowledgeFromMessages(
     // Separate Q&A content from regular conversation
     const qaContent: Array<{ question: string; answer: string | null; canAnswer: boolean }> = [];
     const conversationMessages: Array<{ role: string; content: string }> = [];
+    
+    // Extract the most recent CHOIR answer for context
+    const latestCHOIRAnswer = extractLatestCHOIRAnswer(messages, processedMessages);
+
+    // Find the index of the latest CHOIR answer message to exclude it and preceding messages
+    let conversationStartIndex = 0;
+    if (latestCHOIRAnswer) {
+      // Find the index of the CHOIR answer message
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const originalMsg = messages[i];
+        const messageType = getCHOIRMessageTypeFromBlocks(originalMsg.blocks || []) || 
+                           originalMsg.metadata?.messageType;
+        
+        if (messageType === CHOIRMessageType.ANSWER && processedMessages[i].role === 'CHOIR') {
+          conversationStartIndex = i + 1; // Start after the CHOIR answer
+          break;
+        }
+      }
+    }
 
     for (let i = 0; i < processedMessages.length; i++) {
       const msg = processedMessages[i];
@@ -144,9 +200,8 @@ export async function extractKnowledgeFromMessages(
         continue;
       }
 
-      // Add all other messages to conversation, but exclude CHOIR messages from regular conversation
-      // (Q&A content is already handled separately above)
-      if (msg.role !== 'CHOIR') {
+      // Only include messages after the latest CHOIR answer in conversation
+      if (i >= conversationStartIndex) {
         conversationMessages.push(msg);
       }
     }
@@ -182,6 +237,9 @@ export async function extractKnowledgeFromMessages(
       } else {
         qaContextSection += `\n\n**Question Not Covered by Current Documentation**:\n**Team Member Question:** ${qa.question}\n\nLook for team knowledge that could help answer this question or establish relevant policies.`;
       }
+    } else if (latestCHOIRAnswer) {
+      // If no qa_share_intro but there's a regular CHOIR answer, use it as context
+      qaContextSection += `\n\n**CHOIR's Recent Answer (Current Documentation State)**:\n**Team Member Question:** ${latestCHOIRAnswer.question}\n**CHOIR Answer:** ${latestCHOIRAnswer.answer}\n\nThe above shows what CHOIR knows from existing documentation. Focus on identifying NEW information, policy changes, or corrections mentioned in the conversation.`;
     }
 
     const prompt = `Extract knowledge from this conversation. Base your response directly on what is mentioned in the messages.
@@ -197,6 +255,8 @@ What information is shared in the conversation that should be documented?`;
         {
           role: 'system',
           content: `You are CHOIR, a documentation specialist. Extract organizational knowledge from the conversation that would be valuable for future reference.
+
+Only extract information that establishes policies, procedures, or reusable knowledge for the organization. Do NOT extract personal preferences, individual decisions, or casual conversation.
 
 Start with a descriptive markdown section title (# [Topic Name]), then write the information in natural paragraph format. Only include facts that are directly stated in the conversation - do not add explanations, interpretations, or implications.
 

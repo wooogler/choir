@@ -97,8 +97,8 @@ export const startFileBasedReviewAction = async ({
         let messageText, blockText;
         
         if (!shouldUseFileBasedReview) {
-          messageText = `📄 Using initial search results from all files`;
-          blockText = `📄 *Using initial search results from all files*\n\n_No specific file was selected, so I'll review content from the most relevant files based on your knowledge._`;
+          messageText = `📚 Reviewing all relevant files`;
+          blockText = `📚 *Reviewing all relevant files*\n\n_I'll search across all your documentation to find the most relevant content for your knowledge._`;
         } else {
           const selectedFileName = selectedFile.split('/').pop() || selectedFile;
           if (isUsingDefaultFile) {

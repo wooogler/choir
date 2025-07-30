@@ -50,6 +50,9 @@ export class MultiFileFAISSManager {
     try {
       Logger.info(`Initializing FAISS vector store with ${documents.length} documents (file-based indexing)`);
 
+      // 기존 데이터 완전히 초기화
+      this.cleanup();
+
       // 파일별로 문서 그룹화
       const fileGroups = this.groupDocumentsByFile(documents);
 
@@ -607,5 +610,27 @@ export class MultiFileFAISSManager {
         metadata: metadata as DocumentMetadata,
       });
     });
+  }
+
+  /**
+   * 기존 데이터 완전히 정리
+   */
+  private cleanup(): void {
+    Logger.info('Cleaning up existing FAISS data for fresh initialization');
+    
+    // 모든 파일 스토어 정리
+    this.fileStores.clear();
+    
+    // 파일별 문서 캐시 정리
+    this.fileDocuments.clear();
+    
+    // 전역 스토어 초기화
+    this.globalStore = null;
+    
+    // 쓰기 가능한 스토어 초기화
+    this.writableStore = null;
+    
+    // 초기화 상태 리셋
+    this.isInitialized = false;
   }
 }

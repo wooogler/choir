@@ -15,6 +15,35 @@ export const showCreateFileModalCallback = async ({
   const startTime = Date.now();
   await ack();
 
+  // Immediately update the message via response_url to remove the button
+  const responseUrl = (body as any).response_url;
+  if (responseUrl) {
+    try {
+      await fetch(responseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          replace_original: true,
+          text: '📄 Selected: Create New File',
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '📄 *Selected: Create New File*',
+              },
+            },
+          ],
+        }),
+      });
+      logger.info('Successfully updated Create New File button message via response_url');
+    } catch (responseError) {
+      logger.warn('Failed to update message via response_url:', responseError);
+    }
+  }
+
   try {
     const createFileSessionId = body.actions[0].value;
     if (!createFileSessionId) {
