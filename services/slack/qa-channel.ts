@@ -117,9 +117,22 @@ export async function createQAChannelMessage(
             image_url: userInfo.user.profile.image_192,
             alt_text: questionerName || 'User profile',
           };
+        } else {
+          // Fallback to default profile image
+          introBlock.accessory = {
+            type: 'image',
+            image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
+            alt_text: questionerName || 'User profile',
+          };
         }
       } catch (error) {
         Logger.error('Error fetching user profile image', error as Error, { questionerId });
+        // Fallback to default profile image on error
+        introBlock.accessory = {
+          type: 'image',
+          image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
+          alt_text: questionerName || 'User profile',
+        };
       }
     } else if (isAnonymous) {
       // Add default anonymous profile image
@@ -160,9 +173,22 @@ export async function createQAChannelMessage(
             image_url: userInfo.user.profile.image_192,
             alt_text: questionerName || 'User profile',
           };
+        } else {
+          // Fallback to default profile image
+          introBlock.accessory = {
+            type: 'image',
+            image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
+            alt_text: questionerName || 'User profile',
+          };
         }
       } catch (error) {
         Logger.error('Error fetching user profile image', error as Error, { questionerId });
+        // Fallback to default profile image on error
+        introBlock.accessory = {
+          type: 'image',
+          image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
+          alt_text: questionerName || 'User profile',
+        };
       }
     } else if (isAnonymous) {
       // Add default anonymous profile image

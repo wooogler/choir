@@ -309,9 +309,22 @@ export const suggestUpdatesCallback = async ({
                         image_url: userInfo.user.profile.image_192,
                         alt_text: sessionData.userName || 'User profile',
                       };
+                    } else {
+                      // Fallback to default profile image
+                      introBlock.accessory = {
+                        type: 'image',
+                        image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
+                        alt_text: sessionData.userName || 'User profile',
+                      };
                     }
                   } catch (error) {
                     console.error('Error fetching user profile image:', error);
+                    // Fallback to default profile image on error
+                    introBlock.accessory = {
+                      type: 'image',
+                      image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
+                      alt_text: sessionData.userName || 'User profile',
+                    };
                   }
                 }
 
