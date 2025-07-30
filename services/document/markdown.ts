@@ -1589,12 +1589,30 @@ export function replaceNodeAtomically(
   
   console.log(`[DEBUG] replaceNodeAtomically: Copied nodeMap size: ${newTree.nodeMap.size}`);
 
-  // 1. 새 노드들을 nodeMap에 추가
+  // Helper function to recursively add nodes and their children to nodeMap
+  const addNodeToMapRecursively = (node: ExtendedNode): void => {
+    if (node.id) {
+      newTree.nodeMap.set(node.id, node);
+      console.log(`[DEBUG] replaceNodeAtomically: Added node ${node.id} to nodeMap`);
+      
+      // Recursively add children if they exist (type check for nodes that can have children)
+      const nodeWithChildren = node as any;
+      if (nodeWithChildren.children && Array.isArray(nodeWithChildren.children)) {
+        nodeWithChildren.children.forEach((child: any) => {
+          if (child.id) {
+            addNodeToMapRecursively(child);
+          }
+        });
+      }
+    }
+  };
+
+  // 1. 새 노드들을 nodeMap에 추가 (재귀적으로 자식 노드들도 포함)
   console.log(`[DEBUG] replaceNodeAtomically: Adding ${replacementNodes.length} nodes to nodeMap`);
   replacementNodes.forEach((node, index) => {
     if (node.id) {
-      newTree.nodeMap.set(node.id, node);
-      console.log(`[DEBUG] replaceNodeAtomically: Added node ${node.id} (${index + 1}/${replacementNodes.length})`);
+      addNodeToMapRecursively(node);
+      console.log(`[DEBUG] replaceNodeAtomically: Processed node ${node.id} (${index + 1}/${replacementNodes.length})`);
     } else {
       console.warn(`[DEBUG] replaceNodeAtomically: Node at index ${index} has no ID`);
     }

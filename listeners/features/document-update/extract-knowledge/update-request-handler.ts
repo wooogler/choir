@@ -91,6 +91,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     }
 
     if (!filteredMessages?.length) {
+
       await client.chat.update({
         channel: originalChannelId,
         ts: loadingMessage.ts,
