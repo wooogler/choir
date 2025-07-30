@@ -55,6 +55,7 @@ OPENAI_API_KEY=your-openai-api-key
 
 # GitHub Integration
 GITHUB_TOKEN=your-github-personal-access-token
+GITHUB_WEBHOOK_SECRET=your-webhook-secret  # Optional but recommended for security
 
 # Server Configuration
 PORT=3000  # Use an available port (3000, 3001, 3002, etc.)
@@ -101,3 +102,72 @@ Start the application with PM2 (replace `{workspace_name}` with your actual work
 ```bash
 pm2 start "pnpm run dev:prod" --name "choir-{workspace_name}"
 ```
+
+## GitHub Webhook Auto-Reload
+
+CHOIR supports automatic document reloading when changes are pushed to your GitHub repository. This eliminates the need to manually click "Reload from Github" in the App Home.
+
+### Setup GitHub Webhook
+
+1. **Go to your GitHub repository** → Settings → Webhooks → Add webhook
+
+2. **Configure the webhook**:
+   - **Payload URL**: `https://choir.cs.vt.edu/{workspace_name}/webhook/github`
+   - **Content type**: `application/json`
+   - **Secret**: Enter the same value as `GITHUB_WEBHOOK_SECRET` in your .env file (optional but recommended)
+   - **Events**: Select "Push events"
+   - **Active**: ✅ Checked
+
+3. **Update your Nginx configuration** (if not already done):
+
+```nginx
+# Add this location block for webhook endpoint
+location = /{workspace_name}/webhook/github {
+    proxy_pass http://localhost:{port}/webhook/github;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 60s;
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+}
+```
+
+4. **Reload Nginx**:
+```bash
+sudo nginx -t  # Test configuration
+sudo systemctl reload nginx
+```
+
+### How It Works
+
+1. **Push Detection**: When you push changes to your GitHub repository, GitHub sends a webhook event to CHOIR
+2. **Repository Matching**: CHOIR checks if the repository matches the one configured for your workspace
+3. **Branch Verification**: Only pushes to the configured branch (usually `main`) trigger auto-reload
+4. **Automatic Reload**: CHOIR automatically fetches the latest files and updates the vector store
+5. **Manager Notification**: Workspace managers receive Slack notifications about the auto-reload status
+
+### Development Testing
+
+For local development, use ngrok to expose your local server:
+
+```bash
+# Terminal 1: Start CHOIR
+pnpm run dev
+
+# Terminal 2: Expose local server
+ngrok http 3000
+```
+
+Then use the ngrok URL in your webhook configuration:
+```
+Payload URL: https://abc123.ngrok.io/webhook/github
+```
+
+### Security Notes
+
+- The `GITHUB_WEBHOOK_SECRET` is optional but **highly recommended** for production
+- It prevents malicious webhook requests by verifying that requests actually come from GitHub
+- Without the secret, the webhook will still work but with reduced security

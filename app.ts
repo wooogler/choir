@@ -11,6 +11,7 @@ import { getGithubRepo, getWorkspaceId, setupInitialManager } from 'services/sla
 import { HomeScreenService } from 'services/slack/home-screen';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
 import { VectorStoreService } from 'services/vector/main-service';
+import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
 
 dotenv.config();
 
@@ -40,6 +41,81 @@ const vectorStore = VectorStoreService.getInstance();
 registerListeners(app);
 
 // Note: app_home_opened event is registered in registerListeners()
+
+/** GitHub Webhook Setup */
+const setupGitHubWebhook = () => {
+  const githubWebhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+  
+  if (!githubWebhookSecret) {
+    app.logger.warn('GITHUB_WEBHOOK_SECRET not set. GitHub webhooks will not be verified.');
+  }
+
+  try {
+    // Access the Express app through the receiver
+    const expressApp = (app as any).receiver?.app;
+    
+    if (!expressApp) {
+      app.logger.warn('Express app not available. GitHub webhook endpoint cannot be configured.');
+      return;
+    }
+
+    // Express middleware to parse raw JSON for webhook verification
+    expressApp.use('/webhook/github', (req: any, _res: any, next: any) => {
+      // Parse raw body for webhook signature verification
+      let data = '';
+      req.setEncoding('utf8');
+      req.on('data', (chunk: string) => {
+        data += chunk;
+      });
+      req.on('end', () => {
+        req.body = Buffer.from(data, 'utf8');
+        next();
+      });
+    });
+    
+    // GitHub webhook endpoint
+    expressApp.post('/webhook/github', async (req: any, res: any) => {
+      try {
+        const payload = req.body;
+        const signature = req.get('X-Hub-Signature-256') || '';
+        
+        // Verify webhook signature if secret is configured
+        if (githubWebhookSecret && signature) {
+          const isValid = verifyGitHubSignature(payload.toString(), signature, githubWebhookSecret);
+          if (!isValid) {
+            app.logger.warn('Invalid GitHub webhook signature');
+            return res.status(401).send('Unauthorized');
+          }
+        }
+
+        const webhookPayload = JSON.parse(payload.toString());
+        const eventType = req.get('X-GitHub-Event');
+
+        app.logger.info(`GitHub webhook received: ${eventType}`);
+
+        // Handle push events
+        if (eventType === 'push') {
+          await handleGitHubPushEvent(webhookPayload, app.client, app.logger);
+          app.logger.info('GitHub push event processed successfully');
+        } else {
+          app.logger.info(`Ignoring GitHub event: ${eventType}`);
+        }
+
+        res.status(200).send('OK');
+      } catch (error) {
+        app.logger.error('Error processing GitHub webhook:', error);
+        res.status(500).send('Internal Server Error');
+      }
+    });
+
+    app.logger.info('GitHub webhook endpoint configured at /webhook/github');
+  } catch (error) {
+    app.logger.error('Failed to setup GitHub webhook endpoint:', error);
+  }
+};
+
+// Setup GitHub webhook (works for both Socket Mode and HTTP Mode)
+setupGitHubWebhook();
 
 /** Start Bolt App */
 (async () => {

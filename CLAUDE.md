@@ -110,6 +110,7 @@ AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME=
 
 # GitHub Integration
 GITHUB_TOKEN=             # For repository access
+GITHUB_WEBHOOK_SECRET=    # Optional secret for webhook verification
 
 # Manager Access
 MANAGER_PROMOTION_PASSWORD=  # Password for user promotion to manager
