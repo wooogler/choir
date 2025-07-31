@@ -80,10 +80,26 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
   ];
 
   // 모든 사용자에게 Messages 탭으로 이동할 수 있는 버튼 제공
-  // Get team and bot info for deep link
-  const authTest = await client.auth.test();
-  const teamId = authTest.team_id;
-  const botUserId = authTest.user_id;
+      // Get team and app info for deep link
+    const authTest = await client.auth.test();
+    const teamId = authTest.team_id;
+    const botUserId = authTest.user_id;
+    
+    // Extract app ID from SLACK_APP_TOKEN (format: xapp-1-{APP_ID}-...)
+    let appId = process.env.SLACK_APP_ID;
+    if (!appId && process.env.SLACK_APP_TOKEN) {
+      const tokenParts = process.env.SLACK_APP_TOKEN.split('-');
+      if (tokenParts.length >= 3 && tokenParts[0] === 'xapp') {
+        appId = tokenParts[2]; // App ID is the third part
+      }
+    }
+    
+    logger.info('[DEBUG] App Home - Deep link info:', {
+      teamId,
+      botUserId,
+      appId: appId || 'NOT_FOUND',
+      hasAppToken: !!process.env.SLACK_APP_TOKEN
+    });
 
   homeBlocks.push(
     {
@@ -104,7 +120,10 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
             emoji: true,
           },
           style: 'primary',
-          url: `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
+          // Use App Home deep link format for apps with App Home
+          url: appId 
+            ? `slack://app?team=${teamId}&id=${appId}&tab=messages`
+            : `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
         },
       ],
     } as any,

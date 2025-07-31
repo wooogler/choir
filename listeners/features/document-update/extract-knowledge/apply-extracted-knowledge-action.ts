@@ -91,42 +91,22 @@ export const applyExtractedKnowledgeCallback = async ({
 
     logger.info(`Manager ${managerName} (${managerId}) claimed processing for session ${sessionId}`);
 
-    // 3. Update current manager with processing confirmation via response_url
-    try {
-      if (body.response_url) {
-        await fetch(body.response_url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            replace_original: true,
-            text: '✅ Processing started!',
-            blocks: [
-              {
-                type: 'section',
-                text: {
-                  type: 'mrkdwn',
-                  text: '✅ *Processing started!*\n🔄 Generating document suggestions...',
-                },
-              },
-            ],
-          }),
-        });
-      }
-    } catch (responseError) {
-      logger.warn('Failed to send processing confirmation via response_url:', responseError);
-    }
+
 
     // 4. Update other managers' messages to show conflict state
     await updateOtherManagerMessages(sessionData, managerId, managerName, client, logger);
 
-    // 5. Notify original channel about who started processing (skip if manager's own work)
+    // 5. Notify original channel about who started processing (skip if manager's own work OR thread interaction)
     const isManagerOwnWork = sessionData.userId === managerId; // Manager processing their own suggestion
-    if (!isManagerOwnWork) {
+    const isThreadInteraction = !!sessionData.originalThreadTs; // Interaction happened in a thread
+    
+    if (!isManagerOwnWork && !isThreadInteraction) {
       await notifyOriginalChannel(sessionData, managerName, client, logger);
-    } else {
+      logger.info(`[DEBUG] Sent notification to original channel - channel-level interaction`);
+    } else if (isManagerOwnWork) {
       logger.info(`[DEBUG] Skipping notification - manager processing their own suggestion`);
+    } else if (isThreadInteraction) {
+      logger.info(`[DEBUG] Skipping notification - thread interaction (notification already sent via response_url)`);
     }
     // ========== END CONCURRENCY CONTROL ==========
 
@@ -151,15 +131,78 @@ export const applyExtractedKnowledgeCallback = async ({
       return;
     }
 
+    // Extract app ID from SLACK_APP_TOKEN (format: xapp-1-{APP_ID}-...)
+    let appId = process.env.SLACK_APP_ID;
+    if (!appId && process.env.SLACK_APP_TOKEN) {
+      const tokenParts = process.env.SLACK_APP_TOKEN.split('-');
+      if (tokenParts.length >= 3 && tokenParts[0] === 'xapp') {
+        appId = tokenParts[2]; // App ID is the third part
+      }
+    }
+    
+    // Use App Home deep link format for apps with App Home
+    const workingDmUrl = appId 
+      ? `slack://app?team=${teamId}&id=${appId}&tab=messages`
+      : `slack://user?team=${teamId}&id=${botUserId}&tab=messages`;
+      
+    logger.info('[DEBUG] Apply Knowledge - Deep link info:', {
+      teamId,
+      botUserId,
+      appId: appId || 'NOT_FOUND',
+      dmUrl: workingDmUrl,
+      hasAppToken: !!process.env.SLACK_APP_TOKEN
+    });
+
+    // 3. Update current manager with processing confirmation via response_url
+    try {
+      if (body.response_url) {
+        await fetch(body.response_url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            replace_original: true,
+            text: '✅ Processing started!',
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: '✅ *Processing started!*\n🔄 Generating document suggestions...\nDocument suggestions will be sent to your DM.',
+                },
+              },
+              {
+                type: 'actions',
+                elements: [
+                  {
+                    type: 'button',
+                    text: {
+                      type: 'plain_text',
+                      text: 'Open DM',
+                      emoji: true,
+                    },
+                    style: 'primary',
+                    url: workingDmUrl,
+                  },
+                ],
+              },
+            ],
+          }),
+        });
+      }
+    } catch (responseError) {
+      logger.warn('Failed to send processing confirmation via response_url:', responseError);
+    }
+
     // Check if this is already a DM conversation
     const isDMConversation = sessionData.originalChannelId?.startsWith('D');
 
-    // Only send processing messages if this is NOT a DM conversation
-    if (!isDMConversation) {
-      // Send public notification to channel
+    // Only send processing messages if this is NOT a DM conversation AND NOT a thread interaction
+    if (!isDMConversation && !isThreadInteraction) {
+      // Send public notification to channel (only for top-level channel interactions)
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,
-        ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
         text: '🔄 Processing knowledge and generating document updates...',
         blocks: [
           {
@@ -172,49 +215,11 @@ export const applyExtractedKnowledgeCallback = async ({
           },
         ],
       });
-
-      // Use the original working format from git history
-      const workingDmUrl = `slack://user?team=${teamId}&id=${botUserId}&tab=messages`;
-    
-
-      // Show ephemeral processing message with DM button (only in thread if thread exists)
-      const ephemeralParams: any = {
-        channel: sessionData.originalChannelId,
-        user: body.user.id,
-        text: '🔄 Processing knowledge and generating document updates...',
-        blocks: [
-          {
-            block_id: createCHOIRBlockId(CHOIRMessageType.EPHEMERAL_HELPER),
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: '🔄 Processing knowledge and generating document updates...\nDocument suggestions will be sent to your DM.',
-            },
-          },
-          {
-            type: 'actions',
-            elements: [
-              {
-                type: 'button' as const,
-                text: {
-                  type: 'plain_text' as const,
-                  text: 'Open DM',
-                  emoji: true,
-                },
-                style: 'primary' as const,
-                url: workingDmUrl,
-              },
-            ],
-          },
-        ],
-      };
-      
-      // Only add thread_ts if we're in a thread
-      if (sessionData.originalThreadTs) {
-        ephemeralParams.thread_ts = sessionData.originalThreadTs;
-      }
-      
-      await client.chat.postEphemeral(ephemeralParams);
+      logger.info(`[DEBUG] Sent channel notification - top-level channel interaction`);
+    } else if (isDMConversation) {
+      logger.info(`[DEBUG] Skipping channel notification - DM conversation`);
+    } else if (isThreadInteraction) {
+      logger.info(`[DEBUG] Skipping channel notification - thread interaction (handled via response_url)`);
     }
 
     // Use all messages as source messages
