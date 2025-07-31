@@ -124,7 +124,7 @@ async function performAutoReloadForWorkspace(
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `🔄 *Reflecting your document changes...*\n\nDetected updates in your documents. Please wait while we sync the changes.`,
+              text: `🔄 Reflecting your document changes...`,
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
           },
@@ -163,7 +163,7 @@ async function performAutoReloadForWorkspace(
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `❌ *Unable to reflect changes*\n\nNo documents found in the repository.\n\n<https://github.com/${owner}/${repo}|View Repository>`,
+                text: `❌ Unable to reflect changes: No documents found. <https://github.com/${owner}/${repo}|View Repository>`,
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
             },
@@ -195,13 +195,13 @@ async function performAutoReloadForWorkspace(
       for (const managerId of managers) {
         await client.chat.postMessage({
           channel: managerId,
-          text: `✅ Document changes reflected successfully!`,
+          text: `✅ Document changes reflected successfully! Updated ${markdownFiles.length} files. ${linkText}`,
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `✅ *Document changes reflected successfully!*\n\nUpdated ${markdownFiles.length} files. Your knowledge base is now up to date!\n\n<${commitUrl}|${linkText}>`,
+                text: `✅ Document changes reflected successfully! Updated ${markdownFiles.length} files. <${commitUrl}|${linkText}>`,
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
             },
@@ -221,7 +221,7 @@ async function performAutoReloadForWorkspace(
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `❌ *Unable to reflect changes*\n\nProcessing failed. Please try using the "Reload From Github" button in the Home screen or contact the research team.\n\n<https://github.com/${owner}/${repo}|View Repository>`,
+                text: `❌ Unable to reflect changes: Processing failed. Try "Reload From Github" in Home or contact research team. <https://github.com/${owner}/${repo}|View Repository>`,
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
             },
@@ -251,7 +251,7 @@ async function performAutoReloadForWorkspace(
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
-                  text: `❌ *Unable to reflect document changes*\n\nA system error occurred while processing updates. Please try using the "Reload From Github" button in the Home screen or contact the research team.\n\n<https://github.com/${owner}/${repo}|View Repository>`,
+                  text: `❌ Unable to reflect document changes: System error occurred. Try "Reload From Github" in Home or contact research team. <https://github.com/${owner}/${repo}|View Repository>`,
                 },
                 block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
               },
