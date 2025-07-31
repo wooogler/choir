@@ -1218,16 +1218,4 @@ export const registerManagementHandlers = (app: App) => {
     }
   });
 
-
-  // URL 버튼들을 위한 더미 핸들러들 (Slack이 response를 기대함)
-  app.action('start_chat_url', async ({ ack }) => {
-    await ack();
-    // URL로 redirect되므로 추가 작업 불필요
-  });
-
-  app.action('open_dm_url', async ({ ack }) => {
-    await ack();
-    // URL로 redirect되므로 추가 작업 불필요
-  });
-
 };

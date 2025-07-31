@@ -202,7 +202,6 @@ export const applyExtractedKnowledgeCallback = async ({
                   emoji: true,
                 },
                 style: 'primary' as const,
-                action_id: 'open_dm_url',
                 url: workingDmUrl,
               },
             ],

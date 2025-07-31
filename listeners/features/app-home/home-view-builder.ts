@@ -104,7 +104,6 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
             emoji: true,
           },
           style: 'primary',
-          action_id: 'start_chat_url',
           url: `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
         },
       ],
