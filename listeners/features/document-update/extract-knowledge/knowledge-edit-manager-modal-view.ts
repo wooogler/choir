@@ -87,7 +87,9 @@ export async function handleKnowledgeEditManagerModal({
     sessionData.extractedKnowledge = editedKnowledge.trim();
     sessionData.lastEditedBy = userId; // Mark manager as last editor
     sessionData.lastEditedAt = new Date().toISOString();
-    storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+    // 매니저 제안 세션은 14일 동안 유효하도록 설정
+    const MANAGER_SESSION_EXPIRY = 14 * 24 * 60 * 60 * 1000; // 14일
+    storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE, MANAGER_SESSION_EXPIRY);
 
     logger.info(`Knowledge for session ${sessionId} edited by manager ${userId}`);
 
@@ -312,7 +314,9 @@ export async function handleKnowledgeEditManagerModal({
         // Step 3: Update session data with new timestamp
         if (newMessage?.ts) {
           sessionData.managerMessageInfo[userId].ts = newMessage.ts;
-          storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+          // 매니저 제안 세션은 14일 동안 유효하도록 설정
+          const MANAGER_SESSION_EXPIRY = 14 * 24 * 60 * 60 * 1000; // 14일
+          storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE, MANAGER_SESSION_EXPIRY);
         }
       } catch (updateError) {
         logger.warn(

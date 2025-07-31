@@ -385,7 +385,9 @@ export const suggestUpdatesCallback = async ({
             sessionData.processingBy = userId;
             sessionData.processingManagerName = managerName;
             sessionData.processingAt = new Date().toISOString();
-            storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+            // 매니저 제안 세션은 14일 동안 유효하도록 설정
+            const MANAGER_SESSION_EXPIRY = 14 * 24 * 60 * 60 * 1000; // 14일
+            storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE, MANAGER_SESSION_EXPIRY);
 
             logger.info(`Manager ${managerName} (${userId}) claimed processing for session ${sessionId}`);
 
@@ -1975,7 +1977,9 @@ Section: ${sectionInfo}`;
       if (sessionData) {
         sessionData.mainMessageTs = suggestionMessageTs;
         sessionData.mainChannelId = currentDmChannelId;
-        storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+        // 매니저 제안 세션은 14일 동안 유효하도록 설정
+        const MANAGER_SESSION_EXPIRY = 14 * 24 * 60 * 60 * 1000; // 14일
+        storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE, MANAGER_SESSION_EXPIRY);
       }
     }
 

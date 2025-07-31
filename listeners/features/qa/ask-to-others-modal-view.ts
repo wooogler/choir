@@ -244,6 +244,7 @@ export const askToOthersSubmitCallback = async ({
                     emoji: true,
                   },
                   style: 'primary',
+                  action_id: 'open_private_dm_url',
                   url: `slack://channel?team=${teamId}&id=${conversationId}`,
                 },
               ],

@@ -1218,4 +1218,20 @@ export const registerManagementHandlers = (app: App) => {
     }
   });
 
+  // URL 버튼 action handlers (딥링크와 함께 사용)
+  app.action('start_chat_url', async ({ ack, logger }) => {
+    await ack();
+    logger.info('Start chat URL button clicked - handled by deep link');
+  });
+
+  app.action('open_dm_url', async ({ ack, logger }) => {
+    await ack();
+    logger.info('Open DM URL button clicked - handled by deep link');
+  });
+
+  app.action('open_private_dm_url', async ({ ack, logger }) => {
+    await ack();
+    logger.info('Open private DM URL button clicked - handled by deep link');
+  });
+
 };

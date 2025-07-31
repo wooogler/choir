@@ -120,6 +120,7 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
             emoji: true,
           },
           style: 'primary',
+          action_id: 'start_chat_url',
           // Use App Home deep link format for apps with App Home
           url: appId 
             ? `slack://app?team=${teamId}&id=${appId}&tab=messages`
