@@ -115,10 +115,8 @@ async function performAutoReloadForWorkspace(
     }
 
     // 모든 관리자에게 진행 상황 메시지 전송
-    const progressMessages = new Map<string, any>();
-    
     for (const managerId of managers) {
-      const progressMessage = await client.chat.postMessage({
+      await client.chat.postMessage({
         channel: managerId,
         text: `🔄 Reflecting your document changes...`,
         blocks: [
@@ -132,7 +130,6 @@ async function performAutoReloadForWorkspace(
           },
         ],
       });
-      progressMessages.set(managerId, progressMessage);
     }
 
     // 첫 번째 관리자를 대신해서 reload 수행
@@ -156,11 +153,10 @@ async function performAutoReloadForWorkspace(
     });
 
     if (markdownFiles.length === 0) {
-      // 모든 관리자에게 실패 메시지 업데이트
-      for (const [managerId, progressMessage] of progressMessages) {
-        await client.chat.update({
+      // 모든 관리자에게 실패 메시지 전송
+      for (const managerId of managers) {
+        await client.chat.postMessage({
           channel: managerId,
-          ts: progressMessage.ts!,
           text: '❌ Unable to reflect changes: No documents found.',
           blocks: [
             {
@@ -195,11 +191,10 @@ async function performAutoReloadForWorkspace(
         : `https://github.com/${owner}/${repo}`;
       const linkText = latestCommit ? 'View Changes' : 'View Repository';
 
-      // 모든 관리자에게 성공 메시지 업데이트
-      for (const [managerId, progressMessage] of progressMessages) {
-        await client.chat.update({
+      // 모든 관리자에게 성공 메시지 전송
+      for (const managerId of managers) {
+        await client.chat.postMessage({
           channel: managerId,
-          ts: progressMessage.ts!,
           text: `✅ Document changes reflected successfully!`,
           blocks: [
             {
@@ -216,11 +211,10 @@ async function performAutoReloadForWorkspace(
 
       logger.info(`Auto-reload completed: ${markdownFiles.length} files`);
     } else {
-      // 모든 관리자에게 실패 메시지 업데이트
-      for (const [managerId, progressMessage] of progressMessages) {
-        await client.chat.update({
+      // 모든 관리자에게 실패 메시지 전송
+      for (const managerId of managers) {
+        await client.chat.postMessage({
           channel: managerId,
-          ts: progressMessage.ts!,
           text: '❌ Unable to reflect changes: Processing failed.',
           blocks: [
             {
