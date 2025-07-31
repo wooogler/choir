@@ -336,8 +336,8 @@ export class WorkspaceStore {
       }
 
       // GithubService를 동적으로 import하여 순환 의존성 방지
-      const { GithubService } = await import('services/github/github-service');
-      const githubService = GithubService.getInstance();
+      const GithubServiceModule = await import('services/github/github-service');
+      const githubService = GithubServiceModule.default.getInstance();
       
       Logger.info(`Refreshing markdown files cache for workspace ${workspaceId} from GitHub repo ${config.githubRepo.owner}/${config.githubRepo.repo}`);
 
@@ -349,7 +349,7 @@ export class WorkspaceStore {
         workspaceId,
       });
 
-      const fileList = markdownFiles.map(file => ({
+      const fileList = markdownFiles.map((file: any) => ({
         name: file.name,
         path: file.path,
       }));
@@ -369,10 +369,10 @@ export class WorkspaceStore {
         }
       } catch (vectorError) {
         // 벡터 스토어 업데이트 실패는 로그만 남기고 진행
-        Logger.warn(`Failed to update vector store for workspace ${workspaceId}:`, vectorError);
+        Logger.warn(`Failed to update vector store for workspace ${workspaceId}:`, vectorError as Error);
       }
     } catch (error) {
-      Logger.error(`Failed to refresh markdown files cache for workspace ${workspaceId}:`, error);
+      Logger.error(`Failed to refresh markdown files cache for workspace ${workspaceId}:`, error as Error);
     }
   }
 
