@@ -130,14 +130,20 @@ export const applyExtractedKnowledgeCallback = async ({
     }
     // ========== END CONCURRENCY CONTROL ==========
 
-    // Get team_id and bot_id for the slack:// URL
+    // Get team_id and bot_id for the DM URL
     const authInfo = await client.auth.test();
+    const teamInfo = await client.team.info();
 
     const teamId = authInfo.team_id;
     const botUserId = authInfo.user_id;
+    const teamDomain = teamInfo.team?.domain;
 
-    if (!teamId || !botUserId) {
-      logger.error('Failed to get team_id or user_id for DM link');
+    if (!teamId || !botUserId || !teamDomain) {
+      logger.error('Failed to get team_id, user_id, or team domain for DM link', {
+        teamId,
+        botUserId,
+        teamDomain,
+      });
       await client.chat.postMessage({
         channel: body.user.id,
         text: '❌ Could not create a link to DM. Please try again or contact support.',
@@ -167,6 +173,10 @@ export const applyExtractedKnowledgeCallback = async ({
         ],
       });
 
+      // Use the original working format from git history
+      const workingDmUrl = `slack://user?team=${teamId}&id=${botUserId}&tab=messages`;
+    
+
       // Show ephemeral processing message with DM button (only in thread if thread exists)
       const ephemeralParams: any = {
         channel: sessionData.originalChannelId,
@@ -192,7 +202,8 @@ export const applyExtractedKnowledgeCallback = async ({
                   emoji: true,
                 },
                 style: 'primary' as const,
-                url: `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
+                action_id: 'open_dm_url',
+                url: workingDmUrl,
               },
             ],
           },

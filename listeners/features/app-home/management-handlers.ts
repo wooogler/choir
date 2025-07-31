@@ -12,6 +12,7 @@ import {
 import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 export const registerManagementHandlers = (app: App) => {
   app.action('request_manager_permission', async ({ ack, body, client, logger }) => {
@@ -1216,4 +1217,17 @@ export const registerManagementHandlers = (app: App) => {
       }
     }
   });
+
+
+  // URL 버튼들을 위한 더미 핸들러들 (Slack이 response를 기대함)
+  app.action('start_chat_url', async ({ ack }) => {
+    await ack();
+    // URL로 redirect되므로 추가 작업 불필요
+  });
+
+  app.action('open_dm_url', async ({ ack }) => {
+    await ack();
+    // URL로 redirect되므로 추가 작업 불필요
+  });
+
 };
