@@ -2,7 +2,7 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import { deleteProgressMessageTimestamp, getLastMessageTimestamp, getProgressMessageTimestamp } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getFileSelectionState } from 'services/document/document-store';
-import { getWorkspaceId } from 'services/slack';
+import { getWorkspaceId, getUserName } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
@@ -158,16 +158,19 @@ export const cancelDocumentUpdatesCallback = async ({
     const currentDmChannelId = body.channel?.id;
     if (originalChannelId && originalChannelId !== currentDmChannelId) {
       try {
+        // Get user name for the notification
+        const userName = await getUserName(userId, client);
+        
         await client.chat.postMessage({
           channel: originalChannelId,
           ...(originalThreadTs ? { thread_ts: originalThreadTs } : {}),
-          text: `📋 <@${userId}> ${notificationMessage}.`,
+          text: `📋 *${userName}* ${notificationMessage}.`,
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `📋 <@${userId}> ${notificationMessage}.`,
+                text: `📋 *${userName}* ${notificationMessage}.`,
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
             },

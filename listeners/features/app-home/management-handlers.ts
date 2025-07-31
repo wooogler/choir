@@ -1,5 +1,5 @@
 import type { App } from '@slack/bolt';
-import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
+import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/user-interaction-logger';
 import {
   addManager,
   getCHOIRUsers,
@@ -24,6 +24,7 @@ export const registerManagementHandlers = (app: App) => {
         view: {
           type: 'modal',
           callback_id: 'manager_promotion_modal',
+          notify_on_close: true,
           title: {
             type: 'plain_text',
             text: 'Become Manager',
@@ -66,14 +67,13 @@ export const registerManagementHandlers = (app: App) => {
 
       // Log success
       const workspaceId = await getWorkspaceId(client);
-      await logButtonClick(
+      await logAppHomeButtonClick(
         body.user.id,
         workspaceId,
-        'app_home',
-        'dm',
         'request_manager_permission',
         Date.now() - startTime,
         true,
+        'Become Manager',
         {},
         client,
       );
@@ -91,14 +91,13 @@ export const registerManagementHandlers = (app: App) => {
       // Log error
       try {
         const workspaceId = await getWorkspaceId(client);
-        await logButtonClick(
+        await logAppHomeButtonClick(
           body.user.id,
           workspaceId,
-          'app_home',
-          'dm',
           'request_manager_permission',
           Date.now() - startTime,
           false,
+          'Become Manager',
           {
             error: error instanceof Error ? error.message : 'Unknown error',
             errorStack: error instanceof Error ? error.stack : undefined,
@@ -127,18 +126,17 @@ export const registerManagementHandlers = (app: App) => {
 
         // Log validation error
         const workspaceId = await getWorkspaceId(client);
-        await logModalSubmit(
+        await logAppHomeModalSubmit(
           body.user.id,
           workspaceId,
           'manager_promotion_modal',
           Date.now() - startTime,
           false,
+          'Manager promotion with empty password',
           {
             error: 'Empty password',
           },
           client,
-          'app_home',
-          'dm',
         );
         return;
       }
@@ -187,18 +185,17 @@ export const registerManagementHandlers = (app: App) => {
         });
 
         // Log successful promotion
-        await logModalSubmit(
+        await logAppHomeModalSubmit(
           body.user.id,
           workspaceId,
           'manager_promotion_modal',
           Date.now() - startTime,
           true,
+          `Manager promotion with password: ${password}`,
           {
             promoted: true,
           },
           client,
-          'app_home',
-          'dm',
         );
       } else {
         await ack({
@@ -209,18 +206,17 @@ export const registerManagementHandlers = (app: App) => {
         });
 
         // Log invalid password
-        await logModalSubmit(
+        await logAppHomeModalSubmit(
           body.user.id,
           workspaceId,
           'manager_promotion_modal',
           Date.now() - startTime,
           false,
+          `Manager promotion with invalid password: ${password}`,
           {
             error: 'Invalid password',
           },
           client,
-          'app_home',
-          'dm',
         );
       }
     } catch (error) {
@@ -236,19 +232,18 @@ export const registerManagementHandlers = (app: App) => {
       // Log error
       try {
         const workspaceId = await getWorkspaceId(client);
-        await logModalSubmit(
+        await logAppHomeModalSubmit(
           body.user.id,
           workspaceId,
           'manager_promotion_modal',
           Date.now() - startTime,
           false,
+          `Manager promotion error`,
           {
             error: error instanceof Error ? error.message : 'Unknown error',
             errorStack: error instanceof Error ? error.stack : undefined,
           },
           client,
-          'app_home',
-          'dm',
         );
       } catch (logError) {
         logger.error('Failed to log error:', logError);
@@ -269,6 +264,7 @@ export const registerManagementHandlers = (app: App) => {
         view: {
           type: 'modal',
           callback_id: 'choir_users_modal',
+          notify_on_close: true,
           title: {
             type: 'plain_text',
             text: 'Manage CHOIR Users',
@@ -331,14 +327,13 @@ export const registerManagementHandlers = (app: App) => {
       });
 
       // Log success
-      await logButtonClick(
+      await logAppHomeButtonClick(
         body.user.id,
         workspaceId,
-        'app_home',
-        'dm',
         'manage_choir_users',
         Date.now() - startTime,
         true,
+        'Manage CHOIR Users',
         {
           currentUsersCount: choirUsers.length,
         },
@@ -358,14 +353,13 @@ export const registerManagementHandlers = (app: App) => {
       // Log error
       try {
         const workspaceId = await getWorkspaceId(client);
-        await logButtonClick(
+        await logAppHomeButtonClick(
           body.user.id,
           workspaceId,
-          'app_home',
-          'dm',
           'manage_choir_users',
           Date.now() - startTime,
           false,
+          'Manage CHOIR Users',
           {
             error: error instanceof Error ? error.message : 'Unknown error',
             errorStack: error instanceof Error ? error.stack : undefined,
@@ -438,18 +432,18 @@ export const registerManagementHandlers = (app: App) => {
         });
 
         // Log successful update
-        await logModalSubmit(
+        await logAppHomeModalSubmit(
           body.user.id,
           workspaceId,
           'choir_users_modal',
           Date.now() - startTime,
           true,
+          `CHOIR users updated: ${selectedUsers.join(', ')}`,
           {
             usersCount: selectedUsers.length,
+            selectedUsers: selectedUsers,
           },
           client,
-          'app_home',
-          'dm',
         );
       } else {
         await ack({
@@ -460,19 +454,19 @@ export const registerManagementHandlers = (app: App) => {
         });
 
         // Log update failure
-        await logModalSubmit(
+        await logAppHomeModalSubmit(
           body.user.id,
           workspaceId,
           'choir_users_modal',
           Date.now() - startTime,
           false,
+          `CHOIR users update failed: ${selectedUsers.join(', ')}`,
           {
             error: 'Failed to update CHOIR users',
             usersCount: selectedUsers.length,
+            selectedUsers: selectedUsers,
           },
           client,
-          'app_home',
-          'dm',
         );
       }
     } catch (error) {
@@ -520,6 +514,7 @@ export const registerManagementHandlers = (app: App) => {
         view: {
           type: 'modal',
           callback_id: 'managers_modal',
+          notify_on_close: true,
           title: {
             type: 'plain_text',
             text: 'Manage Managers',
@@ -582,14 +577,13 @@ export const registerManagementHandlers = (app: App) => {
       });
 
       // Log success
-      await logButtonClick(
+      await logAppHomeButtonClick(
         body.user.id,
         workspaceId,
-        'app_home',
-        'dm',
         'manage_managers',
         Date.now() - startTime,
         true,
+        'Manage Managers',
         {
           managersCount: managers.length,
           managerIds: managers,
@@ -615,14 +609,13 @@ export const registerManagementHandlers = (app: App) => {
       // Log error
       try {
         const workspaceId = await getWorkspaceId(client);
-        await logButtonClick(
+        await logAppHomeButtonClick(
           body.user.id,
           workspaceId,
-          'app_home',
-          'dm',
           'manage_managers',
           Date.now() - startTime,
           false,
+          'Manage Managers',
           {
             error: error instanceof Error ? error.message : 'Unknown error',
             errorStack: error instanceof Error ? error.stack : undefined,
@@ -636,6 +629,8 @@ export const registerManagementHandlers = (app: App) => {
   });
 
   app.view('managers_modal', async ({ ack, body, client, logger, view }) => {
+    const startTime = Date.now();
+
     try {
       const selectedUsers = view.state.values.managers_select_block.managers_select.selected_users || [];
 
@@ -646,6 +641,21 @@ export const registerManagementHandlers = (app: App) => {
             managers_select_block: 'Please select at least one manager or cancel to keep current settings.',
           },
         });
+
+        // Log validation error
+        const workspaceId = await getWorkspaceId(client);
+        await logAppHomeModalSubmit(
+          body.user.id,
+          workspaceId,
+          'managers_modal',
+          Date.now() - startTime,
+          false,
+          'Managers modal submitted with no users selected',
+          {
+            error: 'No users selected',
+          },
+          client,
+        );
         return;
       }
 
@@ -732,6 +742,25 @@ export const registerManagementHandlers = (app: App) => {
           managersRemoved: managersToRemove,
           totalManagers: selectedUsers.length,
         });
+
+        // Log successful update
+        await logAppHomeModalSubmit(
+          body.user.id,
+          workspaceId,
+          'managers_modal',
+          Date.now() - startTime,
+          true,
+          `Managers updated - Added: ${managersToAdd.join(', ')}, Removed: ${managersToRemove.join(', ')}, Total: ${selectedUsers.join(', ')}`,
+          {
+            managersAdded: managersToAdd,
+            managersRemoved: managersToRemove,
+            selectedManagers: selectedUsers,
+            totalManagers: selectedUsers.length,
+            addedCount: managersToAdd.length,
+            removedCount: managersToRemove.length,
+          },
+          client,
+        );
       } else if (managersToAdd.length === 0 && managersToRemove.length === 0) {
         await ack();
         await client.chat.postEphemeral({
@@ -739,6 +768,22 @@ export const registerManagementHandlers = (app: App) => {
           channel: body.user.id,
           text: '✅ No changes made to manager permissions.',
         });
+
+        // Log no changes made
+        await logAppHomeModalSubmit(
+          body.user.id,
+          workspaceId,
+          'managers_modal',
+          Date.now() - startTime,
+          true,
+          `Managers modal submitted with no changes - Current managers: ${selectedUsers.join(', ')}`,
+          {
+            selectedManagers: selectedUsers,
+            totalManagers: selectedUsers.length,
+            noChanges: true,
+          },
+          client,
+        );
       } else {
         await ack({
           response_action: 'errors',
@@ -746,6 +791,24 @@ export const registerManagementHandlers = (app: App) => {
             managers_select_block: 'Some manager permission changes failed. Please try again.',
           },
         });
+
+        // Log partial failure
+        await logAppHomeModalSubmit(
+          body.user.id,
+          workspaceId,
+          'managers_modal',
+          Date.now() - startTime,
+          false,
+          `Managers update partially failed - Added: ${managersToAdd.join(', ')}, Removed: ${managersToRemove.join(', ')}, Selected: ${selectedUsers.join(', ')}`,
+          {
+            error: 'Some manager permission changes failed',
+            managersAdded: managersToAdd,
+            managersRemoved: managersToRemove,
+            selectedManagers: selectedUsers,
+            results: results,
+          },
+          client,
+        );
       }
     } catch (error) {
       logger.error('Error processing managers modal:', error);
@@ -756,6 +819,26 @@ export const registerManagementHandlers = (app: App) => {
           managers_select_block: 'An error occurred while updating managers. Please try again.',
         },
       });
+
+      // Log error
+      try {
+        const workspaceId = await getWorkspaceId(client);
+        await logAppHomeModalSubmit(
+          body.user.id,
+          workspaceId,
+          'managers_modal',
+          Date.now() - startTime,
+          false,
+          'Managers modal error',
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+          },
+          client,
+        );
+      } catch (logError) {
+        logger.error('Failed to log error:', logError);
+      }
     }
   });
 
@@ -808,14 +891,13 @@ export const registerManagementHandlers = (app: App) => {
       });
 
       // Log success
-      await logButtonClick(
+      await logAppHomeButtonClick(
         body.user.id,
         workspaceId,
-        'app_home',
-        'dm',
         'toggle_logging',
         Date.now() - startTime,
         true,
+        'Toggle Logging',
         {
           previousState: currentLogging,
           newState: newLogging,
@@ -836,14 +918,13 @@ export const registerManagementHandlers = (app: App) => {
       // Log error
       try {
         const workspaceId = await getWorkspaceId(client);
-        await logButtonClick(
+        await logAppHomeButtonClick(
           body.user.id,
           workspaceId,
-          'app_home',
-          'dm',
           'toggle_logging',
           Date.now() - startTime,
           false,
+          'Toggle Logging',
           {
             error: error instanceof Error ? error.message : 'Unknown error',
             errorStack: error instanceof Error ? error.stack : undefined,
@@ -880,6 +961,7 @@ export const registerManagementHandlers = (app: App) => {
         view: {
           type: 'modal',
           callback_id: 'readonly_files_modal',
+          notify_on_close: true,
           title: {
             type: 'plain_text',
             text: 'Manage Read-Only Files',
@@ -956,14 +1038,13 @@ export const registerManagementHandlers = (app: App) => {
       });
 
       // Log success
-      await logButtonClick(
+      await logAppHomeButtonClick(
         body.user.id,
         workspaceId,
-        'app_home',
-        'dm',
         'manage_readonly_files',
         Date.now() - startTime,
         true,
+        'Manage Read-Only Files',
         {
           currentReadOnlyCount: readOnlyFiles.length,
           totalFilesCount: markdownFiles.length,
@@ -984,14 +1065,13 @@ export const registerManagementHandlers = (app: App) => {
       // Log error
       try {
         const workspaceId = await getWorkspaceId(client);
-        await logButtonClick(
+        await logAppHomeButtonClick(
           body.user.id,
           workspaceId,
-          'app_home',
-          'dm',
           'manage_readonly_files',
           Date.now() - startTime,
           false,
+          'Manage Read-Only Files',
           {
             error: error instanceof Error ? error.message : 'Unknown error',
             errorStack: error instanceof Error ? error.stack : undefined,
@@ -1067,20 +1147,19 @@ export const registerManagementHandlers = (app: App) => {
           readOnlyFiles: selectedFiles,
         });
 
-        // Log successful update
-        await logModalSubmit(
+        // Log successful update  
+        await logAppHomeModalSubmit(
           body.user.id,
           workspaceId,
           'readonly_files_modal',
           Date.now() - startTime,
           true,
+          `Read-only files updated: ${selectedFiles.join(', ')}`,
           {
             readOnlyFilesCount: selectedFiles.length,
             readOnlyFiles: selectedFiles,
           },
           client,
-          'app_home',
-          'dm',
         );
       } else {
         await ack({
@@ -1091,19 +1170,19 @@ export const registerManagementHandlers = (app: App) => {
         });
 
         // Log update failure
-        await logModalSubmit(
+        await logAppHomeModalSubmit(
           body.user.id,
           workspaceId,
           'readonly_files_modal',
           Date.now() - startTime,
           false,
+          `Read-only files update failed: ${selectedFiles.join(', ')}`,
           {
             error: 'Failed to update read-only files',
             readOnlyFilesCount: selectedFiles.length,
+            readOnlyFiles: selectedFiles,
           },
           client,
-          'app_home',
-          'dm',
         );
       }
     } catch (error) {
@@ -1119,19 +1198,18 @@ export const registerManagementHandlers = (app: App) => {
       // Log error
       try {
         const workspaceId = await getWorkspaceId(client);
-        await logModalSubmit(
+        await logAppHomeModalSubmit(
           body.user.id,
           workspaceId,
           'readonly_files_modal',
           Date.now() - startTime,
           false,
+          'Read-only files modal error',
           {
             error: error instanceof Error ? error.message : 'Unknown error',
             errorStack: error instanceof Error ? error.stack : undefined,
           },
           client,
-          'app_home',
-          'dm',
         );
       } catch (logError) {
         logger.error('Failed to log error:', logError);

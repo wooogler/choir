@@ -4,7 +4,6 @@ import {
   getCHOIRUsers,
   getGithubRepo,
   getManagers,
-  getOrganizationDescription,
   getOrganizationName,
   getQAChannel,
   isManager,
@@ -21,8 +20,6 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
 
   const workspaceStore = new WorkspaceStore();
   const userGithubInfo = await workspaceStore.getUserGithubInfo(workspaceId, userId);
-
-  const organizationDescription = (await getOrganizationDescription(workspaceId)) || 'No description set.';
 
   let organizationName = await getOrganizationName(workspaceId);
   if (!organizationName) {
@@ -52,11 +49,10 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
     userGithubInfo,
   );
 
-  const organizationDescriptionBlocks = buildOrganizationDescriptionBlocks(
+  const organizationNameBlocks = buildOrganizationNameBlocks(
     isUserManager,
     isOwner,
     organizationName,
-    organizationDescription,
   );
 
   const logDownloadBlocks = buildLogDownloadBlocks(isUserManager, isOwner);
@@ -123,7 +119,7 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
     ...documentConnectionBlocks,
     ...choirManagementBlocks,
     ...becomeManagerBlocks,
-    ...organizationDescriptionBlocks,
+    ...organizationNameBlocks,
     ...readOnlyFilesBlocks,
     ...loggingToggleBlocks,
   ];
@@ -567,11 +563,10 @@ const buildDocumentConnectionBlocks = async (
   return blocks;
 };
 
-const buildOrganizationDescriptionBlocks = (
+const buildOrganizationNameBlocks = (
   isUserManager: boolean,
   isOwner: boolean,
   organizationName: string,
-  organizationDescription: string,
 ) => {
   if (!isUserManager && !isOwner) {
     return [];
@@ -582,7 +577,7 @@ const buildOrganizationDescriptionBlocks = (
       type: 'header',
       text: {
         type: 'plain_text',
-        text: '🏢 Organization Description',
+        text: '🏢 Organization Name',
         emoji: true,
       },
     },
@@ -590,7 +585,7 @@ const buildOrganizationDescriptionBlocks = (
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Organization Name:* ${organizationName}\n*Description:* ${organizationDescription}`,
+        text: `*Organization Name:* ${organizationName}`,
       },
     },
     {
@@ -600,11 +595,11 @@ const buildOrganizationDescriptionBlocks = (
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Edit Name and Description',
+            text: 'Edit Organization Name',
             emoji: true,
           },
           style: 'primary',
-          action_id: 'edit_organization_info',
+          action_id: 'edit_organization_name',
         },
       ],
     },

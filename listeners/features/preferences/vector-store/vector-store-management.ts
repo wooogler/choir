@@ -1,5 +1,5 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logAppHomeButtonClick } from 'services/common/user-interaction-logger';
 import { parseMarkdownToTree } from 'services/document';
 import { treeToMarkdown } from 'services/document/markdown';
 import { GithubService } from 'services/github';
@@ -42,14 +42,13 @@ export const reloadFromGithubAction = async ({
       });
 
       // Log permission denied
-      await logButtonClick(
+      await logAppHomeButtonClick(
         body.user.id,
         workspaceId,
-        'app_home',
-        'dm',
         'reload_from_github',
         Date.now() - startTime,
         false,
+        'Reload From GitHub',
         {
           error: 'Permission denied',
           isOwner,
@@ -206,14 +205,13 @@ export const reloadFromGithubAction = async ({
       }, 3000);
 
       // Log success
-      await logButtonClick(
+      await logAppHomeButtonClick(
         body.user.id,
         workspaceId,
-        'app_home',
-        'dm',
         'reload_from_github',
         Date.now() - startTime,
         true,
+        'Reload From GitHub',
         {
           filesCount: markdownFiles.length,
           repoOwner: repoInfo.owner,
@@ -239,14 +237,13 @@ export const reloadFromGithubAction = async ({
       });
 
       // Log vector store failure
-      await logButtonClick(
+      await logAppHomeButtonClick(
         body.user.id,
         workspaceId,
-        'app_home',
-        'dm',
         'reload_from_github',
         Date.now() - startTime,
         false,
+        'Reload From GitHub',
         {
           error: 'Failed to update vector store',
           filesCount: markdownFiles.length,
@@ -277,14 +274,13 @@ export const reloadFromGithubAction = async ({
     // Log catch error
     try {
       const workspaceId = await getWorkspaceId(client);
-      await logButtonClick(
+      await logAppHomeButtonClick(
         body.user.id,
         workspaceId,
-        'app_home',
-        'dm',
         'reload_from_github',
         Date.now() - startTime,
         false,
+        'Reload From GitHub',
         {
           error: error instanceof Error ? error.message : 'Unknown error',
           errorStack: error instanceof Error ? error.stack : undefined,
@@ -546,14 +542,13 @@ export const normalizeMarkdownFilesAction = async ({
           }, 1000);
 
           // Log successful normalization
-          await logButtonClick(
+          await logAppHomeButtonClick(
             body.user.id,
             workspaceId,
-            'app_home',
-            'dm',
             'normalize_markdown_files',
             Date.now() - startTime,
             true,
+            'Normalize Markdown Files',
             {
               successCount,
               totalFiles: markdownFiles.length,

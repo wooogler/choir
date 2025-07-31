@@ -10,7 +10,7 @@ export interface UserInteractionLog {
   userName?: string;
   workspaceId: string;
   workspaceName?: string;
-  interactionType: 'message' | 'button_click' | 'modal_submit' | 'command' | 'error';
+  interactionType: 'message' | 'button_click' | 'modal_submit' | 'app_home_button_click' | 'app_home_modal_submit' | 'command' | 'error';
   action: string;
   channelId: string;
   channelName?: string;
@@ -33,6 +33,8 @@ export interface LogMetadata {
   managersNotified?: number;
   updateApplied?: boolean;
   sessionId?: string;
+  modalContent?: string;
+  buttonContent?: string;
   [key: string]: any;
 }
 
@@ -811,6 +813,157 @@ class UserInteractionLogger {
   }
 
   /**
+   * App Home 버튼 클릭 로그 (content 포함)
+   */
+  public async logAppHomeButtonClick(
+    userId: string,
+    workspaceId: string,
+    buttonAction: string,
+    processingTime: number,
+    success: boolean,
+    buttonContent?: string,
+    additionalMetadata: LogMetadata = {},
+    client?: WebClient,
+  ): Promise<void> {
+    console.log(`[DEBUG] logAppHomeButtonClick called:`, { userId, workspaceId, buttonAction, success });
+    try {
+      if (client) {
+        const names = await getAllCachedNames(userId, workspaceId, 'app_home', client);
+        await this.logInteraction(
+          userId,
+          workspaceId,
+          'app_home_button_click',
+          buttonAction,
+          'app_home',
+          'dm',
+          false,
+          processingTime,
+          success,
+          undefined,
+          {
+            buttonClicked: buttonAction,
+            buttonContent,
+            ...additionalMetadata,
+          },
+          names,
+        );
+      } else {
+        await this.logInteraction(
+          userId,
+          workspaceId,
+          'app_home_button_click',
+          buttonAction,
+          'app_home',
+          'dm',
+          false,
+          processingTime,
+          success,
+          undefined,
+          {
+            buttonClicked: buttonAction,
+            buttonContent,
+            ...additionalMetadata,
+          },
+        );
+      }
+    } catch (error) {
+      console.warn('Error getting names for app home button click logging, falling back to basic logging:', error);
+      await this.logInteraction(
+        userId,
+        workspaceId,
+        'app_home_button_click',
+        buttonAction,
+        'app_home',
+        'dm',
+        false,
+        processingTime,
+        success,
+        undefined,
+        {
+          buttonClicked: buttonAction,
+          buttonContent,
+          ...additionalMetadata,
+        },
+      );
+    }
+  }
+
+  /**
+   * App Home 모달 제출 로그 (content 포함)
+   */
+  public async logAppHomeModalSubmit(
+    userId: string,
+    workspaceId: string,
+    modalAction: string,
+    processingTime: number,
+    success: boolean,
+    modalContent?: string,
+    additionalMetadata: LogMetadata = {},
+    client?: WebClient,
+  ): Promise<void> {
+    try {
+      if (client) {
+        const names = await getAllCachedNames(userId, workspaceId, 'app_home', client);
+        await this.logInteraction(
+          userId,
+          workspaceId,
+          'app_home_modal_submit',
+          modalAction,
+          'app_home',
+          'dm',
+          false,
+          processingTime,
+          success,
+          undefined,
+          {
+            modalAction,
+            modalContent,
+            ...additionalMetadata,
+          },
+          names,
+        );
+      } else {
+        await this.logInteraction(
+          userId,
+          workspaceId,
+          'app_home_modal_submit',
+          modalAction,
+          'app_home',
+          'dm',
+          false,
+          processingTime,
+          success,
+          undefined,
+          {
+            modalAction,
+            modalContent,
+            ...additionalMetadata,
+          },
+        );
+      }
+    } catch (error) {
+      console.warn('Error getting names for app home modal submit logging, falling back to basic logging:', error);
+      await this.logInteraction(
+        userId,
+        workspaceId,
+        'app_home_modal_submit',
+        modalAction,
+        'app_home',
+        'dm',
+        false,
+        processingTime,
+        success,
+        undefined,
+        {
+          modalAction,
+          modalContent,
+          ...additionalMetadata,
+        },
+      );
+    }
+  }
+
+  /**
    * 로그 파일 읽기 (분석용)
    */
   public readLogs(date?: string): UserInteractionLog[] {
@@ -890,6 +1043,10 @@ export const logError = userInteractionLogger.logError.bind(userInteractionLogge
 export const logKnowledgeExtraction = userInteractionLogger.logKnowledgeExtraction.bind(userInteractionLogger);
 export const logManagerNotification = userInteractionLogger.logManagerNotification.bind(userInteractionLogger);
 export const logDocumentUpdate = userInteractionLogger.logDocumentUpdate.bind(userInteractionLogger);
+
+// App Home 전용 로깅 함수들
+export const logAppHomeButtonClick = userInteractionLogger.logAppHomeButtonClick.bind(userInteractionLogger);
+export const logAppHomeModalSubmit = userInteractionLogger.logAppHomeModalSubmit.bind(userInteractionLogger);
 
 // 새로운 캐시된 이름 포함 로깅 함수들
 export const logInteractionWithNames = userInteractionLogger.logInteraction.bind(userInteractionLogger);
