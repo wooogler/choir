@@ -388,12 +388,18 @@ class GithubService {
         });
       }
 
+      // CHOIR에서 호출하는 모든 업데이트에 [choir-auto] 태그 추가
+      const baseMessage = params.message || 'Update markdown content';
+      const commitMessage = baseMessage.includes('[choir-auto]') 
+        ? baseMessage 
+        : `${baseMessage} [choir-auto]`;
+
       const updateResponse = await this.throttledRequest(() =>
         octokit.rest.repos.createOrUpdateFileContents({
           owner: params.owner,
           repo: params.repo,
           path: params.path,
-          message: params.message || 'Update markdown content',
+          message: commitMessage,
           content: Buffer.from(params.content).toString('base64'),
           sha: currentFile.sha,
         }),
@@ -667,13 +673,18 @@ class GithubService {
         }
       }
 
+      // CHOIR에서 호출하는 파일 생성에도 [choir-auto] 태그 추가
+      const commitMessage = params.message.includes('[choir-auto]') 
+        ? params.message 
+        : `${params.message} [choir-auto]`;
+
       // Create the file
       await this.throttledRequest(async () => {
         return octokit.rest.repos.createOrUpdateFileContents({
           owner: params.owner,
           repo: params.repo,
           path: params.path,
-          message: params.message,
+          message: commitMessage,
           content: Buffer.from(params.content).toString('base64'),
           branch: defaultBranch,
         });
