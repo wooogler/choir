@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import type { WebClient } from '@slack/web-api';
 import { getGithubRepo, getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
  * GitHub webhook 서명을 검증하는 함수
@@ -121,17 +122,18 @@ async function performAutoReloadForWorkspace(
       // reloadFromGithubAction에서 필요한 다른 속성들
     };
 
-    // 알림 메시지 먼저 전송
-    await client.chat.postMessage({
+    // 진행 상황 메시지 전송
+    const progressMessage = await client.chat.postMessage({
       channel: firstManager,
-      text: `🔄 Auto-reloading documents from GitHub due to push in ${owner}/${repo}@${branch}`,
+      text: `🔄 Reflecting your document changes...`,
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `🔄 **Auto-reload triggered**\n\nNew commits detected in \`${owner}/${repo}\` on branch \`${branch}\`.\nAutomatically reloading documents...`,
+            text: `🔄 *Reflecting your document changes...*\n\nDetected updates in your documents. Please wait while we sync the changes.`,
           },
+          block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
         },
       ],
     });
@@ -154,9 +156,20 @@ async function performAutoReloadForWorkspace(
     });
 
     if (markdownFiles.length === 0) {
-      await client.chat.postMessage({
+      await client.chat.update({
         channel: firstManager,
-        text: '❌ Auto-reload failed: No markdown files found in the repository.',
+        ts: progressMessage.ts!,
+        text: '❌ Unable to reflect changes: No documents found.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `❌ *Unable to reflect changes*\n\nNo documents found in the repository.\n\n<https://github.com/${owner}/${repo}|View Repository>`,
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
+          },
+        ],
       });
       return;
     }
@@ -172,26 +185,39 @@ async function performAutoReloadForWorkspace(
       }));
       await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
 
-      // 성공 알림
-      await client.chat.postMessage({
+      // 진행 메시지를 성공 메시지로 업데이트
+      await client.chat.update({
         channel: firstManager,
-        text: `✅ Auto-reload completed! Updated ${markdownFiles.length} files from ${owner}/${repo}@${branch}`,
+        ts: progressMessage.ts!,
+        text: `✅ Document changes reflected successfully!`,
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `✅ **Auto-reload successful**\n\nUpdated ${markdownFiles.length} files from \`${owner}/${repo}@${branch}\`.\nYour knowledge base is now up to date!`,
+              text: `✅ *Document changes reflected successfully!*\n\nUpdated ${markdownFiles.length} files. Your knowledge base is now up to date!\n\n<https://github.com/${owner}/${repo}|View Repository>`,
             },
+            block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
           },
         ],
       });
 
       logger.info(`Auto-reload completed: ${markdownFiles.length} files`);
     } else {
-      await client.chat.postMessage({
+      await client.chat.update({
         channel: firstManager,
-        text: '❌ Auto-reload failed: Could not update vector store.',
+        ts: progressMessage.ts!,
+        text: '❌ Unable to reflect changes: Processing failed.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `❌ *Unable to reflect changes*\n\nProcessing failed. Please try using the "Reload From Github" button in the Home screen or contact the research team.\n\n<https://github.com/${owner}/${repo}|View Repository>`,
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
+          },
+        ],
       });
       logger.error('Auto-reload failed: vector store update failed');
     }
@@ -208,7 +234,17 @@ async function performAutoReloadForWorkspace(
       if (managers.length > 0) {
         await client.chat.postMessage({
           channel: managers[0],
-          text: `❌ Auto-reload failed for ${owner}/${repo}@${branch}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          text: `❌ Unable to reflect document changes: System error occurred.`,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `❌ *Unable to reflect document changes*\n\nA system error occurred while processing updates. Please try using the "Reload From Github" button in the Home screen or contact the research team.\n\n<https://github.com/${owner}/${repo}|View Repository>`,
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
+            },
+          ],
         });
       }
     } catch (notificationError) {
