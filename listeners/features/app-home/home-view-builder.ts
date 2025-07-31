@@ -739,8 +739,69 @@ const buildReadOnlyFilesBlocks = async (
   const readOnlyFiles = await workspaceStore.getReadOnlyFiles(workspaceId);
   const markdownFiles = await workspaceStore.getCachedMarkdownFiles(workspaceId);
 
+  // 캐시가 없는 경우, GitHub 연결 안내와 함께 섹션 표시
   if (!markdownFiles || markdownFiles.length === 0) {
-    return [];
+    const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+    
+    // GitHub 레포지토리가 연결되어 있지 않은 경우
+    if (!config?.githubRepo) {
+      return [
+        {
+          type: 'header',
+          text: {
+            type: 'plain_text',
+            text: '🔒 Read-Only Files',
+            emoji: true,
+          },
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '📋 *Read-Only Files Management*\nConnect a GitHub repository to manage read-only files. Read-only files are excluded from document updates but remain searchable.',
+          },
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '⚠️ *GitHub repository not connected*\nPlease connect a GitHub repository in the Document Connection section above to manage read-only files.',
+          },
+        },
+        {
+          type: 'divider',
+        },
+      ];
+    }
+    
+    // GitHub는 연결되어 있지만 파일이 캐시되지 않은 경우
+    return [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: '🔒 Read-Only Files',
+          emoji: true,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '📋 *Read-Only Files Management*\nRead-only files are excluded from document updates but remain searchable.',
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '⏳ *Loading files...*\nMarkdown files are being loaded from GitHub. Please refresh in a moment or use the "Reload from GitHub" button in Vector Store Management.',
+        },
+      },
+      {
+        type: 'divider',
+      },
+    ];
   }
 
   return [
