@@ -31,7 +31,8 @@ export const handleAsUpdateRequestCallback = async ({
     const reconstructedEvent = {
       user: messageData.userId,
       channel: messageData.channelId,
-      ts: messageData.threadTs,
+      ts: messageData.messageTs,
+      thread_ts: messageData.threadTs,
       channel_type: messageData.channelType,
       originalMessage: messageData.originalMessage, // 원본 메시지 텍스트 추가
     };
