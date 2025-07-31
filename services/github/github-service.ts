@@ -626,8 +626,8 @@ class GithubService {
       Logger.error('Failed to get user info for commit message', error as Error, { userId });
     }
 
-    // 간단한 커밋 메시지 생성
-    return `Update ${fileName} - ${updatedByUserName}`;
+    // 간단한 커밋 메시지 생성 (CHOIR에서 생성됨을 표시)
+    return `Update ${fileName} - ${updatedByUserName} [choir-auto]`;
   }
 
   /**
