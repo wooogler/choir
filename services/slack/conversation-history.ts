@@ -1,6 +1,6 @@
 import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
-import { anonymizeText, getAnonymizationMapping } from 'services/common/name-cache';
+// Removed anonymization imports - now handled in LLM services
 import { getUserName, isBotUser } from 'services/slack';
 import {
   type CHOIRMessageMetadata,
@@ -58,17 +58,14 @@ export async function processMessageText(text: string, client: WebClient): Promi
         processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), '');
       }
     } else {
-      // Replace user mentions with anonymized names
+      // Replace user mentions with actual user names for better readability
       const userName = await getUserName(userId, client);
-      const anonymizationMapping = getAnonymizationMapping(userId, userName);
-      processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), anonymizationMapping.fakeNickname);
+      processedText = processedText.replace(new RegExp(`<@${userId}>`, 'g'), `@${userName}`);
     }
   }
 
-  // Apply general text anonymization for any remaining real names
-  const anonymizedText = anonymizeText(processedText);
-
-  return anonymizedText.trim();
+  // No anonymization here - return original text with mentions processed
+  return processedText.trim();
 }
 
 // Helper function to get reference timestamp for thread messages
@@ -337,8 +334,7 @@ export const processMessageHistory = async (messages: SlackMessage[], client?: W
           content = `Unknown User: ${msg.text || ''}`;
         } else {
           const userName = await getUserName(msg.user, client);
-          const anonymizationMapping = getAnonymizationMapping(msg.user, userName);
-          content = `${anonymizationMapping.fakeNickname}: ${msg.text || ''}`;
+          content = `${userName}: ${msg.text || ''}`;
         }
       }
 

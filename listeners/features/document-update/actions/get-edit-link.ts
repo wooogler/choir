@@ -1,4 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { SessionType, getSessionData } from 'services/common';
+import { logButtonClick } from 'services/common/user-interaction-logger';
+import { getWorkspaceId } from 'services/slack';
 
 export const getEditLinkAction = async ({
   ack,
@@ -6,16 +9,22 @@ export const getEditLinkAction = async ({
   client,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+  const startTime = Date.now();
   await ack();
 
   try {
-    const value = body.actions?.[0]?.value;
-    if (!value) {
+    const modalSessionId = body.actions?.[0]?.value;
+    if (!modalSessionId) {
       throw new Error('Button value not found');
     }
 
-    const parsedValue = JSON.parse(value);
-    const { owner, repo, branch, fileOptions } = parsedValue;
+    // Get data from session store instead of parsing button value
+    const sessionData = getSessionData(modalSessionId, SessionType.NEW_SECTION);
+    if (!sessionData) {
+      throw new Error('Session data not found');
+    }
+
+    const { owner, repo, branch, fileOptions } = sessionData;
 
     if (!owner || !repo || !branch || !fileOptions) {
       throw new Error('Missing repository information');
@@ -85,6 +94,29 @@ export const getEditLinkAction = async ({
     });
 
     logger.info(`Provided GitHub edit link for file: ${selectedFilePath} to user: ${body.user.id}`);
+
+    // 로그: 성공
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        body.channel?.id || 'modal',
+        'dm',
+        'get_edit_link_for_selected_file',
+        Date.now() - startTime,
+        true,
+        {
+          modalSessionId,
+          selectedFile: selectedFileName,
+          selectedFilePath,
+          editUrl,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Failed to log get edit link success:', logError);
+    }
   } catch (error) {
     logger.error('Error providing GitHub edit link:', error);
 
@@ -93,5 +125,27 @@ export const getEditLinkAction = async ({
       user: body.user.id,
       text: `❌ Failed to generate edit link: ${error instanceof Error ? error.message : 'Unknown error'}`,
     });
+
+    // 로그: 실패
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      await logButtonClick(
+        body.user.id,
+        workspaceId,
+        body.channel?.id || 'modal',
+        'dm',
+        'get_edit_link_for_selected_file',
+        Date.now() - startTime,
+        false,
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined,
+          modalSessionId: body.actions?.[0]?.value,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.error('Failed to log get edit link error:', logError);
+    }
   }
 };

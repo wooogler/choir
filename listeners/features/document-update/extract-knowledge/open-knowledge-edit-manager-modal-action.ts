@@ -92,6 +92,7 @@ export const openKnowledgeEditManagerModalCallback = async ({
         originalChannelId: sessionData.originalChannelId,
         originalThreadTs: sessionData.originalThreadTs,
         extractedKnowledgeLength: sessionData.extractedKnowledge?.length || 0,
+        originalKnowledge: sessionData.extractedKnowledge || '',
         messagesAnalyzed: sessionData.messages?.length || 0,
       },
       client,

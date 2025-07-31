@@ -521,6 +521,57 @@ export const suggestUpdatesCallback = async ({
       throw new Error('Button value not found');
     }
     const parsedValue = JSON.parse(value);
+    console.log(`[DEBUG] Raw button value:`, value);
+    console.log(`[DEBUG] Parsed button value:`, parsedValue);
+
+    // 로깅 체크를 여기로 이동
+    const workspaceId = await getWorkspaceId(client);
+    
+    // 매니저가 처음 문서 업데이트 프로세스를 시작하는 경우와 실제 제안을 표시하는 경우 구분
+    // 조건: index가 없고, action이 없고, sessionId만 있는 경우는 initial start
+    const isInitialProcessStart = (typeof parsedValue?.index === 'undefined') && 
+      !parsedValue?.action && 
+      !!parsedValue?.sessionId;
+    
+    console.log(`[DEBUG] Logging condition check:`, {
+      parsedValueIndex: parsedValue?.index,
+      indexType: typeof parsedValue?.index,
+      parsedValueAction: parsedValue?.action,
+      continueToFileSelection: parsedValue?.continueToFileSelection,
+      isFileBasedReview: parsedValue?.isFileBasedReview,
+      sessionId: parsedValue?.sessionId,
+      isInitialProcessStart
+    });
+      
+    if (isInitialProcessStart) {
+      // 매니저가 처음 "🚀 Start Update Process" 버튼을 클릭한 경우
+      // Get actual knowledge content from session data
+      let actualKnowledgeContent = parsedValue?.knowledgeContent || '';
+      if (!actualKnowledgeContent && parsedValue?.sessionId) {
+        const sessionData = getSessionData(parsedValue.sessionId, SessionType.DOCUMENT_UPDATE) as any;
+        if (sessionData?.extractedKnowledge) {
+          actualKnowledgeContent = sessionData.extractedKnowledge;
+        }
+      }
+      
+      await logButtonClick(
+        userId,
+        workspaceId,
+        currentDmChannelId || 'dm',
+        'dm',
+        'start_document_update_process',
+        Date.now() - startTime,
+        true,
+        {
+          sessionId: parsedValue?.sessionId,
+          knowledgeContent: actualKnowledgeContent,
+          knowledgeContentLength: actualKnowledgeContent.length,
+          originalChannelId: parsedValue?.originalChannelId,
+          originalThreadTs: parsedValue?.originalThreadTs,
+        },
+        client,
+      );
+    }
 
     let currentIndex = 0;
     let searchResults: Document<DocumentMetadata>[] = [];
@@ -577,11 +628,17 @@ export const suggestUpdatesCallback = async ({
         });
 
         if (sessionData?.sourceMessages && sessionData.sourceMessages.length > 0) {
-          sourceMessages = sessionData.sourceMessages;
+          sourceMessages = sessionData.sourceMessages.map((msg: any) => ({
+            ...msg,
+            username: msg.username || msg.user || 'Unknown User', // Fix undefined username
+          }));
           console.log(`[DEBUG] Using session sourceMessages:`, sourceMessages.length);
         } else if (sessionData?.messages && sessionData.messages.length > 0) {
           // sourceMessages가 없으면 일반 messages를 fallback으로 사용
-          sourceMessages = sessionData.messages;
+          sourceMessages = sessionData.messages.map((msg: any) => ({
+            ...msg,
+            username: msg.username || msg.user || 'Unknown User', // Fix undefined username  
+          }));
           console.log(`[DEBUG] Using session messages as fallback:`, sourceMessages.length);
         }
 
@@ -595,7 +652,10 @@ export const suggestUpdatesCallback = async ({
     }
 
     if (sourceMessages.length === 0 && parsedValue.sourceMessages) {
-      sourceMessages = parsedValue.sourceMessages;
+      sourceMessages = parsedValue.sourceMessages.map((msg: any) => ({
+        ...msg,
+        username: msg.username || msg.user || 'Unknown User', // Fix undefined username
+      }));
       console.log(`[DEBUG] Using parsedValue sourceMessages:`, sourceMessages.length);
     }
 
@@ -1913,35 +1973,9 @@ Section: ${sectionInfo}`;
       }
     }
 
-    // 로그: 문서 업데이트 제안 성공
-    const workspaceId = await getWorkspaceId(client);
-    
-    // 매니저가 처음 문서 업데이트 프로세스를 시작하는 경우와 실제 제안을 표시하는 경우 구분
-    const isInitialProcessStart = currentIndex === 0 && isFirstSuggestion && 
-      !parsedValue?.isFileBasedReview && !parsedValue?.selectedFile;
-      
-    if (isInitialProcessStart) {
-      // 매니저가 처음 "🚀 Start Update Process" 버튼을 클릭한 경우
-      await logButtonClick(
-        userId,
-        workspaceId,
-        currentDmChannelId || 'dm',
-        'dm',
-        'start_document_update_process',
-        Date.now() - startTime,
-        true,
-        {
-          sessionId,
-          knowledgeContent: knowledgeContent || '',
-          knowledgeContentLength: knowledgeContent?.length || 0,
-          originalChannelId: knowledgeSourceChannelId,
-          originalThreadTs: knowledgeSourceThreadTs,
-          searchResultsCount: searchResults.length,
-        },
-        client,
-      );
-    } else {
-      // CHOIR가 실제 제안을 표시하는 경우
+    // Log suggestion display
+    try {
+      const workspaceId = await getWorkspaceId(client);
       const { logMessageProcessing } = await import('services/common/user-interaction-logger');
       await logMessageProcessing(
         userId,
@@ -1951,82 +1985,36 @@ Section: ${sectionInfo}`;
         false, // isThread
         Date.now() - startTime,
         true,
-        `Suggestion ${currentIndex + 1}: ${processedDoc.fileName} - ${processedDoc.suggestionType}`,
-        'suggest_updates',
+        '', // messageContent - empty since this is a system-generated suggestion
+        'display_update_suggestion',
         {
           sessionId,
+          suggestionNumber: suggestionDisplayNumber,
           currentIndex,
-          suggestionType: processedDoc.suggestionType,
           fileName: processedDoc.fileName,
+          nodeId: processedDoc.nodeId,
+          sectionName: processedDoc.sectionName,
+          suggestionType: processedDoc.suggestionType,
           hasChanges: processedDoc.hasChanges,
-          originalContent: processedDoc.nodeContent,
-          suggestedContent: processedDoc.updatedNodeContent,
+          originalNodeContent: processedDoc.nodeContent,
+          updatedNodeContent: processedDoc.updatedNodeContent,
           originalContentLength: processedDoc.nodeContent?.length || 0,
-          suggestedContentLength: processedDoc.updatedNodeContent?.length || 0,
-          knowledgeContent: knowledgeContent || '',
-          knowledgeContentLength: knowledgeContent?.length || 0,
+          updatedContentLength: processedDoc.updatedNodeContent?.length || 0,
           originalChannelId: knowledgeSourceChannelId,
           originalThreadTs: knowledgeSourceThreadTs,
-          searchResultsCount: searchResults.length,
+          isFirstSuggestion,
+          wasProgressMessageUpdated: !!progressTimestamp,
         },
         client,
       );
+    } catch (logError) {
+      logger.error('Failed to log suggestion display:', logError);
     }
 
     logger.info(`Document update suggestion ${currentIndex + 1} sent to user ${userId} for session ${sessionId}`);
   } catch (error) {
     console.error('suggestUpdatesCallback에서 오류:', error);
 
-    // 로그: 문서 업데이트 제안 실패
-    try {
-      const workspaceId = await getWorkspaceId(client);
-      const value = body.actions?.[0]?.value;
-      const parsedValue = value ? JSON.parse(value) : {};
-      
-      // 매니저가 처음 시작하는 경우와 실제 제안 표시 실패 구분
-      const isInitialProcessStart = (parsedValue?.index || 0) === 0 && 
-        !parsedValue?.isFileBasedReview && !parsedValue?.selectedFile;
-
-      if (isInitialProcessStart) {
-        await logButtonClick(
-          userId,
-          workspaceId,
-          currentDmChannelId || 'dm',
-          'dm',
-          'start_document_update_process',
-          Date.now() - startTime,
-          false,
-          {
-            error: error instanceof Error ? error.message : 'Unknown error',
-            errorStack: error instanceof Error ? error.stack : undefined,
-            sessionId: parsedValue?.sessionId,
-          },
-          client,
-        );
-      } else {
-        const { logMessageProcessing } = await import('services/common/user-interaction-logger');
-        await logMessageProcessing(
-          userId,
-          workspaceId,
-          currentDmChannelId || 'dm',
-          'dm',
-          false,
-          Date.now() - startTime,
-          false,
-          'Failed to generate suggestion',
-          'suggest_updates',
-          {
-            error: error instanceof Error ? error.message : 'Unknown error',
-            errorStack: error instanceof Error ? error.stack : undefined,
-            sessionId: parsedValue?.sessionId,
-            currentIndex: parsedValue?.index || 0,
-          },
-          client,
-        );
-      }
-    } catch (logError) {
-      logger.error('Failed to log error:', logError);
-    }
 
     if (currentDmChannelId) {
       try {

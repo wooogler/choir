@@ -363,11 +363,15 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           managersCount: managers.length,
           sourceMessageCount: filteredMessages.length,
           hasKnowledgeItem: !!extractionResult.cleanContent,
-          sourceMessages: filteredMessages.map((msg) => ({
-            userId: msg.user || msg.bot_id || 'unknown',
-            username: msg.username || 'Unknown',
-            text: msg.text?.substring(0, 200) || '', // 메시지 내용 일부만 저장
-            ts: msg.ts || '',
+          sourceMessages: await Promise.all(filteredMessages.map(async (msg) => {
+            const userId = msg.user || msg.bot_id || 'unknown';
+            const username = userId !== 'unknown' ? await getUserName(userId, client) : 'Unknown';
+            return {
+              userId,
+              username,
+              text: msg.text || '', // 메시지 내용 전체 저장
+              ts: msg.ts || '',
+            };
           })),
         },
         client,

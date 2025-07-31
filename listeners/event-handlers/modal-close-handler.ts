@@ -96,6 +96,8 @@ const modalCloseCallback = async ({ ack, body, view, client, logger }: AllMiddle
         modalCancelled: callbackId,
         sessionId,
         cancelReason: isCleared ? 'cleared' : 'user_cancelled',
+        originalChannelId,
+        originalChannelType,
       },
       client,
     );
@@ -141,6 +143,9 @@ const register = (app: App) => {
 
   // Handle view_closed for new section modal
   app.view({ callback_id: 'new_section_modal', type: 'view_closed' }, modalCloseCallback);
+
+  // Handle view_closed for create file modal
+  app.view({ callback_id: 'create_file_modal', type: 'view_closed' }, modalCloseCallback);
 };
 
 export default { register };

@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import type { ModalView } from '@slack/web-api';
-import { SessionType, getSessionData } from 'services/common';
+import { SessionType, getSessionData, storeSessionData, generateSessionId } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { GithubService } from 'services/github';
 import { getWorkspaceId } from 'services/slack';
@@ -141,6 +141,31 @@ export const createNewSectionAction = async ({
     const sectionTitleForEdit = sectionTitle;
     const sectionBodyForEdit = `${formattedFirstLine}${restOfContent ? '\n' + restOfContent : ''}`;
 
+    // Store large data in session to avoid private_metadata size limit (3001 chars)
+    const modalSessionId = generateSessionId('new_section_modal');
+    storeSessionData(
+      modalSessionId,
+      {
+        newSectionSessionId,
+        recommendedFileEditUrl,
+        recommendedFile,
+        owner,
+        repo,
+        branch: branch || 'main',
+        fileOptions: fileOptions,
+        copyText,
+        sectionTitle,
+        originalChannelId: originalChannelId,
+        originalThreadTs,
+        userId,
+        sessionId,
+        buttonMessageTs: originalMessageTs,
+        buttonChannelId: buttonChannelId,
+      },
+      SessionType.NEW_SECTION,
+      24 * 60 * 60 * 1000, // 24시간 후 만료
+    );
+
     const modal: ModalView = {
       type: 'modal' as const,
       callback_id: 'new_section_modal',
@@ -158,23 +183,7 @@ export const createNewSectionAction = async ({
         text: 'Submit',
         emoji: true,
       },
-      private_metadata: JSON.stringify({
-        newSectionSessionId,
-        recommendedFileEditUrl,
-        recommendedFile,
-        owner,
-        repo,
-        branch: branch || 'main',
-        fileOptions: fileOptions,
-        copyText,
-        sectionTitle,
-        originalChannelId: originalChannelId,
-        originalThreadTs,
-        userId,
-        sessionId,
-        buttonMessageTs: originalMessageTs,
-        buttonChannelId: buttonChannelId,
-      }),
+      private_metadata: modalSessionId, // Just store the session ID
       blocks: [
         {
           type: 'section',
@@ -263,13 +272,7 @@ export const createNewSectionAction = async ({
               emoji: true,
             },
             action_id: 'get_edit_link_for_selected_file',
-            value: JSON.stringify({
-              newSectionSessionId,
-              owner,
-              repo,
-              branch: branch || 'main',
-              fileOptions: fileOptions,
-            }),
+            value: modalSessionId, // Use the same session ID - all needed data is already stored there
           },
         },
       ],

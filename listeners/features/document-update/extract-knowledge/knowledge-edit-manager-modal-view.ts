@@ -56,6 +56,7 @@ export async function handleKnowledgeEditManagerModal({
     }
 
     const editedKnowledge = view.state.values.knowledge_input?.knowledge_text?.value;
+    const originalKnowledge = sessionData.extractedKnowledge || ''; // Capture original before updating
 
     if (!editedKnowledge || editedKnowledge.trim() === '') {
       logger.warn('Manager tried to submit empty knowledge.');
@@ -73,6 +74,7 @@ export async function handleKnowledgeEditManagerModal({
         {
           error: 'Empty knowledge content',
           sessionId,
+          originalKnowledge,
         },
         client,
         'modal',
@@ -496,9 +498,9 @@ export async function handleKnowledgeEditManagerModal({
         originalUserId: sessionData.userId,
         originalChannelId: sessionData.originalChannelId,
         originalThreadTs: sessionData.originalThreadTs,
-        originalKnowledge: sessionData.extractedKnowledge || '',
+        originalKnowledge: originalKnowledge,
         editedKnowledge: editedKnowledge.trim(),
-        originalKnowledgeLength: (sessionData.extractedKnowledge || '').length,
+        originalKnowledgeLength: originalKnowledge.length,
         editedKnowledgeLength: editedKnowledge.trim().length,
         messageUpdated: !!(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),
         fallbackMessageSent: !(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),

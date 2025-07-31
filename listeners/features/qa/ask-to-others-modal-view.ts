@@ -267,6 +267,8 @@ export const askToOthersSubmitCallback = async ({
       {
         sessionId,
         selectedUsersCount: selectedUsers.length,
+        selectedUsers: selectedUsers,
+        selectedUserNames: participantNames,
         successCount,
         failCount,
         isAnonymous,

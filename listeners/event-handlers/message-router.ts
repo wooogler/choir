@@ -181,6 +181,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
           orgName,
           orgDescription,
           messageLength: message.length,
+          fullMessageContent: message,
         },
         client,
       );

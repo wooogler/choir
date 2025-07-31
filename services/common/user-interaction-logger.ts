@@ -114,7 +114,9 @@ class UserInteractionLogger {
       };
 
       const logLine = JSON.stringify(logEntry) + '\n';
-      fs.appendFileSync(this.getLogFilePath(), logLine);
+      const logFilePath = this.getLogFilePath();
+      console.log(`[DEBUG] Writing log to file: ${logFilePath}, action: ${logEntry.action}`);
+      fs.appendFileSync(logFilePath, logLine);
     } catch (error) {
       console.error('Failed to log user interaction:', error);
     }
@@ -360,6 +362,7 @@ class UserInteractionLogger {
     additionalMetadata: LogMetadata = {},
     client?: WebClient,
   ): Promise<void> {
+    console.log(`[DEBUG] logButtonClick called:`, { userId, workspaceId, buttonAction, success });
     try {
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, channelId, client);

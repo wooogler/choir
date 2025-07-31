@@ -73,10 +73,17 @@ export const startFileBasedReviewAction = async ({
     let selectedFile = fileSelections.get(selectionKey) || parsedValue.selectedFile;
     let isUsingDefaultFile = false;
     
+    // If no explicit selection was made, but we have a defaultFilePath, use it
+    if (!selectedFile && defaultFilePath) {
+      selectedFile = defaultFilePath;
+      isUsingDefaultFile = true;
+      logger.info(`No explicit file selection, using default file: ${defaultFilePath}`);
+    }
+    
     // Check if a file was actually selected
     let shouldUseFileBasedReview = true;
     if (!selectedFile) {
-      // No file selected - use initial search only
+      // No file selected and no default - use initial search only
       shouldUseFileBasedReview = false;
       logger.info(`No file selected, using initial search results only`);
     } else if (selectedFile === defaultFilePath) {

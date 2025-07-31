@@ -113,7 +113,7 @@ export async function extractKnowledgeFromMessages(
   client?: WebClient,
 ): Promise<KnowledgeExtractionResult> {
   try {
-    // Use processMessageHistory to format messages with proper anonymization
+    // Use processMessageHistory to format messages with user names (anonymization applied later in completions.ts)
     const processedMessages = await processMessageHistory(messages, client);
 
     // Separate Q&A content from regular conversation

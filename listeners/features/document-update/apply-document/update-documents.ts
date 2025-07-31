@@ -279,8 +279,13 @@ const applySelectedToGithubAction = async ({
       console.error('Failed to update loading message');
     }
 
-    // 로그: GitHub 업데이트 성공
+    // 로ግ: GitHub 업데이트 성공
     const workspaceId = await getWorkspaceId(client);
+    
+    // Extract original and applied content from selectedUpdates
+    const firstUpdate = selectedUpdates[0];
+    const originalContent = firstUpdate?.oldContent || '';
+    const appliedContent = firstUpdate?.newContent || '';
     
     await logButtonClick(
       userId,
@@ -297,6 +302,10 @@ const applySelectedToGithubAction = async ({
         originalChannelId,
         originalThreadTs,
         fileName: successfulUpdates[0]?.fileName || failedUpdates[0],
+        originalContent,
+        appliedContent,
+        originalContentLength: originalContent.length,
+        appliedContentLength: appliedContent.length,
       },
       client,
     );
@@ -430,18 +439,24 @@ export const handleNewSectionModalSubmission = async ({
     const sectionBody = values.section_body_input?.section_body?.value || '';
     const selectedFile = values.file_selection_input?.file_selection?.selected_option?.value || '';
 
-    // Extract metadata
-    const metadata = JSON.parse(body.view.private_metadata || '{}');
+    // Extract metadata from session store instead of private_metadata
+    const modalSessionId = body.view.private_metadata || '';
+    const sessionData = getSessionData(modalSessionId, SessionType.NEW_SECTION);
+    
+    if (!sessionData) {
+      throw new Error('Modal session data not found');
+    }
+    
     const {
       recommendedFile,
       userId,
-      editUrl,
+      recommendedFileEditUrl: editUrl,
       sessionId,
       buttonMessageTs,
       buttonChannelId,
       originalChannelId,
       originalThreadTs,
-    } = metadata;
+    } = sessionData;
 
     // Use selected file if available, otherwise fall back to recommended file
     const targetFile = selectedFile || recommendedFile;
@@ -811,7 +826,10 @@ I've added the new content. Knowledge grows stronger! ✨`;
       true,
       {
         recommendedFile,
+        selectedFile,
+        targetFile,
         sectionTitle,
+        sectionBody,
         sectionBodyLength: sectionBody.length,
         githubUrl,
         owner,
@@ -844,6 +862,11 @@ I've added the new content. Knowledge grows stronger! ✨`;
     // 로그: 실패
     try {
       const workspaceId = await getWorkspaceId(client);
+      // Extract form values for error logging
+      const errorSectionTitle = body.view.state.values.section_title_input?.section_title?.value || '';
+      const errorSectionBody = body.view.state.values.section_body_input?.section_body?.value || '';
+      const errorSelectedFile = body.view.state.values.file_selection_input?.file_selection?.selected_option?.value || '';
+      
       // Extract originalChannelId from metadata for error logging
       const errorMetadata = JSON.parse(body.view.private_metadata || '{}');
       const errorOriginalChannelId = errorMetadata.originalChannelId;
@@ -857,6 +880,9 @@ I've added the new content. Knowledge grows stronger! ✨`;
         {
           error: error instanceof Error ? error.message : 'Unknown error',
           errorStack: error instanceof Error ? error.stack : undefined,
+          sectionTitle: errorSectionTitle,
+          sectionBody: errorSectionBody,
+          selectedFile: errorSelectedFile,
           privateMetadata: body.view.private_metadata,
         },
         client,

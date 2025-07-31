@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs, ViewSubmitAction } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logModalSubmit } from 'services/common/user-interaction-logger';
 import { GithubService } from 'services/github';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
@@ -303,12 +303,10 @@ export const createFileSubmissionCallback = async ({
 
     // 로그 기록
     const workspaceId2 = await getWorkspaceId(client);
-    await logButtonClick(
+    await logModalSubmit(
       userId,
       workspaceId2,
-      channelId || 'dm',
-      'dm',
-      'create_file_submission',
+      'create_file_modal',
       Date.now() - startTime,
       true,
       {
@@ -329,6 +327,8 @@ export const createFileSubmissionCallback = async ({
         sessionCompleted: !!sessionId,
       },
       client,
+      channelId || 'dm',
+      'dm',
     );
 
     logger.info(`Successfully created and indexed file ${fileName} for user ${userId}`);
@@ -368,20 +368,22 @@ export const createFileSubmissionCallback = async ({
     // 에러 로깅
     try {
       const workspaceId = await getWorkspaceId(client);
-      await logButtonClick(
+      await logModalSubmit(
         metadata.userId || 'unknown',
         workspaceId,
-        metadata.channelId || 'dm',
-        'dm',
-        'create_file_submission',
+        'create_file_modal',
         Date.now() - startTime,
         false,
         {
           error: error instanceof Error ? error.message : 'Unknown error',
           errorStack: error instanceof Error ? error.stack : undefined,
           sessionId: metadata.sessionId,
+          fileName: body.view.state.values.file_name_input?.file_name?.value,
+          fileContent: body.view.state.values.file_content_input?.file_content?.value,
         },
         client,
+        metadata.channelId || 'dm',
+        'dm',
       );
     } catch (logError) {
       logger.warn('Failed to log error:', logError);

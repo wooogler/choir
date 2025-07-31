@@ -284,6 +284,8 @@ export const registerOrganizationHandlers = (app: App) => {
         {
           nameLength: newName.trim().length,
           descriptionLength: newDescription?.trim().length || 0,
+          submittedName: newName.trim(),
+          submittedDescription: newDescription?.trim() || '',
         },
         client,
         'app_home',

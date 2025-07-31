@@ -61,6 +61,7 @@ export const showCreateFileModalCallback = async ({
     const modal = {
       type: 'modal' as const,
       callback_id: 'create_file_modal',
+      notify_on_close: true,
       title: {
         type: 'plain_text' as const,
         text: 'Create New File',
