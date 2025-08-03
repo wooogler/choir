@@ -212,6 +212,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
                 sessionId: sessionId,
                 originalChannelId: sessionData.originalChannelId,
                 originalThreadTs: sessionData.originalThreadTs,
+                continueToFileSelection: true,
               }),
             },
             {
@@ -242,7 +243,9 @@ export const sendUpdateSuggestionToManagerCallback = async ({
           ts: postedMessage.ts, // Combined message
         };
 
-        storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+        // 매니저 제안 세션은 14일 동안 유효하도록 설정
+        const MANAGER_SESSION_EXPIRY = 14 * 24 * 60 * 60 * 1000; // 14일
+        storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE, MANAGER_SESSION_EXPIRY);
 
         // 로그: 매니저 알림 성공
         await logButtonClick(

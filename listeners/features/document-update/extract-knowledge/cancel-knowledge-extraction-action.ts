@@ -236,8 +236,26 @@ export const cancelKnowledgeExtractionCallback = async ({
 
     // Send error message to user
     try {
-      await client.chat.postEphemeral({
-        channel: body.channel?.id || 'unknown',
+      const sessionId = body.actions?.[0]?.value;
+      let originalChannelId = body.channel?.id || 'unknown';
+      let originalThreadTs = undefined;
+      
+      // Try to get original channel and thread info from session data for proper targeting
+      if (sessionId) {
+        try {
+          const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE);
+          if (sessionData) {
+            const typedSessionData = sessionData as any;
+            originalChannelId = typedSessionData.originalChannelId || originalChannelId;
+            originalThreadTs = typedSessionData.originalThreadTs;
+          }
+        } catch (sessionError) {
+          logger.warn('Could not get session data for error message targeting:', sessionError);
+        }
+      }
+      
+      const ephemeralParams: any = {
+        channel: originalChannelId,
         user: body.user.id,
         text: `❌ Failed to cancel: ${error instanceof Error ? error.message : 'Unknown error'}`,
         blocks: [
@@ -249,7 +267,14 @@ export const cancelKnowledgeExtractionCallback = async ({
             },
           },
         ],
-      });
+      };
+      
+      // Only add thread_ts if we're in a thread
+      if (originalThreadTs) {
+        ephemeralParams.thread_ts = originalThreadTs;
+      }
+      
+      await client.chat.postEphemeral(ephemeralParams);
     } catch (ephemeralError) {
       logger.error('Failed to send error ephemeral message:', ephemeralError);
     }

@@ -15,7 +15,7 @@ export const askToOthersModalCallback = async ({
   const startTime = Date.now();
   await ack();
 
-  // response_url을 통해 ephemeral 메시지를 "공유됨" 상태로 업데이트
+  // response_url로 기존 ephemeral 메시지를 업데이트
   try {
     if (body.response_url) {
       await fetch(body.response_url, {
@@ -25,13 +25,13 @@ export const askToOthersModalCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: '✅ Private DM created!',
+          text: '✅ Setting up private discussion...',
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '✅ *Private DM created!*\nYour Q&A has been shared privately with the selected members.',
+                text: '✅ *Setting up private discussion...*\nOpening participant selection modal.',
               },
             },
           ],
@@ -41,6 +41,8 @@ export const askToOthersModalCallback = async ({
   } catch (error) {
     logger.warn('Failed to update ephemeral message via response_url:', error);
   }
+
+
 
   try {
     const sessionId = body.actions[0].value;
@@ -66,6 +68,8 @@ export const askToOthersModalCallback = async ({
       });
       return;
     }
+
+
 
     // 질문자 이름 가져오기
     const questionerName = await getUserName(body.user.id, client);

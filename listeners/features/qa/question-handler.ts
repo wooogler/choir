@@ -164,6 +164,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         originalQuestion: userMessage,
         botResponse: cleanResponseForSharing,
         originalChannelId: event.channel,
+        originalThreadTs: event.thread_ts, // 스레드 정보 추가
         canAnswer: answerResult.canAnswer,
         ephemeralMessageTs: undefined, // 나중에 업데이트됨
         ephemeralUserId: event.user,

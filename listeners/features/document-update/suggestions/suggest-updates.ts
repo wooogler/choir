@@ -385,7 +385,9 @@ export const suggestUpdatesCallback = async ({
             sessionData.processingBy = userId;
             sessionData.processingManagerName = managerName;
             sessionData.processingAt = new Date().toISOString();
-            storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+            // 매니저 제안 세션은 14일 동안 유효하도록 설정
+            const MANAGER_SESSION_EXPIRY = 14 * 24 * 60 * 60 * 1000; // 14일
+            storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE, MANAGER_SESSION_EXPIRY);
 
             logger.info(`Manager ${managerName} (${userId}) claimed processing for session ${sessionId}`);
 
@@ -393,20 +395,26 @@ export const suggestUpdatesCallback = async ({
             await updateOtherManagerMessages(sessionData, userId, managerName, client, logger);
 
             // Notify original channel about who started processing
-            // Skip if: 1) no original channel, 2) same as current DM, 3) processing manager is same as original user (manager's own work)
+            // Skip if: 1) no original channel, 2) same as current DM, 3) processing manager is same as original user (manager's own work), 4) thread interaction
             const isManagerOwnWork = sessionData.userId === userId; // Manager processing their own suggestion
             const isSameChannel = sessionData.originalChannelId === currentDmChannelId;
+            const isThreadInteraction = !!sessionData.originalThreadTs; // Interaction happened in a thread
             const shouldNotify = sessionData.originalChannelId && 
                                 !isSameChannel && 
-                                !isManagerOwnWork;
+                                !isManagerOwnWork &&
+                                !isThreadInteraction;
                                 
-            logger.info(`[DEBUG] Notification check: originalChannelId=${sessionData.originalChannelId}, currentDmChannelId=${currentDmChannelId}, userId=${sessionData.userId}, managerId=${userId}, isManagerOwnWork=${isManagerOwnWork}, isSameChannel=${isSameChannel}, shouldNotify=${shouldNotify}`);
+            logger.info(`[DEBUG] Notification check: originalChannelId=${sessionData.originalChannelId}, currentDmChannelId=${currentDmChannelId}, userId=${sessionData.userId}, managerId=${userId}, isManagerOwnWork=${isManagerOwnWork}, isSameChannel=${isSameChannel}, isThreadInteraction=${isThreadInteraction}, shouldNotify=${shouldNotify}`);
             
             if (shouldNotify) {
               logger.info(`[DEBUG] Sending notification to original channel: ${sessionData.originalChannelId}`);
               await notifyOriginalChannel(sessionData, managerName, client, logger);
-            } else {
-              logger.info(`[DEBUG] Skipping notification - manager's own work or same channel`);
+            } else if (isManagerOwnWork) {
+              logger.info(`[DEBUG] Skipping notification - manager's own work`);
+            } else if (isSameChannel) {
+              logger.info(`[DEBUG] Skipping notification - same channel`);
+            } else if (isThreadInteraction) {
+              logger.info(`[DEBUG] Skipping notification - thread interaction (notification handled via response_url)`);
             }
           }
         }
@@ -1969,7 +1977,9 @@ Section: ${sectionInfo}`;
       if (sessionData) {
         sessionData.mainMessageTs = suggestionMessageTs;
         sessionData.mainChannelId = currentDmChannelId;
-        storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE);
+        // 매니저 제안 세션은 14일 동안 유효하도록 설정
+        const MANAGER_SESSION_EXPIRY = 14 * 24 * 60 * 60 * 1000; // 14일
+        storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE, MANAGER_SESSION_EXPIRY);
       }
     }
 

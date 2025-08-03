@@ -66,7 +66,9 @@ ${replies.map((reply: string, index: number) => `- ${replyAuthors[index]}: ${rep
       parentSessionId: sessionId,
     };
 
-    storeSessionData(newSessionId, newSessionData, SessionType.DOCUMENT_UPDATE);
+    // 매니저 제안 세션은 14일 동안 유효하도록 설정
+    const MANAGER_SESSION_EXPIRY = 14 * 24 * 60 * 60 * 1000; // 14일
+    storeSessionData(newSessionId, newSessionData, SessionType.DOCUMENT_UPDATE, MANAGER_SESSION_EXPIRY);
 
     // 버튼 제거하고 진행 메시지로 업데이트
     const currentMessageTs = (body.message as any)?.ts;

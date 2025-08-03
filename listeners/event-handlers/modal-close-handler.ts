@@ -1,6 +1,66 @@
 import type { AllMiddlewareArgs, App, SlackViewMiddlewareArgs } from '@slack/bolt';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logButtonClick, logAppHomeButtonClick } from 'services/common/user-interaction-logger';
 import { getWorkspaceId } from 'services/slack';
+
+/**
+ * App Home Modal cancel/close 처리 콜백
+ */
+const appHomeModalCloseCallback = async ({ ack, body, view, client, logger }: AllMiddlewareArgs & SlackViewMiddlewareArgs) => {
+  await ack();
+  const startTime = Date.now();
+
+  const callbackId = view?.callback_id || 'unknown';
+  const userId = body.user?.id || 'unknown';
+  const isCleared = (body as any).is_cleared || false;
+
+  logger.info('App Home modal close event received', {
+    callbackId,
+    userId,
+    isCleared,
+  });
+
+  try {
+    const workspaceId = await getWorkspaceId(client);
+
+    // Log the app home modal cancellation
+    await logAppHomeButtonClick(
+      userId,
+      workspaceId,
+      `${callbackId}_cancel`,
+      Date.now() - startTime,
+      true,
+      'Cancel',
+      {
+        modalCancelled: callbackId,
+        cancelReason: isCleared ? 'cleared' : 'user_cancelled',
+      },
+      client,
+    );
+
+    logger.info(`App Home modal cancelled: ${callbackId}`, { userId });
+  } catch (error) {
+    logger.error('Error processing app home modal close:', error);
+
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      await logAppHomeButtonClick(
+        userId,
+        workspaceId,
+        'modal_cancel_error',
+        Date.now() - startTime,
+        false,
+        'Cancel',
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          callbackId,
+        },
+        client,
+      );
+    } catch (logError) {
+      logger.warn('Failed to log app home modal close error:', logError);
+    }
+  }
+};
 
 /**
  * Modal cancel/close 처리 콜백
@@ -146,6 +206,15 @@ const register = (app: App) => {
 
   // Handle view_closed for create file modal
   app.view({ callback_id: 'create_file_modal', type: 'view_closed' }, modalCloseCallback);
+
+  // Handle view_closed for App Home modals
+  app.view({ callback_id: 'manager_promotion_modal', type: 'view_closed' }, appHomeModalCloseCallback);
+  app.view({ callback_id: 'choir_users_modal', type: 'view_closed' }, appHomeModalCloseCallback);
+  app.view({ callback_id: 'managers_modal', type: 'view_closed' }, appHomeModalCloseCallback);
+  app.view({ callback_id: 'readonly_files_modal', type: 'view_closed' }, appHomeModalCloseCallback);
+  app.view({ callback_id: 'select_repository_modal', type: 'view_closed' }, appHomeModalCloseCallback);
+  app.view({ callback_id: 'github_device_code_modal', type: 'view_closed' }, appHomeModalCloseCallback);
+  app.view({ callback_id: 'edit_organization_name_modal', type: 'view_closed' }, appHomeModalCloseCallback);
 };
 
 export default { register };

@@ -182,9 +182,17 @@ export const askToOthersSubmitCallback = async ({
       // 참여자 이름들 표시
       const participantsList = participantNames.join(', ');
 
-      // 공통 성공 메시지 (채널에 공개)
+      logger.info('[DEBUG] Sending "Private DM created" public message:', {
+        channel: sessionData.originalChannelId,
+        thread_ts: sessionData.originalThreadTs,
+        hasThreadTs: !!sessionData.originalThreadTs,
+        participantsList
+      });
+
+      // 공통 성공 메시지 (원본 스레드에 공개)
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,
+        ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
         text: `✅ Private DM created with: ${participantsList}`,
         blocks: [
           {
@@ -204,9 +212,17 @@ export const askToOthersSubmitCallback = async ({
         const authInfo = await client.auth.test();
         const teamId = authInfo.team_id;
 
+        logger.info('[DEBUG] Sending "Your private DM is ready" ephemeral message:', {
+          channel: sessionData.originalChannelId,
+          user: userId,
+          thread_ts: sessionData.originalThreadTs,
+          hasThreadTs: !!sessionData.originalThreadTs
+        });
+
         await client.chat.postEphemeral({
           channel: sessionData.originalChannelId,
           user: userId,
+          ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
           text: 'Access your private DM',
           blocks: [
             {
@@ -228,6 +244,7 @@ export const askToOthersSubmitCallback = async ({
                     emoji: true,
                   },
                   style: 'primary',
+                  action_id: 'open_private_dm_url',
                   url: `slack://channel?team=${teamId}&id=${conversationId}`,
                 },
               ],

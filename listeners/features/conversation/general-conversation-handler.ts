@@ -99,7 +99,8 @@ What would you like to try first?`;
       originalMessage: message,
       userId: event.user,
       channelId: event.channel,
-      threadTs: event.ts,
+      messageTs: event.ts,
+      threadTs: event.thread_ts,
       channelType: event.channel_type,
     });
 

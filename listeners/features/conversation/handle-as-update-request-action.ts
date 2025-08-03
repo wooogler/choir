@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/user-interaction-logger';
-import { getWorkspaceId } from 'services/slack';
+import { getWorkspaceId, getUserName } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { handleUpdateRequestMessage } from '../document-update/extract-knowledge/update-request-handler';
 
@@ -24,11 +24,15 @@ export const handleAsUpdateRequestCallback = async ({
 
     const messageData = JSON.parse(actionValue);
 
+    // Get user name for the message
+    const userName = await getUserName(messageData.userId, client);
+
     // 원본 이벤트 객체 재구성
     const reconstructedEvent = {
       user: messageData.userId,
       channel: messageData.channelId,
-      ts: messageData.threadTs,
+      ts: messageData.messageTs,
+      thread_ts: messageData.threadTs,
       channel_type: messageData.channelType,
       originalMessage: messageData.originalMessage, // 원본 메시지 텍스트 추가
     };
@@ -36,13 +40,13 @@ export const handleAsUpdateRequestCallback = async ({
     // Send friendly public notification first
     await client.chat.postMessage({
       channel: messageData.channelId,
-      text: `📝 <@${messageData.userId}> clarified this was a suggestion for updating our docs - I'll work on that now!`,
+      text: `📝 *${userName}* clarified this was a suggestion for updating our docs - I'll work on that now!`,
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `📝 <@${messageData.userId}> clarified this was a suggestion for updating our docs - I'll work on that now!`,
+            text: `📝 *${userName}* clarified this was a suggestion for updating our docs - I'll work on that now!`,
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
         },

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { WebClient } from '@slack/web-api';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
+import { Logger } from 'services/common/logger';
 
 export interface WorkspaceConfig {
   workspaceId: string;
@@ -294,23 +295,85 @@ export class WorkspaceStore {
   }
 
   /**
-   * 캐시된 마크다운 파일 목록 가져오기
+   * 캐시된 마크다운 파일 목록 가져오기 (Graceful Degradation 방식)
+   * 캐시가 만료되어도 기존 데이터를 반환하고, 백그라운드에서 자동 새로고침
    */
   public async getCachedMarkdownFiles(workspaceId: string): Promise<Array<{ name: string; path: string }> | null> {
     const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config?.markdownFiles || !config.markdownFilesCachedAt) {
+    
+    // 캐시가 아예 없는 경우에만 null 반환
+    if (!config?.markdownFiles) {
       return null;
     }
 
-    // 캐시가 24시간 이상 오래된 경우 무효화
-    const cacheAge = Date.now() - config.markdownFilesCachedAt.getTime();
-    const twentyFourHours = 24 * 60 * 60 * 1000;
+    // 캐시가 있으면 일단 반환 (만료되어도)
+    if (config.markdownFilesCachedAt) {
+      const cacheAge = Date.now() - config.markdownFilesCachedAt.getTime();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
 
-    if (cacheAge > twentyFourHours) {
-      return null;
+      // 만료되었지만 기존 데이터는 반환하고, 백그라운드에서 새로고침
+      if (cacheAge > twentyFourHours) {
+        Logger.info(`Markdown files cache expired for workspace ${workspaceId}, triggering background refresh`);
+        // 백그라운드 새로고침 (await 하지 않음)
+        this.refreshMarkdownFilesCache(workspaceId).catch(error => {
+          Logger.warn('Background markdown files refresh failed:', error);
+        });
+      }
     }
 
     return config.markdownFiles;
+  }
+
+  /**
+   * 백그라운드에서 마크다운 파일 캐시를 새로고침
+   */
+  private async refreshMarkdownFilesCache(workspaceId: string): Promise<void> {
+    try {
+      const config = await this.getWorkspaceConfig(workspaceId);
+      if (!config?.githubRepo) {
+        Logger.warn(`No GitHub repo configured for workspace ${workspaceId}, skipping cache refresh`);
+        return;
+      }
+
+      // GithubService를 동적으로 import하여 순환 의존성 방지
+      const GithubServiceModule = await import('services/github/github-service');
+      const githubService = GithubServiceModule.default.getInstance();
+      
+      Logger.info(`Refreshing markdown files cache for workspace ${workspaceId} from GitHub repo ${config.githubRepo.owner}/${config.githubRepo.repo}`);
+
+      const markdownFiles = await githubService.getAllMarkdownFiles({
+        owner: config.githubRepo.owner,
+        repo: config.githubRepo.repo,
+        path: config.githubRepo.path || '',
+        ref: config.githubRepo.branch,
+        workspaceId,
+      });
+
+      const fileList = markdownFiles.map((file: any) => ({
+        name: file.name,
+        path: file.path,
+      }));
+      
+      await this.setMarkdownFilesCache(workspaceId, fileList);
+      Logger.info(`Successfully refreshed markdown files cache for workspace ${workspaceId}, found ${fileList.length} files`);
+
+      // 벡터 스토어도 백그라운드에서 업데이트 (선택적)
+      try {
+        const { VectorStoreService } = await import('services/vector/main-service');
+        const vectorStore = VectorStoreService.getInstance();
+        
+        // 캐시를 사용하지 않고 새로 초기화
+        const success = await vectorStore.initialize(markdownFiles, false, true, workspaceId);
+        if (success) {
+          Logger.info(`Successfully updated vector store for workspace ${workspaceId} with ${markdownFiles.length} files`);
+        }
+      } catch (vectorError) {
+        // 벡터 스토어 업데이트 실패는 로그만 남기고 진행
+        Logger.warn(`Failed to update vector store for workspace ${workspaceId}:`, vectorError as Error);
+      }
+    } catch (error) {
+      Logger.error(`Failed to refresh markdown files cache for workspace ${workspaceId}:`, error as Error);
+    }
   }
 
   /**

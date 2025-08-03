@@ -5,7 +5,7 @@ import type {
   SlackActionMiddlewareArgs,
   UsersSelectAction,
 } from '@slack/bolt';
-import { addManager, getWorkspaceId, isWorkspaceOwner, removeManager, setupInitialManager } from 'services/slack';
+import { addManager, getWorkspaceId, isWorkspaceOwner, removeManager, setupInitialManager, getUserName } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
@@ -92,16 +92,17 @@ const addManagerCallback = async ({
 
     if (success) {
       // Send success message
+      const selectedUserName = await getUserName(selectedUser, client);
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: `✅ Manager permission has been granted to <@${selectedUser}>.`,
+        text: `✅ Manager permission has been granted to *${selectedUserName}*.`,
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `✅ Manager permission has been granted to <@${selectedUser}>.`,
+              text: `✅ Manager permission has been granted to *${selectedUserName}*.`,
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.EPHEMERAL_HELPER),
           },
@@ -135,15 +136,16 @@ const addManagerCallback = async ({
 
       // Send notification message
       try {
+        const grantingUserName = await getUserName(userId, client);
         await client.chat.postMessage({
           channel: selectedUser,
-          text: `<@${userId}> has granted you CHOIR manager permission.`,
+          text: `*${grantingUserName}* has granted you CHOIR manager permission.`,
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `<@${userId}> has granted you CHOIR manager permission.`,
+                text: `*${grantingUserName}* has granted you CHOIR manager permission.`,
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
             },
@@ -245,16 +247,17 @@ const removeManagerCallback = async ({
 
     if (success) {
       // Send success message
+      const targetUserName = await getUserName(targetUserId, client);
       await client.chat.postEphemeral({
         channel: body.channel?.id || body.user.id,
         user: userId,
-        text: `✅ Manager permission has been removed from <@${targetUserId}>.`,
+        text: `✅ Manager permission has been removed from *${targetUserName}*.`,
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `✅ Manager permission has been removed from <@${targetUserId}>.`,
+              text: `✅ Manager permission has been removed from *${targetUserName}*.`,
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.EPHEMERAL_HELPER),
           },
@@ -288,15 +291,16 @@ const removeManagerCallback = async ({
 
       // Send notification message
       try {
+        const removingUserName = await getUserName(userId, client);
         await client.chat.postMessage({
           channel: targetUserId,
-          text: `<@${userId}> has removed your CHOIR manager permission.`,
+          text: `*${removingUserName}* has removed your CHOIR manager permission.`,
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `<@${userId}> has removed your CHOIR manager permission.`,
+                text: `*${removingUserName}* has removed your CHOIR manager permission.`,
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
             },

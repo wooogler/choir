@@ -24,6 +24,7 @@ export const registerGitHubHandlers = (app: App) => {
         view: {
           type: 'modal',
           callback_id: 'github_device_code_modal',
+          notify_on_close: true,
           title: {
             type: 'plain_text',
             text: 'Connect GitHub',
@@ -222,6 +223,7 @@ export const registerGitHubHandlers = (app: App) => {
         view: {
           type: 'modal',
           callback_id: 'select_repository_modal',
+          notify_on_close: true,
           title: {
             type: 'plain_text',
             text: 'Select Repository',
@@ -294,6 +296,8 @@ export const registerGitHubHandlers = (app: App) => {
   });
 
   app.view('select_repository_modal', async ({ ack, body, client, logger, view }) => {
+    const startTime = Date.now();
+
     try {
       const selectedRepo = view.state.values.repository_select_block.repository_select.selected_option?.value;
       const path = view.state.values.path_input_block.path_input.value || '';
@@ -305,6 +309,24 @@ export const registerGitHubHandlers = (app: App) => {
             repository_select_block: 'Please select a repository.',
           },
         });
+
+        // Log validation error
+        const metadata = JSON.parse(view.private_metadata || '{}');
+        const { userId, workspaceId } = metadata;
+        const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
+        await logAppHomeModalSubmit(
+          userId,
+          workspaceId,
+          'select_repository_modal',
+          Date.now() - startTime,
+          false,
+          'Repository selection modal submitted without selecting a repository',
+          {
+            error: 'No repository selected',
+            enteredPath: path,
+          },
+          client,
+        );
         return;
       }
 
@@ -345,6 +367,26 @@ export const registerGitHubHandlers = (app: App) => {
           channel: userId,
           text: '⚠️ Repository connected but no markdown files found.',
         });
+
+        // Log no files found
+        const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
+        await logAppHomeModalSubmit(
+          userId,
+          workspaceId,
+          'select_repository_modal',
+          Date.now() - startTime,
+          true,
+          `Repository connected but no markdown files found - ${repoInfo.owner}/${repoInfo.repo} at path: "${path.trim()}"`,
+          {
+            selectedRepository: `${repoInfo.owner}/${repoInfo.repo}`,
+            repositoryUrl: repoInfo.url,
+            repositoryPath: path.trim(),
+            isPrivate: repoInfo.private,
+            filesFound: 0,
+            vectorStoreInitialized: false,
+          },
+          client,
+        );
       } else {
         const success = await vectorStore.initialize(markdownFiles, false, true);
 
@@ -362,12 +404,54 @@ export const registerGitHubHandlers = (app: App) => {
             channel: userId,
             text: `✅ Successfully connected to ${repoInfo.owner}/${repoInfo.repo} and loaded ${markdownFiles.length} files!`,
           });
+
+          // Log successful connection
+          const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
+          await logAppHomeModalSubmit(
+            userId,
+            workspaceId,
+            'select_repository_modal',
+            Date.now() - startTime,
+            true,
+            `Successfully connected repository - ${repoInfo.owner}/${repoInfo.repo} at path: "${path.trim()}" with ${markdownFiles.length} files`,
+            {
+              selectedRepository: `${repoInfo.owner}/${repoInfo.repo}`,
+              repositoryUrl: repoInfo.url,
+              repositoryPath: path.trim(),
+              isPrivate: repoInfo.private,
+              filesFound: markdownFiles.length,
+              vectorStoreInitialized: true,
+              fileNames: markdownFiles.map(f => f.name),
+            },
+            client,
+          );
         } else {
           await client.chat.postEphemeral({
             user: userId,
             channel: userId,
             text: '⚠️ Repository connected but failed to load documents. Please try refreshing.',
           });
+
+          // Log vector store failure
+          const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
+          await logAppHomeModalSubmit(
+            userId,
+            workspaceId,
+            'select_repository_modal',
+            Date.now() - startTime,
+            false,
+            `Repository connected but vector store initialization failed - ${repoInfo.owner}/${repoInfo.repo} at path: "${path.trim()}" with ${markdownFiles.length} files`,
+            {
+              selectedRepository: `${repoInfo.owner}/${repoInfo.repo}`,
+              repositoryUrl: repoInfo.url,
+              repositoryPath: path.trim(),
+              isPrivate: repoInfo.private,
+              filesFound: markdownFiles.length,
+              vectorStoreInitialized: false,
+              error: 'Vector store initialization failed',
+            },
+            client,
+          );
         }
       }
 
@@ -402,6 +486,28 @@ export const registerGitHubHandlers = (app: App) => {
           repository_select_block: 'An error occurred while connecting the repository. Please try again.',
         },
       });
+
+      // Log error
+      try {
+        const metadata = JSON.parse(view.private_metadata || '{}');
+        const { userId, workspaceId } = metadata;
+        const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
+        await logAppHomeModalSubmit(
+          userId,
+          workspaceId,
+          'select_repository_modal',
+          Date.now() - startTime,
+          false,
+          'Repository selection modal error',
+          {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorStack: error instanceof Error ? error.stack : undefined,
+          },
+          client,
+        );
+      } catch (logError) {
+        logger.error('Failed to log error:', logError);
+      }
     }
   });
 };

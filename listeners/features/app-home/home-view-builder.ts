@@ -4,7 +4,6 @@ import {
   getCHOIRUsers,
   getGithubRepo,
   getManagers,
-  getOrganizationDescription,
   getOrganizationName,
   getQAChannel,
   isManager,
@@ -21,8 +20,6 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
 
   const workspaceStore = new WorkspaceStore();
   const userGithubInfo = await workspaceStore.getUserGithubInfo(workspaceId, userId);
-
-  const organizationDescription = (await getOrganizationDescription(workspaceId)) || 'No description set.';
 
   let organizationName = await getOrganizationName(workspaceId);
   if (!organizationName) {
@@ -52,11 +49,10 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
     userGithubInfo,
   );
 
-  const organizationDescriptionBlocks = buildOrganizationDescriptionBlocks(
+  const organizationNameBlocks = buildOrganizationNameBlocks(
     isUserManager,
     isOwner,
     organizationName,
-    organizationDescription,
   );
 
   const logDownloadBlocks = buildLogDownloadBlocks(isUserManager, isOwner);
@@ -84,10 +80,26 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
   ];
 
   // 모든 사용자에게 Messages 탭으로 이동할 수 있는 버튼 제공
-  // Get team and bot info for deep link
-  const authTest = await client.auth.test();
-  const teamId = authTest.team_id;
-  const botUserId = authTest.user_id;
+      // Get team and app info for deep link
+    const authTest = await client.auth.test();
+    const teamId = authTest.team_id;
+    const botUserId = authTest.user_id;
+    
+    // Extract app ID from SLACK_APP_TOKEN (format: xapp-1-{APP_ID}-...)
+    let appId = process.env.SLACK_APP_ID;
+    if (!appId && process.env.SLACK_APP_TOKEN) {
+      const tokenParts = process.env.SLACK_APP_TOKEN.split('-');
+      if (tokenParts.length >= 3 && tokenParts[0] === 'xapp') {
+        appId = tokenParts[2]; // App ID is the third part
+      }
+    }
+    
+    logger.info('[DEBUG] App Home - Deep link info:', {
+      teamId,
+      botUserId,
+      appId: appId || 'NOT_FOUND',
+      hasAppToken: !!process.env.SLACK_APP_TOKEN
+    });
 
   homeBlocks.push(
     {
@@ -108,7 +120,11 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
             emoji: true,
           },
           style: 'primary',
-          url: `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
+          action_id: 'start_chat_url',
+          // Use App Home deep link format for apps with App Home
+          url: appId 
+            ? `slack://app?team=${teamId}&id=${appId}&tab=messages`
+            : `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
         },
       ],
     } as any,
@@ -123,7 +139,7 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
     ...documentConnectionBlocks,
     ...choirManagementBlocks,
     ...becomeManagerBlocks,
-    ...organizationDescriptionBlocks,
+    ...organizationNameBlocks,
     ...readOnlyFilesBlocks,
     ...loggingToggleBlocks,
   ];
@@ -567,11 +583,10 @@ const buildDocumentConnectionBlocks = async (
   return blocks;
 };
 
-const buildOrganizationDescriptionBlocks = (
+const buildOrganizationNameBlocks = (
   isUserManager: boolean,
   isOwner: boolean,
   organizationName: string,
-  organizationDescription: string,
 ) => {
   if (!isUserManager && !isOwner) {
     return [];
@@ -582,7 +597,7 @@ const buildOrganizationDescriptionBlocks = (
       type: 'header',
       text: {
         type: 'plain_text',
-        text: '🏢 Organization Description',
+        text: '🏢 Organization Name',
         emoji: true,
       },
     },
@@ -590,7 +605,7 @@ const buildOrganizationDescriptionBlocks = (
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Organization Name:* ${organizationName}\n*Description:* ${organizationDescription}`,
+        text: `*Organization Name:* ${organizationName}`,
       },
     },
     {
@@ -600,11 +615,11 @@ const buildOrganizationDescriptionBlocks = (
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Edit Name and Description',
+            text: 'Edit Organization Name',
             emoji: true,
           },
           style: 'primary',
-          action_id: 'edit_organization_info',
+          action_id: 'edit_organization_name',
         },
       ],
     },
@@ -724,8 +739,69 @@ const buildReadOnlyFilesBlocks = async (
   const readOnlyFiles = await workspaceStore.getReadOnlyFiles(workspaceId);
   const markdownFiles = await workspaceStore.getCachedMarkdownFiles(workspaceId);
 
+  // 캐시가 없는 경우, GitHub 연결 안내와 함께 섹션 표시
   if (!markdownFiles || markdownFiles.length === 0) {
-    return [];
+    const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+    
+    // GitHub 레포지토리가 연결되어 있지 않은 경우
+    if (!config?.githubRepo) {
+      return [
+        {
+          type: 'header',
+          text: {
+            type: 'plain_text',
+            text: '🔒 Read-Only Files',
+            emoji: true,
+          },
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '📋 *Read-Only Files Management*\nConnect a GitHub repository to manage read-only files. Read-only files are excluded from document updates but remain searchable.',
+          },
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '⚠️ *GitHub repository not connected*\nPlease connect a GitHub repository in the Document Connection section above to manage read-only files.',
+          },
+        },
+        {
+          type: 'divider',
+        },
+      ];
+    }
+    
+    // GitHub는 연결되어 있지만 파일이 캐시되지 않은 경우
+    return [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: '🔒 Read-Only Files',
+          emoji: true,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '📋 *Read-Only Files Management*\nRead-only files are excluded from document updates but remain searchable.',
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '⏳ *Loading files...*\nMarkdown files are being loaded from GitHub. Please refresh in a moment or use the "Reload from GitHub" button in Vector Store Management.',
+        },
+      },
+      {
+        type: 'divider',
+      },
+    ];
   }
 
   return [
