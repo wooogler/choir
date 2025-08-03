@@ -1,6 +1,6 @@
 import type { WebClient } from '@slack/web-api';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import { anonymizeText, getAnonymizationMapping } from 'services/common/name-cache';
+// Removed anonymization imports - handled in completions.ts
 import { SlackMessage } from 'services/slack';
 import { getUserName } from 'services/slack';
 import { processMessageHistory, processMessageText } from 'services/slack/conversation-history';
@@ -42,17 +42,13 @@ export const answerQuestion = async (
     if (lastMessage.user) {
       try {
         const userName = await getUserName(lastMessage.user, client);
-        const anonymizationMapping = getAnonymizationMapping(lastMessage.user, userName);
-        currentQuestionWithUser = `${anonymizationMapping.fakeNickname}: ${userMessage}`;
+        currentQuestionWithUser = `${userName}: ${userMessage}`;
       } catch (error) {
         // Fallback to just the message if user name lookup fails
         currentQuestionWithUser = userMessage;
       }
     }
   }
-
-  // Anonymize the final message
-  const anonymizedCurrentQuestion = anonymizeText(currentQuestionWithUser);
 
   // Get today's date
   const today = new Date().toLocaleDateString('en-US', {
@@ -108,7 +104,7 @@ ${context}
 ${messages.map((m) => m.content).join('\n')}
 
 ==== CURRENT QUESTION ====
-${anonymizedCurrentQuestion}
+${currentQuestionWithUser}
 
 Analyze whether you can answer based on the documentation and provide your response as JSON:`;
 
