@@ -46,14 +46,26 @@ const dmMessageCallback = async ({
       logger.warn('Could not verify bot user ID for message filtering:', authError);
     }
 
-    // SLACKBOT 메시지 필터링 - 무한 루프 방지
+    // 추가 봇 필터링 - 포괄적 무한 루프 방지
     const userId = 'user' in event ? event.user : '';
     if (!userId) return;
     
+    // SLACKBOT 및 기타 시스템 봇 필터링
     if (userId === 'USLACKBOT') {
       logger.info('Skipping SLACKBOT message in DM to prevent infinite loop', {
         channel: event.channel,
         userId: userId,
+      });
+      return;
+    }
+    
+    // 봇 사용자 ID 패턴 필터링 (대부분 봇은 B로 시작하거나 특별한 패턴)
+    // Google Drive bot, 기타 앱 봇들을 포괄적으로 필터링
+    if (userId.startsWith('B') || userId.includes('bot') || userId.includes('BOT')) {
+      logger.info('Skipping bot user message in DM to prevent infinite loop', {
+        channel: event.channel,
+        userId: userId,
+        reason: 'Bot user ID pattern detected',
       });
       return;
     }
