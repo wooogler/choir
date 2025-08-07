@@ -130,7 +130,7 @@ export function trackAnonymousMessage(
       isProcessed: false, // "Send Reply to Questioner" 버튼이 클릭되었는지 여부
     },
     SessionType.ANONYMOUS_MESSAGE,
-    24 * 60 * 60 * 1000, // 24시간 후 만료
+    7 * 24 * 60 * 60 * 1000, // 7일 후 만료
   );
 }
 

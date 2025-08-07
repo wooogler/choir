@@ -5,7 +5,6 @@ import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { QuestionProcessor } from 'services/qa/question-processor';
 import {
   createGitbookSectionLink,
-  getCHOIRUsers,
   getChannelName,
   getManagers,
   getQAChannel,
@@ -13,7 +12,6 @@ import {
   getWorkspaceId,
 } from 'services/slack';
 import type { SlackMessage } from 'services/slack';
-import { ConversationCache } from 'services/slack/conversation-cache';
 import { createEnhancedMessage } from 'services/slack/message-text-utils';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -48,20 +46,20 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     });
     loadingMessageTs = loadingMessage.ts;
 
-    // Get workspace info and CHOIR users for filtering
+    // Get workspace info - skip conversation history to avoid API rate limits
     const workspaceId = await getWorkspaceId(client);
-    const choirUsers = await getCHOIRUsers(workspaceId);
+    // const choirUsers = await getCHOIRUsers(workspaceId);
 
-    // Get filtered conversation history using cache (excludes Non-CHOIR users)
-    const conversationCache = ConversationCache.getInstance();
-    const messages = await conversationCache.getOrFetchHistory(client, event, choirUsers, {
-      timeLimit: 5, // 5 minutes
-      messageLimit: 10, // fetch up to 10 messages
-      maxResults: 5, // return up to 5 messages
-    });
+    // Skip conversation history for question answering to avoid API rate limits
+    // const conversationCache = ConversationCache.getInstance();
+    // const messages = await conversationCache.getOrFetchHistory(client, event, choirUsers, {
+    //   timeLimit: 5, // 5 minutes
+    //   messageLimit: 10, // fetch up to 10 messages
+    //   maxResults: 5, // return up to 5 messages
+    // });
 
-    // Create historyResult object for compatibility with existing code
-    const historyResult = { messages };
+    // Create historyResult object for compatibility with existing code - empty messages
+    const historyResult = { messages: [] };
 
     // QuestionProcessor로 질문 처리
     const questionProcessor = new QuestionProcessor();
@@ -346,21 +344,21 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       }
     }
 
-    // Add CHOIR response to cache so next question includes this response
-    if (messageResult?.ts) {
-      // Create CHOIR message object to add to cache
-      const choirMessage: SlackMessage = {
-        ts: messageResult.ts,
-        bot_id: 'choir_bot', // Mark as bot message
-        text: response,
-        thread_ts: event.thread_ts,
-        // Add other relevant fields
-        user: undefined, // Bot messages don't have user field
-      };
+    // Skip adding CHOIR response to cache to avoid conversation history dependencies
+    // if (messageResult?.ts) {
+    //   // Create CHOIR message object to add to cache
+    //   const choirMessage: SlackMessage = {
+    //     ts: messageResult.ts,
+    //     bot_id: 'choir_bot', // Mark as bot message
+    //     text: response,
+    //     thread_ts: event.thread_ts,
+    //     // Add other relevant fields
+    //     user: undefined, // Bot messages don't have user field
+    //   };
 
-      conversationCache.addMessageToCache(event.channel, event.thread_ts, choirMessage);
-      logger.info(`Added CHOIR response to cache for channel ${event.channel}`);
-    }
+    //   // conversationCache.addMessageToCache(event.channel, event.thread_ts, choirMessage);
+    //   // logger.info(`Added CHOIR response to cache for channel ${event.channel}`);
+    // }
 
     // 관련 문서 정보를 응답의 스레드에 추가
     if (messageResult.ts && relevantDocs.length > 0) {

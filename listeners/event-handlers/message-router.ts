@@ -1,14 +1,11 @@
 import { classifyMessageIntent } from 'services/llm/document-editor';
 import {
-  getCHOIRUsers,
   getOrganizationDescription,
   getOrganizationName,
   getUserName,
   getWorkspaceId,
-  isManager,
 } from 'services/slack';
-import { ConversationCache } from 'services/slack/conversation-cache';
-import { CHOIRMessageType, createCHOIRBlockId, getCHOIRMessageTypeFromBlocks } from 'types/message-types';
+import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { getAnonymousThreadInfo } from '../../services/common/session-store';
 import { logMessageProcessing } from '../../services/common/user-interaction-logger';
 import { handleGeneralConversationMessage } from '../features/conversation/general-conversation-handler';
@@ -95,32 +92,9 @@ export async function handleIncomingMessage(client: any, event: any, message: st
           }
         }
 
-        // mention되지 않은 경우에만 fallback 체크 수행
-        if (!isMentioned) {
-          const threadResponse = await client.conversations.history({
-            channel: event.channel,
-            latest: event.thread_ts,
-            inclusive: true,
-            limit: 1,
-          });
-
-          if (threadResponse.messages && threadResponse.messages.length > 0) {
-            const originalMessage = threadResponse.messages[0];
-            if (originalMessage.blocks) {
-              const messageType = getCHOIRMessageTypeFromBlocks(originalMessage.blocks);
-              if (messageType === CHOIRMessageType.ANONYMOUS_QUESTION) {
-                logger.info('Skipping thread reply for anonymous question (fallback check)', {
-                  channel: event.channel,
-                  threadTs: event.thread_ts,
-                  messageType,
-                });
-                return true;
-              }
-            }
-          }
-        }
-      } catch (historyError) {
-        logger.warn('Failed to check thread original message type:', historyError);
+        // Skip fallback API check to avoid rate limits - rely on session store only
+      } catch (error) {
+        logger.warn('Error in anonymous thread check:', error);
       }
     }
 
@@ -147,21 +121,20 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     const orgName = (await getOrganizationName(workspaceId)) || '';
     const orgDescription = (await getOrganizationDescription(workspaceId)) || '';
 
-    // Get CHOIR users for filtering conversation history
-    const choirUsers = await getCHOIRUsers(workspaceId);
+    // Skip getting CHOIR users since we're not using conversation history
+    // const choirUsers = await getCHOIRUsers(workspaceId);
 
-    // Get filtered conversation history using cache (excludes Non-CHOIR users)
-    // Use shorter time limit for DMs since they are more immediate conversations
-    const isDM = event.channel_type === 'im';
-    const conversationCache = ConversationCache.getInstance();
-    const messages = await conversationCache.getOrFetchHistory(client, event, choirUsers, {
-      timeLimit: isDM ? 30 : 1440, // 30 minutes for DMs, 1 day for channels
-      messageLimit: 10, // fetch up to 10 messages
-      maxResults: 5, // return up to 5 messages
-    });
+    // Skip conversation history for classify intent to avoid API rate limits
+    // const isDM = event.channel_type === 'im';
+    // const conversationCache = ConversationCache.getInstance();
+    // const messages = await conversationCache.getOrFetchHistory(client, event, choirUsers, {
+    //   timeLimit: isDM ? 30 : 1440, // 30 minutes for DMs, 1 day for channels
+    //   messageLimit: 10, // fetch up to 10 messages
+    //   maxResults: 5, // return up to 5 messages
+    // });
 
-    // 메시지 의도 분류 (질문 또는 업데이트 요청 또는 일반 대화)
-    messageIntent = await classifyMessageIntent(message, orgName, orgDescription, messages, client);
+    // 메시지 의도 분류 (질문 또는 업데이트 요청 또는 일반 대화) - without conversation history
+    messageIntent = await classifyMessageIntent(message, orgName, orgDescription, [], client);
     logger.info(`Message intent classified as: ${messageIntent}`);
 
     // Log the intent classification result to interaction logs
