@@ -68,46 +68,17 @@ export async function processMessageText(text: string, client: WebClient): Promi
   return processedText.trim();
 }
 
-// Helper function to get reference timestamp for thread messages
-async function getReferenceTimestamp(client: WebClient, event: any): Promise<number> {
+// Helper function to get reference timestamp for thread messages - simplified
+function getReferenceTimestamp(event: any): number {
   if (!event.thread_ts) {
     return Date.now();
   }
-
-  try {
-    // Get thread messages to find the message before the current mention
-    const threadResult = await client.conversations.replies({
-      channel: event.channel,
-      ts: event.thread_ts,
-      limit: 50,
-      inclusive: true,
-    });
-
-    const threadMessages = (threadResult.messages || []) as SlackMessage[];
-    const currentMentionTs = event.ts;
-
-    // Find the message just before the mention message
-    let previousMessage = null;
-    for (let i = 0; i < threadMessages.length; i++) {
-      if (threadMessages[i].ts === currentMentionTs && i > 0) {
-        previousMessage = threadMessages[i - 1];
-        break;
-      }
-    }
-
-    // Use the previous message timestamp, or parent message if this is the first reply
-    if (previousMessage && previousMessage.ts) {
-      return Number.parseFloat(previousMessage.ts) * 1000;
-    } else {
-      return Number.parseFloat(event.thread_ts) * 1000;
-    }
-  } catch (error) {
-    Logger.warn('Failed to get thread reference timestamp, using current time', error as Error);
-    return Date.now();
-  }
+  
+  // Use thread parent timestamp as reference point - no API call needed
+  return Number.parseFloat(event.thread_ts) * 1000;
 }
 
-// Helper function to collect messages from Slack API
+// Helper function to collect messages from Slack API - simplified for knowledge extraction
 async function collectMessages(
   client: WebClient,
   event: any,
@@ -118,39 +89,17 @@ async function collectMessages(
   let messages: SlackMessage[] = [];
 
   if (event.thread_ts) {
-    // For thread mentions, get both thread messages AND conversation before the parent message
-
-    // 1. Get thread messages (including parent message)
+    // For thread mentions, get only thread messages (no pre-thread context needed)
     const threadResult = await client.conversations.replies({
       channel: event.channel,
       ts: event.thread_ts,
-      limit: Math.ceil(adjustedLimit / 2), // Use half the limit for thread messages
+      limit: adjustedLimit, // Use full limit for thread messages
       inclusive: true,
       ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
     });
 
-    const threadMessages = (threadResult.messages || []) as SlackMessage[];
-
-    // 2. Get conversation history before the parent message (thread_ts)
-    const parentTimestamp = Number.parseFloat(event.thread_ts);
-    const preThreadResult = await client.conversations.history({
-      channel: event.channel,
-      latest: event.thread_ts, // Stop at the parent message
-      limit: Math.ceil(adjustedLimit / 2), // Use remaining half for pre-thread context
-      ...(timeLimit <= 60 ? { oldest: timeLimitAgo.toString() } : {}),
-    });
-
-    const preThreadMessages = (preThreadResult.messages || []).filter((msg: any) => {
-      if (!msg.ts) return false;
-      const msgTimestamp = Number.parseFloat(msg.ts);
-      return msgTimestamp < parentTimestamp; // Exclude the parent message to avoid duplication
-    }) as SlackMessage[];
-
-    // 3. Combine pre-thread conversation + thread messages (chronological order)
-    // preThreadMessages from conversations.history comes in reverse chronological order
-    // threadMessages from conversations.replies comes in chronological order
-    // Note: threadMessages already includes the parent message due to inclusive: true
-    messages = [...preThreadMessages.reverse(), ...threadMessages];
+    messages = (threadResult.messages || []) as SlackMessage[];
+    // Thread messages already come in chronological order
   } else {
     // Non-thread mentions: use regular channel history
     const historyResult = await client.conversations.history({
@@ -363,7 +312,7 @@ export async function getFilteredConversationHistory(
   const { timeLimit = defaultTimeLimit, messageLimit = defaultMessageLimit, maxResults = defaultMaxResults } = options;
 
   try {
-    const referenceTimestamp = await getReferenceTimestamp(client, event);
+    const referenceTimestamp = getReferenceTimestamp(event);
     const timeLimitAgo = Math.floor((referenceTimestamp - timeLimit * 60 * 1000) / 1000);
 
     // Get conversation history or replies
