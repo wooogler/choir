@@ -19,6 +19,7 @@ export {
   setCHOIRUsers,
   isCHOIRUser,
   getNonUserResponseMessage,
+  getOrInitBotUserId,
 } from './user-management';
 
 // Message Utils

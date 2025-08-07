@@ -2,6 +2,7 @@ import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bo
 import { getManagers, getNonUserResponseMessage, getWorkspaceId, isCHOIRUser } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { handleIncomingMessage } from './message-router';
+import { getOrInitBotUserId } from 'services/slack/user-management';
 
 /**
  * DM 메시지 처리 콜백
@@ -33,8 +34,8 @@ const dmMessageCallback = async ({
 
     // 추가 안전장치: 자신의 메시지인지 확인
     try {
-      const botInfo = await client.auth.test();
-      if ('user' in event && event.user === botInfo.user_id) {
+      const botUserId = await getOrInitBotUserId(client);
+      if ('user' in event && event.user === botUserId) {
         logger.info('Skipping own message in DM to prevent infinite loop', {
           channel: event.channel,
           userId: 'user' in event ? event.user : undefined,

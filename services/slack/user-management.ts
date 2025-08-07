@@ -152,6 +152,23 @@ export async function getWorkspaceId(client: WebClient): Promise<string> {
 }
 
 /**
+ * 워크스페이스의 botUserId를 config에서 읽거나, 없으면 Slack API로 조회 후 저장
+ */
+export async function getOrInitBotUserId(client: WebClient): Promise<string> {
+  const workspaceId = await getWorkspaceId(client);
+  const botUserIdFromConfig = await workspaceStore.getBotUserId(workspaceId);
+  if (botUserIdFromConfig) return botUserIdFromConfig;
+  // 없으면 Slack API로 조회
+  const botInfo = await client.auth.test();
+  const botUserId = botInfo.user_id;
+  if (!botUserId) {
+    throw new Error('Failed to get bot user ID from Slack API');
+  }
+  await workspaceStore.setBotUserId(workspaceId, botUserId);
+  return botUserId;
+}
+
+/**
  * 캐시된 워크스페이스 ID를 클리어합니다. (테스트용)
  */
 export function clearWorkspaceIdCache(): void {

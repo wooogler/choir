@@ -6,6 +6,18 @@ import { getManagers, getNonUserResponseMessage, getWorkspaceId, isCHOIRUser } f
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 // import cancelDocumentUpdatesCallback from "../features/document-update/cancel-document-updates-action"; // 삭제: document-update feature에서 중앙 관리
 import { handleIncomingMessage } from './message-router';
+import { getOrInitBotUserId } from 'services/slack/user-management';
+
+// 봇 ID 캐싱 - 성능 최적화
+let cachedBotUserId: string | null = null;
+
+async function getBotUserId(client: any): Promise<string> {
+  if (!cachedBotUserId) {
+    const botInfo = await client.auth.test();
+    cachedBotUserId = botInfo.user_id;
+  }
+  return cachedBotUserId!;
+}
 
 /**
  * 앱 멘션 처리 콜백
@@ -28,8 +40,8 @@ const appMentionCallback = async ({
 
     // 추가 안전장치: 자신의 메시지인지 확인
     try {
-      const botInfo = await client.auth.test();
-      if ('user' in event && event.user === botInfo.user_id) {
+      const botUserId = await getOrInitBotUserId(client);
+      if ('user' in event && event.user === botUserId) {
         logger.info('Skipping own message in mention to prevent infinite loop', {
           channel: event.channel,
           userId: 'user' in event ? event.user : undefined,

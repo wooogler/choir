@@ -37,6 +37,7 @@ export interface WorkspaceConfig {
       connectedAt: Date;
     };
   };
+  botUserId?: string; // <-- 추가
   createdAt: Date;
   updatedAt: Date;
 }
@@ -645,5 +646,23 @@ export class WorkspaceStore {
 
     const readOnlyFiles = config.readOnlyFiles || [];
     return config.markdownFiles.filter((file) => !readOnlyFiles.includes(file.name));
+  }
+
+  /**
+   * 워크스페이스의 botUserId를 반환 (없으면 undefined)
+   */
+  public async getBotUserId(workspaceId: string): Promise<string | undefined> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.botUserId;
+  }
+
+  /**
+   * 워크스페이스의 botUserId를 저장
+   */
+  public async setBotUserId(workspaceId: string, botUserId: string): Promise<void> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) throw new Error('Workspace config not found');
+    config.botUserId = botUserId;
+    await this.saveWorkspaceConfig(config);
   }
 }

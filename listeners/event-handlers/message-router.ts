@@ -4,6 +4,7 @@ import {
   getOrganizationName,
   getUserName,
   getWorkspaceId,
+  getOrInitBotUserId,
 } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { getAnonymousThreadInfo } from '../../services/common/session-store';
@@ -12,6 +13,17 @@ import { handleGeneralConversationMessage } from '../features/conversation/gener
 import { handleDMClearCommand } from '../features/dm/clear-handler';
 import { handleUpdateRequestMessage } from '../features/document-update/extract-knowledge/update-request-handler';
 import { handleQuestionMessage } from '../features/qa/question-handler';
+
+// 봇 ID 캐싱 - 성능 최적화
+let cachedBotUserId: string | null = null;
+
+async function getBotUserId(client: any): Promise<string> {
+  if (!cachedBotUserId) {
+    const botInfo = await client.auth.test();
+    cachedBotUserId = botInfo.user_id;
+  }
+  return cachedBotUserId!;
+}
 
 /**
  * 메시지 처리를 위한 공통 함수
@@ -35,8 +47,8 @@ export async function handleIncomingMessage(client: any, event: any, message: st
 
     // 추가 안전장치: 자신의 메시지인지 확인
     try {
-      const botInfo = await client.auth.test();
-      if ('user' in event && event.user === botInfo.user_id) {
+      const botUserId = await getOrInitBotUserId(client);
+      if ('user' in event && event.user === botUserId) {
         logger.info('Skipping own message in message router to prevent infinite loop', {
           channel: event.channel,
           userId: 'user' in event ? event.user : undefined,
@@ -52,8 +64,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
       // 먼저 mention 여부 확인 (try 블록 밖에서)
       let isMentioned = false;
       try {
-        const botInfo = await client.auth.test();
-        const botUserId = botInfo.user_id;
+        const botUserId = await getOrInitBotUserId(client);
         isMentioned = message.includes(`<@${botUserId}>`) || message.includes('@choir');
 
         // mention된 경우에는 익명 thread 체크를 우회하고 정상 처리
