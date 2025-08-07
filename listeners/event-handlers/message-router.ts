@@ -23,6 +23,30 @@ export async function handleIncomingMessage(client: any, event: any, message: st
   let routingResult: boolean;
 
   try {
+    // 전역 봇 메시지 필터링 - 무한 루프 방지 (추가 안전장치)
+    if (('bot_id' in event && event.bot_id) || event.subtype === 'bot_message') {
+      logger.info('Skipping bot message in message router to prevent infinite loop', {
+        channel: event.channel,
+        botId: 'bot_id' in event ? event.bot_id : undefined,
+        subtype: event.subtype,
+      });
+      return true;
+    }
+
+    // 추가 안전장치: 자신의 메시지인지 확인
+    try {
+      const botInfo = await client.auth.test();
+      if ('user' in event && event.user === botInfo.user_id) {
+        logger.info('Skipping own message in message router to prevent infinite loop', {
+          channel: event.channel,
+          userId: 'user' in event ? event.user : undefined,
+        });
+        return true;
+      }
+    } catch (authError) {
+      logger.warn('Could not verify bot user ID for message filtering in router:', authError);
+    }
+
     // Thread message인 경우 원본 메시지가 Anonymous 질문인지 확인
     if (event.thread_ts) {
       // 먼저 mention 여부 확인 (try 블록 밖에서)
@@ -44,11 +68,11 @@ export async function handleIncomingMessage(client: any, event: any, message: st
           const anonymousInfo = getAnonymousThreadInfo(event.channel, event.thread_ts);
           if (anonymousInfo) {
             // Bot 메시지는 전달하지 않음 (CHOIR의 안내 메시지 등)
-            if (event.bot_id || event.subtype === 'bot_message') {
+            if (('bot_id' in event && event.bot_id) || event.subtype === 'bot_message') {
               logger.info('Skipping bot message in anonymous thread', {
                 channel: event.channel,
                 threadTs: event.thread_ts,
-                botId: event.bot_id,
+                botId: 'bot_id' in event ? event.bot_id : undefined,
                 subtype: event.subtype,
               });
               return true;

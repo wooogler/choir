@@ -21,6 +21,30 @@ const dmMessageCallback = async ({
       return;
     }
 
+    // 봇 메시지 필터링 - 무한 루프 방지
+    if (('bot_id' in event && event.bot_id) || event.subtype === 'bot_message') {
+      logger.info('Skipping bot message in DM to prevent infinite loop', {
+        channel: event.channel,
+        botId: 'bot_id' in event ? event.bot_id : undefined,
+        subtype: event.subtype,
+      });
+      return;
+    }
+
+    // 추가 안전장치: 자신의 메시지인지 확인
+    try {
+      const botInfo = await client.auth.test();
+      if ('user' in event && event.user === botInfo.user_id) {
+        logger.info('Skipping own message in DM to prevent infinite loop', {
+          channel: event.channel,
+          userId: 'user' in event ? event.user : undefined,
+        });
+        return;
+      }
+    } catch (authError) {
+      logger.warn('Could not verify bot user ID for message filtering:', authError);
+    }
+
     // Get workspace and check if user is a CHOIR user
     const workspaceId = await getWorkspaceId(client);
     const userId = 'user' in event ? event.user : '';
