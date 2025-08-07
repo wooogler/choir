@@ -46,10 +46,20 @@ const dmMessageCallback = async ({
       logger.warn('Could not verify bot user ID for message filtering:', authError);
     }
 
-    // Get workspace and check if user is a CHOIR user
-    const workspaceId = await getWorkspaceId(client);
+    // SLACKBOT 메시지 필터링 - 무한 루프 방지
     const userId = 'user' in event ? event.user : '';
     if (!userId) return;
+    
+    if (userId === 'USLACKBOT') {
+      logger.info('Skipping SLACKBOT message in DM to prevent infinite loop', {
+        channel: event.channel,
+        userId: userId,
+      });
+      return;
+    }
+
+    // Get workspace and check if user is a CHOIR user
+    const workspaceId = await getWorkspaceId(client);
 
     const isUserCHOIRUser = await isCHOIRUser(workspaceId, userId);
 
