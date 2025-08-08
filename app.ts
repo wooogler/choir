@@ -1,6 +1,7 @@
 import { App, LogLevel, ExpressReceiver } from '@slack/bolt';
 import * as dotenv from 'dotenv';
 import registerListeners from './listeners';
+import { SlackUsageMonitor, usageMonitoringMiddleware } from 'services/slack/usage-monitor';
 
 import { GithubService } from './services/github';
 
@@ -43,6 +44,11 @@ const app = new App({
     },
   },
 });
+
+// 전역 사용량 모니터 초기화 및 미들웨어 등록
+SlackUsageMonitor.getInstance().initializeGlobalHook();
+// 모든 요청에 대해 행위자(userId) 컨텍스트를 주입
+app.use(usageMonitoringMiddleware);
 
 const githubService = GithubService.getInstance();
 const vectorStore = VectorStoreService.getInstance();
