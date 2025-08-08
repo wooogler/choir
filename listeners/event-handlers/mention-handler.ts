@@ -52,10 +52,32 @@ const appMentionCallback = async ({
       logger.warn('Could not verify bot user ID for message filtering:', authError);
     }
 
-    // Get workspace and check if user is a CHOIR user
-    const workspaceId = await getWorkspaceId(client);
+    // 추가 봇 필터링 - 포괄적 무한 루프 방지
     const userId = event.user || '';
     if (!userId) return;
+    
+    // SLACKBOT 및 기타 시스템 봇 필터링
+    if (userId === 'USLACKBOT') {
+      logger.info('Skipping SLACKBOT message in mention to prevent infinite loop', {
+        channel: event.channel,
+        userId: userId,
+      });
+      return;
+    }
+    
+    // 봇 사용자 ID 패턴 필터링 (대부분 봇은 B로 시작하거나 특별한 패턴)
+    // Google Drive bot, 기타 앱 봇들을 포괄적으로 필터링
+    if (userId.startsWith('B') || userId.includes('bot') || userId.includes('BOT')) {
+      logger.info('Skipping bot user message in mention to prevent infinite loop', {
+        channel: event.channel,
+        userId: userId,
+        reason: 'Bot user ID pattern detected',
+      });
+      return;
+    }
+
+    // Get workspace and check if user is a CHOIR user
+    const workspaceId = await getWorkspaceId(client);
 
     const isUserCHOIRUser = await isCHOIRUser(workspaceId, userId);
 
