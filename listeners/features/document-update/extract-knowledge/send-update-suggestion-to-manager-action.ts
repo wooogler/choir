@@ -261,6 +261,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
             managersNotified: managers.length,
             managerIds: managers,
             extractedKnowledgeLength: sessionData.extractedKnowledge?.length || 0,
+            extractedKnowledge: sessionData.extractedKnowledge,
             originalChannelId: sessionData.originalChannelId,
             originalThreadTs: sessionData.originalThreadTs,
             userName,
