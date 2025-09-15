@@ -196,24 +196,27 @@ export const registerGitHubHandlers = (app: App) => {
       const githubOAuth = GitHubOAuthDeviceFlow.getInstance();
       const repositories = await githubOAuth.getRepositoriesWithMarkdown(accessToken);
 
-      const repoOptions = repositories.slice(0, 10).map((repo) => ({
-        text: {
-          type: 'plain_text' as const,
-          text: `${repo.full_name}${repo.private ? ' 🔒' : ''}`,
-        },
-        value: JSON.stringify({
-          owner: repo.owner.login,
-          repo: repo.name,
-          url: repo.html_url,
-          private: repo.private,
-        }),
-      }));
+      const repoOptions = repositories
+        .filter((repo) => !repo.private) // Only show public repositories
+        .slice(0, 10)
+        .map((repo) => ({
+          text: {
+            type: 'plain_text' as const,
+            text: repo.full_name,
+          },
+          value: JSON.stringify({
+            owner: repo.owner.login,
+            repo: repo.name,
+            url: repo.html_url,
+            private: repo.private,
+          }),
+        }));
 
       if (repoOptions.length === 0) {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
-          text: '❌ No repositories found with write access.',
+          text: '❌ No public repositories found with write access.',
         });
         return;
       }
@@ -241,7 +244,7 @@ export const registerGitHubHandlers = (app: App) => {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '📂 *Select a GitHub repository to connect*\n\nChoose one of your repositories that you have write access to.',
+                text: '📂 *Select a GitHub repository to connect*\n\nChoose one of your public repositories that you have write access to.',
               },
             },
             {
