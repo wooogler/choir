@@ -59,7 +59,7 @@ Generate content that fits this section context using only the provided knowledg
     ],
     {
       model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
-      temperature: 0.1,
+      temperature: 0,
       max_tokens: 300,
       function_name: 'createContentForEmptySection',
       debug: true,
@@ -70,7 +70,7 @@ Generate content that fits this section context using only the provided knowledg
 }
 
 /**
- * 기존 내용을 knowledge로 향상
+ * 기존 내용을 knowledge로 향상 (업데이트 우선, 필요시 추가)
  */
 async function enhanceExistingContent(
   markdown: string,
@@ -86,17 +86,21 @@ async function enhanceExistingContent(
     [
       {
         role: 'system',
-        content: `You are a document editor. Enhance existing content by adding the provided knowledge.
+        content: `You are a document editor. Improve existing content by integrating the provided knowledge.
 
 Existing content type: ${contentType}
 
 Rules:
-- Add knowledge in matching format: ${contentType === 'list' ? 'as additional list items (- format)' : 'as additional paragraphs'}
-- Only modify existing content if it directly contradicts the knowledge
+- PRIORITIZE updating/replacing existing content when knowledge provides better, more accurate, or more comprehensive information
+- If knowledge contradicts existing content, prefer the knowledge (assume it's more current/accurate)
+- If knowledge complements existing content without contradiction, add it in matching format: ${contentType === 'list' ? 'as additional list items (- format)' : 'as additional paragraphs'}
+- If knowledge provides more specific details about existing points, merge them into improved versions
 - Preserve all URLs from the knowledge
 - Use single-level lists only (no nested bullets)
 - No headings or section titles
-- Return original if knowledge adds no value
+- Return original only if knowledge adds no meaningful value
+
+Approach: Update first, then add if needed. Create the most accurate and comprehensive version.
 
 Wrap your response in <markdown> tags.`,
       },
@@ -192,7 +196,7 @@ ${descOrg ? `- About: ${descOrg}` : ''}${contextSection}`;
       },
     ],
     {
-      temperature: 0.1,
+      temperature: 0,
       max_tokens: 15,
       function_name: 'classifyMessageIntent',
       debug: true,
