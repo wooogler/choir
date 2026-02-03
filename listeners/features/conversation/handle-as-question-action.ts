@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { getSessionData, SessionType } from 'services/common/session-store';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getWorkspaceId, getUserName } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
@@ -17,12 +18,15 @@ export const handleAsQuestionCallback = async ({
   await ack();
 
   try {
-    const actionValue = body.actions[0].value;
-    if (!actionValue) {
-      throw new Error('Action value is missing');
+    const sessionId = body.actions[0].value;
+    if (!sessionId) {
+      throw new Error('Session ID is missing');
     }
 
-    const messageData = JSON.parse(actionValue);
+    const messageData = getSessionData(sessionId, SessionType.GENERAL_CONVERSATION);
+    if (!messageData) {
+      throw new Error('Session data not found or expired');
+    }
 
     // Get user name for the message
     const userName = await getUserName(messageData.userId, client);

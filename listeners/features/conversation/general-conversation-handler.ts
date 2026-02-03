@@ -1,5 +1,6 @@
 import type { Logger } from '@slack/bolt';
 import type { WebClient } from '@slack/web-api';
+import { generateSessionId, SessionType, storeSessionData } from 'services/common/session-store';
 import { logMessageProcessing } from 'services/common/user-interaction-logger';
 import { respondToGeneralConversation } from 'services/llm/chat-responder';
 import {
@@ -94,15 +95,21 @@ What would you like to try first?`;
       fullReplyText += `\n\n_Based on <${URLtoGithubORWebsite}|${organizationName}'s documentation>_`;
     }
 
-    // 원본 메시지 정보를 JSON으로 인코딩
-    const messageData = JSON.stringify({
-      originalMessage: message,
-      userId: event.user,
-      channelId: event.channel,
-      messageTs: event.ts,
-      threadTs: event.thread_ts,
-      channelType: event.channel_type,
-    });
+    // 원본 메시지 정보를 세션에 저장 (Slack 버튼 value 2000자 제한 우회)
+    const sessionId = generateSessionId('general_conv');
+    storeSessionData(
+      sessionId,
+      {
+        originalMessage: message,
+        userId: event.user,
+        channelId: event.channel,
+        messageTs: event.ts,
+        threadTs: event.thread_ts,
+        channelType: event.channel_type,
+      },
+      SessionType.GENERAL_CONVERSATION,
+      24 * 60 * 60 * 1000, // 24시간 후 만료
+    );
 
     // Send the main response to everyone
     await client.chat.postMessage({
@@ -150,7 +157,7 @@ What would you like to try first?`;
                 emoji: true,
               },
               action_id: 'handle_as_question',
-              value: messageData,
+              value: sessionId,
             },
             {
               type: 'button',
@@ -160,7 +167,7 @@ What would you like to try first?`;
                 emoji: true,
               },
               action_id: 'handle_as_update_request',
-              value: messageData,
+              value: sessionId,
             },
           ],
         },
