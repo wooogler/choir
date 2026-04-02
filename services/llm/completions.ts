@@ -46,7 +46,7 @@ export const createChatCompletion = async (
 ) => {
   const {
     model,
-    temperature = 0.2,
+    temperature = 0,
     max_tokens = 1000,
     function_name = 'None',
     debug = false,

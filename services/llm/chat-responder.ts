@@ -49,7 +49,7 @@ Knowledge Repository: ${URLtoGithubORWebsite}`,
         },
       ],
       {
-        temperature: 0.7,
+        temperature: 0,
         max_tokens: 150,
         function_name: 'respondToGeneralConversation',
       },

@@ -134,10 +134,12 @@ const applySelectedToGithubAction = async ({
     });
 
     // GitHub에 문서 업데이트 적용
+    const workspaceId = await getWorkspaceId(client);
     const results = await applyDocumentUpdatesToGithub({
       userId,
       documentUpdates: selectedUpdates,
       client,
+      workspaceId,
     });
 
     // 결과 분석
@@ -155,7 +157,6 @@ const applySelectedToGithubAction = async ({
       const actualGithubUrl = selectedUpdates.find(u => u.fileName === fileName)?.githubUrl || githubUrl;
       
       // Generate URLs for the updated file
-      const workspaceId = await getWorkspaceId(client);
       const workspaceStore = new (await import('services/workspace/workspace-store')).WorkspaceStore();
       const config = await workspaceStore.getWorkspaceConfig(workspaceId);
       let editUrl = '';
@@ -279,8 +280,7 @@ const applySelectedToGithubAction = async ({
       console.error('Failed to update loading message');
     }
 
-    // 로ግ: GitHub 업데이트 성공
-    const workspaceId = await getWorkspaceId(client);
+    // 로그: GitHub 업데이트 성공
     
     // Extract original and applied content from selectedUpdates
     const firstUpdate = selectedUpdates[0];

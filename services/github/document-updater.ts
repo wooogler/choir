@@ -12,10 +12,12 @@ export async function applyDocumentUpdatesToGithub({
   userId,
   documentUpdates,
   client,
+  workspaceId,
 }: {
   userId: string;
   documentUpdates: DocumentUpdate[];
   client: WebClient;
+  workspaceId?: string;
 }): Promise<{ fileName: string; success: boolean; message: string; commitSha?: string }[]> {
   const successfulUpdates: { fileName: string; commitSha: string }[] = [];
   const failedUpdates: string[] = [];
@@ -106,6 +108,8 @@ export async function applyDocumentUpdatesToGithub({
         path: currentMarkdownFile.path,
         content: updatedMarkdownForGithub,
         message: commitMessage,
+        workspaceId,
+        userId,
       });
 
       Logger.info(`Successfully updated ${fileName} on GitHub`);

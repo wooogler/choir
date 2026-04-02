@@ -79,7 +79,13 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
       }
     }
 
-    if (allChoirMessages.length === 0) {
+    // 시간순으로 정렬 (최신 메시지가 먼저 오도록)
+    allChoirMessages.sort((a: any, b: any) => parseFloat(b.ts) - parseFloat(a.ts));
+
+    // 최근 5개 메시지만 선택
+    const messagesToClear = allChoirMessages.slice(0, 5);
+
+    if (messagesToClear.length === 0) {
       await client.chat.postMessage({
         channel: event.channel,
         text: '💬 No CHOIR messages found to clear.',
@@ -100,13 +106,13 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
     // 확인 메시지 전송
     const confirmMessage = await client.chat.postMessage({
       channel: event.channel,
-      text: `🗑️ Are you sure you want to clear ${allChoirMessages.length} CHOIR messages?`,
+      text: `🗑️ Are you sure you want to clear ${messagesToClear.length} recent CHOIR messages?`,
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `🗑️ *Clear CHOIR Messages*\n\nI found ${allChoirMessages.length} messages from CHOIR in this conversation (including thread replies).\n\nAre you sure you want to delete all of them? This action cannot be undone.`,
+            text: `🗑️ *Clear Recent CHOIR Messages*\n\nI found ${allChoirMessages.length} total CHOIR messages in this conversation. I will delete the ${messagesToClear.length} most recent ones.\n\nAre you sure you want to delete them? This action cannot be undone.`,
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
         },
@@ -117,14 +123,14 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: 'Yes, Clear All',
+                text: `Yes, Clear ${messagesToClear.length} Recent`,
                 emoji: true,
               },
               style: 'danger',
               action_id: 'confirm_clear_dm',
               value: JSON.stringify({
-                messageCount: allChoirMessages.length,
-                messageTimestamps: allChoirMessages.map((msg: any) => msg.ts),
+                messageCount: messagesToClear.length,
+                messageTimestamps: messagesToClear.map((msg: any) => msg.ts),
               }),
             },
             {
@@ -155,12 +161,13 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
       'clear_command',
       {
         choirMessagesFound: allChoirMessages.length,
+        messagesToClear: messagesToClear.length,
         totalMessagesChecked: historyResponse.messages.length,
       },
       client,
     );
 
-    logger.info(`Clear confirmation shown for ${allChoirMessages.length} CHOIR messages in DM ${event.channel}`);
+    logger.info(`Clear confirmation shown for ${messagesToClear.length} recent CHOIR messages (out of ${allChoirMessages.length} total) in DM ${event.channel}`);
     return true;
   } catch (error) {
     logger.error('Error in handleDMClearCommand:', error);

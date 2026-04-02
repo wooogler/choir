@@ -122,7 +122,7 @@ Analyze whether you can answer based on the documentation and provide your respo
     ],
     {
       model: 'gpt-4o',
-      temperature: 0.2,
+      temperature: 0,
       max_tokens: 1000,
       function_name: 'answerQuestion',
       debug: true,

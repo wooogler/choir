@@ -23,19 +23,19 @@ export const confirmClearDMCallback = async ({
       throw new Error('Invalid message timestamps data');
     }
 
-    logger.info(`Starting to clear ${messageCount} messages in DM ${body.channel?.id}`);
+    logger.info(`Starting to clear ${messageCount} recent messages in DM ${body.channel?.id}`);
 
     // 확인 메시지 업데이트 (진행 상태 표시)
     await client.chat.update({
       channel: body.channel?.id || '',
       ts: body.message?.ts || '',
-      text: '🗑️ Clearing messages...',
+      text: '🗑️ Clearing recent messages...',
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `🗑️ *Clearing ${messageCount} messages...*\nPlease wait while I delete the messages.`,
+            text: `🗑️ *Clearing ${messageCount} recent messages...*\nPlease wait while I delete the messages.`,
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
         },
