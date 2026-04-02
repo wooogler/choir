@@ -15,10 +15,6 @@ describe('AppConfig', () => {
     process.env.SLACK_APP_TOKEN = undefined;
     process.env.SLACK_SIGNING_SECRET = undefined;
     process.env.MANAGER_PROMOTION_PASSWORD = undefined;
-    process.env.AZURE_OPENAI_API_KEY = undefined;
-    process.env.AZURE_OPENAI_ENDPOINT = undefined;
-    process.env.AZURE_OPENAI_DEPLOYMENT_NAME = undefined;
-    process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME = undefined;
     process.env.TEST_VAR = undefined;
   });
 
@@ -77,22 +73,6 @@ describe('AppConfig', () => {
         appToken: 'xapp-test',
         signingSecret: 'signing-secret',
         socketMode: false,
-      });
-    });
-  });
-
-  describe('getAzureOpenAIConfig', () => {
-    it('should expose configured Azure OpenAI values', () => {
-      process.env.AZURE_OPENAI_API_KEY = 'azure-key';
-      process.env.AZURE_OPENAI_ENDPOINT = 'https://example.openai.azure.com/';
-      process.env.AZURE_OPENAI_DEPLOYMENT_NAME = 'chat-deployment';
-      process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME = 'embedding-deployment';
-
-      expect(AppConfig.getAzureOpenAIConfig()).toEqual({
-        apiKey: 'azure-key',
-        endpoint: 'https://example.openai.azure.com/',
-        deploymentName: 'chat-deployment',
-        embeddingsDeploymentName: 'embedding-deployment',
       });
     });
   });

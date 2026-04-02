@@ -1,10 +1,7 @@
 import type { WebClient } from '@slack/web-api';
-import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-// Removed anonymization imports - handled in completions.ts
-import { SlackMessage } from 'services/slack';
 import { getUserName } from 'services/slack';
-import { processMessageHistory, processMessageText } from 'services/slack/conversation-history';
-import { createChatCompletion } from './completions';
+import { processMessageHistory } from 'services/slack/conversation-history';
+import { createStructuredResponse } from './completions';
 
 // Format context from references
 const formatContext = (docs: any[]) => {
@@ -108,47 +105,44 @@ ${currentQuestionWithUser}
 
 Analyze whether you can answer based on the documentation and provide your response as JSON:`;
 
-  const result = await createChatCompletion(
-    [
-      {
-        role: 'system',
-        content:
-          "You are CHOIR, a helpful documentation assistant that answers questions based only on provided documents. Always respond with a JSON object containing 'canAnswer' (boolean) and 'response' (string).",
-      },
-      {
-        role: 'user',
-        content: prompt,
-      },
-    ],
-    {
-      model: 'gpt-4o',
-      temperature: 0,
-      max_tokens: 1000,
-      function_name: 'answerQuestion',
-      debug: true,
-      response_format: { type: 'json_object' },
-    },
-  );
-
   try {
-    let jsonString = result?.trim() || '{}';
-
-    // Remove markdown code block markers if present
-    if (jsonString.startsWith('```json')) {
-      jsonString = jsonString.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-    } else if (jsonString.startsWith('```')) {
-      jsonString = jsonString.replace(/^```\s*/, '').replace(/\s*```$/, '');
-    }
-
-    const parsed = JSON.parse(jsonString);
-
-    return {
-      canAnswer: parsed.canAnswer || false,
-      response: parsed.response || 'I encountered an error processing your question.',
-    };
+    return await createStructuredResponse<AnswerResult>(
+      [
+        {
+          role: 'system',
+          content:
+            "You are CHOIR, a helpful documentation assistant that answers questions based only on provided documents. Always respond with a JSON object containing 'canAnswer' (boolean) and 'response' (string).",
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      {
+        model: 'gpt-4o',
+        temperature: 0,
+        max_tokens: 1000,
+        function_name: 'answerQuestion',
+        debug: true,
+        schemaName: 'qa_answer',
+        schemaDescription: 'Whether the documentation can answer the question and the final response text',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            canAnswer: {
+              type: 'boolean',
+            },
+            response: {
+              type: 'string',
+            },
+          },
+          required: ['canAnswer', 'response'],
+        },
+      },
+    );
   } catch (parseError) {
-    console.warn('Failed to parse JSON response from answerQuestion:', parseError);
-    console.warn('Raw response:', result);
+    console.warn('Failed to parse structured response from answerQuestion:', parseError);
 
     return {
       canAnswer: false,

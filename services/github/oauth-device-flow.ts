@@ -43,6 +43,11 @@ export interface GitHubRepository {
     pull: boolean;
   };
   updated_at: string;
+  markdownStats?: {
+    markdownFiles: number;
+    totalFiles: number;
+    markdownRatio: number;
+  };
 }
 
 export class GitHubOAuthDeviceFlow {
@@ -257,6 +262,52 @@ export class GitHubOAuthDeviceFlow {
     }
   }
 
+  private async getRepositoryMarkdownStats(
+    accessToken: string,
+    repository: GitHubRepository,
+  ): Promise<{ markdownFiles: number; totalFiles: number; markdownRatio: number }> {
+    try {
+      const treeUrl = `https://api.github.com/repos/${repository.owner.login}/${repository.name}/git/trees/${encodeURIComponent(repository.default_branch)}?recursive=1`;
+      const response = await fetch(treeUrl, {
+        headers: {
+          Authorization: `token ${accessToken}`,
+          Accept: 'application/vnd.github.v3+json',
+        },
+      });
+
+      if (!response.ok) {
+        // Empty repositories or repos without a readable default branch can legitimately fail here.
+        Logger.warn(`Failed to inspect repository tree for markdown stats: ${repository.full_name}`, {
+          status: response.status,
+        });
+        return {
+          markdownFiles: 0,
+          totalFiles: 0,
+          markdownRatio: 0,
+        };
+      }
+
+      const treeData = await response.json();
+      const treeItems = Array.isArray(treeData?.tree) ? treeData.tree : [];
+      const blobItems = treeItems.filter((item: any) => item?.type === 'blob' && typeof item.path === 'string');
+      const markdownFiles = blobItems.filter((item: any) => item.path.toLowerCase().endsWith('.md')).length;
+      const totalFiles = blobItems.length;
+
+      return {
+        markdownFiles,
+        totalFiles,
+        markdownRatio: totalFiles > 0 ? markdownFiles / totalFiles : 0,
+      };
+    } catch (error) {
+      Logger.warn(`Failed to inspect repository tree for ${repository.full_name}`, error as Error);
+      return {
+        markdownFiles: 0,
+        totalFiles: 0,
+        markdownRatio: 0,
+      };
+    }
+  }
+
   /**
    * Get repositories with markdown files
    */
@@ -275,7 +326,48 @@ export class GitHubOAuthDeviceFlow {
       );
 
       Logger.info(`Found ${writableRepos.length} writable repositories out of ${repositories.length} total`);
-      return writableRepos;
+
+      const publicWritableRepos = writableRepos.filter((repo) => !repo.private);
+      const inspectedRepositories: GitHubRepository[] = [];
+      const concurrency = 5;
+
+      for (let index = 0; index < publicWritableRepos.length; index += concurrency) {
+        const batch = publicWritableRepos.slice(index, index + concurrency);
+        const batchResults = await Promise.all(
+          batch.map(async (repo) => {
+            const markdownStats = await this.getRepositoryMarkdownStats(accessToken, repo);
+            return {
+              ...repo,
+              markdownStats,
+            };
+          }),
+        );
+
+        inspectedRepositories.push(...batchResults);
+      }
+
+      const repositoriesWithMarkdown = inspectedRepositories
+        .filter((repo) => (repo.markdownStats?.markdownFiles || 0) > 0)
+        .sort((left, right) => {
+          const leftMarkdownFiles = left.markdownStats?.markdownFiles || 0;
+          const rightMarkdownFiles = right.markdownStats?.markdownFiles || 0;
+          if (rightMarkdownFiles !== leftMarkdownFiles) {
+            return rightMarkdownFiles - leftMarkdownFiles;
+          }
+
+          const leftRatio = left.markdownStats?.markdownRatio || 0;
+          const rightRatio = right.markdownStats?.markdownRatio || 0;
+          if (rightRatio !== leftRatio) {
+            return rightRatio - leftRatio;
+          }
+
+          return right.updated_at.localeCompare(left.updated_at);
+        });
+
+      Logger.info(
+        `Found ${repositoriesWithMarkdown.length} public writable repositories with markdown files out of ${publicWritableRepos.length} public writable repositories`,
+      );
+      return repositoriesWithMarkdown;
     } catch (error) {
       Logger.error('Failed to get repositories with markdown:', error as Error);
       throw error;

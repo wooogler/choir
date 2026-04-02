@@ -1,5 +1,6 @@
 import type { Document } from '@langchain/core/documents';
 import type { DocumentTree } from 'services/document';
+import type { UpdateAnchor } from 'services/document/update-anchor';
 
 /**
  * 검색 파라미터 타입
@@ -28,6 +29,7 @@ export interface DocumentMetadata {
   githubUrl: string;
   headingPath?: string; // UI 표시용 (배열을 "heading1 > heading2" 형태로 변환)
   originalContent: string; // document update용 원본 내용
+  updateAnchor?: UpdateAnchor;
   webContent?: Array<{
     url: string;
     title: string;

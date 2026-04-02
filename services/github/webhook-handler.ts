@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import type { WebClient } from '@slack/web-api';
 import { getGithubRepo, getWorkspaceId } from 'services/slack';
+import { GitHubSyncService } from 'services/sync/github-sync-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -160,6 +161,7 @@ async function performAutoReloadForWorkspace(
     const { GithubService } = await import('services/github');
     
     const githubService = GithubService.getInstance();
+    const gitHubSyncService = GitHubSyncService.getInstance();
     const vectorStore = VectorStoreService.getInstance();
 
     // GitHub에서 최신 파일들 가져오기
@@ -197,15 +199,25 @@ async function performAutoReloadForWorkspace(
     const success = await vectorStore.initialize(markdownFiles, false, true, workspaceId);
 
     if (success) {
+      const latestCommit = commits && commits.length > 0 ? commits[commits.length - 1] : null;
+
       // 캐시 업데이트
       const fileList = markdownFiles.map((file) => ({
         name: file.name,
         path: file.path,
       }));
       await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
+      await gitHubSyncService.syncWorkspaceFromMarkdownFiles({
+        workspaceId,
+        owner,
+        repo,
+        branch,
+        markdownFiles,
+        source: 'webhook',
+        commitSha: latestCommit?.id,
+      });
 
       // 가장 최근 commit의 URL 생성 (가장 마지막 commit 사용)
-      const latestCommit = commits && commits.length > 0 ? commits[commits.length - 1] : null;
       const commitUrl = latestCommit 
         ? `https://github.com/${owner}/${repo}/commit/${latestCommit.id}`
         : `https://github.com/${owner}/${repo}`;

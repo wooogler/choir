@@ -358,6 +358,20 @@ export class WorkspaceStore {
       await this.setMarkdownFilesCache(workspaceId, fileList);
       Logger.info(`Successfully refreshed markdown files cache for workspace ${workspaceId}, found ${fileList.length} files`);
 
+      try {
+        const { GitHubSyncService } = await import('services/sync/github-sync-service');
+        await GitHubSyncService.getInstance().syncWorkspaceFromMarkdownFiles({
+          workspaceId,
+          owner: config.githubRepo.owner,
+          repo: config.githubRepo.repo,
+          branch: config.githubRepo.branch,
+          markdownFiles,
+          source: 'manual-refresh',
+        });
+      } catch (syncError) {
+        Logger.warn(`Failed to refresh workspace mirror for workspace ${workspaceId}:`, syncError as Error);
+      }
+
       // 벡터 스토어도 백그라운드에서 업데이트 (선택적)
       try {
         const { VectorStoreService } = await import('services/vector/main-service');

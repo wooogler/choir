@@ -1,6 +1,7 @@
 import type { Document } from '@langchain/core/documents';
 import type { SlackMessage } from '../slack';
 import type { DocumentMetadata } from '../vector/types';
+import type { UpdateAnchor } from './update-anchor';
 
 export interface DocumentUpdate {
   index: number;
@@ -25,6 +26,7 @@ export interface DocumentUpdate {
   suggestionType: 'UPDATE' | 'APPEND';
   originalLastNodeContent?: string; // APPEND 시 원본 마지막 노드 내용 (마크다운)
   appendedNodeContent?: string; // APPEND 시 새로 생성된/추가될 노드 내용 (마크다운)
+  updateAnchor?: UpdateAnchor;
 }
 
 // 새로운 파일 선택 상태 관리를 위한 인터페이스

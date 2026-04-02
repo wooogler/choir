@@ -35,17 +35,6 @@ export class AppConfig {
     };
   }
 
-  static getAzureOpenAIConfig() {
-    return {
-      apiKey: this.getOptionalEnvVar('AZURE_OPENAI_API_KEY'),
-      endpoint: this.getOptionalEnvVar('AZURE_OPENAI_ENDPOINT'),
-      deploymentName: this.getOptionalEnvVar('AZURE_OPENAI_DEPLOYMENT_NAME'),
-      embeddingsDeploymentName: this.getOptionalEnvVar('AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME'),
-    };
-  }
-
-
-
   static getManagerPromotionConfig() {
     return {
       password: this.getOptionalEnvVar('MANAGER_PROMOTION_PASSWORD'),

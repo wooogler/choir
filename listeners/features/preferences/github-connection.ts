@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { GithubService } from 'services/github';
 import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from 'services/slack';
+import { GitHubSyncService } from 'services/sync/github-sync-service';
 import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
@@ -161,11 +162,21 @@ export const testGithubConnectionCallback = async ({
         await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
         logger.info(`Cached ${fileList.length} markdown files in workspace configuration`);
 
+        await GitHubSyncService.getInstance().syncWorkspaceFromMarkdownFiles({
+          workspaceId,
+          owner: repoInfo.owner,
+          repo: repoInfo.repo,
+          branch: repoInfo.branch,
+          markdownFiles,
+          source: 'manual-refresh',
+        });
+
         const vectorStore = VectorStoreService.getInstance();
         // 새로운 파일들로 벡터스토어 설정 (기존 캐시 교체)
         await vectorStore.setMarkdownFiles(markdownFiles, {
           owner: repoInfo.owner,
           repo: repoInfo.repo,
+          workspaceId,
         });
         logger.info(
           `Vector store rebuilt with ${markdownFiles.length} files from new GitHub repository for workspace ${workspaceId}`,

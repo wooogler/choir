@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs, ViewSubmitAction } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/user-interaction-logger';
+import { DocumentUpdateService } from 'services/document/document-update-service';
 import { GithubService } from 'services/github';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
@@ -100,6 +101,7 @@ export const createFileSubmissionCallback = async ({
 
     const { owner, repo, path, branch } = config.githubRepo;
     const githubService = GithubService.getInstance();
+    const documentUpdateService = DocumentUpdateService.getInstance();
 
     // Create the file in GitHub
     const filePath = path ? `${path}/${fileName}` : fileName;
@@ -153,6 +155,16 @@ export const createFileSubmissionCallback = async ({
       });
 
       if (createdFile) {
+        await documentUpdateService.persistRemoteFile({
+          workspaceId,
+          filePath,
+          content: createdFile.content,
+          owner,
+          repo,
+          branch,
+          source: 'create-file',
+        });
+
         // Create MarkdownFile object similar to initial load
         const { parseMarkdownToTree } = await import('services/document/markdown');
         const markdownFile: any = {

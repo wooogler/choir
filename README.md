@@ -13,7 +13,7 @@ CHOIR is a Slack bot for organization knowledge workflows. It indexes markdown d
 
 - TypeScript
 - Slack Bolt
-- OpenAI or Azure OpenAI
+- OpenAI
 - GitHub API via Octokit
 - FAISS-based vector search
 
@@ -38,7 +38,7 @@ Minimum variables for local development:
 - `SLACK_BOT_TOKEN`
 - `SLACK_APP_TOKEN`
 - `SLACK_SIGNING_SECRET`
-- `OPENAI_API_KEY` or Azure OpenAI equivalents
+- `OPENAI_API_KEY`
 
 Optional but commonly used:
 

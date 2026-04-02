@@ -8,6 +8,7 @@ import { VectorCacheManager } from './cache-manager';
 import { DocumentProcessor } from './document-processor';
 import { EmbeddingService } from './embedding-service';
 import { FAISSStoreManager } from './faiss-store-manager';
+import { isQmdRetrievalEnabled } from '../retrieval/provider-config';
 import { VectorStoreError } from './types';
 import type { DocumentMetadata } from './types';
 
@@ -58,6 +59,14 @@ export class VectorStoreService {
 
     try {
       this.markdownFiles = markdownFiles;
+
+      if (isQmdRetrievalEnabled()) {
+        Logger.info('QMD retrieval is enabled. Skipping FAISS vector store initialization and hydrating markdown files only.', {
+          workspaceId,
+          fileCount: markdownFiles.length,
+        });
+        return true;
+      }
 
       if (!this.markdownFiles.length) {
         Logger.info('No documents loaded, starting with empty vector store');
@@ -384,6 +393,13 @@ export class VectorStoreService {
    */
   public async initializeFromCacheOnly(owner: string, repo: string, workspaceId?: string): Promise<boolean> {
     try {
+      if (isQmdRetrievalEnabled()) {
+        Logger.info(`QMD retrieval is enabled. Skipping FAISS cache-only initialization for ${owner}/${repo}.`, {
+          workspaceId,
+        });
+        return false;
+      }
+
       Logger.info(`Attempting to initialize vector store from cache only: ${owner}/${repo}`);
 
       const cacheFilePath = this.cacheManager.getCacheFilePath(owner, repo);
@@ -455,6 +471,11 @@ export class VectorStoreService {
 
   public getAllMarkdownFiles(): MarkdownFile[] {
     return this.markdownFiles;
+  }
+
+  public setLoadedMarkdownFiles(markdownFiles: MarkdownFile[]): void {
+    this.markdownFiles = markdownFiles;
+    Logger.info(`Hydrated in-memory markdown files: ${markdownFiles.length}`);
   }
 
   public isHealthy(): boolean {

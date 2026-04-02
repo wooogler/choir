@@ -1,8 +1,8 @@
 import { Logger } from 'services/common/logger';
 import { clearFileSelectionState } from 'services/document/document-store';
 import { answerQuestion } from 'services/llm/qa-service';
+import { getRetrievalProvider } from 'services/retrieval';
 import { getOrganizationDescription, getOrganizationName, getWorkspaceId } from 'services/slack';
-import { VectorStoreService } from 'services/vector/main-service';
 import { DocumentEnhancer } from 'services/web-content/document-enhancer';
 
 export class QuestionProcessor {
@@ -18,12 +18,18 @@ export class QuestionProcessor {
         clearFileSelectionState(userId);
       }
 
-      // 벡터 스토어에서 관련 문서 가져오기
-      const vectorStore = VectorStoreService.getInstance();
-      Logger.info('QuestionProcessor: Got VectorStoreService instance, calling similaritySearch...');
+      const workspaceId = await getWorkspaceId(client);
 
-      let relevantDocs = await vectorStore.similaritySearch(userMessage, 5);
-      Logger.info(`QuestionProcessor: similaritySearch returned ${relevantDocs.length} documents`);
+      // Retrieval provider를 통해 관련 문서 가져오기
+      const retrievalProvider = getRetrievalProvider();
+      Logger.info(`QuestionProcessor: Using retrieval provider "${retrievalProvider.name}"`);
+
+      let relevantDocs = await retrievalProvider.search({
+        query: userMessage,
+        limit: 5,
+        workspaceId,
+      });
+      Logger.info(`QuestionProcessor: retrieval returned ${relevantDocs.length} documents`);
 
       // 웹 콘텐츠가 있는 문서들의 pageContent를 확장
       relevantDocs = relevantDocs.map((doc) => {
@@ -47,7 +53,6 @@ export class QuestionProcessor {
       }
 
       // Organization 정보 가져오기
-      const workspaceId = await getWorkspaceId(client);
       const organizationName = await getOrganizationName(workspaceId);
       const organizationDescription = await getOrganizationDescription(workspaceId);
 

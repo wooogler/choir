@@ -1,0 +1,346 @@
+import path from 'node:path';
+import { Document } from '@langchain/core/documents';
+import { Logger } from 'services/common/logger';
+import { getGithubRepo } from 'services/slack';
+import type { DocumentMetadata } from 'services/vector/types';
+import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
+import { expandQueryWithOpenAI } from './openai-query-expansion';
+import { searchQmdLexWithFallback } from './qmd-lex-search';
+import type { RetrievalDocument, RetrievalProvider, RetrievalSearchParams, RetrievalWarmupParams } from './types';
+import { FaissRetrievalProvider } from './faiss-provider';
+
+type QmdSearchMode = 'lex' | 'hybrid';
+
+interface QmdStore {
+  searchLex(query: string, options?: { limit?: number; collection?: string }): Promise<QmdSearchResult[]>;
+  search(options: {
+    query?: string;
+    queries?: Array<{ type: 'lex' | 'vec' | 'hyde'; query: string }>;
+    limit?: number;
+    collection?: string;
+    collections?: string[];
+    rerank?: boolean;
+  }): Promise<QmdHybridQueryResult[]>;
+  update(options?: { collections?: string[] }): Promise<unknown>;
+  close(): Promise<void>;
+}
+
+interface QmdSearchResult {
+  filepath: string;
+  displayPath?: string;
+  title: string;
+  body?: string;
+  score: number;
+}
+
+interface QmdHybridQueryResult {
+  file: string;
+  displayPath?: string;
+  title: string;
+  body: string;
+  bestChunk?: string;
+  score: number;
+}
+
+interface QmdModule {
+  createStore(options: {
+    dbPath: string;
+    config: {
+      collections: Record<string, { path: string; pattern?: string }>;
+    };
+  }): Promise<QmdStore>;
+}
+
+interface StoreCacheEntry {
+  store: QmdStore;
+  indexedAt?: string;
+  repoRoot: string;
+  owner: string;
+  repo: string;
+  branch?: string;
+}
+
+export class QmdRetrievalProvider implements RetrievalProvider {
+  public readonly name = 'qmd' as const;
+  private readonly fallbackProvider = new FaissRetrievalProvider();
+  private readonly storeCache = new Map<string, StoreCacheEntry>();
+  private qmdModulePromise?: Promise<QmdModule>;
+
+  private async loadQmdModule(): Promise<QmdModule> {
+    if (!this.qmdModulePromise) {
+      const importQmd = new Function('specifier', 'return import(specifier);') as (specifier: string) => Promise<QmdModule>;
+      this.qmdModulePromise = importQmd('@tobilu/qmd');
+    }
+
+    return await this.qmdModulePromise;
+  }
+
+  private getSearchMode(): QmdSearchMode {
+    return process.env.QMD_SEARCH_MODE === 'lex' ? 'lex' : 'hybrid';
+  }
+
+  private getWarmupQuery(): string {
+    return process.env.QMD_WARMUP_QUERY?.trim() || 'documentation';
+  }
+
+  private getDbPath(workspaceId: string): string {
+    const workspaceRoot = WorkspaceMirrorService.getInstance().getWorkspaceRoot(workspaceId);
+    return path.join(workspaceRoot, 'state', 'qmd-index.sqlite');
+  }
+
+  private buildGithubUrl(owner: string, repo: string, branch: string | undefined, relativePath: string): string {
+    const ref = branch || 'main';
+    const normalizedPath = relativePath.split(path.sep).join(path.posix.sep).replace(/^\/+/, '');
+    return `https://github.com/${owner}/${repo}/blob/${ref}/${normalizedPath}`;
+  }
+
+  private getRelativePathFromQmdPath(repoRoot: string, rawPath: string, displayPath?: string): string {
+    if (rawPath.startsWith('qmd://')) {
+      const virtualPath = rawPath.replace(/^qmd:\/\//, '');
+      const separatorIndex = virtualPath.indexOf('/');
+      if (separatorIndex >= 0) {
+        return virtualPath.slice(separatorIndex + 1);
+      }
+    }
+
+    if (displayPath) {
+      const normalizedDisplayPath = displayPath.split(path.sep).join(path.posix.sep).replace(/^\/+/, '');
+      const separatorIndex = normalizedDisplayPath.indexOf('/');
+      if (separatorIndex >= 0) {
+        return normalizedDisplayPath.slice(separatorIndex + 1);
+      }
+    }
+
+    const absolutePath = path.isAbsolute(rawPath) ? rawPath : path.join(repoRoot, rawPath);
+    return path.relative(repoRoot, absolutePath).split(path.sep).join(path.posix.sep);
+  }
+
+  private mapLexResultToDocument(params: {
+    result: QmdSearchResult;
+    repoRoot: string;
+    owner: string;
+    repo: string;
+    branch?: string;
+  }): RetrievalDocument {
+    const relativePath = this.getRelativePathFromQmdPath(params.repoRoot, params.result.filepath, params.result.displayPath);
+    const body = params.result.body || '';
+    const title = params.result.title || path.posix.basename(relativePath);
+
+    return new Document<DocumentMetadata>({
+      pageContent: body,
+      metadata: {
+        fileName: relativePath,
+        nodeId: `qmd:${relativePath}`,
+        sectionName: title,
+        headingPath: title,
+        nodeType: 'document',
+        githubUrl: this.buildGithubUrl(params.owner, params.repo, params.branch, relativePath),
+        originalContent: body,
+      },
+    });
+  }
+
+  private mapHybridResultToDocument(params: {
+    result: QmdHybridQueryResult;
+    repoRoot: string;
+    owner: string;
+    repo: string;
+    branch?: string;
+  }): RetrievalDocument {
+    const relativePath = this.getRelativePathFromQmdPath(params.repoRoot, params.result.file, params.result.displayPath);
+    const body = params.result.bestChunk || params.result.body || '';
+    const title = params.result.title || path.posix.basename(relativePath);
+
+    return new Document<DocumentMetadata>({
+      pageContent: body,
+      metadata: {
+        fileName: relativePath,
+        nodeId: `qmd:${relativePath}`,
+        sectionName: title,
+        headingPath: title,
+        nodeType: 'document',
+        githubUrl: this.buildGithubUrl(params.owner, params.repo, params.branch, relativePath),
+        originalContent: body,
+      },
+    });
+  }
+
+  private async getOrCreateStore(workspaceId: string): Promise<StoreCacheEntry | null> {
+    const repoInfo = await getGithubRepo(workspaceId);
+    if (!repoInfo) {
+      Logger.warn(`QmdRetrievalProvider: no GitHub repo configured for workspace ${workspaceId}`);
+      return null;
+    }
+
+    const mirrorService = WorkspaceMirrorService.getInstance();
+    const repoRoot = mirrorService.getRepoRoot(workspaceId);
+    const syncState = await mirrorService.getSyncState(workspaceId);
+    const cached = this.storeCache.get(workspaceId);
+
+    if (cached) {
+      if (syncState?.updatedAt && syncState.updatedAt !== cached.indexedAt) {
+        Logger.info(`QmdRetrievalProvider: workspace mirror changed, refreshing QMD index`, {
+          workspaceId,
+          updatedAt: syncState.updatedAt,
+        });
+        await cached.store.update({ collections: ['docs'] });
+        cached.indexedAt = syncState.updatedAt;
+      }
+
+      return cached;
+    }
+
+    const qmd = await this.loadQmdModule();
+    const store = await qmd.createStore({
+      dbPath: this.getDbPath(workspaceId),
+      config: {
+        collections: {
+          docs: {
+            path: repoRoot,
+            pattern: '**/*.md',
+          },
+        },
+      },
+    });
+
+    await store.update({ collections: ['docs'] });
+
+    const entry: StoreCacheEntry = {
+      store,
+      indexedAt: syncState?.updatedAt,
+      repoRoot,
+      owner: repoInfo.owner,
+      repo: repoInfo.repo,
+      branch: repoInfo.branch,
+    };
+
+    this.storeCache.set(workspaceId, entry);
+    Logger.info(`QmdRetrievalProvider: initialized QMD store for workspace ${workspaceId}`, {
+      repoRoot,
+      dbPath: this.getDbPath(workspaceId),
+      searchMode: this.getSearchMode(),
+    });
+
+    return entry;
+  }
+
+  async search(params: RetrievalSearchParams): Promise<RetrievalDocument[]> {
+    if (!params.workspaceId) {
+      Logger.warn('QmdRetrievalProvider: workspaceId missing, falling back to FAISS');
+      return await this.fallbackProvider.search(params);
+    }
+
+    try {
+      const storeEntry = await this.getOrCreateStore(params.workspaceId);
+      if (!storeEntry) {
+        return await this.fallbackProvider.search(params);
+      }
+
+      const limit = params.limit ?? 5;
+      const searchMode = this.getSearchMode();
+
+      Logger.info(`QmdRetrievalProvider: searching for "${params.query.substring(0, 50)}${params.query.length > 50 ? '...' : ''}"`, {
+        workspaceId: params.workspaceId,
+        limit,
+        searchMode,
+      });
+
+      if (searchMode === 'hybrid') {
+        const queries = await expandQueryWithOpenAI({
+          query: params.query,
+          purpose: 'qa',
+        });
+        const results = await storeEntry.store.search({
+          queries,
+          limit,
+          collections: ['docs'],
+          rerank: false,
+        });
+
+        if (results.length > 0) {
+          return results.map((result) =>
+            this.mapHybridResultToDocument({
+              result,
+              repoRoot: storeEntry.repoRoot,
+              owner: storeEntry.owner,
+              repo: storeEntry.repo,
+              branch: storeEntry.branch,
+            }),
+          );
+        }
+
+        Logger.info('QmdRetrievalProvider: hybrid search returned no results, falling back to lexical candidate search.', {
+          workspaceId: params.workspaceId,
+          query: params.query,
+          queries,
+        });
+      }
+
+      const { results, matchedCandidate, queryCandidates } = await searchQmdLexWithFallback({
+        store: storeEntry.store,
+        query: params.query,
+        limit,
+        collection: 'docs',
+      });
+
+      if (matchedCandidate && matchedCandidate !== params.query.trim()) {
+        Logger.info('QmdRetrievalProvider: lexical fallback matched with simplified query candidate.', {
+          workspaceId: params.workspaceId,
+          originalQuery: params.query,
+          matchedCandidate,
+          queryCandidates,
+          resultCount: results.length,
+        });
+      }
+
+      return results.map((result) =>
+        this.mapLexResultToDocument({
+          result,
+          repoRoot: storeEntry.repoRoot,
+          owner: storeEntry.owner,
+          repo: storeEntry.repo,
+          branch: storeEntry.branch,
+        }),
+        );
+    } catch (error) {
+      Logger.warn(
+        `QmdRetrievalProvider: failed to use QMD, falling back to FAISS for query "${params.query.substring(0, 50)}${params.query.length > 50 ? '...' : ''}".`,
+        error as Error,
+      );
+      return await this.fallbackProvider.search(params);
+    }
+  }
+
+  async warmup(params: RetrievalWarmupParams): Promise<void> {
+    const storeEntry = await this.getOrCreateStore(params.workspaceId);
+    if (!storeEntry) {
+      Logger.warn(`QmdRetrievalProvider: skipping warm-up because no store is available for workspace ${params.workspaceId}`);
+      return;
+    }
+
+    const query = params.query?.trim() || this.getWarmupQuery();
+    Logger.info('QmdRetrievalProvider: starting hybrid warm-up.', {
+      workspaceId: params.workspaceId,
+      query,
+    });
+
+    const queries = await expandQueryWithOpenAI({
+      query,
+      purpose: 'qa',
+    });
+    await storeEntry.store.search({
+      queries,
+      limit: 1,
+      collections: ['docs'],
+      rerank: false,
+    });
+
+    Logger.info('QmdRetrievalProvider: hybrid warm-up completed.', {
+      workspaceId: params.workspaceId,
+    });
+  }
+
+  isHealthy(): boolean {
+    return this.storeCache.size > 0 || this.fallbackProvider.isHealthy();
+  }
+}

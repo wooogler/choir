@@ -1,10 +1,155 @@
 import type { App } from '@slack/bolt';
 import { GithubService } from 'services/github';
 import { GitHubOAuthDeviceFlow } from 'services/github/oauth-device-flow';
+import { GitHubSyncService } from 'services/sync/github-sync-service';
 import { getWorkspaceId, storeGithubRepo } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
+
+function formatRepositoryOptionText(repo: {
+  full_name: string;
+  markdownStats?: {
+    markdownFiles: number;
+  };
+}): string {
+  const markdownFiles = repo.markdownStats?.markdownFiles || 0;
+  const suffix = markdownFiles > 0 ? ` (${markdownFiles} md)` : '';
+  const text = `${repo.full_name}${suffix}`;
+
+  return text.length > 75 ? `${text.slice(0, 72)}...` : text;
+}
+
+function buildRepositoryLoadingView(metadata: { userId: string; workspaceId: string }) {
+  return {
+    type: 'modal' as const,
+    callback_id: 'select_repository_loading_modal',
+    notify_on_close: true,
+    title: {
+      type: 'plain_text' as const,
+      text: 'Select Repository',
+    },
+    close: {
+      type: 'plain_text' as const,
+      text: 'Cancel',
+    },
+    blocks: [
+      {
+        type: 'section' as const,
+        text: {
+          type: 'mrkdwn' as const,
+          text: '⏳ *Loading repositories*\n\nChecking which repositories you can write to and which ones already contain `.md` files...',
+        },
+      },
+    ],
+    private_metadata: JSON.stringify(metadata),
+  };
+}
+
+function buildRepositorySelectionView(
+  metadata: { userId: string; workspaceId: string },
+  repoOptions: Array<{
+    text: {
+      type: 'plain_text';
+      text: string;
+    };
+    description?:
+      | {
+          type: 'plain_text';
+          text: string;
+        }
+      | undefined;
+    value: string;
+  }>,
+) {
+  return {
+    type: 'modal' as const,
+    callback_id: 'select_repository_modal',
+    notify_on_close: true,
+    title: {
+      type: 'plain_text' as const,
+      text: 'Select Repository',
+    },
+    submit: {
+      type: 'plain_text' as const,
+      text: 'Connect Repository',
+    },
+    close: {
+      type: 'plain_text' as const,
+      text: 'Cancel',
+    },
+    blocks: [
+      {
+        type: 'section' as const,
+        text: {
+          type: 'mrkdwn' as const,
+          text: '📂 *Select a GitHub repository to connect*\n\nOnly public repositories that you can write to and that already contain `.md` files are shown below.',
+        },
+      },
+      {
+        type: 'input' as const,
+        block_id: 'repository_select_block',
+        element: {
+          type: 'static_select' as const,
+          action_id: 'repository_select',
+          placeholder: {
+            type: 'plain_text' as const,
+            text: 'Choose a repository...',
+          },
+          options: repoOptions,
+        },
+        label: {
+          type: 'plain_text' as const,
+          text: 'Repository',
+        },
+      },
+      {
+        type: 'input' as const,
+        block_id: 'path_input_block',
+        element: {
+          type: 'plain_text_input' as const,
+          action_id: 'path_input',
+          placeholder: {
+            type: 'plain_text' as const,
+            text: 'docs/ (optional - leave empty for root)',
+          },
+        },
+        label: {
+          type: 'plain_text' as const,
+          text: 'Path in Repository',
+        },
+        optional: true,
+      },
+    ],
+    private_metadata: JSON.stringify(metadata),
+  };
+}
+
+function buildRepositoryEmptyView(metadata: { userId: string; workspaceId: string }) {
+  return {
+    type: 'modal' as const,
+    callback_id: 'select_repository_empty_modal',
+    notify_on_close: true,
+    title: {
+      type: 'plain_text' as const,
+      text: 'Select Repository',
+    },
+    close: {
+      type: 'plain_text' as const,
+      text: 'Close',
+    },
+    blocks: [
+      {
+        type: 'section' as const,
+        text: {
+          type: 'mrkdwn' as const,
+          text: '❌ No public writable repositories with markdown files were found.',
+        },
+      },
+    ],
+    private_metadata: JSON.stringify(metadata),
+  };
+}
 
 export const registerGitHubHandlers = (app: App) => {
   app.action('connect_personal_github', async ({ ack, body, client, logger }) => {
@@ -172,9 +317,12 @@ export const registerGitHubHandlers = (app: App) => {
   app.action('browse_github_repositories', async ({ ack, body, client, logger }) => {
     await ack();
 
+    let repositoryBrowseViewId: string | undefined;
+
     try {
       const workspaceId = await getWorkspaceId(client);
       const userId = body.user.id;
+      const modalMetadata = { userId, workspaceId };
 
       const workspaceStore = new WorkspaceStore();
       const userGithubInfo = await workspaceStore.getUserGithubInfo(workspaceId, userId);
@@ -193,17 +341,28 @@ export const registerGitHubHandlers = (app: App) => {
       // Use user token if available, otherwise use environment token
       const accessToken = userGithubInfo?.accessToken || process.env.GITHUB_TOKEN!;
 
+      const loadingViewResponse = await client.views.open({
+        trigger_id: (body as any).trigger_id,
+        view: buildRepositoryLoadingView(modalMetadata),
+      });
+      repositoryBrowseViewId = (loadingViewResponse as any).view?.id;
+
       const githubOAuth = GitHubOAuthDeviceFlow.getInstance();
       const repositories = await githubOAuth.getRepositoriesWithMarkdown(accessToken);
 
       const repoOptions = repositories
-        .filter((repo) => !repo.private) // Only show public repositories
         .slice(0, 10)
         .map((repo) => ({
           text: {
             type: 'plain_text' as const,
-            text: repo.full_name,
+            text: formatRepositoryOptionText(repo),
           },
+          description: repo.markdownStats
+            ? {
+                type: 'plain_text' as const,
+                text: `${repo.markdownStats.markdownFiles} markdown files · ${(repo.markdownStats.markdownRatio * 100).toFixed(1)}% of ${repo.markdownStats.totalFiles} files`,
+              }
+            : undefined,
           value: JSON.stringify({
             owner: repo.owner.login,
             repo: repo.name,
@@ -213,88 +372,76 @@ export const registerGitHubHandlers = (app: App) => {
         }));
 
       if (repoOptions.length === 0) {
-        await client.chat.postEphemeral({
-          user: userId,
-          channel: userId,
-          text: '❌ No public repositories found with write access.',
-        });
+        if (repositoryBrowseViewId) {
+          await client.views.update({
+            view_id: repositoryBrowseViewId,
+            view: buildRepositoryEmptyView(modalMetadata),
+          });
+        } else {
+          await client.chat.postEphemeral({
+            user: userId,
+            channel: userId,
+            text: '❌ No public writable repositories with markdown files were found.',
+          });
+        }
         return;
       }
 
-      await client.views.open({
-        trigger_id: (body as any).trigger_id,
-        view: {
-          type: 'modal',
-          callback_id: 'select_repository_modal',
-          notify_on_close: true,
-          title: {
-            type: 'plain_text',
-            text: 'Select Repository',
-          },
-          submit: {
-            type: 'plain_text',
-            text: 'Connect Repository',
-          },
-          close: {
-            type: 'plain_text',
-            text: 'Cancel',
-          },
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: '📂 *Select a GitHub repository to connect*\n\nChoose one of your public repositories that you have write access to.',
-              },
-            },
-            {
-              type: 'input',
-              block_id: 'repository_select_block',
-              element: {
-                type: 'static_select',
-                action_id: 'repository_select',
-                placeholder: {
-                  type: 'plain_text',
-                  text: 'Choose a repository...',
-                },
-                options: repoOptions,
-              },
-              label: {
-                type: 'plain_text',
-                text: 'Repository',
-              },
-            },
-            {
-              type: 'input',
-              block_id: 'path_input_block',
-              element: {
-                type: 'plain_text_input',
-                action_id: 'path_input',
-                placeholder: {
-                  type: 'plain_text',
-                  text: 'docs/ (optional - leave empty for root)',
-                },
-              },
-              label: {
-                type: 'plain_text',
-                text: 'Path in Repository',
-              },
-              optional: true,
-            },
-          ],
-          private_metadata: JSON.stringify({
-            userId,
-            workspaceId,
-          }),
-        },
-      });
+      if (repositoryBrowseViewId) {
+        await client.views.update({
+          view_id: repositoryBrowseViewId,
+          view: buildRepositorySelectionView(modalMetadata, repoOptions),
+        });
+      }
     } catch (error) {
       logger.error('Error browsing GitHub repositories:', error);
-      await client.chat.postEphemeral({
-        user: body.user.id,
-        channel: body.user.id,
-        text: '❌ Error loading repositories. Please try again.',
-      });
+      if (repositoryBrowseViewId) {
+        try {
+          const workspaceId = await getWorkspaceId(client);
+          await client.views.update({
+            view_id: repositoryBrowseViewId,
+            view: {
+              type: 'modal',
+              callback_id: 'select_repository_error_modal',
+              notify_on_close: true,
+              title: {
+                type: 'plain_text',
+                text: 'Select Repository',
+              },
+              close: {
+                type: 'plain_text',
+                text: 'Close',
+              },
+              blocks: [
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: '❌ Error loading repositories. Please try again.',
+                  },
+                },
+              ],
+              private_metadata: JSON.stringify({
+                userId: body.user.id,
+                workspaceId,
+              }),
+            },
+          });
+        } catch (updateError) {
+          logger.error('Error updating repository browse modal after failure:', updateError);
+          await client.chat.postEphemeral({
+            user: body.user.id,
+            channel: body.user.id,
+            text: '❌ Error loading repositories. Please try again.',
+          });
+        }
+      } else {
+        await client.chat.postEphemeral({
+          user: body.user.id,
+          channel: body.user.id,
+          text: '❌ Error loading repositories. Please try again.',
+        });
+      }
     }
   });
 
@@ -355,6 +502,7 @@ export const registerGitHubHandlers = (app: App) => {
 
       const githubService = GithubService.getInstance();
       const vectorStore = VectorStoreService.getInstance();
+      const gitHubSyncService = GitHubSyncService.getInstance();
 
       const markdownFiles = await githubService.getAllMarkdownFiles({
         owner: repoInfo.owner,
@@ -391,7 +539,15 @@ export const registerGitHubHandlers = (app: App) => {
           client,
         );
       } else {
-        const success = await vectorStore.initialize(markdownFiles, false, true);
+        await gitHubSyncService.syncWorkspaceFromMarkdownFiles({
+          workspaceId,
+          owner: repoInfo.owner,
+          repo: repoInfo.repo,
+          markdownFiles,
+          source: 'manual-refresh',
+        });
+
+        const success = await vectorStore.initialize(markdownFiles, false, true, workspaceId);
 
         if (success) {
           // Update workspace markdown files cache

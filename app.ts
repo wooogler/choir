@@ -8,13 +8,36 @@ import { GithubService } from './services/github';
 import { AppConfig } from '@/config';
 import { Logger } from 'services/common/logger';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
+import { getRetrievalProvider } from 'services/retrieval';
+import { isQmdRetrievalEnabled } from 'services/retrieval/provider-config';
 import { getGithubRepo, getWorkspaceId, setupInitialManager } from 'services/slack';
 import { HomeScreenService } from 'services/slack/home-screen';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
+import { GitHubSyncService } from 'services/sync/github-sync-service';
 import { VectorStoreService } from 'services/vector/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
 
 dotenv.config();
+
+function applyQmdCpuOnlyDefaults(): void {
+  if (process.env.QMD_FORCE_CPU_ONLY === 'false') {
+    return;
+  }
+
+  if (!process.env.NODE_LLAMA_CPP_GPU) {
+    process.env.NODE_LLAMA_CPP_GPU = 'off';
+  }
+
+  if (!process.env.LLAMA_ARG_DEVICE) {
+    process.env.LLAMA_ARG_DEVICE = 'none';
+  }
+
+  if (!process.env.LLAMA_ARG_N_GPU_LAYERS) {
+    process.env.LLAMA_ARG_N_GPU_LAYERS = '0';
+  }
+}
+
+applyQmdCpuOnlyDefaults();
 
 /** Initialization */
 const slackConfig = AppConfig.getSlackConfig();
@@ -51,7 +74,46 @@ SlackUsageMonitor.getInstance().initializeGlobalHook();
 app.use(usageMonitoringMiddleware);
 
 const githubService = GithubService.getInstance();
+const gitHubSyncService = GitHubSyncService.getInstance();
 const vectorStore = VectorStoreService.getInstance();
+
+function shouldWarmupQmdOnStartup(): boolean {
+  return process.env.QMD_WARMUP_ON_STARTUP !== 'false';
+}
+
+function warmupQmdServicesOnStartup(workspaceId: string): void {
+  if (!isQmdRetrievalEnabled() || !shouldWarmupQmdOnStartup()) {
+    return;
+  }
+
+  const query = process.env.QMD_WARMUP_QUERY?.trim() || 'documentation';
+
+  setTimeout(() => {
+    void (async () => {
+      try {
+        app.logger.info('Starting background QMD warm-up.', {
+          workspaceId,
+          query,
+        });
+
+        const retrievalProvider = getRetrievalProvider();
+        await retrievalProvider.warmup?.({
+          workspaceId,
+          query,
+        });
+
+        app.logger.info('Background QMD warm-up finished.', {
+          workspaceId,
+        });
+      } catch (error) {
+        app.logger.warn('Background QMD warm-up failed.', error as Error, {
+          workspaceId,
+          query,
+        });
+      }
+    })();
+  }, 0);
+}
 
 /** Register Listeners */
 registerListeners(app);
@@ -146,22 +208,13 @@ setupGitHubWebhook();
 /** Start Bolt App */
 (async () => {
   try {
-    // AI Provider 설정 검증
-    const aiProvider = getAIProvider();
-    app.logger.info(`AI Provider: ${aiProvider}`);
-
     if (!validateCurrentProvider()) {
-      app.logger.error(`${aiProvider} configuration is invalid. Please check your environment variables.`);
-      if (aiProvider === 'azure') {
-        app.logger.error(
-          'Required variables: AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_NAME, AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME',
-        );
-      } else {
-        app.logger.error('Required variables: OPENAI_API_KEY');
-      }
+      app.logger.error('OpenAI configuration is invalid. Please check your environment variables.');
+      app.logger.error('Required variables: OPENAI_API_KEY');
       process.exit(1);
     }
-    app.logger.info(`${aiProvider} configuration is valid`);
+    app.logger.info(`AI Provider: ${getAIProvider()}`);
+    app.logger.info('OpenAI configuration is valid');
 
     // 워크스페이스 ID 가져오기 (첫 번째 호출에서 캐시됨)
     const workspaceId = await getWorkspaceId(app.client);
@@ -202,24 +255,44 @@ setupGitHubWebhook();
 
       if (cacheInitialized) {
         app.logger.info('Vector store successfully initialized from cache. Skipping GitHub API calls.');
+        const hydratedFromMirror = await gitHubSyncService.hydrateVectorStoreFromMirror({
+          workspaceId,
+          owner: repoInfo.owner,
+          repo: repoInfo.repo,
+          branch: repoInfo.branch,
+        });
+
+        if (hydratedFromMirror) {
+          app.logger.info('Hydrated markdown file metadata from workspace mirror after cache restore.');
+        }
       } else {
-        app.logger.info('Cache not available or invalid. Fetching from GitHub...');
+        app.logger.info('Cache not available or invalid. Loading markdown files via sync service...');
 
         try {
-          // 캐시가 없거나 무효한 경우에만 GitHub API 호출
-          const markdownFiles = await githubService.getAllMarkdownFiles({
+          const { markdownFiles, loadedFrom } = await gitHubSyncService.loadWorkspaceMarkdownFiles({
+            workspaceId,
             owner: repoInfo.owner,
             repo: repoInfo.repo,
+            branch: repoInfo.branch,
             path: repoInfo.path,
-            workspaceId: workspaceId,
-            userId: workspaceOwner, // 워크스페이스 소유자 ID 사용
+            userId: workspaceOwner,
+            source: 'startup',
           });
 
-          await vectorStore.setMarkdownFiles(markdownFiles, {
-            owner: repoInfo.owner,
-            repo: repoInfo.repo,
-            workspaceId: workspaceId,
-          });
+          if (markdownFiles.length > 0) {
+            app.logger.info(`Loaded ${markdownFiles.length} markdown files from ${loadedFrom}.`);
+            await vectorStore.setMarkdownFiles(markdownFiles, {
+              owner: repoInfo.owner,
+              repo: repoInfo.repo,
+              workspaceId: workspaceId,
+            });
+          } else {
+            app.logger.info('No markdown files available from mirror or GitHub. Starting with empty vector store.');
+            await vectorStore.setMarkdownFiles([], {
+              owner: 'empty',
+              repo: 'empty',
+            });
+          }
         } catch (error) {
           app.logger.info('Connected GitHub repository not accessible. Starting with empty vector store.');
           // Initialize empty vector store
@@ -240,6 +313,10 @@ setupGitHubWebhook();
 
     await app.start(process.env.PORT || 3000);
     app.logger.info('⚡️ Bolt app is running! ⚡️');
+
+    if (repoInfo) {
+      warmupQmdServicesOnStartup(workspaceId);
+    }
   } catch (error) {
     app.logger.error('Unable to start App', error);
   }

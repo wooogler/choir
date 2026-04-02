@@ -2,7 +2,8 @@ export * from './langchain';
 
 // Core completion functionality
 export { createChatCompletion } from './completions';
-export type { ChatCompletionOptions } from './completions';
+export { createStructuredResponse } from './completions';
+export type { ChatCompletionOptions, StructuredResponseOptions } from './completions';
 
 // Q&A related functions
 export { answerQuestion } from './qa-service';
@@ -13,11 +14,8 @@ export {
   classifyMessageIntent,
 } from './document-editor';
 
-// LLM configuration (Azure OpenAI and OpenAI)
+// LLM configuration
 export {
-  validateAzureOpenAIConfig,
-  getAzureOpenAIConfig,
-  isAzureOpenAIEnabled,
   validateOpenAIConfig,
   getOpenAIConfig,
   isOpenAIEnabled,

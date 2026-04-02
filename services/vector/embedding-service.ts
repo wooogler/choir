@@ -1,47 +1,25 @@
 import type { Document } from '@langchain/core/documents';
-import { AzureOpenAIEmbeddings } from '@langchain/openai';
 import { OpenAIEmbeddings } from '@langchain/openai';
-import { getAIProvider, getAzureOpenAIConfig, getOpenAIConfig } from '../llm/llm-config';
+import { getOpenAIConfig } from '../llm/llm-config';
 import type { DocumentMetadata } from './types';
 
 /**
  * 임베딩 생성 및 관리를 담당하는 서비스 클래스
  */
 export class EmbeddingService {
-  private embeddings: AzureOpenAIEmbeddings | OpenAIEmbeddings;
+  private embeddings: OpenAIEmbeddings;
   private logger: Console;
-  private provider: 'azure' | 'openai';
+  private provider: 'openai';
 
   constructor(apiKey?: string, logger: Console = console) {
-    this.provider = getAIProvider();
+    this.provider = 'openai';
     this.logger = logger;
-
-    if (this.provider === 'azure') {
-      const config = getAzureOpenAIConfig();
-      this.embeddings = new AzureOpenAIEmbeddings({
-        apiKey: apiKey || config.apiKey,
-        azureOpenAIEndpoint: config.endpoint,
-        azureOpenAIApiDeploymentName: config.embeddingsDeploymentName,
-        azureOpenAIApiVersion: config.apiVersion,
-        azureOpenAIApiInstanceName: this.extractInstanceName(config.endpoint || ''),
-        batchSize: 512,
-      });
-    } else {
-      const config = getOpenAIConfig();
-      this.embeddings = new OpenAIEmbeddings({
-        apiKey: apiKey || config.apiKey,
-        modelName: config.embeddingsModel,
-        batchSize: 512,
-      });
-    }
-  }
-
-  /**
-   * Azure OpenAI 엔드포인트에서 인스턴스 이름 추출
-   */
-  private extractInstanceName(endpoint: string): string {
-    const match = endpoint.match(/https:\/\/([^.]+)\.openai\.azure\.com/);
-    return match ? match[1] : '';
+    const config = getOpenAIConfig();
+    this.embeddings = new OpenAIEmbeddings({
+      apiKey: apiKey || config.apiKey,
+      modelName: config.embeddingsModel,
+      batchSize: 512,
+    });
   }
 
   /**
@@ -284,14 +262,14 @@ export class EmbeddingService {
   /**
    * 임베딩 API 인스턴스 반환
    */
-  public getEmbeddingAPI(): AzureOpenAIEmbeddings | OpenAIEmbeddings {
+  public getEmbeddingAPI(): OpenAIEmbeddings {
     return this.embeddings;
   }
 
   /**
    * 현재 사용 중인 AI 프로바이더 반환
    */
-  public getProvider(): 'azure' | 'openai' {
+  public getProvider(): 'openai' {
     return this.provider;
   }
 }

@@ -1,4 +1,4 @@
-import { createChatCompletion } from './completions';
+import { createStructuredResponse } from './completions';
 
 export interface NewSectionSuggestion {
   sectionTitle: string;
@@ -18,11 +18,12 @@ export async function generateNewFileDefaults(
 ): Promise<NewFileDefaults> {
   const existingFileNames = existingFiles.map(file => file.name).join('\n');
 
-  const response = await createChatCompletion(
-    [
-      {
-        role: 'system',
-        content: `You are a documentation file naming expert. Your task is to suggest a good file name and initial markdown content for new documentation based on knowledge content.
+  try {
+    return await createStructuredResponse<NewFileDefaults>(
+      [
+        {
+          role: 'system',
+          content: `You are a documentation file naming expert. Your task is to suggest a good file name and initial markdown content for new documentation based on knowledge content.
 
 Key rules:
 1. Suggest a descriptive but concise file name ending with .md
@@ -36,33 +37,43 @@ Key rules:
 }
 
 The initial content should start with a markdown header and include the knowledge content in a well-structured format.`,
-      },
-      {
-        role: 'user',
-        content: `Knowledge content to create a new file for:
+        },
+        {
+          role: 'user',
+          content: `Knowledge content to create a new file for:
 ${knowledgeContent}
 
 Existing files (avoid conflicts):
 ${existingFileNames}
 
 Generate a suitable file name and initial markdown content.`,
+        },
+      ],
+      {
+        model: process.env.OPENAI_RESPONSES_MODEL || process.env.OPENAI_MODEL_NAME || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        temperature: 0,
+        max_tokens: 600,
+        function_name: 'generateNewFileDefaults',
+        debug: true,
+        schemaName: 'new_file_defaults',
+        schemaDescription: 'A file name and initial markdown content for a new documentation file',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            fileName: {
+              type: 'string',
+              minLength: 1,
+            },
+            initialContent: {
+              type: 'string',
+              minLength: 1,
+            },
+          },
+          required: ['fileName', 'initialContent'],
+        },
       },
-    ],
-    {
-      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
-      temperature: 0,
-      max_tokens: 600,
-      function_name: 'generateNewFileDefaults',
-      debug: true,
-    },
-  );
-
-  try {
-    const parsed = JSON.parse(response?.trim() || '{}');
-    return {
-      fileName: parsed.fileName || 'new-document.md',
-      initialContent: parsed.initialContent || `# New Document\n\n${knowledgeContent}`,
-    };
+    );
   } catch (error) {
     console.error('Failed to parse new file defaults:', error);
     return {
@@ -80,11 +91,12 @@ export async function createNewSectionFromKnowledge(
     .map((file) => `- ${file.fileName}: ${file.description || 'No description'}`)
     .join('\n');
 
-  const response = await createChatCompletion(
-    [
-      {
-        role: 'system',
-        content: `You are a documentation structure expert. Your task is to analyze knowledge content and suggest a new section that could be added to existing documentation.
+  try {
+    return await createStructuredResponse<NewSectionSuggestion>(
+      [
+        {
+          role: 'system',
+          content: `You are a documentation structure expert. Your task is to analyze knowledge content and suggest a new section that could be added to existing documentation.
 
 CONSTRAINTS:
 - Use ONLY information from the knowledge - no external details, links, or assumptions
@@ -107,35 +119,51 @@ Return ONLY a valid JSON object with this exact structure:
 
 The section title should be general enough to be applicable across different organizations (e.g., "Online Meeting Platform" rather than "Using Microsoft Teams for Online Meetings").
 The section content should use only the provided knowledge without additional explanations or examples.`,
-      },
-      {
-        role: 'user',
-        content: `Knowledge to turn into a new section:
+        },
+        {
+          role: 'user',
+          content: `Knowledge to turn into a new section:
 ${knowledgeContent}
 
 Available files:
 ${filesDescription}
 
 Analyze the knowledge and suggest a new section with appropriate title, content, and recommend which file it should be added to.`,
+        },
+      ],
+      {
+        model: process.env.OPENAI_RESPONSES_MODEL || process.env.OPENAI_MODEL_NAME || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        temperature: 0,
+        max_tokens: 800,
+        function_name: 'createNewSectionFromKnowledge',
+        debug: false,
+        schemaName: 'new_section_suggestion',
+        schemaDescription: 'A new documentation section suggestion and the best file to place it in',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            reasoning: {
+              type: 'string',
+              minLength: 1,
+            },
+            sectionTitle: {
+              type: 'string',
+              minLength: 1,
+            },
+            sectionContent: {
+              type: 'string',
+              minLength: 1,
+            },
+            recommendedFile: {
+              type: 'string',
+              minLength: 1,
+            },
+          },
+          required: ['reasoning', 'sectionTitle', 'sectionContent', 'recommendedFile'],
+        },
       },
-    ],
-    {
-      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
-      temperature: 0,
-      max_tokens: 800,
-      function_name: 'createNewSectionFromKnowledge',
-      debug: false,
-    },
-  );
-
-  try {
-    const parsed = JSON.parse(response?.trim() || '{}');
-    return {
-      sectionTitle: parsed.sectionTitle || 'New Section',
-      sectionContent: parsed.sectionContent || knowledgeContent,
-      recommendedFile: parsed.recommendedFile || availableFiles[0]?.fileName || 'Unknown',
-      reasoning: parsed.reasoning || 'Default selection',
-    };
+    );
   } catch (error) {
     console.error('Failed to parse new section suggestion:', error);
     return {

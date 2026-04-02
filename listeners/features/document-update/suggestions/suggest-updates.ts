@@ -30,6 +30,7 @@ import {
 } from 'services/document/document-store';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { type ProcessedDocument, processDocument } from 'services/document/update-processor';
+import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
 import { GithubService } from 'services/github';
 import { type SlackMessage, getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
@@ -52,6 +53,11 @@ export function createMessageLink(workspaceUrl: string, channelId: string, messa
   } else {
     return `${baseUrl}/archives/${channelId}`;
   }
+}
+
+function getUpdateRetrievalProvider(): 'faiss' | 'qmd' {
+  const configuredProvider = process.env.UPDATE_RETRIEVAL_PROVIDER || process.env.RETRIEVAL_PROVIDER;
+  return configuredProvider === 'qmd' ? 'qmd' : 'faiss';
 }
 
 /**
@@ -717,20 +723,40 @@ export const suggestUpdatesCallback = async ({
           // Case 1: Default/recommended file selected
           logger.info('Default/recommended file selected - performing file-specific search');
           logger.info(`[SEARCH DEBUG] Query used for default file search: "${knowledgeContent}"`);
-          fileSpecificResults = await vectorStore.similaritySearchByFile(
-            knowledgeContent,
-            parsedValue.selectedFile,
-            5, // 파일별 검색에서 최대 5개 결과
-          );
+          if (getUpdateRetrievalProvider() === 'qmd') {
+            const workspaceId = await getWorkspaceId(client);
+            fileSpecificResults = await QmdUpdateAnchorService.getInstance().search({
+              workspaceId,
+              query: knowledgeContent,
+              selectedFile: parsedValue.selectedFile,
+              limit: 5,
+            });
+          } else {
+            fileSpecificResults = await vectorStore.similaritySearchByFile(
+              knowledgeContent,
+              parsedValue.selectedFile,
+              5, // 파일별 검색에서 최대 5개 결과
+            );
+          }
         } else {
           // Case 2: Specific file selected  
           logger.info(`Searching in specific file: ${parsedValue.selectedFile}`);
           logger.info(`[SEARCH DEBUG] Query used for file-specific search: "${knowledgeContent}"`);
-          fileSpecificResults = await vectorStore.similaritySearchByFile(
-            knowledgeContent,
-            parsedValue.selectedFile,
-            5, // 파일별 검색에서 최대 5개 결과
-          );
+          if (getUpdateRetrievalProvider() === 'qmd') {
+            const workspaceId = await getWorkspaceId(client);
+            fileSpecificResults = await QmdUpdateAnchorService.getInstance().search({
+              workspaceId,
+              query: knowledgeContent,
+              selectedFile: parsedValue.selectedFile,
+              limit: 5,
+            });
+          } else {
+            fileSpecificResults = await vectorStore.similaritySearchByFile(
+              knowledgeContent,
+              parsedValue.selectedFile,
+              5, // 파일별 검색에서 최대 5개 결과
+            );
+          }
         }
 
         // Log file-specific search results
@@ -1250,7 +1276,15 @@ export const suggestUpdatesCallback = async ({
     if (currentIndex === 0 && !isFileBasedReview && (!searchResults || searchResults.length === 0)) {
       logger.info(`[SEARCH DEBUG] Query used for initial search: "${knowledgeContent}"`);
       const workspaceId = await getWorkspaceId(client);
-      searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
+      if (getUpdateRetrievalProvider() === 'qmd') {
+        searchResults = await QmdUpdateAnchorService.getInstance().search({
+          workspaceId,
+          query: knowledgeContent,
+          limit: 5,
+        });
+      } else {
+        searchResults = await vectorStore.similaritySearchWritableFiles(knowledgeContent, workspaceId, 5);
+      }
 
       // Store results for later use (for file-based review)
       storeSearchResults(userId, searchResults);
@@ -1731,6 +1765,7 @@ export const suggestUpdatesCallback = async ({
       originalChannelId: knowledgeSourceChannelId,
       originalThreadTs: knowledgeSourceThreadTs,
       suggestionType: processedDoc.suggestionType,
+      updateAnchor: processedDoc.updateAnchor,
     };
 
     const currentUpdates = getStoredDocumentUpdates(userId);
@@ -1761,8 +1796,14 @@ export const suggestUpdatesCallback = async ({
 
     const suggestionTitleText = `📝 *Update Suggestion ${suggestionNumber}*`;
     
+    const anchorLineText = processedDoc.updateAnchor?.startLine
+      ? processedDoc.updateAnchor.endLine && processedDoc.updateAnchor.endLine !== processedDoc.updateAnchor.startLine
+        ? `\nAnchor: lines ${processedDoc.updateAnchor.startLine}-${processedDoc.updateAnchor.endLine}`
+        : `\nAnchor: line ${processedDoc.updateAnchor.startLine}`
+      : '';
+
     const fileInfoText = `File: <${processedDoc.githubUrl}|${processedDoc.fileName}>
-Section: ${sectionInfo}`;
+Section: ${sectionInfo}${anchorLineText}`;
 
     const editButtonValue = {
       index: currentIndex,

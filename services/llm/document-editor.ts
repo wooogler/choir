@@ -58,7 +58,7 @@ Generate content that fits this section context using only the provided knowledg
       },
     ],
     {
-      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
+      model: process.env.OPENAI_RESPONSES_MODEL || process.env.OPENAI_MODEL_NAME || process.env.OPENAI_MODEL || 'gpt-4o-mini',
       temperature: 0,
       max_tokens: 300,
       function_name: 'createContentForEmptySection',
@@ -118,7 +118,7 @@ ${knowledgeContent}`,
       },
     ],
     {
-      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
+      model: process.env.OPENAI_RESPONSES_MODEL || process.env.OPENAI_MODEL_NAME || process.env.OPENAI_MODEL || 'gpt-4o-mini',
       temperature: 0,
       max_tokens: 500,
       function_name: 'enhanceExistingContent',
@@ -197,10 +197,10 @@ ${descOrg ? `- About: ${descOrg}` : ''}${contextSection}`;
     ],
     {
       temperature: 0,
-      max_tokens: 15,
+      max_tokens: 16,
       function_name: 'classifyMessageIntent',
       debug: true,
-      model: process.env.OPENAI_MODEL_NAME || 'gpt-4o-mini',
+      model: process.env.OPENAI_RESPONSES_MODEL || process.env.OPENAI_MODEL_NAME || process.env.OPENAI_MODEL || 'gpt-4o-mini',
     },
   );
 

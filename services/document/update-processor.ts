@@ -10,6 +10,7 @@ import type { SlackMessage } from 'services/slack';
 import type { VectorStoreService } from 'services/vector/main-service';
 import type { DocumentMetadata } from 'services/vector/types';
 import { convertMarkdownToSlackText } from './markdown';
+import type { UpdateAnchor } from './update-anchor';
 
 export interface ProcessedDocument {
   fileName: string;
@@ -33,6 +34,7 @@ export interface ProcessedDocument {
   originalLastNodeContent?: string; // APPEND 시 원본 마지막 노드 내용 (마크다운)
   appendedNodeContent?: string; // APPEND 시 새로 생성된 노드 내용 (마크다운)
   newSectionSuggestion?: NewSectionSuggestion; // APPEND 시 새 섹션 제안
+  updateAnchor?: UpdateAnchor;
 }
 
 /**
@@ -109,19 +111,21 @@ export async function processDocument(
     }
 
     const fileName = doc.metadata.fileName;
-    const markdownFile = vectorStore.getMarkdownFile(fileName);
-
-    if (!markdownFile) {
-      console.error(`파일을 찾을 수 없습니다: ${fileName}`);
-      return null;
-    }
-
-    const docTree = markdownFile.tree;
     const nodeId = doc.metadata.nodeId;
+    const updateAnchor = doc.metadata.updateAnchor;
 
-    if (!docTree.nodeMap.has(nodeId)) {
-      console.log(`노드 ID가 트리에서 찾을 수 없음: ${nodeId}`);
-      return null;
+    if (!updateAnchor) {
+      const markdownFile = vectorStore.getMarkdownFile(fileName);
+      if (!markdownFile) {
+        console.error(`파일을 찾을 수 없습니다: ${fileName}`);
+        return null;
+      }
+
+      const docTree = markdownFile.tree;
+      if (!docTree.nodeMap.has(nodeId)) {
+        console.log(`노드 ID가 트리에서 찾을 수 없음: ${nodeId}`);
+        return null;
+      }
     }
 
     // originalContent가 있으면 사용 (순수한 내용), 없으면 pageContent에서 컨텍스트 제거
@@ -213,6 +217,7 @@ export async function processDocument(
       hasChanges,
       suggestionType, // 항상 'UPDATE'
       newSectionSuggestion, // 항상 포함
+      updateAnchor,
     };
 
     // --- 로깅 추가 ---

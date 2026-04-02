@@ -152,6 +152,16 @@ export const reloadFromGithubAction = async ({
       return;
     }
 
+    const { GitHubSyncService } = await import('services/sync/github-sync-service');
+    await GitHubSyncService.getInstance().syncWorkspaceFromMarkdownFiles({
+      workspaceId,
+      owner: repoInfo.owner,
+      repo: repoInfo.repo,
+      branch: currentDefaultBranch,
+      markdownFiles,
+      source: 'manual-refresh',
+    });
+
     // 벡터 저장소 업데이트 (캐시 사용 안 함, 강제 새로고침)
     const success = await vectorStore.initialize(markdownFiles, false, true, workspaceId);
 
