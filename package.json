@@ -1,7 +1,7 @@
 {
-  "name": "bolt-ts-starter-template",
+  "name": "choir",
   "version": "1.0.0",
-  "description": "A scaffold template for Slack apps",
+  "description": "AI-powered Slack bot for answering questions and updating organizational documentation from GitHub markdown files.",
   "main": "dist/app.js",
   "scripts": {
     "build": "rm -rf dist && tsc && tsc-alias",
@@ -9,27 +9,25 @@
     "dev:watch": "nodemon --watch '**/*.ts' --exec 'ts-node -r tsconfig-paths/register' app.ts",
     "dev:prod": "NODE_ENV=production ts-node -r tsconfig-paths/register app.ts",
     "dev:web": "NODE_ENV=development ENABLE_WEB_CONTENT=true ts-node -r tsconfig-paths/register app.ts",
-    "lint": "npx @biomejs/biome check *.ts listeners services",
-    "lint:fix": "npx @biomejs/biome check --write *.ts listeners services",
+    "lint": "node scripts/run-biome-changed.js check",
+    "lint:fix": "node scripts/run-biome-changed.js write",
+    "lint:all": "npx @biomejs/biome check *.ts listeners services scripts __tests__ src",
+    "lint:all:fix": "npx @biomejs/biome check --write *.ts listeners services scripts __tests__ src",
     "test:unit": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test": "npm run build && npm run lint && npm run test:unit"
+    "test": "pnpm test:unit",
+    "verify": "pnpm build && pnpm test:unit"
   },
-  "author": "Slack Technologies, LLC",
+  "author": "CHOIR contributors",
   "license": "MIT",
-  "keywords": [
-    "slack",
-    "bolt",
-    "slackapi",
-    "typescript"
-  ],
+  "keywords": ["slack", "bolt", "typescript", "github", "openai", "knowledge-base", "rag"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/slack-samples/bolt-ts-starter-template.git"
+    "url": "https://github.com/wooogler/choir.git"
   },
   "bugs": {
-    "url": "https://github.com/slack-samples/bolt-ts-starter-template/issues"
+    "url": "https://github.com/wooogler/choir/issues"
   },
   "dependencies": {
     "@langchain/azure-openai": "^0.0.11",

@@ -1,33 +1,29 @@
 /**
- * Test file for configuration
- * Run with: pnpm test:unit
+ * Test file for current AppConfig behavior
  */
 
 import { AppConfig } from '@/config';
 
 describe('AppConfig', () => {
+  let consoleErrorSpy: jest.SpyInstance;
+
   beforeEach(() => {
-    // Reset environment variables
-    delete process.env.NODE_ENV;
-    delete process.env.SLACK_BOT_TOKEN;
+    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    process.env.NODE_ENV = undefined;
+    process.env.SLACK_BOT_TOKEN = undefined;
+    process.env.SLACK_APP_TOKEN = undefined;
+    process.env.SLACK_SIGNING_SECRET = undefined;
+    process.env.MANAGER_PROMOTION_PASSWORD = undefined;
+    process.env.AZURE_OPENAI_API_KEY = undefined;
+    process.env.AZURE_OPENAI_ENDPOINT = undefined;
+    process.env.AZURE_OPENAI_DEPLOYMENT_NAME = undefined;
+    process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME = undefined;
+    process.env.TEST_VAR = undefined;
   });
 
-  describe('getDefaultRepo', () => {
-    it('should return development repo for development environment', () => {
-      process.env.NODE_ENV = 'development';
-      const repo = AppConfig.getDefaultRepo();
-      expect(repo.owner).toBe('wooogler');
-      expect(repo.repo).toBe('assets');
-      expect(repo.branch).toBe('master');
-    });
-
-    it('should return production repo for production environment', () => {
-      process.env.NODE_ENV = 'production';
-      const repo = AppConfig.getDefaultRepo();
-      expect(repo.owner).toBe('wooogler');
-      expect(repo.repo).toBe('choirlab');
-      expect(repo.branch).toBe('main');
-    });
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
   });
 
   describe('getRequiredEnvVar', () => {
@@ -41,6 +37,73 @@ describe('AppConfig', () => {
       expect(() => {
         AppConfig.getRequiredEnvVar('MISSING_VAR');
       }).toThrow('Required environment variable MISSING_VAR is not set');
+    });
+  });
+
+  describe('getOptionalEnvVar', () => {
+    it('should return the configured value when present', () => {
+      process.env.TEST_VAR = 'configured_value';
+      expect(AppConfig.getOptionalEnvVar('TEST_VAR', 'fallback')).toBe('configured_value');
+    });
+
+    it('should return the default value when the variable is missing', () => {
+      expect(AppConfig.getOptionalEnvVar('MISSING_OPTIONAL', 'fallback')).toBe('fallback');
+    });
+  });
+
+  describe('getSlackConfig', () => {
+    beforeEach(() => {
+      process.env.SLACK_BOT_TOKEN = 'xoxb-test';
+      process.env.SLACK_APP_TOKEN = 'xapp-test';
+      process.env.SLACK_SIGNING_SECRET = 'signing-secret';
+    });
+
+    it('should enable socket mode outside production', () => {
+      process.env.NODE_ENV = 'development';
+
+      expect(AppConfig.getSlackConfig()).toEqual({
+        botToken: 'xoxb-test',
+        appToken: 'xapp-test',
+        signingSecret: 'signing-secret',
+        socketMode: true,
+      });
+    });
+
+    it('should disable socket mode in production', () => {
+      process.env.NODE_ENV = 'production';
+
+      expect(AppConfig.getSlackConfig()).toEqual({
+        botToken: 'xoxb-test',
+        appToken: 'xapp-test',
+        signingSecret: 'signing-secret',
+        socketMode: false,
+      });
+    });
+  });
+
+  describe('getAzureOpenAIConfig', () => {
+    it('should expose configured Azure OpenAI values', () => {
+      process.env.AZURE_OPENAI_API_KEY = 'azure-key';
+      process.env.AZURE_OPENAI_ENDPOINT = 'https://example.openai.azure.com/';
+      process.env.AZURE_OPENAI_DEPLOYMENT_NAME = 'chat-deployment';
+      process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME = 'embedding-deployment';
+
+      expect(AppConfig.getAzureOpenAIConfig()).toEqual({
+        apiKey: 'azure-key',
+        endpoint: 'https://example.openai.azure.com/',
+        deploymentName: 'chat-deployment',
+        embeddingsDeploymentName: 'embedding-deployment',
+      });
+    });
+  });
+
+  describe('getManagerPromotionConfig', () => {
+    it('should return the optional manager promotion password', () => {
+      process.env.MANAGER_PROMOTION_PASSWORD = 'top-secret';
+
+      expect(AppConfig.getManagerPromotionConfig()).toEqual({
+        password: 'top-secret',
+      });
     });
   });
 });

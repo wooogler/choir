@@ -1,173 +1,122 @@
-# CHOIR - AI-Powered Slack Bot
+# CHOIR
 
-CHOIR is an AI-powered Slack bot designed to help organizations manage and leverage their collective knowledge stored as markdown files in GitHub repositories.
+CHOIR is a Slack bot for organization knowledge workflows. It indexes markdown documents from GitHub, answers questions against that document set, and can turn Slack conversations into document update suggestions.
 
-## Installation
+## Core capabilities
 
-#### Server Access
+- Answer questions from GitHub-backed markdown documentation
+- Suggest document updates from Slack conversations
+- Refresh the document index automatically from GitHub webhook events
+- Provide manager controls in Slack App Home
 
-Connect to the server:
+## Stack
+
+- TypeScript
+- Slack Bolt
+- OpenAI or Azure OpenAI
+- GitHub API via Octokit
+- FAISS-based vector search
+
+## Getting started
+
+### 1. Install dependencies
+
 ```bash
-ssh sangwonlee@choir.cs.vt.edu
-# Enter password when prompted
-```
-
-#### Clone Repository
-
-```bash
-git clone https://github.com/wooogler/choir.git choir-{workspace_name}
-cd choir-{workspace_name}
-```
-
-#### Install Dependencies
-
-```bash
+git clone https://github.com/wooogler/choir.git
+cd choir
 pnpm install
 ```
 
-#### Create a Slack App
-
-1. Open [https://api.slack.com/apps/new](https://api.slack.com/apps/new) and choose "From an app manifest"
-2. Choose the workspace you want to install the application to
-3. Copy the contents of [manifest.json](./manifest.json) into the text box that says `*Paste your manifest code here*` (within the JSON tab)
-4. **Important**: Update the `event_subscriptions.request_url` and `interactivity.request_url` in the manifest to: `https://choir.cs.vt.edu/{workspace_name}/slack/events`
-5. Click _Next_, review the configuration and click _Create_
-6. Click _Install to Workspace_ and _Allow_ on the screen that follows
-
-#### Environment Variables
-
-1. Copy `env.sample` to `.env`
-2. Configure your Slack app credentials:
-   - Go to your app's _OAuth & Permissions_ page and copy the _Bot User OAuth Token_ to `SLACK_BOT_TOKEN`
-   - Go to _Basic Information_ and create an app-level token with `connections:write` scope for `SLACK_APP_TOKEN`
-   - Copy the _Signing Secret_ from _Basic Information_ to `SLACK_SIGNING_SECRET`
-
-3. Configure OpenAI (default AI provider):
-
-```env
-# Slack Configuration
-SLACK_BOT_TOKEN=xoxb-your-bot-token
-SLACK_APP_TOKEN=xapp-your-app-token
-SLACK_SIGNING_SECRET=your-signing-secret
-
-# OpenAI Configuration
-OPENAI_API_KEY=your-openai-api-key
-
-# GitHub Integration
-GITHUB_TOKEN=your-github-personal-access-token
-GITHUB_WEBHOOK_SECRET=your-webhook-secret  # Optional but recommended for security
-
-# Server Configuration
-PORT=3000  # Use an available port (3000, 3001, 3002, etc.)
-
-# Optional
-MANAGER_PROMOTION_PASSWORD=your-manager-password
-CHOIR_CONSENT_FORM_URL=https://your-consent-form-url
-```
-
-#### Configure Nginx
-
-1. Edit the `nginx-test-server.conf` file to add your workspace configuration:
-
-```nginx
-# Add this block for your workspace (replace {workspace_name} and {port})
-location = /{workspace_name}/slack/events {
-    proxy_pass http://localhost:{port}/slack/events;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_cache_bypass $http_upgrade;
-    proxy_read_timeout 60s;
-    proxy_connect_timeout 60s;
-    proxy_send_timeout 60s;
-}
-```
-
-2. Replace the nginx configuration:
+### 2. Configure environment variables
 
 ```bash
-sudo cp nginx-test-server.conf /etc/nginx/sites-available/test-server
-sudo nginx -t  # Test configuration
-sudo systemctl reload nginx
+cp env.sample .env
 ```
 
-#### Deploy with PM2
+Minimum variables for local development:
 
-Start the application with PM2 (replace `{workspace_name}` with your actual workspace name):
+- `SLACK_BOT_TOKEN`
+- `SLACK_APP_TOKEN`
+- `SLACK_SIGNING_SECRET`
+- `OPENAI_API_KEY` or Azure OpenAI equivalents
+
+Optional but commonly used:
+
+- `GITHUB_TOKEN`
+- `GITHUB_WEBHOOK_SECRET`
+- `MANAGER_PROMOTION_PASSWORD`
+- `CHOIR_CONSENT_FORM_URL`
+- `SLACK_APP_ID`
+
+`env.sample` documents the full set currently used by the app.
+
+### 3. Create the Slack app
+
+1. Open <https://api.slack.com/apps/new>.
+2. Choose `From an app manifest`.
+3. Paste the contents of `manifest.json`.
+4. Install the app into your workspace.
+
+If you plan to run in HTTP mode, update the manifest request URLs before installing:
+
+- Events: `https://your-host/slack/events`
+- Interactivity: `https://your-host/slack/events`
+
+### 4. Run the app
+
+For local development with Socket Mode:
 
 ```bash
-pm2 start "pnpm run dev:prod" --name "choir-{workspace_name}"
+pnpm dev
 ```
 
-## GitHub Webhook Auto-Reload
-
-CHOIR supports automatic document reloading when changes are pushed to your GitHub repository. This eliminates the need to manually click "Reload from Github" in the App Home.
-
-### Setup GitHub Webhook
-
-1. **Go to your GitHub repository** → Settings → Webhooks → Add webhook
-
-2. **Configure the webhook**:
-   - **Payload URL**: `https://choir.cs.vt.edu/{workspace_name}/webhook/github`
-   - **Content type**: `application/json`
-   - **Secret**: Enter the same value as `GITHUB_WEBHOOK_SECRET` in your .env file (optional but recommended)
-   - **Events**: Select "Push events"
-   - **Active**: ✅ Checked
-
-3. **Update your Nginx configuration** (if not already done):
-
-```nginx
-# Add this location block for webhook endpoint
-location = /{workspace_name}/webhook/github {
-    proxy_pass http://localhost:{port}/webhook/github;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_read_timeout 60s;
-    proxy_connect_timeout 60s;
-    proxy_send_timeout 60s;
-}
-```
-
-4. **Reload Nginx**:
-```bash
-sudo nginx -t  # Test configuration
-sudo systemctl reload nginx
-```
-
-### How It Works
-
-1. **Push Detection**: When you push changes to your GitHub repository, GitHub sends a webhook event to CHOIR
-2. **Repository Matching**: CHOIR checks if the repository matches the one configured for your workspace
-3. **Branch Verification**: Only pushes to the configured branch (usually `main`) trigger auto-reload
-4. **Automatic Reload**: CHOIR automatically fetches the latest files and updates the vector store
-5. **Manager Notification**: Workspace managers receive Slack notifications about the auto-reload status
-
-### Development Testing
-
-For local development, use ngrok to expose your local server:
+For HTTP mode:
 
 ```bash
-# Terminal 1: Start CHOIR
-pnpm run dev
-
-# Terminal 2: Expose local server
-ngrok http 3000
+pnpm dev:prod
 ```
 
-Then use the ngrok URL in your webhook configuration:
-```
-Payload URL: https://abc123.ngrok.io/webhook/github
-```
+Notes:
 
-### Security Notes
+- `pnpm dev` uses Socket Mode because `NODE_ENV=development`.
+- `pnpm dev:prod` uses HTTP mode because `NODE_ENV=production`.
+- GitHub webhooks are only exposed in HTTP mode.
 
-- The `GITHUB_WEBHOOK_SECRET` is optional but **highly recommended** for production
-- It prevents malicious webhook requests by verifying that requests actually come from GitHub
-- Without the secret, the webhook will still work but with reduced security
+## Scripts
+
+- `pnpm dev`: local development in Socket Mode
+- `pnpm dev:watch`: development with `nodemon`
+- `pnpm dev:prod`: HTTP-mode runtime
+- `pnpm dev:web`: development with web content enhancement enabled
+- `pnpm build`: compile TypeScript into `dist/`
+- `pnpm test`: run unit tests
+- `pnpm test:coverage`: run unit tests with coverage
+- `pnpm verify`: build and run unit tests
+- `pnpm lint`: run Biome on changed files only
+- `pnpm lint:fix`: apply Biome fixes to changed files only
+- `pnpm lint:all`: run Biome against the broader codebase backlog
+- `pnpm lint:all:fix`: apply Biome fixes across the broader codebase backlog
+
+## Linting workflow
+
+Biome remains in the repository, but it is intentionally not part of the default verification path while the backlog is still large.
+
+- Use `pnpm verify` for the default build-and-test path.
+- Use `pnpm lint` or `pnpm lint:fix` during normal work; both target changed files only.
+- Use `pnpm lint:all` only when intentionally paying down the backlog.
+
+## GitHub webhook setup
+
+To auto-refresh documentation after repository changes:
+
+1. Run CHOIR in HTTP mode.
+2. Expose the app at a stable public URL.
+3. Add a GitHub webhook for `push` events.
+4. Point the webhook to `https://your-host/webhook/github`.
+5. Set `GITHUB_WEBHOOK_SECRET` in `.env` and in the GitHub webhook configuration.
+
+CHOIR will match the incoming repository against the workspace configuration and rebuild the vector store when the configured branch changes.
+
+## Local state
+
+CHOIR stores workspace configuration and connection state under `data/` in the project directory. That directory is runtime state and should not be treated as checked-in source.
