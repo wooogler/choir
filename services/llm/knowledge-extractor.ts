@@ -2,8 +2,8 @@ import type { WebClient } from '@slack/web-api';
 import { anonymizeText } from 'services/common/name-cache';
 import type { SlackMessage } from 'services/slack';
 import { processMessageHistory } from 'services/slack/conversation-history';
-import { type ChatCompletionOptions, createChatCompletion } from './completions';
 import { CHOIRMessageType, getCHOIRMessageTypeFromBlocks } from 'types/message-types';
+import { type ChatCompletionOptions, createChatCompletion } from './completions';
 
 interface KnowledgeExtractionResult {
   cleanContent: string;
@@ -26,31 +26,29 @@ interface OrganizationalContext {
 // Extract user comment text from USER_COMMENT blocks
 function extractUserCommentFromBlocks(blocks: any[]): string | null {
   if (!blocks || blocks.length === 0) return null;
-  
+
   for (const block of blocks) {
-    if (block.block_id && block.block_id.includes('user_comment') && 
-        block.type === 'section' && block.text?.text) {
+    if (block.block_id && block.block_id.includes('user_comment') && block.type === 'section' && block.text?.text) {
       return block.text.text;
     }
   }
-  
+
   return null;
 }
 
 // Helper function to extract the most recent Q&A pair from regular CHOIR answers
 function extractLatestCHOIRAnswer(
-  messages: SlackMessage[], 
-  processedMessages: Array<{ role: string; content: string }>
+  messages: SlackMessage[],
+  processedMessages: Array<{ role: string; content: string }>,
 ): { question: string; answer: string; source: 'choir_answer' } | null {
   // Search from the end to find the most recent CHOIR answer
   for (let i = messages.length - 1; i >= 0; i--) {
     const originalMsg = messages[i];
     const processedMsg = processedMessages[i];
-    
+
     // Check if this is a CHOIR answer message
-    const messageType = getCHOIRMessageTypeFromBlocks(originalMsg.blocks || []) || 
-                       originalMsg.metadata?.messageType;
-    
+    const messageType = getCHOIRMessageTypeFromBlocks(originalMsg.blocks || []) || originalMsg.metadata?.messageType;
+
     if (messageType === CHOIRMessageType.ANSWER && processedMsg.role === 'CHOIR') {
       // Look for the preceding user question
       for (let j = i - 1; j >= 0; j--) {
@@ -59,17 +57,17 @@ function extractLatestCHOIRAnswer(
           // Found a user message before the CHOIR answer
           const question = prevProcessedMsg.content.replace('@CHOIR', '').trim();
           const answer = processedMsg.content.trim();
-          
+
           return {
             question,
             answer,
-            source: 'choir_answer'
+            source: 'choir_answer',
           };
         }
       }
     }
   }
-  
+
   return null;
 }
 
@@ -119,7 +117,7 @@ export async function extractKnowledgeFromMessages(
     // Separate Q&A content from regular conversation
     const qaContent: Array<{ question: string; answer: string | null; canAnswer: boolean }> = [];
     const conversationMessages: Array<{ role: string; content: string }> = [];
-    
+
     // Extract the most recent CHOIR answer for context
     const latestCHOIRAnswer = extractLatestCHOIRAnswer(messages, processedMessages);
 
@@ -129,9 +127,9 @@ export async function extractKnowledgeFromMessages(
       // Find the index of the CHOIR answer message
       for (let i = messages.length - 1; i >= 0; i--) {
         const originalMsg = messages[i];
-        const messageType = getCHOIRMessageTypeFromBlocks(originalMsg.blocks || []) || 
-                           originalMsg.metadata?.messageType;
-        
+        const messageType =
+          getCHOIRMessageTypeFromBlocks(originalMsg.blocks || []) || originalMsg.metadata?.messageType;
+
         if (messageType === CHOIRMessageType.ANSWER && processedMessages[i].role === 'CHOIR') {
           conversationStartIndex = i + 1; // Start after the CHOIR answer
           break;
@@ -159,9 +157,9 @@ export async function extractKnowledgeFromMessages(
           ));
 
       // Check if this message has a USER_COMMENT block
-      const hasUserComment = originalMsg.blocks && 
-        originalMsg.blocks.some((block: any) => 
-          block.block_id && block.block_id.includes('user_comment'));
+      const hasUserComment =
+        originalMsg.blocks &&
+        originalMsg.blocks.some((block: any) => block.block_id && block.block_id.includes('user_comment'));
 
       // Handle Q&A SHARE messages (these should be excluded from conversation)
       if ((isQAShareAnswered || isQAShareUnanswered) && msg.role === 'CHOIR') {
@@ -260,7 +258,9 @@ Only extract information that establishes policies, procedures, or reusable know
 
 Start with a descriptive markdown section title (# [Topic Name]), then write the information in natural paragraph format. Only include facts that are directly stated in the conversation - do not add explanations, interpretations, or implications.
 
-Do not include personal conversation details like who said what. Always preserve any URLs mentioned.`,
+Do not attribute information to specific people in your output. Always preserve any URLs mentioned.
+
+If no documentable knowledge is found, respond with exactly: No organizational knowledge found`,
         },
         {
           role: 'user',

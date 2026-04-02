@@ -2,7 +2,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { Logger } from 'services/common/logger';
 import { createStructuredResponse } from 'services/llm/completions';
 import { getOpenAIConfig } from 'services/llm/llm-config';
-import { buildQmdStructuredSearchQueries, type QmdStructuredSearchQuery } from './qmd-lex-search';
+import { type QmdStructuredSearchQuery, buildQmdStructuredSearchQueries } from './qmd-lex-search';
 
 interface QueryExpansionResponse {
   queries: Array<{
@@ -27,7 +27,10 @@ function buildFallbackQueries(query: string): QmdStructuredSearchQuery[] {
   return buildQmdStructuredSearchQueries(query, getMaxLexQueries());
 }
 
-function normalizeQueries(query: string, queries: Array<{ type: 'lex' | 'vec'; query: string }>): QmdStructuredSearchQuery[] {
+function normalizeQueries(
+  query: string,
+  queries: Array<{ type: 'lex' | 'vec'; query: string }>,
+): QmdStructuredSearchQuery[] {
   const cleaned = queries
     .map((entry) => ({
       type: entry.type,
@@ -99,7 +102,7 @@ Rules:
 - prefer terminology likely to appear verbatim in docs for lex queries
 - keep lex queries short, usually 2 to 6 words
 - keep the vec query faithful to the user's wording and intent
-- if the request is an update, focus queries on locating the existing documentation that should be changed`,
+- if purpose is 'update', focus queries on locating the existing documentation that should be changed`,
     },
     {
       role: 'user',

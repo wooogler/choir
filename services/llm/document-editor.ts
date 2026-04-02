@@ -3,7 +3,7 @@ import { anonymizeText, getAnonymizationMapping } from 'services/common/name-cac
 import type { SlackMessage } from 'services/slack';
 import { getUserName } from 'services/slack';
 import { processMessageHistory, processMessageText } from 'services/slack/conversation-history';
-import { createChatCompletion } from './completions';
+import { createChatCompletion, createStructuredResponse } from './completions';
 
 export async function editMarkdownWithKnowledge(
   markdown: string,
@@ -42,9 +42,7 @@ Rules:
 - Keep content concise and relevant to the section
 - Preserve all URLs from the knowledge
 - Use single-level lists only (no nested bullets)
-- Return empty string if knowledge is insufficient
-
-Write appropriate content for this section.`,
+- Return empty string if knowledge is insufficient`,
       },
       {
         role: 'user',
@@ -54,11 +52,15 @@ SECTION: ${contextInfo}
 KNOWLEDGE:
 ${knowledgeContent}
 
-Generate content that fits this section context using only the provided knowledge:`,
+Generate content for this section:`,
       },
     ],
     {
-      model: process.env.OPENAI_RESPONSES_MODEL || process.env.OPENAI_MODEL_NAME || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      model:
+        process.env.OPENAI_RESPONSES_MODEL ||
+        process.env.OPENAI_MODEL_NAME ||
+        process.env.OPENAI_MODEL ||
+        'gpt-4o-mini',
       temperature: 0,
       max_tokens: 300,
       function_name: 'createContentForEmptySection',
@@ -78,7 +80,7 @@ async function enhanceExistingContent(
   context?: { fileName?: string; sectionName?: string; headingPath?: string },
 ) {
   const contextInfo = context?.headingPath || context?.sectionName || 'Unknown section';
-  
+
   // 기존 markdown 내용을 분석해서 타입 감지
   const contentType = markdown.trim().match(/^(\s*[-*+]|\s*\d+\.)\s/) ? 'list' : 'paragraph';
 
@@ -102,23 +104,25 @@ Rules:
 
 Approach: Update first, then add if needed. Create the most accurate and comprehensive version.
 
-Wrap your response in <markdown> tags.`,
+Return ONLY the updated markdown content, nothing else.`,
       },
       {
         role: 'user',
         content: `File: ${context?.fileName || 'Unknown'} - Section: ${contextInfo}
 
 Existing content:
-<markdown>
 ${markdown}
-</markdown>
 
 Knowledge to integrate:
 ${knowledgeContent}`,
       },
     ],
     {
-      model: process.env.OPENAI_RESPONSES_MODEL || process.env.OPENAI_MODEL_NAME || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      model:
+        process.env.OPENAI_RESPONSES_MODEL ||
+        process.env.OPENAI_MODEL_NAME ||
+        process.env.OPENAI_MODEL ||
+        'gpt-4o-mini',
       temperature: 0,
       max_tokens: 500,
       function_name: 'enhanceExistingContent',
@@ -126,7 +130,7 @@ ${knowledgeContent}`,
     },
   );
 
-  return response?.replace(/<\/?markdown>/g, '') || markdown;
+  return response?.trim() || markdown;
 }
 
 export async function classifyMessageIntent(
@@ -150,70 +154,48 @@ export async function classifyMessageIntent(
     }
   }
 
-  const systemPrompt = `You are CHOIR, an intelligent agent that answers questions or helps update documents that manages the institutional knowledge or polices of an organization, such as a university research lab.
-Your task is to classify the user message as 'question' (asking for information about the organization), 'update_request' (containing new knowledge, information, or facts that could be documented, or explicitly asking to save/store information about the organization), or 'general_conversation' (a general statement, greeting, or chit-chat without substantial new information, questions that are not necessarily about the organization or the members).
+  const systemPrompt = `Classify the user message for an organizational knowledge management system.
+- 'question': seeking information that could be in the organization's documentation — policies, procedures, schedules, rules, tools, resources, or any factual knowledge about the organization
+- 'update_request': providing new information to be documented, or requesting to save/update content
+- 'general_conversation': greetings, chit-chat, meta-questions about this system, or browsing requests
 
-Update_request includes: direct requests to save information about the organization, suggestions for document changes, AND statements containing new knowledge, facts, decisions, tools being used, processes, or any information that could be valuable for documentation.
+When in doubt between 'question' and 'general_conversation', prefer 'question'.
+${organizationName ? `\nOrganization: ${organizationName}` : ''}${descOrg ? `\nAbout: ${descOrg}` : ''}${contextSection}`;
 
-Examples of update_request:
-'I will use Microsoft Teams for online meeting'
-'We decided to switch to React for the frontend'
-'The API endpoint is now https://api.example.com'
-'Please update the document'
-'Please save this information'
-'This document needs to be updated'
-
-Examples of general_conversation:
-'How do I use CHOIR?'
-'What can you do?'
-'How does CHOIR work?'
-'What are your features?'
-'How can I interact with you?'
-'What commands do you support?'
-'What documents are available?'
-'List all documents'
-'Show me the documents'
-'What files do you have access to?'
-'Hello'
-'Hi there'
-'Thanks'
-
-Respond with only 'question', 'update_request', or 'general_conversation'.
-
-Organization Context:
-${organizationName ? `- Organization: ${organizationName}` : ''}
-${descOrg ? `- About: ${descOrg}` : ''}${contextSection}`;
-
-  const result = await createChatCompletion(
-    [
+  try {
+    const result = await createStructuredResponse<{ intent: 'question' | 'update_request' | 'general_conversation' }>(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: anonymizedMessage },
+      ],
       {
-        role: 'system',
-        content: systemPrompt,
+        temperature: 0,
+        max_tokens: 16,
+        function_name: 'classifyMessageIntent',
+        debug: true,
+        model:
+          process.env.OPENAI_RESPONSES_MODEL ||
+          process.env.OPENAI_MODEL_NAME ||
+          process.env.OPENAI_MODEL ||
+          'gpt-4o-mini',
+        schemaName: 'message_intent',
+        schemaDescription: 'Classification of user message intent',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            intent: {
+              type: 'string',
+              enum: ['question', 'update_request', 'general_conversation'],
+            },
+          },
+          required: ['intent'],
+        },
       },
-      {
-        role: 'user',
-        content: anonymizedMessage,
-      },
-    ],
-    {
-      temperature: 0,
-      max_tokens: 16,
-      function_name: 'classifyMessageIntent',
-      debug: true,
-      model: process.env.OPENAI_RESPONSES_MODEL || process.env.OPENAI_MODEL_NAME || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    },
-  );
-
-  const classification = result?.trim().toLowerCase();
-  let finalIntent: 'question' | 'update_request' | 'general_conversation';
-
-  if (classification === 'update_request') {
-    finalIntent = 'update_request';
-  } else if (classification === 'question') {
-    finalIntent = 'question';
-  } else {
-    finalIntent = 'general_conversation';
+    );
+    return result.intent;
+  } catch (error) {
+    console.warn('Failed to classify message intent:', error);
+    return 'general_conversation';
   }
-
-  return finalIntent;
 }

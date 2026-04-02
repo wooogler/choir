@@ -16,27 +16,19 @@ export async function generateNewFileDefaults(
   knowledgeContent: string,
   existingFiles: Array<{ name: string; path: string }>,
 ): Promise<NewFileDefaults> {
-  const existingFileNames = existingFiles.map(file => file.name).join('\n');
+  const existingFileNames = existingFiles.map((file) => file.name).join('\n');
 
   try {
     return await createStructuredResponse<NewFileDefaults>(
       [
         {
           role: 'system',
-          content: `You are a documentation file naming expert. Your task is to suggest a good file name and initial markdown content for new documentation based on knowledge content.
+          content: `You are a documentation assistant. Suggest a file name and initial markdown content for new documentation.
 
-Key rules:
-1. Suggest a descriptive but concise file name ending with .md
-2. File name should be in kebab-case (lowercase with hyphens)
-3. Avoid conflicts with existing files
-4. Create initial markdown content with a proper title and the knowledge content
-5. Return ONLY a valid JSON object with this exact structure:
-{
-  "fileName": "string",
-  "initialContent": "string"
-}
-
-The initial content should start with a markdown header and include the knowledge content in a well-structured format.`,
+Rules:
+- File name: descriptive, concise, kebab-case, ending with .md
+- Avoid conflicts with existing files
+- Initial content: start with a markdown header, then include the knowledge in a well-structured format`,
         },
         {
           role: 'user',
@@ -50,7 +42,11 @@ Generate a suitable file name and initial markdown content.`,
         },
       ],
       {
-        model: process.env.OPENAI_RESPONSES_MODEL || process.env.OPENAI_MODEL_NAME || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        model:
+          process.env.OPENAI_RESPONSES_MODEL ||
+          process.env.OPENAI_MODEL_NAME ||
+          process.env.OPENAI_MODEL ||
+          'gpt-4o-mini',
         temperature: 0,
         max_tokens: 600,
         function_name: 'generateNewFileDefaults',
@@ -96,29 +92,16 @@ export async function createNewSectionFromKnowledge(
       [
         {
           role: 'system',
-          content: `You are a documentation structure expert. Your task is to analyze knowledge content and suggest a new section that could be added to existing documentation.
+          content: `You are a documentation assistant. Analyze knowledge content and suggest a new section for existing documentation.
 
-CONSTRAINTS:
-- Use ONLY information from the knowledge - no external details, links, or assumptions
-- Create a clear, descriptive but GENERAL section title (without # symbol) that could be relevant to many teams/contexts
-- For section content, write as multiple paragraphs or multiple list items (no headings, subheadings, or complex structure)
-- Keep content concise and directly relevant to the section context
+Rules:
+- Use ONLY information from the provided knowledge — no external details or assumptions
+- Section title: clear, general (e.g., "Online Meeting Platform" not "Using Microsoft Teams for Online Meetings"), without # symbol
+- Section content: paragraphs or list items only (no headings or nested structure)
 - Never include user names or identifiers
-- Always preserve any URLs from the knowledge as they contain valuable reference information
-- If knowledge is insufficient to create a meaningful section, return empty sectionContent
-- Select the most appropriate file from the available files
-- Provide clear reasoning for your file selection
-
-Return ONLY a valid JSON object with this exact structure:
-{
-  "reasoning": "string",
-  "sectionTitle": "string",
-  "sectionContent": "string", 
-  "recommendedFile": "string"
-}
-
-The section title should be general enough to be applicable across different organizations (e.g., "Online Meeting Platform" rather than "Using Microsoft Teams for Online Meetings").
-The section content should use only the provided knowledge without additional explanations or examples.`,
+- Preserve any URLs from the knowledge
+- Select the most appropriate file and provide reasoning for the choice
+- If knowledge is insufficient, return empty sectionContent`,
         },
         {
           role: 'user',
@@ -132,7 +115,11 @@ Analyze the knowledge and suggest a new section with appropriate title, content,
         },
       ],
       {
-        model: process.env.OPENAI_RESPONSES_MODEL || process.env.OPENAI_MODEL_NAME || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        model:
+          process.env.OPENAI_RESPONSES_MODEL ||
+          process.env.OPENAI_MODEL_NAME ||
+          process.env.OPENAI_MODEL ||
+          'gpt-4o-mini',
         temperature: 0,
         max_tokens: 800,
         function_name: 'createNewSectionFromKnowledge',
@@ -153,7 +140,6 @@ Analyze the knowledge and suggest a new section with appropriate title, content,
             },
             sectionContent: {
               type: 'string',
-              minLength: 1,
             },
             recommendedFile: {
               type: 'string',
