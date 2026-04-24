@@ -9,6 +9,7 @@ import {
   isManager,
   isWorkspaceOwner,
 } from 'services/slack';
+import { isQmdRetrievalEnabled } from 'services/retrieval/provider-config';
 import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 
@@ -502,6 +503,94 @@ const buildDocumentConnectionBlocks = async (
     if (savedRepoInfo) {
       const vectorStore = VectorStoreService.getInstance();
       const diagnosis = vectorStore.diagnoseVectorStore();
+      const managementButtons: Array<Record<string, unknown>> = [
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: 'Normalize Markdown',
+            emoji: true,
+          },
+          style: 'primary',
+          action_id: 'normalize_markdown_files',
+          confirm: {
+            title: {
+              type: 'plain_text',
+              text: 'Normalize Markdown Files',
+            },
+            text: {
+              type: 'plain_text',
+              text: 'This will convert all markdown files to tree format and back to markdown, standardizing the formatting. This may change newlines, list styles, etc.',
+            },
+            confirm: {
+              type: 'plain_text',
+              text: 'Normalize',
+            },
+            deny: {
+              type: 'plain_text',
+              text: 'Cancel',
+            },
+          },
+        },
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: 'Reload from GitHub',
+            emoji: true,
+          },
+          style: 'primary',
+          action_id: 'reload_from_github',
+          confirm: {
+            title: {
+              type: 'plain_text',
+              text: 'Reload from GitHub?',
+            },
+            text: {
+              type: 'plain_text',
+              text: 'This will fetch the latest files from GitHub and update the vector store. Any unsaved changes will be overwritten.',
+            },
+            confirm: {
+              type: 'plain_text',
+              text: 'Reload',
+            },
+            deny: {
+              type: 'plain_text',
+              text: 'Cancel',
+            },
+          },
+        },
+      ];
+
+      if (isQmdRetrievalEnabled()) {
+        managementButtons.push({
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: 'Rebuild QMD Index',
+            emoji: true,
+          },
+          action_id: 'rebuild_qmd_index',
+          confirm: {
+            title: {
+              type: 'plain_text',
+              text: 'Rebuild QMD Index?',
+            },
+            text: {
+              type: 'plain_text',
+              text: 'This will delete the local QMD SQLite index and rebuild it from the synced markdown mirror. Use this after chunking changes or if retrieval looks stale.',
+            },
+            confirm: {
+              type: 'plain_text',
+              text: 'Rebuild',
+            },
+            deny: {
+              type: 'plain_text',
+              text: 'Cancel',
+            },
+          },
+        });
+      }
 
       blocks.push(
         {
@@ -513,64 +602,7 @@ const buildDocumentConnectionBlocks = async (
         },
         {
           type: 'actions',
-          elements: [
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
-                text: 'Normalize Markdown',
-                emoji: true,
-              },
-              style: 'primary',
-              action_id: 'normalize_markdown_files',
-              confirm: {
-                title: {
-                  type: 'plain_text',
-                  text: 'Normalize Markdown Files',
-                },
-                text: {
-                  type: 'plain_text',
-                  text: 'This will convert all markdown files to tree format and back to markdown, standardizing the formatting. This may change newlines, list styles, etc.',
-                },
-                confirm: {
-                  type: 'plain_text',
-                  text: 'Normalize',
-                },
-                deny: {
-                  type: 'plain_text',
-                  text: 'Cancel',
-                },
-              },
-            },
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
-                text: 'Reload from GitHub',
-                emoji: true,
-              },
-              style: 'primary',
-              action_id: 'reload_from_github',
-              confirm: {
-                title: {
-                  type: 'plain_text',
-                  text: 'Reload from GitHub?',
-                },
-                text: {
-                  type: 'plain_text',
-                  text: 'This will fetch the latest files from GitHub and update the vector store. Any unsaved changes will be overwritten.',
-                },
-                confirm: {
-                  type: 'plain_text',
-                  text: 'Reload',
-                },
-                deny: {
-                  type: 'plain_text',
-                  text: 'Cancel',
-                },
-              },
-            },
-          ],
+          elements: managementButtons as any,
         },
       );
     }

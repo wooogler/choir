@@ -3,7 +3,7 @@ import { githubRepoUrlInputCallback, testGithubConnectionCallback } from './gith
 import { addManagerCallback, removeManagerCallback, selectUserCallback } from './manage-permissions';
 import qaChannelActions from './qa-channel-actions'; // default export { register }
 import { diagnoseVectorStoreAction } from './vector-store/vector-store-diagnosis';
-import { normalizeMarkdownFilesAction, reloadFromGithubAction } from './vector-store/vector-store-management';
+import { normalizeMarkdownFilesAction, rebuildQmdIndexAction, reloadFromGithubAction } from './vector-store/vector-store-management';
 
 export const registerPreferencesFeature = (app: App) => {
   // Manage Permissions
@@ -23,6 +23,7 @@ export const registerPreferencesFeature = (app: App) => {
 
   // Vector Store Management
   app.action('reload_from_github', reloadFromGithubAction);
+  app.action('rebuild_qmd_index', rebuildQmdIndexAction);
   app.action('normalize_markdown_files', normalizeMarkdownFilesAction);
 };
 

@@ -45,7 +45,17 @@ interface QmdStore {
     rerank?: boolean;
   }): Promise<QmdHybridResult[]>;
   update(options?: { collections?: string[] }): Promise<unknown>;
+  embed(options?: { force?: boolean; model?: string }): Promise<unknown>;
   close(): Promise<void>;
+}
+
+interface QmdUpdateResult {
+  collections: number;
+  indexed: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  needsEmbedding: number;
 }
 
 interface QmdModule {
@@ -228,6 +238,20 @@ export class QmdUpdateAnchorService {
     return `https://github.com/${owner}/${repo}/blob/${ref}/${normalizedPath}`;
   }
 
+  private async syncStoreIndex(store: QmdStore, forceEmbed = false): Promise<QmdUpdateResult> {
+    const updateResult = (await store.update({ collections: ['docs'] })) as QmdUpdateResult;
+
+    if (forceEmbed || updateResult.needsEmbedding > 0) {
+      Logger.info('QmdUpdateAnchorService: generating embeddings for refreshed QMD index.', {
+        forceEmbed,
+        needsEmbedding: updateResult.needsEmbedding,
+      });
+      await store.embed({ force: forceEmbed });
+    }
+
+    return updateResult;
+  }
+
   private async getOrCreateStore(workspaceId: string): Promise<StoreCacheEntry | null> {
     const repoInfo = await getGithubRepo(workspaceId);
     if (!repoInfo) {
@@ -242,7 +266,7 @@ export class QmdUpdateAnchorService {
 
     if (cached) {
       if (syncState?.updatedAt && syncState.updatedAt !== cached.indexedAt) {
-        await cached.store.update({ collections: ['docs'] });
+        await this.syncStoreIndex(cached.store);
         cached.indexedAt = syncState.updatedAt;
       }
 
@@ -262,7 +286,7 @@ export class QmdUpdateAnchorService {
       },
     });
 
-    await store.update({ collections: ['docs'] });
+    await this.syncStoreIndex(store);
 
     const entry: StoreCacheEntry = {
       store,
@@ -275,6 +299,21 @@ export class QmdUpdateAnchorService {
 
     this.storeCache.set(workspaceId, entry);
     return entry;
+  }
+
+  public async invalidateWorkspace(workspaceId: string): Promise<void> {
+    const cached = this.storeCache.get(workspaceId);
+    if (!cached) {
+      return;
+    }
+
+    try {
+      await cached.store.close();
+    } catch (error) {
+      Logger.warn(`QmdUpdateAnchorService: failed to close cached store for workspace ${workspaceId}`, error as Error);
+    } finally {
+      this.storeCache.delete(workspaceId);
+    }
   }
 
   public async search(params: {

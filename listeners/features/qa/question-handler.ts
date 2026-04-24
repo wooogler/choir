@@ -399,21 +399,12 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
             }
           }
 
-          // 문서 내용에서 메타데이터 부분 제거
-          let contentPreview = doc.pageContent;
+          // Show the retrieved markdown chunk as-is so users can inspect the raw source text.
+          let contentPreview = doc.pageContent.replace(/\(To be continued\)/g, '');
 
-          // 마크다운 헤더 패턴 제거 (# filename, ## section, etc.)
-          contentPreview = contentPreview.replace(/^(#+\s+.*\n)+\n/, '');
-
-          // "(To be continued)" 제거
-          contentPreview = contentPreview.replace(/\(To be continued\)/g, '');
-
-          // 길이 제한 및 Slack 형식 변환
           if (contentPreview.length > 500) {
             contentPreview = `${contentPreview.substring(0, 500)}...`;
           }
-
-          contentPreview = await convertMarkdownToSlackText(contentPreview);
 
           return `*Reference ${index + 1}*\n${sourceInfo}\n\`\`\`${contentPreview}\`\`\`\n`;
         }),

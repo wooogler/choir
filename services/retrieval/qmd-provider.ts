@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { Document } from '@langchain/core/documents';
 import { Logger } from 'services/common/logger';
@@ -22,7 +23,24 @@ interface QmdStore {
     rerank?: boolean;
   }): Promise<QmdHybridQueryResult[]>;
   update(options?: { collections?: string[] }): Promise<unknown>;
+  embed(options?: { force?: boolean; model?: string }): Promise<unknown>;
   close(): Promise<void>;
+}
+
+interface QmdUpdateResult {
+  collections: number;
+  indexed: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  needsEmbedding: number;
+}
+
+interface QmdEmbedResult {
+  docsProcessed: number;
+  chunksEmbedded: number;
+  errors: number;
+  durationMs: number;
 }
 
 interface QmdSearchResult {
@@ -165,6 +183,36 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     });
   }
 
+  private async syncStoreIndex(store: QmdStore, forceEmbed = false): Promise<{
+    updateResult: QmdUpdateResult;
+    embedResult?: QmdEmbedResult;
+  }> {
+    const updateResult = (await store.update({ collections: ['docs'] })) as QmdUpdateResult;
+    let embedResult: QmdEmbedResult | undefined;
+
+    if (forceEmbed || updateResult.needsEmbedding > 0) {
+      Logger.info('QmdRetrievalProvider: generating embeddings for refreshed QMD index.', {
+        forceEmbed,
+        needsEmbedding: updateResult.needsEmbedding,
+      });
+      embedResult = (await store.embed({ force: forceEmbed })) as QmdEmbedResult;
+    }
+
+    return {
+      updateResult,
+      embedResult,
+    };
+  }
+
+  private async removeDbArtifacts(dbPath: string): Promise<void> {
+    for (const suffix of ['', '-wal', '-shm', '-journal']) {
+      const targetPath = `${dbPath}${suffix}`;
+      if (fs.existsSync(targetPath)) {
+        await fs.promises.unlink(targetPath);
+      }
+    }
+  }
+
   private async getOrCreateStore(workspaceId: string): Promise<StoreCacheEntry | null> {
     const repoInfo = await getGithubRepo(workspaceId);
     if (!repoInfo) {
@@ -183,7 +231,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
           workspaceId,
           updatedAt: syncState.updatedAt,
         });
-        await cached.store.update({ collections: ['docs'] });
+        await this.syncStoreIndex(cached.store);
         cached.indexedAt = syncState.updatedAt;
       }
 
@@ -203,7 +251,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       },
     });
 
-    await store.update({ collections: ['docs'] });
+    await this.syncStoreIndex(store);
 
     const entry: StoreCacheEntry = {
       store,
@@ -222,6 +270,85 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     });
 
     return entry;
+  }
+
+  public async invalidateWorkspace(workspaceId: string): Promise<void> {
+    const cached = this.storeCache.get(workspaceId);
+    if (!cached) {
+      return;
+    }
+
+    try {
+      await cached.store.close();
+    } catch (error) {
+      Logger.warn(`QmdRetrievalProvider: failed to close cached store for workspace ${workspaceId}`, error as Error);
+    } finally {
+      this.storeCache.delete(workspaceId);
+    }
+  }
+
+  public async rebuildWorkspaceIndex(workspaceId: string): Promise<{
+    updateResult: QmdUpdateResult;
+    embedResult?: QmdEmbedResult;
+    dbPath: string;
+  }> {
+    const repoInfo = await getGithubRepo(workspaceId);
+    if (!repoInfo) {
+      throw new Error(`No GitHub repository configured for workspace ${workspaceId}`);
+    }
+
+    const mirrorService = WorkspaceMirrorService.getInstance();
+    const repoRoot = mirrorService.getRepoRoot(workspaceId);
+    const syncState = await mirrorService.getSyncState(workspaceId);
+    const dbPath = this.getDbPath(workspaceId);
+
+    await this.invalidateWorkspace(workspaceId);
+    await this.removeDbArtifacts(dbPath);
+
+    const qmd = await this.loadQmdModule();
+    const store = await qmd.createStore({
+      dbPath,
+      config: {
+        collections: {
+          docs: {
+            path: repoRoot,
+            pattern: '**/*.md',
+          },
+        },
+      },
+    });
+
+    try {
+      const { updateResult, embedResult } = await this.syncStoreIndex(store, true);
+      this.storeCache.set(workspaceId, {
+        store,
+        indexedAt: syncState?.updatedAt,
+        repoRoot,
+        owner: repoInfo.owner,
+        repo: repoInfo.repo,
+        branch: repoInfo.branch,
+      });
+
+      Logger.info(`QmdRetrievalProvider: rebuilt QMD index for workspace ${workspaceId}`, {
+        dbPath,
+        repoRoot,
+        updateResult,
+        embedResult,
+      });
+
+      return {
+        updateResult,
+        embedResult,
+        dbPath,
+      };
+    } catch (error) {
+      try {
+        await store.close();
+      } catch (closeError) {
+        Logger.warn(`QmdRetrievalProvider: failed to close store after rebuild failure for workspace ${workspaceId}`, closeError as Error);
+      }
+      throw error;
+    }
   }
 
   async search(params: RetrievalSearchParams): Promise<RetrievalDocument[]> {
