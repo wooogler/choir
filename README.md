@@ -85,6 +85,22 @@ Notes:
 - `pnpm dev:prod` uses HTTP mode because `NODE_ENV=production`.
 - GitHub webhooks are only exposed in HTTP mode.
 
+## Slack Installation Modes
+
+CHOIR supports two Slack runtime modes:
+
+- `SLACK_MODE=single`: one self-hosted workspace using `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, and `SLACK_SIGNING_SECRET`.
+- `SLACK_MODE=oauth`: one HTTP server can receive OAuth installs from multiple Slack workspaces.
+
+OAuth mode requires:
+
+- `SLACK_CLIENT_ID`
+- `SLACK_CLIENT_SECRET`
+- `SLACK_STATE_SECRET`
+- `SLACK_SIGNING_SECRET`
+
+In OAuth mode, Bolt exposes `/slack/install` and `/slack/oauth_redirect`. Installation records are stored under `data/slack-installations/` for this first deployment step.
+
 ## Scripts
 
 - `pnpm dev`: local development in Socket Mode

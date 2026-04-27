@@ -7,9 +7,6 @@ import { WorkspaceStore } from '../workspace/workspace-store';
 
 const workspaceStore = new WorkspaceStore();
 
-// Workspace ID 캐시
-let cachedWorkspaceId: string | null = null;
-
 /**
  * 사용자가 관리자인지 확인합니다.
  */
@@ -125,14 +122,9 @@ export async function isBotUser(userId: string, client: WebClient): Promise<bool
 }
 
 /**
- * 워크스페이스 ID를 가져옵니다. (캐시됨)
+ * 워크스페이스 ID를 가져옵니다.
  */
 export async function getWorkspaceId(client: WebClient): Promise<string> {
-  // 캐시된 값이 있으면 반환
-  if (cachedWorkspaceId) {
-    return cachedWorkspaceId;
-  }
-
   try {
     const authInfo = await client.auth.test();
     if (!authInfo.team_id) {
@@ -140,11 +132,7 @@ export async function getWorkspaceId(client: WebClient): Promise<string> {
       throw new Error('No team_id in auth response');
     }
 
-    // 캐시에 저장
-    cachedWorkspaceId = authInfo.team_id;
-    Logger.info('Workspace ID cached', { workspaceId: cachedWorkspaceId });
-
-    return cachedWorkspaceId;
+    return authInfo.team_id;
   } catch (error) {
     Logger.error('Error getting workspace info', error as Error);
     throw new Error(`Failed to get workspace ID: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -172,7 +160,8 @@ export async function getOrInitBotUserId(client: WebClient): Promise<string> {
  * 캐시된 워크스페이스 ID를 클리어합니다. (테스트용)
  */
 export function clearWorkspaceIdCache(): void {
-  cachedWorkspaceId = null;
+  // Kept for tests and older call sites. Workspace IDs are no longer globally cached
+  // because a single OAuth process can serve many Slack workspaces.
 }
 
 /**

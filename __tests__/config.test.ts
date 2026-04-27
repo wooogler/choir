@@ -10,12 +10,18 @@ describe('AppConfig', () => {
   beforeEach(() => {
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    process.env.NODE_ENV = undefined;
-    process.env.SLACK_BOT_TOKEN = undefined;
-    process.env.SLACK_APP_TOKEN = undefined;
-    process.env.SLACK_SIGNING_SECRET = undefined;
-    process.env.MANAGER_PROMOTION_PASSWORD = undefined;
-    process.env.TEST_VAR = undefined;
+    process.env.NODE_ENV = '';
+    process.env.SLACK_MODE = '';
+    process.env.SLACK_BOT_TOKEN = '';
+    process.env.SLACK_APP_TOKEN = '';
+    process.env.SLACK_SIGNING_SECRET = '';
+    process.env.SLACK_CLIENT_ID = '';
+    process.env.SLACK_CLIENT_SECRET = '';
+    process.env.SLACK_STATE_SECRET = '';
+    process.env.SLACK_REDIRECT_URI = '';
+    process.env.SLACK_SCOPES = '';
+    process.env.MANAGER_PROMOTION_PASSWORD = '';
+    process.env.TEST_VAR = '';
   });
 
   afterEach(() => {
@@ -58,6 +64,7 @@ describe('AppConfig', () => {
       process.env.NODE_ENV = 'development';
 
       expect(AppConfig.getSlackConfig()).toEqual({
+        mode: 'single',
         botToken: 'xoxb-test',
         appToken: 'xapp-test',
         signingSecret: 'signing-secret',
@@ -69,10 +76,44 @@ describe('AppConfig', () => {
       process.env.NODE_ENV = 'production';
 
       expect(AppConfig.getSlackConfig()).toEqual({
+        mode: 'single',
         botToken: 'xoxb-test',
         appToken: 'xapp-test',
         signingSecret: 'signing-secret',
         socketMode: false,
+      });
+    });
+
+    it('should not require app token in single-workspace production HTTP mode', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.SLACK_APP_TOKEN = '';
+
+      expect(AppConfig.getSlackConfig()).toEqual({
+        mode: 'single',
+        botToken: 'xoxb-test',
+        appToken: undefined,
+        signingSecret: 'signing-secret',
+        socketMode: false,
+      });
+    });
+
+    it('should return OAuth config when Slack mode is oauth', () => {
+      process.env.SLACK_MODE = 'oauth';
+      process.env.SLACK_CLIENT_ID = 'client-id';
+      process.env.SLACK_CLIENT_SECRET = 'client-secret';
+      process.env.SLACK_STATE_SECRET = 'state-secret';
+      process.env.SLACK_REDIRECT_URI = 'https://example.com/slack/oauth_redirect';
+      process.env.SLACK_SCOPES = 'chat:write, users:read ';
+
+      expect(AppConfig.getSlackConfig()).toEqual({
+        mode: 'oauth',
+        signingSecret: 'signing-secret',
+        socketMode: false,
+        clientId: 'client-id',
+        clientSecret: 'client-secret',
+        stateSecret: 'state-secret',
+        redirectUri: 'https://example.com/slack/oauth_redirect',
+        scopes: ['chat:write', 'users:read'],
       });
     });
   });

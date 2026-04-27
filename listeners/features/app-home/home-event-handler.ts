@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, SlackEventMiddlewareArgs } from '@slack/bolt';
 import { getWorkspaceId } from 'services/slack';
+import { ensureWorkspaceInitialized } from 'services/slack/workspace-bootstrap';
 import { buildHomeView } from './home-view-builder';
 
 export const appHomeOpenedCallback = async ({
@@ -12,7 +13,8 @@ export const appHomeOpenedCallback = async ({
   if (event.tab !== 'home') return;
 
   try {
-    const workspaceId = await getWorkspaceId(client);
+    const bootstrap = await ensureWorkspaceInitialized(client, event.user);
+    const workspaceId = bootstrap.workspaceId || (await getWorkspaceId(client));
     const blocks = await buildHomeView(client, logger, workspaceId, event.user);
 
     await client.views.publish({
