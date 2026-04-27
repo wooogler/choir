@@ -37,6 +37,7 @@ export const rejectUpdateCallback = async ({
 
     const parsedValue = JSON.parse(value);
     const { index, messageKeys, originalChannelId, originalThreadTs, rejectIndex } = parsedValue;
+    const workspaceId = await getWorkspaceId(client);
 
     // 이전 메시지 삭제 (저장된 타임스탬프 사용)
     const lastMessageTs = getLastMessageTimestamp(userId);
@@ -71,7 +72,7 @@ export const rejectUpdateCallback = async ({
     }
 
     // document update 삭제
-    removeDocumentUpdate(userId, rejectIndex);
+    removeDocumentUpdate(userId, rejectIndex, workspaceId);
 
     // 다음 제안 보여주기
     await suggestUpdatesCallback({
@@ -95,7 +96,6 @@ export const rejectUpdateCallback = async ({
     } as any);
 
     // 로그: 성공
-    const workspaceId = await getWorkspaceId(client);
     await logButtonClick(
       userId,
       workspaceId,

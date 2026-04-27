@@ -1,23 +1,12 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
 import { getManagers, getNonUserResponseMessage, getWorkspaceId, isCHOIRUser } from 'services/slack';
+import { getOrInitBotUserId } from 'services/slack/user-management';
 // import { rejectUpdateCallback } from "../features/document-update/reject-update"; // 삭제: document-update feature에서 중앙 관리
 // import suggestUpdatesCallback from "../features/document-update/suggest-updates"; // 삭제: document-update feature에서 중앙 관리
 // import { applySelectedToGithubAction } from "../features/document-update/update-documents"; // 삭제: document-update feature에서 중앙 관리
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 // import cancelDocumentUpdatesCallback from "../features/document-update/cancel-document-updates-action"; // 삭제: document-update feature에서 중앙 관리
 import { handleIncomingMessage } from './message-router';
-import { getOrInitBotUserId } from 'services/slack/user-management';
-
-// 봇 ID 캐싱 - 성능 최적화
-let cachedBotUserId: string | null = null;
-
-async function getBotUserId(client: any): Promise<string> {
-  if (!cachedBotUserId) {
-    const botInfo = await client.auth.test();
-    cachedBotUserId = botInfo.user_id;
-  }
-  return cachedBotUserId!;
-}
 
 /**
  * 앱 멘션 처리 콜백
@@ -55,7 +44,7 @@ const appMentionCallback = async ({
     // 추가 봇 필터링 - 포괄적 무한 루프 방지
     const userId = event.user || '';
     if (!userId) return;
-    
+
     // SLACKBOT 및 기타 시스템 봇 필터링
     if (userId === 'USLACKBOT') {
       logger.info('Skipping SLACKBOT message in mention to prevent infinite loop', {
@@ -64,7 +53,7 @@ const appMentionCallback = async ({
       });
       return;
     }
-    
+
     // 봇 사용자 ID 패턴 필터링 (대부분 봇은 B로 시작하거나 특별한 패턴)
     // Google Drive bot, 기타 앱 봇들을 포괄적으로 필터링
     if (userId.startsWith('B') || userId.includes('bot') || userId.includes('BOT')) {

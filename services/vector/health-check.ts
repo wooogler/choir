@@ -7,10 +7,14 @@ interface HealthCheckResult {
   blocks?: any[];
 }
 
-export async function checkVectorStoreHealth(client: WebClient, dmChannelId: string): Promise<HealthCheckResult> {
+export async function checkVectorStoreHealth(
+  client: WebClient,
+  dmChannelId: string,
+  workspaceId?: string,
+): Promise<HealthCheckResult> {
   console.log('벡터 스토어 상태 진단 중...');
   const vectorStore = VectorStoreService.getInstance();
-  const diagnosis = vectorStore.diagnoseVectorStore();
+  const diagnosis = vectorStore.diagnoseVectorStore(workspaceId);
 
   // 벡터 스토어에 실제 문제가 있는 경우 (빈 상태가 아닌 오류)
   if (diagnosis.status === 'error' || diagnosis.status === 'degraded') {

@@ -27,9 +27,10 @@ export const showSuggestionEditorModal = async ({
     const actionValue = JSON.parse(value);
     const suggestionType = actionValue.suggestionType || 'UPDATE';
     const { index, nodeId } = actionValue;
+    const workspaceId = await getWorkspaceId(client);
 
     // Get stored document updates to retrieve the actual content
-    const storedUpdates = getStoredDocumentUpdates(body.user.id);
+    const storedUpdates = getStoredDocumentUpdates(body.user.id, workspaceId);
     const currentUpdate = storedUpdates.find((update) => update.index === index && update.nodeId === nodeId);
 
     if (!currentUpdate) {
@@ -117,7 +118,6 @@ export const showSuggestionEditorModal = async ({
     });
 
     // 로그: 성공
-    const workspaceId = await getWorkspaceId(client);
     await logButtonClick(
       body.user.id,
       workspaceId,

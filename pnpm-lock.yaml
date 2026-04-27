@@ -10,7 +10,7 @@ importers:
     dependencies:
       '@langchain/community':
         specifier: ^0.3.48
-        version: 0.3.48(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.54.1)(deepmerge@4.3.1)(dotenv@16.4.7)(openai@4.104.0(ws@8.18.3)(zod@4.3.6))(zod@4.3.6))(@huggingface/transformers@3.6.3)(@ibm-cloud/watsonx-ai@1.6.8)(@langchain/core@0.3.62(openai@4.104.0(ws@8.18.3)(zod@4.3.6)))(axios@1.10.0)(chromadb@3.0.9)(ibm-cloud-sdk-core@5.4.0)(ignore@5.3.2)(jsonwebtoken@9.0.2)(lodash@4.17.21)(openai@4.104.0(ws@8.18.3)(zod@4.3.6))(playwright@1.54.1)(puppeteer@24.9.0(typescript@5.8.3))(weaviate-client@3.6.2)(ws@8.18.3)
+        version: 0.3.48(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.54.1)(deepmerge@4.3.1)(dotenv@16.4.7)(openai@4.104.0(ws@8.18.3)(zod@4.3.6))(zod@4.3.6))(@huggingface/transformers@3.6.3)(@ibm-cloud/watsonx-ai@1.6.8)(@langchain/core@0.3.62(openai@4.104.0(ws@8.18.3)(zod@4.3.6)))(axios@1.10.0)(better-sqlite3@12.9.0)(chromadb@3.0.9)(ibm-cloud-sdk-core@5.4.0)(ignore@5.3.2)(jsonwebtoken@9.0.2)(lodash@4.17.21)(openai@4.104.0(ws@8.18.3)(zod@4.3.6))(playwright@1.54.1)(puppeteer@24.9.0(typescript@5.8.3))(weaviate-client@3.6.2)(ws@8.18.3)
       '@langchain/core':
         specifier: ^0.3.62
         version: 0.3.62(openai@4.104.0(ws@8.18.3)(zod@4.3.6))
@@ -41,6 +41,9 @@ importers:
       archiver:
         specifier: ^7.0.1
         version: 7.0.1
+      better-sqlite3:
+        specifier: ^12.9.0
+        version: 12.9.0
       diff:
         specifier: ^7.0.0
         version: 7.0.0
@@ -90,6 +93,9 @@ importers:
       '@biomejs/biome':
         specifier: ^1.9.4
         version: 1.9.4
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
       '@types/jest':
         specifier: ^30.0.0
         version: 30.0.0
@@ -1426,6 +1432,9 @@ packages:
   '@types/babel__traverse@7.20.7':
     resolution: {integrity: sha512-dkO5fhS7+/oos4ciWxyEyjWe48zmG6wbCheo/G2ZnHx4fs3EU6YC6UM8rk56gAjNJ9P3MTH2jo5jb92/K6wbng==}
 
+  '@types/better-sqlite3@7.6.13':
+    resolution: {integrity: sha512-NMv9ASNARoKksWtsq/SHakpYAYnhBrQgGD8zkLYk/jaK8jUGn08CfEdTRgYhMypUQAfzSP8W6gNLe0q19/t4VA==}
+
   '@types/body-parser@1.19.6':
     resolution: {integrity: sha512-HLFeCYgz89uk22N5Qg3dvGvsv46B8GLvKKo1zKG4NybA8U2DiEO3w9lqGg29t/tfLRJpJ6iQxnVw4OnB7MoM9g==}
 
@@ -1808,8 +1817,8 @@ packages:
   before-after-hook@3.0.2:
     resolution: {integrity: sha512-Nik3Sc0ncrMK4UUdXQmAnRtzmNQTAAXmXIopizwZ1W1t8QmfJj+zL4OA2I7XPTPW5z5TDqv4hRo/JzouDJnX3A==}
 
-  better-sqlite3@12.8.0:
-    resolution: {integrity: sha512-RxD2Vd96sQDjQr20kdP+F+dK/1OUNiVOl200vKBZY8u0vTwysfolF6Hq+3ZK2+h8My9YvZhHsF+RSGZW2VYrPQ==}
+  better-sqlite3@12.9.0:
+    resolution: {integrity: sha512-wqUv4Gm3toFpHDQmaKD4QhZm3g1DjUBI0yzS4UBl6lElUmXFYdTQmmEDpAFa5o8FiFiymURypEnfVHzILKaxqQ==}
     engines: {node: 20.x || 22.x || 23.x || 24.x || 25.x}
 
   binary-extensions@2.3.0:
@@ -5093,7 +5102,7 @@ snapshots:
 
   '@kwsites/promise-deferred@1.1.1': {}
 
-  '@langchain/community@0.3.48(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.54.1)(deepmerge@4.3.1)(dotenv@16.4.7)(openai@4.104.0(ws@8.18.3)(zod@4.3.6))(zod@4.3.6))(@huggingface/transformers@3.6.3)(@ibm-cloud/watsonx-ai@1.6.8)(@langchain/core@0.3.62(openai@4.104.0(ws@8.18.3)(zod@4.3.6)))(axios@1.10.0)(chromadb@3.0.9)(ibm-cloud-sdk-core@5.4.0)(ignore@5.3.2)(jsonwebtoken@9.0.2)(lodash@4.17.21)(openai@4.104.0(ws@8.18.3)(zod@4.3.6))(playwright@1.54.1)(puppeteer@24.9.0(typescript@5.8.3))(weaviate-client@3.6.2)(ws@8.18.3)':
+  '@langchain/community@0.3.48(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.54.1)(deepmerge@4.3.1)(dotenv@16.4.7)(openai@4.104.0(ws@8.18.3)(zod@4.3.6))(zod@4.3.6))(@huggingface/transformers@3.6.3)(@ibm-cloud/watsonx-ai@1.6.8)(@langchain/core@0.3.62(openai@4.104.0(ws@8.18.3)(zod@4.3.6)))(axios@1.10.0)(better-sqlite3@12.9.0)(chromadb@3.0.9)(ibm-cloud-sdk-core@5.4.0)(ignore@5.3.2)(jsonwebtoken@9.0.2)(lodash@4.17.21)(openai@4.104.0(ws@8.18.3)(zod@4.3.6))(playwright@1.54.1)(puppeteer@24.9.0(typescript@5.8.3))(weaviate-client@3.6.2)(ws@8.18.3)':
     dependencies:
       '@browserbasehq/stagehand': 1.14.0(@playwright/test@1.54.1)(deepmerge@4.3.1)(dotenv@16.4.7)(openai@4.104.0(ws@8.18.3)(zod@4.3.6))(zod@4.3.6)
       '@ibm-cloud/watsonx-ai': 1.6.8
@@ -5113,6 +5122,7 @@ snapshots:
     optionalDependencies:
       '@browserbasehq/sdk': 2.6.0
       '@huggingface/transformers': 3.6.3
+      better-sqlite3: 12.9.0
       chromadb: 3.0.9
       ignore: 5.3.2
       jsonwebtoken: 9.0.2
@@ -5575,7 +5585,7 @@ snapshots:
   '@tobilu/qmd@2.0.1(@cfworker/json-schema@4.1.1)(typescript@5.8.3)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)
-      better-sqlite3: 12.8.0
+      better-sqlite3: 12.9.0
       fast-glob: 3.3.3
       node-llama-cpp: 3.18.1(typescript@5.8.3)
       picomatch: 4.0.2
@@ -5628,6 +5638,10 @@ snapshots:
   '@types/babel__traverse@7.20.7':
     dependencies:
       '@babel/types': 7.27.7
+
+  '@types/better-sqlite3@7.6.13':
+    dependencies:
+      '@types/node': 24.0.13
 
   '@types/body-parser@1.19.6':
     dependencies:
@@ -6015,7 +6029,7 @@ snapshots:
 
   before-after-hook@3.0.2: {}
 
-  better-sqlite3@12.8.0:
+  better-sqlite3@12.9.0:
     dependencies:
       bindings: 1.5.0
       prebuild-install: 7.1.3

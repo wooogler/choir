@@ -19,6 +19,7 @@ export async function applyDocumentChanges({
   documentUpdates,
   vectorStore,
   validMessages,
+  workspaceId,
 }: {
   userId: string;
   channelId: string;
@@ -27,6 +28,7 @@ export async function applyDocumentChanges({
   documentUpdates: DocumentUpdate[];
   vectorStore: VectorStoreService;
   validMessages: SlackMessage[];
+  workspaceId?: string;
 }): Promise<DocumentChangeResult[]> {
   const nodesByFile = new Map<
     string,
@@ -65,7 +67,7 @@ export async function applyDocumentChanges({
   // 각 파일에 대한 변경사항 적용
   for (const [fileName, fileData] of nodesByFile.entries()) {
     try {
-      const markdownFile = vectorStore.getMarkdownFile(fileName);
+      const markdownFile = vectorStore.getMarkdownFile(fileName, workspaceId);
       if (!markdownFile) {
         results.push({
           fileName,
@@ -94,6 +96,7 @@ export async function applyDocumentChanges({
             fileName,
             update.nodeId,
             update.appendedNodeContent,
+            workspaceId,
           );
           if (!success) {
             throw new Error(`Failed to append node ${update.nodeId} in ${fileName}`);
@@ -128,7 +131,7 @@ export async function applyDocumentChanges({
 
       if (hasAppendOperations) {
         // 업데이트된 트리에서 전체 마크다운 생성
-        const markdownFile = vectorStore.getMarkdownFile(fileName);
+        const markdownFile = vectorStore.getMarkdownFile(fileName, workspaceId);
         if (markdownFile) {
           const { treeToMarkdown } = await import('./markdown');
           const fullUpdatedMarkdown = treeToMarkdown(markdownFile.tree);
@@ -217,9 +220,10 @@ export async function processFileChanges(
     documentUpdates: DocumentUpdate[];
   },
   vectorStore: VectorStoreService,
+  workspaceId?: string,
 ): Promise<ProcessFileChangesResult> {
   try {
-    const markdownFile = vectorStore.getMarkdownFile(fileName);
+    const markdownFile = vectorStore.getMarkdownFile(fileName, workspaceId);
     if (!markdownFile) {
       return {
         success: false,

@@ -25,6 +25,7 @@ export class MultiFileFAISSManager {
   private globalStore: FaissStore | null = null;
   private writableStore: FaissStore | null = null; // 쓰기 가능한 파일들만의 인덱스
   private embeddingService: EmbeddingService;
+  private readonly indexRootPath: string;
   private indexBasePath: string;
   private maxLoadedStores: number;
   private isInitialized = false;
@@ -35,7 +36,8 @@ export class MultiFileFAISSManager {
   constructor(embeddingService: EmbeddingService, maxLoadedStores = 10) {
     this.embeddingService = embeddingService;
     this.maxLoadedStores = maxLoadedStores;
-    this.indexBasePath = path.join(process.cwd(), 'data', 'multi-faiss-index');
+    this.indexRootPath = path.join(process.cwd(), 'data', 'multi-faiss-index');
+    this.indexBasePath = path.join(this.indexRootPath, 'default');
 
     // 인덱스 디렉토리 생성
     if (!fs.existsSync(this.indexBasePath)) {
@@ -48,6 +50,7 @@ export class MultiFileFAISSManager {
    */
   async initialize(documents: Document<DocumentMetadata>[], workspaceId?: string): Promise<boolean> {
     try {
+      this.setWorkspaceIndexPath(workspaceId);
       Logger.info(`Initializing FAISS vector store with ${documents.length} documents (file-based indexing)`);
 
       // 기존 데이터 완전히 초기화
@@ -330,15 +333,17 @@ export class MultiFileFAISSManager {
   private async recreateGlobalIndex(): Promise<void> {
     try {
       Logger.info('Recreating global index from all file documents');
-      
+
       // 모든 파일의 documents 수집
       const allDocuments: Document<DocumentMetadata>[] = [];
       for (const [fileName, documents] of this.fileDocuments.entries()) {
         allDocuments.push(...documents);
       }
-      
-      Logger.info(`Collected ${allDocuments.length} documents from ${this.fileDocuments.size} files for global index recreation`);
-      
+
+      Logger.info(
+        `Collected ${allDocuments.length} documents from ${this.fileDocuments.size} files for global index recreation`,
+      );
+
       if (allDocuments.length === 0) {
         // 문서가 없으면 빈 store 생성
         const openAIEmbeddings = this.embeddingService.getEmbeddingAPI();
@@ -351,11 +356,10 @@ export class MultiFileFAISSManager {
         this.globalStore = await FaissStore.fromDocuments(serializedDocs, openAIEmbeddings);
         Logger.info(`Successfully recreated global index with ${allDocuments.length} documents`);
       }
-      
+
       // 글로벌 인덱스 저장
       await this.saveGlobalIndex();
       Logger.info('Global index saved after recreation');
-      
     } catch (error) {
       Logger.error('Failed to recreate global index', error as Error);
       throw error;
@@ -577,6 +581,15 @@ export class MultiFileFAISSManager {
     return path.join(this.indexBasePath, safeFileName);
   }
 
+  private setWorkspaceIndexPath(workspaceId?: string): void {
+    const safeWorkspaceId = (workspaceId || 'default').replace(/[^a-zA-Z0-9._-]/g, '_');
+    this.indexBasePath = path.join(this.indexRootPath, safeWorkspaceId);
+
+    if (!fs.existsSync(this.indexBasePath)) {
+      fs.mkdirSync(this.indexBasePath, { recursive: true });
+    }
+  }
+
   private serializeDocumentsMetadata(documents: Document<DocumentMetadata>[]): Document<DocumentMetadata>[] {
     return documents.map((doc) => {
       const serializedMetadata = { ...doc.metadata };
@@ -617,19 +630,19 @@ export class MultiFileFAISSManager {
    */
   private cleanup(): void {
     Logger.info('Cleaning up existing FAISS data for fresh initialization');
-    
+
     // 모든 파일 스토어 정리
     this.fileStores.clear();
-    
+
     // 파일별 문서 캐시 정리
     this.fileDocuments.clear();
-    
+
     // 전역 스토어 초기화
     this.globalStore = null;
-    
+
     // 쓰기 가능한 스토어 초기화
     this.writableStore = null;
-    
+
     // 초기화 상태 리셋
     this.isInitialized = false;
   }

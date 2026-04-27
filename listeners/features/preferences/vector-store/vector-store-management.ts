@@ -1,8 +1,8 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logAppHomeButtonClick } from 'services/common/user-interaction-logger';
-import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
 import { parseMarkdownToTree } from 'services/document';
 import { treeToMarkdown } from 'services/document/markdown';
+import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
 import { GithubService } from 'services/github';
 import { getRetrievalProvider } from 'services/retrieval';
 import { isQmdRetrievalEnabled } from 'services/retrieval/provider-config';
@@ -113,12 +113,12 @@ export const reloadFromGithubAction = async ({
 
     // GitHub에서 현재 기본 브랜치 확인 및 업데이트
     const currentDefaultBranch = await githubService.getDefaultBranch(
-      repoInfo.owner, 
-      repoInfo.repo, 
-      workspaceId, 
-      body.user.id
+      repoInfo.owner,
+      repoInfo.repo,
+      workspaceId,
+      body.user.id,
     );
-    
+
     // 기존 브랜치와 다르면 워크스페이스 설정 업데이트
     if (repoInfo.branch !== currentDefaultBranch) {
       const { storeGithubRepo } = await import('services/slack');
@@ -634,12 +634,12 @@ export const normalizeMarkdownFilesAction = async ({
 
     // GitHub에서 현재 기본 브랜치 확인 및 업데이트
     const currentDefaultBranch = await githubService.getDefaultBranch(
-      repoInfo.owner, 
-      repoInfo.repo, 
-      workspaceId, 
-      body.user.id
+      repoInfo.owner,
+      repoInfo.repo,
+      workspaceId,
+      body.user.id,
     );
-    
+
     // 기존 브랜치와 다르면 워크스페이스 설정 업데이트
     if (repoInfo.branch !== currentDefaultBranch) {
       const { storeGithubRepo } = await import('services/slack');
@@ -748,7 +748,7 @@ export const normalizeMarkdownFilesAction = async ({
 
       // 벡터 스토어 재구축
       try {
-        const rebuildSuccess = await vectorStore.resetAndRebuildVectorStore();
+        const rebuildSuccess = await vectorStore.resetAndRebuildVectorStore(workspaceId);
         if (rebuildSuccess) {
           await client.chat.postMessage({
             channel: body.user.id,

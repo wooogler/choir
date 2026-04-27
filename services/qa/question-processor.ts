@@ -12,13 +12,15 @@ export class QuestionProcessor {
         `QuestionProcessor: Starting to process question: "${userMessage.substring(0, 50)}${userMessage.length > 50 ? '...' : ''}"`,
       );
 
+      const workspaceId = await getWorkspaceId(client);
+
       // Q&A 답변 전 document update 캐시 무효화 (최신 정보로 답변하기 위해)
       if (userId) {
-        Logger.info(`QuestionProcessor: Clearing document update cache for user ${userId} to ensure fresh search results`);
-        clearFileSelectionState(userId);
+        Logger.info(
+          `QuestionProcessor: Clearing document update cache for user ${userId} to ensure fresh search results`,
+        );
+        clearFileSelectionState(userId, workspaceId);
       }
-
-      const workspaceId = await getWorkspaceId(client);
 
       // Retrieval provider를 통해 관련 문서 가져오기
       const retrievalProvider = getRetrievalProvider();

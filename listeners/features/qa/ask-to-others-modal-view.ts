@@ -46,6 +46,8 @@ export const askToOthersSubmitCallback = async ({
       return;
     }
 
+    const currentWorkspaceId = await getWorkspaceId(client);
+
     // 세션 데이터 가져오기
     const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
@@ -140,8 +142,9 @@ export const askToOthersSubmitCallback = async ({
 
         // Anonymous 질문인 경우 메시지 추적 등록 및 CHOIR의 안내 메시지 추가
         if (isAnonymous && postedMessage.ts) {
-          trackAnonymousMessage(conversationId, postedMessage.ts, userId, sessionId);
+          trackAnonymousMessage(conversationId, postedMessage.ts, userId, sessionId, currentWorkspaceId);
           logger.info('Anonymous message tracked', {
+            workspaceId: currentWorkspaceId,
             conversationId,
             messageTs: postedMessage.ts,
             originalQuestionerId: userId,
@@ -186,7 +189,7 @@ export const askToOthersSubmitCallback = async ({
         channel: sessionData.originalChannelId,
         thread_ts: sessionData.originalThreadTs,
         hasThreadTs: !!sessionData.originalThreadTs,
-        participantsList
+        participantsList,
       });
 
       // 공통 성공 메시지 (원본 스레드에 공개)
@@ -216,7 +219,7 @@ export const askToOthersSubmitCallback = async ({
           channel: sessionData.originalChannelId,
           user: userId,
           thread_ts: sessionData.originalThreadTs,
-          hasThreadTs: !!sessionData.originalThreadTs
+          hasThreadTs: !!sessionData.originalThreadTs,
         });
 
         await client.chat.postEphemeral({

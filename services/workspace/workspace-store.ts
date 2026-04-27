@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { WebClient } from '@slack/web-api';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
 import { Logger } from 'services/common/logger';
+import { decryptJson, encryptJson } from 'services/db/crypto';
+import { getDatabase } from 'services/db/connection';
 
 export interface WorkspaceConfig {
   workspaceId: string;
@@ -73,6 +75,32 @@ export class WorkspaceStore {
     return path.join(this.dataPath, `${workspaceId}-config.json`);
   }
 
+  private hydrateDates(config: WorkspaceConfig): WorkspaceConfig {
+    config.createdAt = new Date(config.createdAt);
+    config.updatedAt = new Date(config.updatedAt);
+    if (config.markdownFilesCachedAt) {
+      config.markdownFilesCachedAt = new Date(config.markdownFilesCachedAt);
+    }
+    if (config.githubTokens) {
+      for (const userId in config.githubTokens) {
+        config.githubTokens[userId].connectedAt = new Date(config.githubTokens[userId].connectedAt);
+      }
+    }
+
+    return config;
+  }
+
+  private async readLegacyWorkspaceConfig(workspaceId: string): Promise<WorkspaceConfig | null> {
+    const configPath = this.getWorkspaceConfigPath(workspaceId);
+
+    if (!fs.existsSync(configPath)) {
+      return null;
+    }
+
+    const configData = await fs.promises.readFile(configPath, 'utf-8');
+    return this.hydrateDates(JSON.parse(configData) as WorkspaceConfig);
+  }
+
   /**
    * 워크스페이스 설정 저장
    */
@@ -81,10 +109,25 @@ export class WorkspaceStore {
       this.ensureDataDirectory();
 
       config.updatedAt = new Date();
-      const configPath = this.getWorkspaceConfigPath(config.workspaceId);
+      const createdAt = config.createdAt ? new Date(config.createdAt) : new Date();
+      config.createdAt = createdAt;
 
-      await fs.promises.writeFile(configPath, JSON.stringify(config, null, 2));
-      this.logger.info(`Saved workspace config for: ${config.workspaceId}`);
+      getDatabase()
+        .prepare(`
+          INSERT INTO workspace_configs (workspace_id, config_json, created_at, updated_at)
+          VALUES (@workspaceId, @configJson, @createdAt, @updatedAt)
+          ON CONFLICT(workspace_id) DO UPDATE SET
+            config_json = excluded.config_json,
+            updated_at = excluded.updated_at
+        `)
+        .run({
+          workspaceId: config.workspaceId,
+          configJson: encryptJson(config),
+          createdAt: createdAt.toISOString(),
+          updatedAt: config.updatedAt.toISOString(),
+        });
+
+      this.logger.info(`Saved workspace config in SQLite for: ${config.workspaceId}`);
     } catch (error) {
       this.logger.error(`Failed to save workspace config: ${error}`);
       throw error;
@@ -96,28 +139,21 @@ export class WorkspaceStore {
    */
   public async getWorkspaceConfig(workspaceId: string): Promise<WorkspaceConfig | null> {
     try {
-      const configPath = this.getWorkspaceConfigPath(workspaceId);
+      const row = getDatabase()
+        .prepare('SELECT config_json AS configJson FROM workspace_configs WHERE workspace_id = ?')
+        .get(workspaceId) as { configJson: string } | undefined;
 
-      if (!fs.existsSync(configPath)) {
-        return null;
+      if (row) {
+        return this.hydrateDates(decryptJson<WorkspaceConfig>(row.configJson));
       }
 
-      const configData = await fs.promises.readFile(configPath, 'utf-8');
-      const config = JSON.parse(configData) as WorkspaceConfig;
-
-      // Date 객체 복원
-      config.createdAt = new Date(config.createdAt);
-      config.updatedAt = new Date(config.updatedAt);
-      if (config.markdownFilesCachedAt) {
-        config.markdownFilesCachedAt = new Date(config.markdownFilesCachedAt);
-      }
-      if (config.githubTokens) {
-        for (const userId in config.githubTokens) {
-          config.githubTokens[userId].connectedAt = new Date(config.githubTokens[userId].connectedAt);
-        }
+      const legacyConfig = await this.readLegacyWorkspaceConfig(workspaceId);
+      if (legacyConfig) {
+        await this.saveWorkspaceConfig(legacyConfig);
+        this.logger.info(`Migrated legacy workspace config into SQLite for: ${workspaceId}`);
       }
 
-      return config;
+      return legacyConfig;
     } catch (error) {
       this.logger.error(`Failed to load workspace config: ${error}`);
       return null;
@@ -266,11 +302,9 @@ export class WorkspaceStore {
    */
   public async removeWorkspace(workspaceId: string): Promise<void> {
     try {
-      const configPath = this.getWorkspaceConfigPath(workspaceId);
-      if (fs.existsSync(configPath)) {
-        await fs.promises.unlink(configPath);
-        this.logger.info(`Removed workspace config: ${workspaceId}`);
-      }
+      getDatabase().prepare('DELETE FROM workspace_configs WHERE workspace_id = ?').run(workspaceId);
+      await fs.promises.rm(this.getWorkspaceConfigPath(workspaceId), { force: true });
+      this.logger.info(`Removed workspace config from SQLite: ${workspaceId}`);
     } catch (error) {
       this.logger.error(`Failed to remove workspace: ${error}`);
     }
@@ -573,15 +607,24 @@ export class WorkspaceStore {
    */
   public async getAllWorkspaceConfigs(): Promise<WorkspaceConfig[]> {
     try {
+      const rows = getDatabase()
+        .prepare('SELECT workspace_id AS workspaceId, config_json AS configJson FROM workspace_configs')
+        .all() as Array<{ workspaceId: string; configJson: string }>;
+      const configs = rows.map((row) => this.hydrateDates(decryptJson<WorkspaceConfig>(row.configJson)));
+      const existingWorkspaceIds = new Set(configs.map((config) => config.workspaceId));
+
       const files = await fs.promises.readdir(this.dataPath);
       const configFiles = files.filter((file) => file.endsWith('-config.json'));
 
-      const configs: WorkspaceConfig[] = [];
-
       for (const file of configFiles) {
         const workspaceId = file.replace('-config.json', '');
-        const config = await this.getWorkspaceConfig(workspaceId);
+        if (existingWorkspaceIds.has(workspaceId)) {
+          continue;
+        }
+
+        const config = await this.readLegacyWorkspaceConfig(workspaceId);
         if (config) {
+          await this.saveWorkspaceConfig(config);
           configs.push(config);
         }
       }

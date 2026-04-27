@@ -144,7 +144,7 @@ export class GitHubSyncService {
       return false;
     }
 
-    VectorStoreService.getInstance().setLoadedMarkdownFiles(mirroredMarkdownFiles);
+    VectorStoreService.getInstance().setLoadedMarkdownFiles(mirroredMarkdownFiles, params.workspaceId);
     Logger.info(`GitHubSyncService: hydrated vector store metadata from mirror`, {
       workspaceId: params.workspaceId,
       owner: params.owner,

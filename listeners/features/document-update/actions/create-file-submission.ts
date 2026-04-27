@@ -182,12 +182,14 @@ export const createFileSubmissionCallback = async ({
 
         if (documents.length > 0) {
           // Add to vector store using the same method as bulk initialization
-          const success = await vectorStore.addDocumentsToVectorStore(documents);
-          
+          const success = await vectorStore.addDocumentsToVectorStore(documents, workspaceId);
+
           if (success) {
             // Update markdownFiles array to include the new file
-            vectorStore.addToMarkdownFiles(markdownFile);
-            logger.info(`Successfully indexed new file ${fileName} with web content enhancement (${documents.length} documents)`);
+            vectorStore.addToMarkdownFiles(markdownFile, workspaceId);
+            logger.info(
+              `Successfully indexed new file ${fileName} with web content enhancement (${documents.length} documents)`,
+            );
           } else {
             logger.error(`Failed to add documents to vector store for ${fileName}`);
           }
@@ -199,12 +201,14 @@ export const createFileSubmissionCallback = async ({
         try {
           const { WorkspaceStore } = await import('services/workspace/workspace-store');
           const workspaceStore = new WorkspaceStore();
-          
+
           // Get current cached file list
-          const currentFiles = await workspaceStore.getMarkdownFilesCache(workspaceId) || [];
-          
+          const currentFiles = (await workspaceStore.getMarkdownFilesCache(workspaceId)) || [];
+
           // Add the new file to the list if not already present
-          const fileExists = currentFiles.some((f: { name: string; path: string }) => f.name === fileName || f.path === filePath);
+          const fileExists = currentFiles.some(
+            (f: { name: string; path: string }) => f.name === fileName || f.path === filePath,
+          );
           if (!fileExists) {
             const updatedFiles = [...currentFiles, { name: fileName, path: filePath }];
             await workspaceStore.setMarkdownFilesCache(workspaceId, updatedFiles);
@@ -248,7 +252,7 @@ export const createFileSubmissionCallback = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: "🎉 *Document update process complete!*\nYour new file has been created and is ready for use. You can mention me anytime with new knowledge to review and update docs!",
+            text: '🎉 *Document update process complete!*\nYour new file has been created and is ready for use. You can mention me anytime with new knowledge to review and update docs!',
           },
         },
       ],
@@ -267,7 +271,7 @@ export const createFileSubmissionCallback = async ({
         }
 
         const notificationText = `📄 New File Created by ${createdBy}: <https://github.com/${owner}/${repo}/blob/${branch}/${filePath}|${fileName}>`;
-        
+
         await client.chat.postMessage({
           channel: knowledgeSourceChannelId,
           ...(knowledgeSourceThreadTs ? { thread_ts: knowledgeSourceThreadTs } : {}),

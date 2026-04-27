@@ -1,9 +1,6 @@
 import type { Document } from '@langchain/core/documents';
 import type { WebClient } from '@slack/web-api';
-import {
-  type NewSectionSuggestion,
-  createNewSectionFromKnowledge,
-} from 'services/llm/content-generator';
+import { type NewSectionSuggestion, createNewSectionFromKnowledge } from 'services/llm/content-generator';
 import { editMarkdownWithKnowledge } from 'services/llm/document-editor';
 import { createDiffBlock } from 'services/slack';
 import type { SlackMessage } from 'services/slack';
@@ -47,7 +44,7 @@ export function createAppendSuggestionBlock(originalMarkdown: string, appendedMa
   // Remove markdown headers from original content since they're already shown in the title
   const lines = originalMarkdown.split('\n');
   let contentStartIndex = 0;
-  
+
   // Skip markdown headers at the beginning (# ## ### etc.)
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -57,13 +54,13 @@ export function createAppendSuggestionBlock(originalMarkdown: string, appendedMa
       break;
     }
   }
-  
+
   const cleanedOriginalMarkdown = lines.slice(contentStartIndex).join('\n').trim();
 
   // If content is empty, show section header instead
   if (!cleanedOriginalMarkdown) {
     // Extract section name from last markdown header
-    const headerLines = lines.slice(0, contentStartIndex).filter(line => line.trim().startsWith('#'));
+    const headerLines = lines.slice(0, contentStartIndex).filter((line) => line.trim().startsWith('#'));
     const lastHeader = headerLines[headerLines.length - 1];
     const sectionName = lastHeader ? lastHeader.replace(/^#+\s*/, '').trim() : 'Section';
 
@@ -103,6 +100,7 @@ export async function processDocument(
   validMessages: SlackMessage[],
   client: WebClient,
   vectorStore: VectorStoreService,
+  workspaceId?: string,
 ): Promise<ProcessedDocument | null> {
   try {
     if (!doc.metadata?.fileName || !doc.metadata?.githubUrl || !doc.metadata?.nodeId) {
@@ -115,7 +113,7 @@ export async function processDocument(
     const updateAnchor = doc.metadata.updateAnchor;
 
     if (!updateAnchor) {
-      const markdownFile = vectorStore.getMarkdownFile(fileName);
+      const markdownFile = vectorStore.getMarkdownFile(fileName, workspaceId);
       if (!markdownFile) {
         console.error(`파일을 찾을 수 없습니다: ${fileName}`);
         return null;
@@ -164,7 +162,7 @@ export async function processDocument(
       }),
       (async () => {
         // 새 섹션 제안 생성을 위해 모든 마크다운 파일 목록 가져오기
-        const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
+        const allMarkdownFiles = vectorStore.getAllMarkdownFiles(workspaceId);
         const availableFiles = allMarkdownFiles.map((file) => ({
           fileName: file.name,
           githubUrl: file.githubUrl,

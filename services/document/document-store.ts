@@ -1,4 +1,5 @@
 import type { Document } from '@langchain/core/documents';
+import { getDatabase } from 'services/db/connection';
 import type { SlackMessage } from '../slack';
 import type { DocumentMetadata } from '../vector/types';
 import type { UpdateAnchor } from './update-anchor';
@@ -40,36 +41,88 @@ export interface FileSelectionState {
   currentSuggestionCount: number; // 현재까지 보여준 suggestion 수
 }
 
-// documentUpdates를 저장하기 위한 Map (userId -> { documentUpdates, thread_ts, channel_id })
-const storedDocumentUpdates = new Map<
-  string,
-  { documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }
->();
-
-// 선택된 문서 ID를 저장하기 위한 Map (userId -> Set<string>)
-const selectedNodeIds = new Map<string, Set<string>>();
-
-// 검색 결과를 저장하기 위한 Map (userId -> Document<DocumentMetadata>[])
-const searchResultsStorage = new Map<string, Document<DocumentMetadata>[]>();
-
-// 파일 선택 상태를 저장하기 위한 Map (userId -> FileSelectionState)
-const fileSelectionStateStorage = new Map<string, FileSelectionState>();
-
 // 검색 결과 캐시 제거됨 - 항상 최신 벡터 스토어 상태를 반영하기 위해
 
+const getScopedUserKey = (userId: string, workspaceId?: string): string =>
+  workspaceId ? `${workspaceId}:${userId}` : userId;
+
+function getStateKey(stateType: string, userId: string, workspaceId?: string): string {
+  return `${stateType}:${getScopedUserKey(userId, workspaceId)}`;
+}
+
+function getAppState<T>(stateType: string, userId: string, workspaceId?: string): T | null {
+  const row = getDatabase()
+    .prepare('SELECT data_json AS dataJson FROM app_state WHERE state_key = ?')
+    .get(getStateKey(stateType, userId, workspaceId)) as { dataJson: string } | undefined;
+
+  return row ? (JSON.parse(row.dataJson) as T) : null;
+}
+
+function setAppState(stateType: string, userId: string, value: unknown, workspaceId?: string): void {
+  getDatabase()
+    .prepare(`
+      INSERT INTO app_state (state_key, state_type, data_json, updated_at)
+      VALUES (@stateKey, @stateType, @dataJson, @updatedAt)
+      ON CONFLICT(state_key) DO UPDATE SET
+        state_type = excluded.state_type,
+        data_json = excluded.data_json,
+        updated_at = excluded.updated_at
+    `)
+    .run({
+      stateKey: getStateKey(stateType, userId, workspaceId),
+      stateType,
+      dataJson: JSON.stringify(value),
+      updatedAt: Date.now(),
+    });
+}
+
+function deleteAppState(stateType: string, userId: string, workspaceId?: string): void {
+  getDatabase().prepare('DELETE FROM app_state WHERE state_key = ?').run(getStateKey(stateType, userId, workspaceId));
+}
+
+function serializeFileSelectionState(state: FileSelectionState): Omit<FileSelectionState, 'appliedSuggestions'> & {
+  appliedSuggestions: string[];
+} {
+  return {
+    ...state,
+    appliedSuggestions: Array.from(state.appliedSuggestions),
+  };
+}
+
+function deserializeFileSelectionState(data: any): FileSelectionState {
+  return {
+    ...data,
+    appliedSuggestions: new Set<string>(data.appliedSuggestions || []),
+  };
+}
+
 // 사용자의 documentUpdates 가져오기
-export const getStoredDocumentUpdates = (userId: string): DocumentUpdate[] => {
-  return storedDocumentUpdates.get(userId)?.documentUpdates || [];
+export const getStoredDocumentUpdates = (userId: string, workspaceId?: string): DocumentUpdate[] => {
+  return (
+    getAppState<{ documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }>(
+      'document_updates',
+      userId,
+      workspaceId,
+    )?.documentUpdates || []
+  );
 };
 
 // 사용자의 thread_ts 가져오기
-export const getStoredThreadTs = (userId: string): string | undefined => {
-  return storedDocumentUpdates.get(userId)?.thread_ts;
+export const getStoredThreadTs = (userId: string, workspaceId?: string): string | undefined => {
+  return getAppState<{ documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }>(
+    'document_updates',
+    userId,
+    workspaceId,
+  )?.thread_ts;
 };
 
 // 사용자의 channel_id 가져오기
-export const getStoredChannelId = (userId: string): string | undefined => {
-  return storedDocumentUpdates.get(userId)?.channel_id;
+export const getStoredChannelId = (userId: string, workspaceId?: string): string | undefined => {
+  return getAppState<{ documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }>(
+    'document_updates',
+    userId,
+    workspaceId,
+  )?.channel_id;
 };
 
 // 사용자의 documentUpdates 저장하기
@@ -78,32 +131,50 @@ export const storeDocumentUpdates = (
   updates: DocumentUpdate[],
   thread_ts?: string,
   channel_id?: string,
+  workspaceId?: string,
 ): void => {
-  const existing = storedDocumentUpdates.get(userId) || { documentUpdates: [] };
+  const existing = getAppState<{ documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }>(
+    'document_updates',
+    userId,
+    workspaceId,
+  ) || { documentUpdates: [] };
 
-  storedDocumentUpdates.set(userId, {
+  setAppState('document_updates', userId, {
     documentUpdates: updates,
     thread_ts: thread_ts || existing.thread_ts,
     channel_id: channel_id || existing.channel_id,
-  });
+  }, workspaceId);
 };
 
 // 사용자의 thread 정보 저장하기
-export const storeThreadInfo = (userId: string, thread_ts: string, channel_id: string): void => {
-  const existing = storedDocumentUpdates.get(userId);
+export const storeThreadInfo = (userId: string, thread_ts: string, channel_id: string, workspaceId?: string): void => {
+  const existing = getAppState<{ documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }>(
+    'document_updates',
+    userId,
+    workspaceId,
+  );
 
   if (existing) {
-    storedDocumentUpdates.set(userId, {
+    setAppState('document_updates', userId, {
       ...existing,
       thread_ts,
       channel_id,
-    });
+    }, workspaceId);
   }
 };
 
 // 특정 문서 업데이트의 updatedNodeContent 수정하기
-export const updateDocumentContent = (userId: string, index: number, newContent: string): boolean => {
-  const userUpdates = storedDocumentUpdates.get(userId);
+export const updateDocumentContent = (
+  userId: string,
+  index: number,
+  newContent: string,
+  workspaceId?: string,
+): boolean => {
+  const userUpdates = getAppState<{ documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }>(
+    'document_updates',
+    userId,
+    workspaceId,
+  );
 
   if (!userUpdates || !userUpdates.documentUpdates[index]) {
     console.log(`[Error] Failed to find document update for user ${userId}, index ${index}`);
@@ -123,58 +194,67 @@ export const updateDocumentContent = (userId: string, index: number, newContent:
   console.log(`Suggestion Type: ${update.suggestionType}`);
   console.log('Content updated successfully');
   console.log('=== End Document Store Update ===');
+  setAppState('document_updates', userId, userUpdates, workspaceId);
 
   return true;
 };
 
 // 사용자의 선택된 문서 ID 가져오기
-export const getSelectedNodeIds = (userId: string): string[] => {
-  return Array.from(selectedNodeIds.get(userId) || new Set<string>());
+export const getSelectedNodeIds = (userId: string, workspaceId?: string): string[] => {
+  return getAppState<string[]>('selected_node_ids', userId, workspaceId) || [];
 };
 
 // 사용자의 선택된 문서 ID 초기화
-export const clearSelectedNodeIds = (userId: string): void => {
-  selectedNodeIds.set(userId, new Set<string>());
+export const clearSelectedNodeIds = (userId: string, workspaceId?: string): void => {
+  setAppState('selected_node_ids', userId, [], workspaceId);
 };
 
 // 사용자의 선택된 문서 ID 추가
-export const addSelectedNodeId = (userId: string, nodeId: string): void => {
-  if (!selectedNodeIds.has(userId)) {
-    selectedNodeIds.set(userId, new Set<string>());
-  }
-  selectedNodeIds.get(userId)!.add(nodeId);
+export const addSelectedNodeId = (userId: string, nodeId: string, workspaceId?: string): void => {
+  setAppState('selected_node_ids', userId, [...new Set([...getSelectedNodeIds(userId, workspaceId), nodeId])], workspaceId);
 };
 
 // 사용자의 선택된 문서 ID 제거
-export const removeSelectedNodeId = (userId: string, nodeId: string): void => {
-  if (selectedNodeIds.has(userId)) {
-    selectedNodeIds.get(userId)!.delete(nodeId);
-  }
+export const removeSelectedNodeId = (userId: string, nodeId: string, workspaceId?: string): void => {
+  setAppState(
+    'selected_node_ids',
+    userId,
+    getSelectedNodeIds(userId, workspaceId).filter((id) => id !== nodeId),
+    workspaceId,
+  );
 };
 
 // 사용자의 선택된 문서 ID 설정
-export const setSelectedNodeIds = (userId: string, nodeIds: string[]): void => {
-  selectedNodeIds.set(userId, new Set<string>(nodeIds));
+export const setSelectedNodeIds = (userId: string, nodeIds: string[], workspaceId?: string): void => {
+  setAppState('selected_node_ids', userId, [...new Set(nodeIds)], workspaceId);
 };
 
 // 검색 결과 캐시 관련 함수들 - 다시 활성화
-export function storeSearchResults(userId: string, searchResults: Document<DocumentMetadata>[]): void {
-  searchResultsStorage.set(userId, searchResults);
+export function storeSearchResults(
+  userId: string,
+  searchResults: Document<DocumentMetadata>[],
+  workspaceId?: string,
+): void {
+  setAppState('search_results', userId, searchResults, workspaceId);
 }
 
 // 검색 결과 가져오기 - 캐시된 결과 반환
-export function getSearchResults(userId: string): Document<DocumentMetadata>[] {
-  return searchResultsStorage.get(userId) || [];
+export function getSearchResults(userId: string, workspaceId?: string): Document<DocumentMetadata>[] {
+  return getAppState<Document<DocumentMetadata>[]>('search_results', userId, workspaceId) || [];
 }
 
 // 검색 결과 삭제하기
-export function clearSearchResults(userId: string) {
-  searchResultsStorage.delete(userId);
+export function clearSearchResults(userId: string, workspaceId?: string) {
+  deleteAppState('search_results', userId, workspaceId);
 }
 
 // 특정 문서 업데이트 삭제하기
-export const removeDocumentUpdate = (userId: string, index: number): boolean => {
-  const userUpdates = storedDocumentUpdates.get(userId);
+export const removeDocumentUpdate = (userId: string, index: number, workspaceId?: string): boolean => {
+  const userUpdates = getAppState<{ documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }>(
+    'document_updates',
+    userId,
+    workspaceId,
+  );
 
   if (!userUpdates || !userUpdates.documentUpdates[index]) {
     return false;
@@ -184,18 +264,22 @@ export const removeDocumentUpdate = (userId: string, index: number): boolean => 
   userUpdates.documentUpdates.splice(index, 1);
 
   // 업데이트된 배열 저장
-  storedDocumentUpdates.set(userId, userUpdates);
+  setAppState('document_updates', userId, userUpdates, workspaceId);
 
   return true;
 };
 
-export function updateSearchResultDocument(userId: string, updatedDocument: Document<DocumentMetadata>): void {
-  const searchResults = getSearchResults(userId);
+export function updateSearchResultDocument(
+  userId: string,
+  updatedDocument: Document<DocumentMetadata>,
+  workspaceId?: string,
+): void {
+  const searchResults = getSearchResults(userId, workspaceId);
   const docIndex = searchResults.findIndex((doc) => doc.metadata?.nodeId === updatedDocument.metadata?.nodeId);
 
   if (docIndex !== -1) {
     searchResults[docIndex] = updatedDocument;
-    storeSearchResults(userId, searchResults);
+    storeSearchResults(userId, searchResults, workspaceId);
     console.info(`Updated search result document for node: ${updatedDocument.metadata?.nodeId}`);
   }
 }
@@ -215,7 +299,8 @@ export function initializeFileSelectionState(
   isFileSelected: boolean,
   selectedFile?: string,
   initialSearchResults: Document<DocumentMetadata>[] = [],
-  fileSpecificResults: Document<DocumentMetadata>[] = []
+  fileSpecificResults: Document<DocumentMetadata>[] = [],
+  workspaceId?: string,
 ): void {
   const state: FileSelectionState = {
     isFileSelected,
@@ -226,16 +311,19 @@ export function initializeFileSelectionState(
     maxSuggestions: 5,
     currentSuggestionCount: 0,
   };
-  
-  fileSelectionStateStorage.set(userId, state);
-  console.info(`Initialized file selection state for user ${userId}: fileSelected=${isFileSelected}, file=${selectedFile}`);
+
+  setAppState('file_selection_state', userId, serializeFileSelectionState(state), workspaceId);
+  console.info(
+    `Initialized file selection state for user ${userId}: fileSelected=${isFileSelected}, file=${selectedFile}`,
+  );
 }
 
 /**
  * 파일 선택 상태 가져오기
  */
-export function getFileSelectionState(userId: string): FileSelectionState | null {
-  return fileSelectionStateStorage.get(userId) || null;
+export function getFileSelectionState(userId: string, workspaceId?: string): FileSelectionState | null {
+  const state = getAppState<any>('file_selection_state', userId, workspaceId);
+  return state ? deserializeFileSelectionState(state) : null;
 }
 
 /**
@@ -243,9 +331,10 @@ export function getFileSelectionState(userId: string): FileSelectionState | null
  */
 export function resetFileSelectionAfterApply(
   userId: string,
-  initialSearchResults: Document<DocumentMetadata>[]
+  initialSearchResults: Document<DocumentMetadata>[],
+  workspaceId?: string,
 ): void {
-  const currentState = getFileSelectionState(userId);
+  const currentState = getFileSelectionState(userId, workspaceId);
   if (!currentState) return;
 
   const state: FileSelectionState = {
@@ -257,23 +346,25 @@ export function resetFileSelectionAfterApply(
     maxSuggestions: currentState.maxSuggestions,
     currentSuggestionCount: currentState.currentSuggestionCount, // suggestion count 보존
   };
-  
-  fileSelectionStateStorage.set(userId, state);
-  console.info(`Reset file selection state after Apply Changes for user ${userId}: preserving count=${state.currentSuggestionCount}`);
+
+  setAppState('file_selection_state', userId, serializeFileSelectionState(state), workspaceId);
+  console.info(
+    `Reset file selection state after Apply Changes for user ${userId}: preserving count=${state.currentSuggestionCount}`,
+  );
 }
 
 /**
  * suggestion을 applied로 마킹
  */
-export function markSuggestionAsApplied(userId: string, nodeId: string): boolean {
-  const state = fileSelectionStateStorage.get(userId);
+export function markSuggestionAsApplied(userId: string, nodeId: string, workspaceId?: string): boolean {
+  const state = getFileSelectionState(userId, workspaceId);
   if (!state) {
     console.warn(`No file selection state found for user ${userId}`);
     return false;
   }
-  
+
   state.appliedSuggestions.add(nodeId);
-  fileSelectionStateStorage.set(userId, state);
+  setAppState('file_selection_state', userId, serializeFileSelectionState(state), workspaceId);
   console.info(`Marked suggestion ${nodeId} as applied for user ${userId}`);
   return true;
 }
@@ -281,21 +372,21 @@ export function markSuggestionAsApplied(userId: string, nodeId: string): boolean
 /**
  * 현재 suggestion 카운트 증가
  */
-export function incrementSuggestionCount(userId: string): void {
-  const state = fileSelectionStateStorage.get(userId);
+export function incrementSuggestionCount(userId: string, workspaceId?: string): void {
+  const state = getFileSelectionState(userId, workspaceId);
   if (state) {
     state.currentSuggestionCount++;
-    fileSelectionStateStorage.set(userId, state);
+    setAppState('file_selection_state', userId, serializeFileSelectionState(state), workspaceId);
   }
 }
 
 /**
  * 최대 suggestion 수에 도달했는지 확인
  */
-export function isMaxSuggestionsReached(userId: string): boolean {
-  const state = fileSelectionStateStorage.get(userId);
+export function isMaxSuggestionsReached(userId: string, workspaceId?: string): boolean {
+  const state = getFileSelectionState(userId, workspaceId);
   if (!state) return false;
-  
+
   return state.currentSuggestionCount >= state.maxSuggestions;
 }
 
@@ -303,70 +394,72 @@ export function isMaxSuggestionsReached(userId: string): boolean {
  * 동적 순서 계산 - 새로운 로직의 핵심
  * Apply된 suggestions에 따라 순서를 동적으로 재계산
  */
-export function calculateDynamicOrder(userId: string): Document<DocumentMetadata>[] {
-  const state = fileSelectionStateStorage.get(userId);
+export function calculateDynamicOrder(userId: string, workspaceId?: string): Document<DocumentMetadata>[] {
+  const state = getFileSelectionState(userId, workspaceId);
   if (!state) {
     console.warn(`No file selection state found for user ${userId}`);
     return [];
   }
-  
+
   // 파일이 선택되지 않은 경우: initial search 결과만 사용
   if (!state.isFileSelected) {
     return state.initialSearchResults;
   }
-  
+
   // 파일이 선택된 경우: 동적 순서 계산
   const result: Document<DocumentMetadata>[] = [];
-  
+
   // file-specific 결과에서 아직 applied되지 않은 것들을 순서대로 추가
   for (const doc of state.fileSpecificResults) {
     if (!state.appliedSuggestions.has(doc.metadata?.nodeId || '')) {
       result.push(doc);
     }
   }
-  
+
   // initial search 결과에서 중복 제거하고 추가
-  const fileSpecificNodeIds = new Set(state.fileSpecificResults.map(doc => doc.metadata?.nodeId));
-  const filteredInitialResults = state.initialSearchResults.filter(doc => 
-    !fileSpecificNodeIds.has(doc.metadata?.nodeId) && 
-    !state.appliedSuggestions.has(doc.metadata?.nodeId || '')
+  const fileSpecificNodeIds = new Set(state.fileSpecificResults.map((doc) => doc.metadata?.nodeId));
+  const filteredInitialResults = state.initialSearchResults.filter(
+    (doc) =>
+      !fileSpecificNodeIds.has(doc.metadata?.nodeId) && !state.appliedSuggestions.has(doc.metadata?.nodeId || ''),
   );
-  
+
   result.push(...filteredInitialResults);
-  
-  console.info(`Calculated dynamic order for user ${userId}: ${result.length} documents, ${state.appliedSuggestions.size} applied`);
+
+  console.info(
+    `Calculated dynamic order for user ${userId}: ${result.length} documents, ${state.appliedSuggestions.size} applied`,
+  );
   return result;
 }
 
 /**
  * 다음 suggestion 가져오기
  */
-export function getNextSuggestion(userId: string): Document<DocumentMetadata> | null {
-  const dynamicOrder = calculateDynamicOrder(userId);
-  const state = fileSelectionStateStorage.get(userId);
-  
+export function getNextSuggestion(userId: string, workspaceId?: string): Document<DocumentMetadata> | null {
+  const dynamicOrder = calculateDynamicOrder(userId, workspaceId);
+  const state = getFileSelectionState(userId, workspaceId);
+
   if (!state || dynamicOrder.length === 0) {
     return null;
   }
-  
+
   // 최대 suggestion 수 체크 (파일 선택된 경우만)
   if (state.isFileSelected && state.currentSuggestionCount >= state.maxSuggestions) {
     return null;
   }
-  
+
   // 현재 suggestion 카운트에 맞는 document 반환 (0-based index)
   const currentIndex = state.currentSuggestionCount;
   if (currentIndex >= dynamicOrder.length) {
     return null;
   }
-  
+
   return dynamicOrder[currentIndex] || null;
 }
 
 /**
  * 파일 선택 상태 정리
  */
-export function clearFileSelectionState(userId: string): void {
-  fileSelectionStateStorage.delete(userId);
+export function clearFileSelectionState(userId: string, workspaceId?: string): void {
+  deleteAppState('file_selection_state', userId, workspaceId);
   console.info(`Cleared file selection state for user ${userId}`);
 }

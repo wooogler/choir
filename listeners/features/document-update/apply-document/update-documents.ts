@@ -82,8 +82,10 @@ const applySelectedToGithubAction = async ({
       throw new Error('채널 ID를 찾을 수 없습니다');
     }
 
+    const workspaceId = await getWorkspaceId(client);
+
     // 저장된 모든 document updates 가져오기
-    const documentUpdates = getStoredDocumentUpdates(userId);
+    const documentUpdates = getStoredDocumentUpdates(userId, workspaceId);
 
     if (!documentUpdates || documentUpdates.length === 0) {
       await client.chat.postEphemeral({
@@ -99,7 +101,7 @@ const applySelectedToGithubAction = async ({
     // 특정 nodeId가 제공된 경우, 해당하는 단일 업데이트만 필터링
     let selectedUpdates = documentUpdates;
     if (value.nodeId) {
-      const specificUpdate = documentUpdates.find(update => update.nodeId === value.nodeId);
+      const specificUpdate = documentUpdates.find((update) => update.nodeId === value.nodeId);
       if (specificUpdate) {
         selectedUpdates = [specificUpdate];
         console.log(`Filtered to single update for nodeId: ${value.nodeId}`);
@@ -120,21 +122,20 @@ const applySelectedToGithubAction = async ({
     // 로딩 메시지 먼저 보내기
     loadingMessage = await client.chat.postMessage({
       channel: dmResult.channel.id,
-      text: "⚙️ Applying changes to GitHub...",
+      text: '⚙️ Applying changes to GitHub...',
       blocks: [
         {
           type: 'section',
           block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
           text: {
             type: 'mrkdwn',
-            text: "⚙️ Applying changes to GitHub...",
+            text: '⚙️ Applying changes to GitHub...',
           },
         },
       ],
     });
 
     // GitHub에 문서 업데이트 적용
-    const workspaceId = await getWorkspaceId(client);
     const results = await applyDocumentUpdatesToGithub({
       userId,
       documentUpdates: selectedUpdates,
@@ -152,33 +153,33 @@ const applySelectedToGithubAction = async ({
       const successfulUpdate = successfulUpdates[0]; // 단일 파일 처리 가정
       const fileName = successfulUpdate.fileName;
       const commitSha = successfulUpdate.commitSha;
-      
+
       // documentUpdates에서 실제 githubUrl 가져오기
-      const actualGithubUrl = selectedUpdates.find(u => u.fileName === fileName)?.githubUrl || githubUrl;
-      
+      const actualGithubUrl = selectedUpdates.find((u) => u.fileName === fileName)?.githubUrl || githubUrl;
+
       // Generate URLs for the updated file
       const workspaceStore = new (await import('services/workspace/workspace-store')).WorkspaceStore();
       const config = await workspaceStore.getWorkspaceConfig(workspaceId);
       let editUrl = '';
       let commitDiffUrl = '';
-      
+
       if (config?.githubRepo && fileName) {
         const { owner, repo, branch } = config.githubRepo;
         const branchName = branch || 'main';
         // Find the file path from selected updates
-        const updateWithPath = selectedUpdates.find(u => u.fileName === fileName);
+        const updateWithPath = selectedUpdates.find((u) => u.fileName === fileName);
         if (updateWithPath) {
           // Extract file path from github URL or use fileName directly
           const filePath = updateWithPath.githubUrl?.split('/blob/')[1]?.split('/').slice(1).join('/') || fileName;
           editUrl = `https://github.com/${owner}/${repo}/edit/${branchName}/${filePath}`;
-          
+
           // Generate commit diff URL if we have commitSha
           if (commitSha) {
             commitDiffUrl = `https://github.com/${owner}/${repo}/commit/${commitSha}`;
           }
         }
       }
-      
+
       resultMessage = `✅ Great news! I've successfully updated the document: <${actualGithubUrl}|*${fileName}*>`;
       if (commitDiffUrl && editUrl) {
         resultMessage += `\n\n📝 You can <${commitDiffUrl}|view the changes> or <${editUrl}|edit the file> directly on GitHub.`;
@@ -220,7 +221,7 @@ const applySelectedToGithubAction = async ({
           const updatedFileName = successfulUpdates[0].fileName; // 성공한 파일 이름 사용
           const userName = await getUserName(userId, client); // 사용자 이름 가져오기
           // 실제 githubUrl 사용
-          const actualGithubUrl = selectedUpdates.find(u => u.fileName === updatedFileName)?.githubUrl || githubUrl;
+          const actualGithubUrl = selectedUpdates.find((u) => u.fileName === updatedFileName)?.githubUrl || githubUrl;
           const sectionInfo = formatSectionPathWithLinks({
             headingPath,
             sectionName,
@@ -281,12 +282,12 @@ const applySelectedToGithubAction = async ({
     }
 
     // 로그: GitHub 업데이트 성공
-    
+
     // Extract original and applied content from selectedUpdates
     const firstUpdate = selectedUpdates[0];
     const originalContent = firstUpdate?.oldContent || '';
     const appliedContent = firstUpdate?.newContent || '';
-    
+
     await logButtonClick(
       userId,
       workspaceId,
@@ -347,13 +348,13 @@ const applySelectedToGithubAction = async ({
     // 에러 메시지를 DM으로 전송 - 기존 채널 사용
     try {
       const errorMessage = `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : 'Unknown error'}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`;
-      
+
       // 이미 연 DM 채널이 있으면 재사용, 없으면 새로 열기
       let targetChannelId: string | undefined;
-      
+
       if (dmResult?.ok && dmResult.channel?.id) {
         targetChannelId = dmResult.channel.id;
-        
+
         // 로딩 메시지가 있으면 업데이트, 없으면 새 메시지
         if (loadingMessage?.ok && loadingMessage.ts) {
           await client.chat.update({
@@ -392,7 +393,7 @@ const applySelectedToGithubAction = async ({
         const newDmResult = await client.conversations.open({
           users: body.user.id,
         });
-        
+
         if (newDmResult.ok && newDmResult.channel?.id) {
           await client.chat.postMessage({
             channel: newDmResult.channel.id,
@@ -442,11 +443,11 @@ export const handleNewSectionModalSubmission = async ({
     // Extract metadata from session store instead of private_metadata
     const modalSessionId = body.view.private_metadata || '';
     const sessionData = getSessionData(modalSessionId, SessionType.NEW_SECTION);
-    
+
     if (!sessionData) {
       throw new Error('Modal session data not found');
     }
-    
+
     const {
       recommendedFile,
       userId,
@@ -460,7 +461,7 @@ export const handleNewSectionModalSubmission = async ({
 
     // Use selected file if available, otherwise fall back to recommended file
     const targetFile = selectedFile || recommendedFile;
-    
+
     // Get current DM channel ID for consistency with other similar functions
     const currentDmChannelId = user.id;
 
@@ -469,7 +470,7 @@ export const handleNewSectionModalSubmission = async ({
     logger.info(`Section body: "${sectionBody}"`);
     logger.info(`Section body length: ${sectionBody.length}`);
     logger.info(`Recommended file: ${recommendedFile}`);
-    
+
     // 디버깅: 모달 values 전체 구조 확인
     logger.info(`Modal values structure:`, JSON.stringify(values, null, 2));
 
@@ -542,9 +543,10 @@ export const handleNewSectionModalSubmission = async ({
 
     // 벡터 스토어 인스턴스 가져오기
     const vectorStore = VectorStoreService.getInstance();
+    const currentWorkspaceId = await getWorkspaceId(client);
 
     // 1. 벡터 스토어에 새 섹션 추가
-    const success = await vectorStore.addNewSection(targetFile, sectionTitle, sectionBody);
+    const success = await vectorStore.addNewSection(targetFile, sectionTitle, sectionBody, currentWorkspaceId);
 
     if (!success) {
       await client.chat.postMessage({
@@ -560,10 +562,9 @@ export const handleNewSectionModalSubmission = async ({
       });
 
       // 로그: 벡터 스토어 추가 실패
-      const workspaceId = await getWorkspaceId(client);
       logModalSubmit(
         user.id,
-        workspaceId,
+        currentWorkspaceId,
         'new_section_modal',
         Date.now() - startTime,
         false,
@@ -581,7 +582,7 @@ export const handleNewSectionModalSubmission = async ({
     }
 
     // 2. 업데이트된 마크다운 파일 가져오기
-    const markdownFile = vectorStore.getMarkdownFile(targetFile);
+    const markdownFile = vectorStore.getMarkdownFile(targetFile, currentWorkspaceId);
     if (!markdownFile) {
       await client.chat.postMessage({
         channel: user.id,
@@ -596,10 +597,9 @@ export const handleNewSectionModalSubmission = async ({
       });
 
       // 로그: 마크다운 파일 없음
-      const workspaceId = await getWorkspaceId(client);
       logModalSubmit(
         user.id,
-        workspaceId,
+        currentWorkspaceId,
         'new_section_modal',
         Date.now() - startTime,
         false,
@@ -684,21 +684,23 @@ Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''
     try {
       // Generate URLs for the new section
       const editUrl = `https://github.com/${owner}/${repo}/edit/main/${markdownFile.path}`;
-      const commitDiffUrl = updateResult.commitSha ? `https://github.com/${owner}/${repo}/commit/${updateResult.commitSha}` : '';
-      
+      const commitDiffUrl = updateResult.commitSha
+        ? `https://github.com/${owner}/${repo}/commit/${updateResult.commitSha}`
+        : '';
+
       // Use the same UI format as the success message (lines 448-458)
       let successText = `✅ New section "${sectionTitle}" added successfully to GitHub!
 
 📁 *File:* <${githubUrl}|${targetFile}>
 📝 *Added by:* ${userName}`;
-      
+
       // Add URL options if available
       if (commitDiffUrl && editUrl) {
         successText += `\n\n📝 You can <${commitDiffUrl}|view the changes> or <${editUrl}|edit the file> directly on GitHub.`;
       } else if (editUrl) {
         successText += `\n\n📝 You can <${editUrl}|edit the file> directly on GitHub.`;
       }
-      
+
       successText += `\n\n🔍 *Preview:*
 \`\`\`# ${sectionTitle}
 ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
@@ -865,8 +867,9 @@ I've added the new content. Knowledge grows stronger! ✨`;
       // Extract form values for error logging
       const errorSectionTitle = body.view.state.values.section_title_input?.section_title?.value || '';
       const errorSectionBody = body.view.state.values.section_body_input?.section_body?.value || '';
-      const errorSelectedFile = body.view.state.values.file_selection_input?.file_selection?.selected_option?.value || '';
-      
+      const errorSelectedFile =
+        body.view.state.values.file_selection_input?.file_selection?.selected_option?.value || '';
+
       // Extract originalChannelId from metadata for error logging
       const errorMetadata = JSON.parse(body.view.private_metadata || '{}');
       const errorOriginalChannelId = errorMetadata.originalChannelId;

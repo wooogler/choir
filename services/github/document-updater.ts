@@ -38,7 +38,7 @@ export async function applyDocumentUpdatesToGithub({
 
   for (const [fileName, fileUpdates] of updatesByFile.entries()) {
     try {
-      let currentMarkdownFile = vectorStore.getMarkdownFile(fileName);
+      let currentMarkdownFile = vectorStore.getMarkdownFile(fileName, workspaceId);
       if (!currentMarkdownFile) {
         throw new Error(`File not found in vector store: ${fileName}`);
       }
@@ -90,6 +90,7 @@ export async function applyDocumentUpdatesToGithub({
                   fileName,
                   update.nodeId,
                   update.updatedNodeContent,
+                  workspaceId,
                 );
                 if (!success) {
                   throw new Error(`Failed to update node ${update.nodeId} in ${fileName}`);
@@ -107,7 +108,7 @@ export async function applyDocumentUpdatesToGithub({
         }
 
         // 업데이트 후 최신 MarkdownFile 객체를 다시 가져옴
-        currentMarkdownFile = vectorStore.getMarkdownFile(fileName);
+        currentMarkdownFile = vectorStore.getMarkdownFile(fileName, workspaceId);
         if (!currentMarkdownFile) {
           throw new Error(`File not found in vector store after updates: ${fileName}`);
         }
@@ -175,7 +176,6 @@ export async function applyDocumentUpdatesToGithub({
 
       // 벡터 스토어는 이미 appendSpecificNode를 통해 업데이트됨
       Logger.info(`Vector store updates completed during node processing for ${fileName}`);
-
 
       successfulUpdates.push({ fileName, commitSha: updateResult.commitSha });
     } catch (error) {

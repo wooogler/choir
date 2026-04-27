@@ -99,7 +99,14 @@ OAuth mode requires:
 - `SLACK_STATE_SECRET`
 - `SLACK_SIGNING_SECRET`
 
-In OAuth mode, Bolt exposes `/slack/install` and `/slack/oauth_redirect`. Installation records are stored under `data/slack-installations/` for this first deployment step.
+In OAuth mode, Bolt exposes `/slack/install` and `/slack/oauth_redirect`.
+
+Runtime state is stored in SQLite by default:
+
+- `DATABASE_URL=file:data/choir.db`
+- `CHOIR_DB_ENCRYPTION_KEY`: optional 32-byte hex key used to encrypt Slack installations and workspace config JSON. Generate one with `openssl rand -hex 32`. If omitted, CHOIR creates `data/.choir-db-key` on first encrypted write; keep that file backed up for self-hosted deployments.
+
+Legacy JSON files under `data/*-config.json` and `data/slack-installations/` are migrated lazily the first time each workspace or installation is read.
 
 ## Scripts
 

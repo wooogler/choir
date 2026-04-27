@@ -3,14 +3,21 @@ import { Logger } from '../common/logger';
 import { DocumentTree } from '../document';
 import { updateNodeContent } from '../document/markdown';
 import type { MarkdownFile } from '../github';
+import { isQmdRetrievalEnabled } from '../retrieval/provider-config';
 import type { SlackMessage } from '../slack';
 import { VectorCacheManager } from './cache-manager';
 import { DocumentProcessor } from './document-processor';
 import { EmbeddingService } from './embedding-service';
 import { FAISSStoreManager } from './faiss-store-manager';
-import { isQmdRetrievalEnabled } from '../retrieval/provider-config';
 import { VectorStoreError } from './types';
 import type { DocumentMetadata } from './types';
+
+interface VectorWorkspaceState {
+  storeManager: FAISSStoreManager;
+  markdownFiles: MarkdownFile[];
+  cacheId: string;
+  nodeDocumentMap: Map<string, Document<DocumentMetadata>[]>;
+}
 
 /**
  * 벡터 스토어 서비스 - FAISS 기반
@@ -21,21 +28,15 @@ export class VectorStoreService {
 
   private embeddingService: EmbeddingService;
   private cacheManager: VectorCacheManager;
-  private storeManager: FAISSStoreManager;
   private documentProcessor: DocumentProcessor;
-  private markdownFiles: MarkdownFile[] = [];
-  private cacheId = '';
-
-  // 노드 ID와 문서 매핑 (증분 업데이트용)
-  private nodeDocumentMap = new Map<string, Document<DocumentMetadata>[]>();
+  private readonly workspaceStates = new Map<string, VectorWorkspaceState>();
+  private readonly defaultWorkspaceKey = 'default';
 
   constructor(embeddingService: EmbeddingService) {
     this.embeddingService = embeddingService;
     this.documentProcessor = new DocumentProcessor();
     this.cacheManager = new VectorCacheManager();
 
-    // FAISS 사용 (안정적이고 빠른 벡터 검색, 파일별 인덱싱)
-    this.storeManager = new FAISSStoreManager(this.embeddingService);
     Logger.info('Using FAISS vector store (stable and fast, file-based indexing)');
   }
 
@@ -49,39 +50,71 @@ export class VectorStoreService {
     return VectorStoreService.instance;
   }
 
+  private getWorkspaceKey(workspaceId?: string): string {
+    return workspaceId || this.defaultWorkspaceKey;
+  }
+
+  private getState(workspaceId?: string): VectorWorkspaceState {
+    const workspaceKey = this.getWorkspaceKey(workspaceId);
+    const existing = this.workspaceStates.get(workspaceKey);
+    if (existing) {
+      return existing;
+    }
+
+    const state: VectorWorkspaceState = {
+      storeManager: new FAISSStoreManager(this.embeddingService),
+      markdownFiles: [],
+      cacheId: '',
+      nodeDocumentMap: new Map<string, Document<DocumentMetadata>[]>(),
+    };
+    this.workspaceStates.set(workspaceKey, state);
+    return state;
+  }
+
   /**
    * 벡터 스토어 초기화
    */
-  public async initialize(markdownFiles: MarkdownFile[], useCache = true, forceRefresh = false, workspaceId?: string): Promise<boolean> {
+  public async initialize(
+    markdownFiles: MarkdownFile[],
+    useCache = true,
+    forceRefresh = false,
+    workspaceId?: string,
+  ): Promise<boolean> {
     Logger.info(
       `Initializing Vector Store with ${markdownFiles.length} files (useCache=${useCache}, forceRefresh=${forceRefresh})`,
     );
 
     try {
-      this.markdownFiles = markdownFiles;
+      const state = this.getState(workspaceId);
+      state.markdownFiles = markdownFiles;
 
       if (isQmdRetrievalEnabled()) {
-        Logger.info('QMD retrieval is enabled. Skipping FAISS vector store initialization and hydrating markdown files only.', {
-          workspaceId,
-          fileCount: markdownFiles.length,
-        });
+        Logger.info(
+          'QMD retrieval is enabled. Skipping FAISS vector store initialization and hydrating markdown files only.',
+          {
+            workspaceId,
+            fileCount: markdownFiles.length,
+          },
+        );
         return true;
       }
 
-      if (!this.markdownFiles.length) {
+      if (!state.markdownFiles.length) {
         Logger.info('No documents loaded, starting with empty vector store');
-        return await this.storeManager.initializeStore([], [], workspaceId);
+        return await state.storeManager.initializeStore([], [], workspaceId);
       }
 
-      this.cacheId = this.cacheManager.generateCacheId();
-      const buildSuccess = await this.buildVectorStore(this.markdownFiles, useCache, forceRefresh, workspaceId);
+      state.cacheId = this.cacheManager.generateCacheId();
+      const buildSuccess = await this.buildVectorStore(state.markdownFiles, useCache, forceRefresh, workspaceId);
 
       if (!buildSuccess) {
         Logger.error('Failed to build vector store');
         return false;
       }
 
-      Logger.info(`VectorStoreService: Ready with ${this.storeManager.getDocuments().length} documents`);
+      Logger.info(`VectorStoreService: Ready with ${state.storeManager.getDocuments().length} documents`, {
+        workspaceId,
+      });
       return true;
     } catch (error) {
       Logger.error('Failed to initialize vector store', error as Error);
@@ -125,16 +158,17 @@ export class VectorStoreService {
    */
   private async buildVectorStoreFromFiles(markdownFiles: MarkdownFile[], workspaceId?: string): Promise<boolean> {
     try {
+      const state = this.getState(workspaceId);
       Logger.info(`Building vector store from ${markdownFiles.length} files`);
 
       // 새로 빌드할 때는 nodeDocumentMap도 초기화
       Logger.info('Clearing nodeDocumentMap for fresh build');
-      this.nodeDocumentMap.clear();
+      state.nodeDocumentMap.clear();
 
       const documents = await this.documentProcessor.prepareDocuments(markdownFiles);
       if (documents.length === 0) {
         Logger.warn('No valid documents found, initializing empty vector store');
-        return await this.storeManager.initializeStore([], [], workspaceId);
+        return await state.storeManager.initializeStore([], [], workspaceId);
       }
 
       const texts = this.documentProcessor.prepareTextsForEmbedding(documents);
@@ -164,7 +198,7 @@ export class VectorStoreService {
         documentTrees,
       });
 
-      return await this.storeManager.initializeStore(documents, embeddings, workspaceId);
+      return await state.storeManager.initializeStore(documents, embeddings, workspaceId);
     } catch (error) {
       Logger.error('Error building vector store from files', error as Error);
       return false;
@@ -176,9 +210,10 @@ export class VectorStoreService {
    */
   private async restoreFromCache(workspaceId?: string): Promise<boolean> {
     try {
+      const state = this.getState(workspaceId);
       Logger.info('Attempting to restore vector store from cache');
 
-      const firstFile = this.markdownFiles[0];
+      const firstFile = state.markdownFiles[0];
       let owner = 'default';
       let repo = 'default';
 
@@ -193,7 +228,7 @@ export class VectorStoreService {
       const cacheFilePath = this.cacheManager.getCacheFilePath(owner, repo);
       await this.cacheManager.logCacheStatus(cacheFilePath);
 
-      const cacheData = await this.cacheManager.loadEmbeddingsCache(cacheFilePath, this.markdownFiles);
+      const cacheData = await this.cacheManager.loadEmbeddingsCache(cacheFilePath, state.markdownFiles);
 
       if (!cacheData) {
         Logger.info('No valid cache data found');
@@ -206,7 +241,7 @@ export class VectorStoreService {
       if (cacheData.documentTrees && cacheData.documentTrees.size > 0) {
         Logger.info(`Found ${cacheData.documentTrees.size} document trees in cache`);
 
-        this.markdownFiles.forEach((file) => {
+        state.markdownFiles.forEach((file) => {
           if (cacheData.documentTrees?.has(file.name)) {
             const cachedTree = cacheData.documentTrees.get(file.name);
             if (cachedTree) {
@@ -217,7 +252,7 @@ export class VectorStoreService {
         });
       }
 
-      const success = await this.storeManager.initializeStore(documents, embeddings, workspaceId);
+      const success = await state.storeManager.initializeStore(documents, embeddings, workspaceId);
 
       if (success) {
         Logger.info(`Successfully restored vector store from cache with ${documents.length} documents`);
@@ -233,9 +268,10 @@ export class VectorStoreService {
   /**
    * 유사도 검색 수행
    */
-  public async similaritySearch(query: string, k = 5): Promise<Document<DocumentMetadata>[]> {
+  public async similaritySearch(query: string, k = 5, workspaceId?: string): Promise<Document<DocumentMetadata>[]> {
     try {
-      this.storeManager.checkInitialized();
+      const state = this.getState(workspaceId);
+      state.storeManager.checkInitialized();
 
       const cleanedQuery = query.replace(/<@[A-Z0-9]+>/g, '').trim();
 
@@ -249,7 +285,7 @@ export class VectorStoreService {
       );
 
       // FAISS 검색 수행
-      const results = await this.storeManager.similaritySearch(cleanedQuery, k);
+      const results = await state.storeManager.similaritySearch(cleanedQuery, k);
       Logger.info(`FAISS search found ${results.length} results`);
 
       if (results.length === 0) {
@@ -269,9 +305,15 @@ export class VectorStoreService {
    * 특정 파일에 제한된 유사도 검색 수행
    * FAISS 스토어의 내장 필터링 기능 사용
    */
-  public async similaritySearchByFile(query: string, filePath: string, k = 1): Promise<Document<DocumentMetadata>[]> {
+  public async similaritySearchByFile(
+    query: string,
+    filePath: string,
+    k = 1,
+    workspaceId?: string,
+  ): Promise<Document<DocumentMetadata>[]> {
     try {
-      this.storeManager.checkInitialized();
+      const state = this.getState(workspaceId);
+      state.storeManager.checkInitialized();
 
       const cleanedQuery = query.replace(/<@[A-Z0-9]+>/g, '').trim();
 
@@ -288,7 +330,7 @@ export class VectorStoreService {
       const fileName = filePath.split('/').pop() || filePath;
 
       // Use FAISS store's built-in file filtering
-      const results = await this.storeManager.similaritySearchByFile(cleanedQuery, fileName, k);
+      const results = await state.storeManager.similaritySearchByFile(cleanedQuery, fileName, k);
 
       Logger.info(`File-specific search returned ${results.length} results for file: ${fileName}`);
 
@@ -324,7 +366,8 @@ export class VectorStoreService {
     k = 5,
   ): Promise<Document<DocumentMetadata>[]> {
     try {
-      this.storeManager.checkInitialized();
+      const state = this.getState(workspaceId);
+      state.storeManager.checkInitialized();
 
       const cleanedQuery = query.replace(/<@[A-Z0-9]+>/g, '').trim();
 
@@ -342,7 +385,7 @@ export class VectorStoreService {
         `Performing writable files similarity search for query: "${cleanedQuery.substring(0, 50)}${cleanedQuery.length > 50 ? '...' : ''}" with k=${k}, excluding ${readOnlyFiles.length} read-only files`,
       );
 
-      const results = await this.storeManager.similaritySearchWritableFiles(cleanedQuery, readOnlyFiles, k);
+      const results = await state.storeManager.similaritySearchWritableFiles(cleanedQuery, readOnlyFiles, k);
 
       Logger.info(`Writable files search returned ${results.length} results`);
 
@@ -362,7 +405,8 @@ export class VectorStoreService {
    */
   public async updateReadOnlyFilesConfiguration(workspaceId: string): Promise<boolean> {
     try {
-      this.storeManager.checkInitialized();
+      const state = this.getState(workspaceId);
+      state.storeManager.checkInitialized();
 
       // Get read-only files from workspace config
       const { WorkspaceStore } = await import('services/workspace/workspace-store');
@@ -373,7 +417,7 @@ export class VectorStoreService {
         `Updating read-only files configuration for workspace ${workspaceId}, ${readOnlyFiles.length} files set as read-only`,
       );
 
-      const success = await this.storeManager.updateReadOnlyFiles(readOnlyFiles);
+      const success = await state.storeManager.updateReadOnlyFiles(readOnlyFiles);
 
       if (success) {
         Logger.info('Successfully updated writable files index configuration');
@@ -393,6 +437,7 @@ export class VectorStoreService {
    */
   public async initializeFromCacheOnly(owner: string, repo: string, workspaceId?: string): Promise<boolean> {
     try {
+      const state = this.getState(workspaceId);
       if (isQmdRetrievalEnabled()) {
         Logger.info(`QMD retrieval is enabled. Skipping FAISS cache-only initialization for ${owner}/${repo}.`, {
           workspaceId,
@@ -434,10 +479,10 @@ export class VectorStoreService {
         }
       }
 
-      this.markdownFiles = markdownFiles;
+      state.markdownFiles = markdownFiles;
 
       // 벡터 스토어 초기화
-      const success = await this.storeManager.initializeStore(cacheData.documents, cacheData.embeddings, workspaceId);
+      const success = await state.storeManager.initializeStore(cacheData.documents, cacheData.embeddings, workspaceId);
 
       if (success) {
         Logger.info(`Successfully initialized vector store from cache with ${cacheData.documents.length} documents`);
@@ -455,41 +500,46 @@ export class VectorStoreService {
   /**
    * 메시지 기반 스마트 검색
    */
-  public async smartSearchForMessages(messages: SlackMessage[], k = 5): Promise<Document<DocumentMetadata>[]> {
-    this.storeManager.checkInitialized();
+  public async smartSearchForMessages(
+    messages: SlackMessage[],
+    k = 5,
+    workspaceId?: string,
+  ): Promise<Document<DocumentMetadata>[]> {
+    const state = this.getState(workspaceId);
+    state.storeManager.checkInitialized();
 
     // Enhanced search 서비스가 제거되었으므로 기본 검색 사용
     Logger.info('Using basic similarity search for messages');
     const query = messages.map((msg) => msg.text).join('\n');
-    return await this.similaritySearch(query, k);
+    return await this.similaritySearch(query, k, workspaceId);
   }
 
   // Getter methods for compatibility
-  public getMarkdownFile(fileName: string): MarkdownFile | undefined {
-    return this.markdownFiles.find((file) => file.name === fileName);
+  public getMarkdownFile(fileName: string, workspaceId?: string): MarkdownFile | undefined {
+    return this.getState(workspaceId).markdownFiles.find((file) => file.name === fileName);
   }
 
-  public getAllMarkdownFiles(): MarkdownFile[] {
-    return this.markdownFiles;
+  public getAllMarkdownFiles(workspaceId?: string): MarkdownFile[] {
+    return this.getState(workspaceId).markdownFiles;
   }
 
-  public setLoadedMarkdownFiles(markdownFiles: MarkdownFile[]): void {
-    this.markdownFiles = markdownFiles;
-    Logger.info(`Hydrated in-memory markdown files: ${markdownFiles.length}`);
+  public setLoadedMarkdownFiles(markdownFiles: MarkdownFile[], workspaceId?: string): void {
+    this.getState(workspaceId).markdownFiles = markdownFiles;
+    Logger.info(`Hydrated in-memory markdown files: ${markdownFiles.length}`, { workspaceId });
   }
 
-  public isHealthy(): boolean {
-    const diagnosis = this.storeManager.getDiagnostics();
+  public isHealthy(workspaceId?: string): boolean {
+    const diagnosis = this.getState(workspaceId).storeManager.getDiagnostics();
     return diagnosis.status === 'healthy';
   }
 
   public get vectorCount(): number {
-    const diagnosis = this.storeManager.getDiagnostics();
+    const diagnosis = this.getState().storeManager.getDiagnostics();
     return diagnosis.details.vectorsCount;
   }
 
-  public diagnoseVectorStore() {
-    return this.storeManager.getDiagnostics();
+  public diagnoseVectorStore(workspaceId?: string) {
+    return this.getState(workspaceId).storeManager.getDiagnostics();
   }
 
   /**
@@ -498,9 +548,9 @@ export class VectorStoreService {
   /**
    * 마크다운 파일 배열에 새 파일 추가
    */
-  public addToMarkdownFiles(markdownFile: MarkdownFile): void {
-    this.markdownFiles.push(markdownFile);
-    Logger.info(`Added new file to markdownFiles array: ${markdownFile.name}`);
+  public addToMarkdownFiles(markdownFile: MarkdownFile, workspaceId?: string): void {
+    this.getState(workspaceId).markdownFiles.push(markdownFile);
+    Logger.info(`Added new file to markdownFiles array: ${markdownFile.name}`, { workspaceId });
   }
 
   public async setMarkdownFiles(
@@ -522,14 +572,15 @@ export class VectorStoreService {
   /**
    * 벡터 스토어 리셋 및 재구축
    */
-  public async resetAndRebuildVectorStore(): Promise<boolean> {
-    Logger.info('Resetting and rebuilding vector store');
+  public async resetAndRebuildVectorStore(workspaceId?: string): Promise<boolean> {
+    const state = this.getState(workspaceId);
+    Logger.info('Resetting and rebuilding vector store', { workspaceId });
 
-    this.storeManager.reset();
+    state.storeManager.reset();
 
     // 현재 작업 중인 repository의 캐시만 무효화
-    if (this.markdownFiles.length > 0) {
-      const firstFile = this.markdownFiles[0];
+    if (state.markdownFiles.length > 0) {
+      const firstFile = state.markdownFiles[0];
       if (firstFile && firstFile.githubUrl) {
         const match = firstFile.githubUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
         if (match && match.length >= 3) {
@@ -546,7 +597,7 @@ export class VectorStoreService {
         await this.cacheManager.invalidateCache();
       }
 
-      return await this.initialize(this.markdownFiles, true, true);
+      return await this.initialize(state.markdownFiles, true, true, workspaceId);
     }
 
     Logger.warn('No markdown files available to rebuild vector store');
@@ -565,9 +616,14 @@ export class VectorStoreService {
   /**
    * 새로운 섹션 추가
    */
-  public async addNewSection(fileName: string, sectionTitle: string, sectionBody: string): Promise<boolean> {
+  public async addNewSection(
+    fileName: string,
+    sectionTitle: string,
+    sectionBody: string,
+    workspaceId?: string,
+  ): Promise<boolean> {
     try {
-      const file = this.getMarkdownFile(fileName);
+      const file = this.getMarkdownFile(fileName, workspaceId);
       if (!file) {
         Logger.error(`File not found: ${fileName}`);
         return false;
@@ -592,7 +648,7 @@ export class VectorStoreService {
           const { toString } = await import('mdast-util-to-string');
           const nodeContent = toString(node);
           if (nodeContent && nodeContent.trim()) {
-            const success = await this.addNodeIncremental(fileName, nodeId, nodeContent, node.type as any);
+            const success = await this.addNodeIncremental(fileName, nodeId, nodeContent, node.type as any, workspaceId);
             if (success) successCount++;
           }
         }
@@ -614,9 +670,15 @@ export class VectorStoreService {
    * 특정 노드를 새로운 내용으로 교체 (enhanceExistingContent용) - 여러 listItem/paragraph 지원
    * 예: 기존 "- A is B" → 새로운 "- A is C\n- B is C" (1개 노드 → 2개 노드로 교체)
    */
-  public async replaceNodeWithEnhancedContent(fileName: string, nodeId: string, content: string): Promise<boolean> {
+  public async replaceNodeWithEnhancedContent(
+    fileName: string,
+    nodeId: string,
+    content: string,
+    workspaceId?: string,
+  ): Promise<boolean> {
     try {
-      const file = this.getMarkdownFile(fileName);
+      const state = this.getState(workspaceId);
+      const file = this.getMarkdownFile(fileName, workspaceId);
       if (!file) {
         Logger.error(`File not found: ${fileName}`);
         return false;
@@ -628,7 +690,6 @@ export class VectorStoreService {
       const { parseAndSplitContent, createReplacementNodes, replaceNodeAtomically } = await import(
         '../document/markdown'
       );
-
 
       // 1. content를 파싱하여 개별 항목들로 분할
       const contentItems = parseAndSplitContent(content);
@@ -642,19 +703,19 @@ export class VectorStoreService {
 
       // 3. Atomic replacement 로직 사용
       const originalNode = file.tree.nodeMap.get(nodeId);
-      
+
       if (originalNode) {
         Logger.info(`Using atomic replacement for node ${nodeId}`);
-        
+
         // 기존 노드를 벡터 스토어에서 제거
-        await this.removeNodeFromVectorStore(nodeId);
+        await this.removeNodeFromVectorStore(nodeId, workspaceId);
         Logger.info(`Removed existing node ${nodeId} from vector store`);
-        
+
         // 원자적 노드 교체
         const replacementNodes = createReplacementNodes(originalNode, contentItems);
         Logger.info(`DEBUG: Before replaceNodeAtomically - nodeMap size: ${file.tree.nodeMap.size}`);
-        Logger.info(`DEBUG: Replacement nodes to add: ${replacementNodes.map(n => n.id).join(', ')}`);
-        
+        Logger.info(`DEBUG: Replacement nodes to add: ${replacementNodes.map((n) => n.id).join(', ')}`);
+
         file.tree = replaceNodeAtomically(file.tree, nodeId, replacementNodes);
         Logger.info(`DEBUG: After replaceNodeAtomically - nodeMap size: ${file.tree.nodeMap.size}`);
         Logger.info(`Atomically replaced node ${nodeId} with ${replacementNodes.length} replacement nodes`);
@@ -676,14 +737,20 @@ export class VectorStoreService {
 
         for (const [newNodeId, newNode] of newNodes) {
           // 이미 벡터 스토어에 있는 노드는 건너뛰기
-          if (this.nodeDocumentMap.has(newNodeId)) {
+          if (state.nodeDocumentMap.has(newNodeId)) {
             continue;
           }
 
           try {
             const newNodeContent = toString(newNode);
             if (newNodeContent && newNodeContent.trim()) {
-              const success = await this.addNodeIncremental(fileName, newNodeId, newNodeContent, newNode.type as any);
+              const success = await this.addNodeIncremental(
+                fileName,
+                newNodeId,
+                newNodeContent,
+                newNode.type as any,
+                workspaceId,
+              );
               if (success) {
                 addedCount++;
                 Logger.info(`Successfully added replacement node ${newNodeId} to vector store`);
@@ -705,9 +772,7 @@ export class VectorStoreService {
       Logger.info(
         `Node replacement completed successfully: removed 1 original node, added ${addedCount} replacement nodes`,
       );
-      
 
-      
       return true;
     } catch (error) {
       Logger.error('Error replacing node with enhanced content', error as Error);
@@ -721,9 +786,10 @@ export class VectorStoreService {
   public async updateSpecificNodes(
     fileName: string,
     updates: Array<{ nodeId: string; content: string }>,
+    workspaceId?: string,
   ): Promise<boolean> {
     try {
-      const file = this.getMarkdownFile(fileName);
+      const file = this.getMarkdownFile(fileName, workspaceId);
       if (!file) {
         Logger.error(`File not found: ${fileName}`);
         return false;
@@ -751,6 +817,7 @@ export class VectorStoreService {
             update.nodeId,
             updatedNodeContent,
             updatedNode.type as any,
+            workspaceId,
           );
           if (success) {
             successCount++;
@@ -786,7 +853,7 @@ export class VectorStoreService {
    * 저장소 정보 추출
    */
   public extractRepoInfoFromFiles() {
-    const firstFile = this.markdownFiles[0];
+    const firstFile = this.getState().markdownFiles[0];
     if (!firstFile?.githubUrl) return null;
 
     const match = firstFile.githubUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
@@ -804,8 +871,8 @@ export class VectorStoreService {
   /**
    * 향상된 검색 (기존 호환성)
    */
-  public async enhancedSearch(query: string, k = 5): Promise<any[]> {
-    return await this.similaritySearch(query, k);
+  public async enhancedSearch(query: string, k = 5, workspaceId?: string): Promise<any[]> {
+    return await this.similaritySearch(query, k, workspaceId);
   }
 
   // ===== 증분 업데이트 메서드들 =====
@@ -818,9 +885,11 @@ export class VectorStoreService {
     nodeId: string,
     nodeContent: string,
     nodeType: 'paragraph' | 'listItem' | 'code' | 'blockquote' | 'list' = 'paragraph',
+    workspaceId?: string,
   ): Promise<boolean> {
     try {
-      const file = this.getMarkdownFile(fileName);
+      const state = this.getState(workspaceId);
+      const file = this.getMarkdownFile(fileName, workspaceId);
       if (!file) {
         Logger.error(`File not found: ${fileName}`);
         return false;
@@ -830,27 +899,29 @@ export class VectorStoreService {
       if (nodeType === 'list') {
         const listNode = file.tree.nodeMap.get(nodeId) as any;
         if (listNode && listNode.children) {
-          Logger.info(`Processing list node ${nodeId} with ${listNode.children.length} children as individual listItem documents`);
-          
+          Logger.info(
+            `Processing list node ${nodeId} with ${listNode.children.length} children as individual listItem documents`,
+          );
+
           let successCount = 0;
           const { toString } = await import('mdast-util-to-string');
-          
+
           for (let i = 0; i < listNode.children.length; i++) {
             const childNode = listNode.children[i];
             if (childNode.type === 'listItem') {
               const childContent = toString(childNode);
               if (childContent && childContent.trim()) {
                 Logger.info(`Processing listItem ${i}: "${childContent.substring(0, 50)}..."`);
-                
+
                 // 직접 Document 생성하여 벡터 스토어에 추가
                 const documents = await this.createListItemDocument(file, nodeId, childContent, i);
                 if (documents.length > 0) {
                   const enhancedDocuments = await this.enhanceNewDocuments(documents);
-                  const success = await this.addDocumentsToVectorStore(enhancedDocuments);
+                  const success = await this.addDocumentsToVectorStore(enhancedDocuments, workspaceId);
                   if (success) {
                     // listItem의 가상 nodeId를 nodeDocumentMap에 추가
                     const virtualNodeId = `${nodeId}_item_${i}`;
-                    this.nodeDocumentMap.set(virtualNodeId, enhancedDocuments);
+                    state.nodeDocumentMap.set(virtualNodeId, enhancedDocuments);
                     successCount++;
                     Logger.info(`Successfully added listItem ${i} document to vector store and nodeDocumentMap`);
                   } else {
@@ -862,8 +933,10 @@ export class VectorStoreService {
               }
             }
           }
-          
-          Logger.info(`Successfully processed ${successCount}/${listNode.children.length} listItem documents for list ${nodeId}`);
+
+          Logger.info(
+            `Successfully processed ${successCount}/${listNode.children.length} listItem documents for list ${nodeId}`,
+          );
           return successCount > 0;
         } else {
           Logger.warn(`List node ${nodeId} not found or has no children`);
@@ -882,14 +955,14 @@ export class VectorStoreService {
       const enhancedDocuments = await this.enhanceNewDocuments(documents);
 
       // 3. 임베딩 생성 및 벡터 스토어에 추가
-      const success = await this.addDocumentsToVectorStore(enhancedDocuments);
+      const success = await this.addDocumentsToVectorStore(enhancedDocuments, workspaceId);
       if (!success) {
         Logger.error(`Failed to add documents to vector store for node ${nodeId}`);
         return false;
       }
 
       // 4. 노드별 Document 맵에 저장
-      this.nodeDocumentMap.set(nodeId, enhancedDocuments);
+      state.nodeDocumentMap.set(nodeId, enhancedDocuments);
 
       Logger.info(`Successfully added node ${nodeId} to vector store incrementally`);
       return true;
@@ -907,13 +980,14 @@ export class VectorStoreService {
     nodeId: string,
     newContent: string,
     nodeType: 'paragraph' | 'listItem' | 'code' | 'blockquote' = 'paragraph',
+    workspaceId?: string,
   ): Promise<boolean> {
     try {
       // 1. 기존 노드의 Document들 제거
-      await this.removeNodeFromVectorStore(nodeId);
+      await this.removeNodeFromVectorStore(nodeId, workspaceId);
 
       // 2. 새 내용으로 노드 추가
-      return await this.addNodeIncremental(fileName, nodeId, newContent, nodeType);
+      return await this.addNodeIncremental(fileName, nodeId, newContent, nodeType, workspaceId);
     } catch (error) {
       Logger.error(`Error updating node ${nodeId} incrementally`, error as Error);
       return false;
@@ -923,52 +997,59 @@ export class VectorStoreService {
   /**
    * 벡터 스토어에서 특정 노드의 Document들 제거
    */
-  private async removeNodeFromVectorStore(nodeId: string): Promise<void> {
+  private async removeNodeFromVectorStore(nodeId: string, workspaceId?: string): Promise<void> {
     try {
+      const state = this.getState(workspaceId);
       Logger.info(`🗑️  Attempting to remove node ${nodeId} from vector store`);
-      Logger.info(`📊 Current nodeDocumentMap has ${this.nodeDocumentMap.size} entries`);
-      
-      const existingDocuments = this.nodeDocumentMap.get(nodeId);
+      Logger.info(`📊 Current nodeDocumentMap has ${state.nodeDocumentMap.size} entries`);
+
+      const existingDocuments = state.nodeDocumentMap.get(nodeId);
       Logger.info(`🔍 Found ${existingDocuments?.length || 0} existing documents for node ${nodeId}`);
-      
+
       if (existingDocuments && existingDocuments.length > 0) {
         // Debug: 제거할 document들의 정보 로그
         existingDocuments.forEach((doc, index) => {
-          Logger.info(`   [${index}] Document nodeId: ${doc.metadata.nodeId}, content preview: "${doc.pageContent.substring(0, 50)}..."`);
+          Logger.info(
+            `   [${index}] Document nodeId: ${doc.metadata.nodeId}, content preview: "${doc.pageContent.substring(0, 50)}..."`,
+          );
         });
-        
+
         // 실제 벡터 스토어에서 Document 제거
-        const success = await this.storeManager.removeDocuments(existingDocuments);
+        const success = await state.storeManager.removeDocuments(existingDocuments);
         if (!success) {
           Logger.error(`Failed to remove documents for node ${nodeId} from vector store`);
           throw new Error(`Failed to remove documents for node ${nodeId}`);
         }
 
         // 맵에서도 제거
-        this.nodeDocumentMap.delete(nodeId);
+        state.nodeDocumentMap.delete(nodeId);
 
-        Logger.info(`✅ Successfully removed ${existingDocuments.length} documents for node ${nodeId} from vector store`);
+        Logger.info(
+          `✅ Successfully removed ${existingDocuments.length} documents for node ${nodeId} from vector store`,
+        );
       } else {
         Logger.warn(`⚠️  No existing documents found for node ${nodeId} in nodeDocumentMap`);
-        
+
         // Debug: nodeDocumentMap의 모든 키 출력
-        const allKeys = Array.from(this.nodeDocumentMap.keys());
+        const allKeys = Array.from(state.nodeDocumentMap.keys());
         Logger.info(`🔑 All keys in nodeDocumentMap: [${allKeys.join(', ')}]`);
-        
+
         // nodeDocumentMap이 비어있을 때 대안: vector store에서 직접 찾아서 제거
         Logger.info(`🔍 Attempting alternative removal: searching vector store for nodeId ${nodeId}`);
-        const allDocuments = this.storeManager.getDocuments();
-        const documentsToRemove = allDocuments.filter(doc => doc.metadata.nodeId === nodeId);
-        
+        const allDocuments = state.storeManager.getDocuments();
+        const documentsToRemove = allDocuments.filter((doc) => doc.metadata.nodeId === nodeId);
+
         if (documentsToRemove.length > 0) {
           Logger.info(`📋 Found ${documentsToRemove.length} documents with nodeId ${nodeId} in vector store`);
           documentsToRemove.forEach((doc, index) => {
             Logger.info(`   [${index}] Document content preview: "${doc.pageContent.substring(0, 50)}..."`);
           });
-          
-          const success = await this.storeManager.removeDocuments(documentsToRemove);
+
+          const success = await state.storeManager.removeDocuments(documentsToRemove);
           if (success) {
-            Logger.info(`✅ Successfully removed ${documentsToRemove.length} documents for node ${nodeId} using alternative method`);
+            Logger.info(
+              `✅ Successfully removed ${documentsToRemove.length} documents for node ${nodeId} using alternative method`,
+            );
           } else {
             Logger.error(`❌ Failed to remove documents for node ${nodeId} using alternative method`);
             throw new Error(`Failed to remove documents for node ${nodeId}`);
@@ -1208,8 +1289,14 @@ export class VectorStoreService {
   /**
    * 단일 문서를 벡터 스토어에 추가
    */
-  public async addDocument(fileName: string, content: string, metadata: DocumentMetadata): Promise<boolean> {
+  public async addDocument(
+    fileName: string,
+    content: string,
+    metadata: DocumentMetadata,
+    workspaceId?: string,
+  ): Promise<boolean> {
     try {
+      const state = this.getState(workspaceId);
       Logger.info(`Adding single document to vector store: ${fileName}`);
 
       // 기존 파일 처리 로직을 재사용하여 MarkdownFile 객체 생성
@@ -1235,11 +1322,11 @@ export class VectorStoreService {
       }
 
       // 기존 addDocumentsToVectorStore 메서드 사용
-      const success = await this.addDocumentsToVectorStore(documents);
+      const success = await this.addDocumentsToVectorStore(documents, workspaceId);
 
       if (success) {
         // markdownFiles 배열에도 추가하여 캐시에 포함
-        this.markdownFiles.push(markdownFile);
+        state.markdownFiles.push(markdownFile);
         Logger.info(`Successfully added single document ${fileName} with ${documents.length} nodes to vector store`);
       } else {
         Logger.error(`Failed to add single document ${fileName} to vector store`);
@@ -1255,8 +1342,12 @@ export class VectorStoreService {
   /**
    * Document들을 벡터 스토어에 추가
    */
-  public async addDocumentsToVectorStore(documents: Document<DocumentMetadata>[]): Promise<boolean> {
+  public async addDocumentsToVectorStore(
+    documents: Document<DocumentMetadata>[],
+    workspaceId?: string,
+  ): Promise<boolean> {
     try {
+      const state = this.getState(workspaceId);
       if (documents.length === 0) {
         return true;
       }
@@ -1272,7 +1363,7 @@ export class VectorStoreService {
 
       // 실제 증분 추가
       Logger.info('Adding documents using incremental update');
-      const success = await this.storeManager.addDocuments(documents, embeddings);
+      const success = await state.storeManager.addDocuments(documents, embeddings);
       if (!success) {
         Logger.error('Failed to add documents to vector store incrementally');
         return false;

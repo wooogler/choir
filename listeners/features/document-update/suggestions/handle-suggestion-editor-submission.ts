@@ -105,12 +105,12 @@ export const handleSuggestionEditorSubmission = async ({
 
       // 문서 업데이트 저장
       const userId = body.user.id;
-      updateDocumentContent(userId, index, updatedContent);
+      const workspaceId = await getWorkspaceId(client);
+      updateDocumentContent(userId, index, updatedContent, workspaceId);
 
       console.log(`Message updated for user ${userId}, index ${index}`);
 
       // 로그: 성공
-      const workspaceId = await getWorkspaceId(client);
       // 채널 타입 결정
       let channelType: 'public' | 'private' | 'dm' = 'public';
       try {

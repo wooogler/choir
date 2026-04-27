@@ -4,6 +4,7 @@
  * 세션 데이터 저장소 구현
  * Slack API의 private_metadata 크기 제한(3001자)을 우회하기 위한 임시 저장소입니다.
  */
+import { getDatabase } from 'services/db/connection';
 
 // 세션 타입 열거형
 export enum SessionType {
@@ -14,14 +15,43 @@ export enum SessionType {
   GENERAL_CONVERSATION = 'general_conversation', // General conversation correction buttons
 }
 
-// 세션 타입별 데이터를 저장할 Map (메모리 기반 저장소)
-const sessionStores = {
-  [SessionType.DOCUMENT_UPDATE]: new Map<string, any>(),
-  [SessionType.NEW_SECTION]: new Map<string, any>(),
-  [SessionType.ANONYMOUS_MESSAGE]: new Map<string, any>(),
-  [SessionType.CREATE_FILE_MODAL]: new Map<string, any>(),
-  [SessionType.GENERAL_CONVERSATION]: new Map<string, any>(),
-};
+const sessionTimers = new Map<string, NodeJS.Timeout>();
+
+function getSessionKey(sessionId: string, sessionType: SessionType): string {
+  return `${sessionType}:${sessionId}`;
+}
+
+function deleteSession(sessionId: string, sessionType: SessionType): boolean {
+  const result = getDatabase()
+    .prepare('DELETE FROM sessions WHERE session_type = ? AND session_id = ?')
+    .run(sessionType, sessionId);
+  return result.changes > 0;
+}
+
+function deserializeSessionData(dataJson: string): any {
+  return JSON.parse(dataJson);
+}
+
+function getSessionRow(sessionId: string, sessionType: SessionType): any | null {
+  const row = getDatabase()
+    .prepare(`
+      SELECT data_json AS dataJson, expires_at AS expiresAt
+      FROM sessions
+      WHERE session_type = ? AND session_id = ?
+    `)
+    .get(sessionType, sessionId) as { dataJson: string; expiresAt: number } | undefined;
+
+  if (!row) {
+    return null;
+  }
+
+  if (row.expiresAt <= Date.now()) {
+    deleteSession(sessionId, sessionType);
+    return null;
+  }
+
+  return deserializeSessionData(row.dataJson);
+}
 
 /**
  * 세션 데이터를 저장합니다.
@@ -36,26 +66,43 @@ export function storeSessionData(
   sessionType: SessionType = SessionType.DOCUMENT_UPDATE,
   expirationMs: number = 24 * 60 * 60 * 1000, // 24시간으로 연장
 ): void {
-  const sessionStore = sessionStores[sessionType];
+  const sessionKey = getSessionKey(sessionId, sessionType);
 
   // 기존 타이머가 있으면 제거
-  const existingSession = sessionStore.get(sessionId);
-  if (existingSession && existingSession._timerId) {
-    clearTimeout(existingSession._timerId);
+  const existingTimer = sessionTimers.get(sessionKey);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    sessionTimers.delete(sessionKey);
   }
+
+  const now = Date.now();
+  const expiresAt = now + expirationMs;
 
   // 만료 타이머 설정
   const timerId = setTimeout(() => {
     console.log(`세션 만료: ${sessionId} (${sessionType})`);
-    sessionStore.delete(sessionId);
+    deleteSession(sessionId, sessionType);
+    sessionTimers.delete(sessionKey);
   }, expirationMs);
+  sessionTimers.set(sessionKey, timerId);
 
-  // 데이터와 타이머 ID 저장
-  sessionStore.set(sessionId, {
-    ...data,
-    _timerId: timerId,
-    _createdAt: Date.now(),
-  });
+  getDatabase()
+    .prepare(`
+      INSERT INTO sessions (session_type, session_id, data_json, expires_at, created_at, updated_at)
+      VALUES (@sessionType, @sessionId, @dataJson, @expiresAt, @createdAt, @updatedAt)
+      ON CONFLICT(session_type, session_id) DO UPDATE SET
+        data_json = excluded.data_json,
+        expires_at = excluded.expires_at,
+        updated_at = excluded.updated_at
+    `)
+    .run({
+      sessionType,
+      sessionId,
+      dataJson: JSON.stringify(data),
+      expiresAt,
+      createdAt: now,
+      updatedAt: now,
+    });
 
   console.log(`세션 저장: ${sessionId} (${sessionType}), 만료 시간: ${expirationMs}ms`);
 }
@@ -67,17 +114,14 @@ export function storeSessionData(
  * @returns 저장된 데이터 객체, 없으면 null
  */
 export function getSessionData(sessionId: string, sessionType: SessionType = SessionType.DOCUMENT_UPDATE): any {
-  const sessionStore = sessionStores[sessionType];
-  const session = sessionStore.get(sessionId);
+  const session = getSessionRow(sessionId, sessionType);
 
   if (!session) {
     console.log(`존재하지 않는 세션: ${sessionId} (${sessionType})`);
     return null;
   }
 
-  // 내부 프로퍼티 제외하고 반환
-  const { _timerId, _createdAt, ...data } = session;
-  return data;
+  return session;
 }
 
 /**
@@ -87,14 +131,15 @@ export function getSessionData(sessionId: string, sessionType: SessionType = Ses
  * @returns 삭제 성공 여부
  */
 export function removeSessionData(sessionId: string, sessionType: SessionType = SessionType.DOCUMENT_UPDATE): boolean {
-  const sessionStore = sessionStores[sessionType];
-  const session = sessionStore.get(sessionId);
+  const sessionKey = getSessionKey(sessionId, sessionType);
+  const timer = sessionTimers.get(sessionKey);
 
-  if (session && session._timerId) {
-    clearTimeout(session._timerId);
+  if (timer) {
+    clearTimeout(timer);
+    sessionTimers.delete(sessionKey);
   }
 
-  return sessionStore.delete(sessionId);
+  return deleteSession(sessionId, sessionType);
 }
 
 /**
@@ -120,8 +165,9 @@ export function trackAnonymousMessage(
   messageTs: string,
   originalQuestionerId: string,
   sessionId: string,
+  workspaceId = 'default',
 ): void {
-  const key = `${channelId}_${messageTs}`;
+  const key = `${workspaceId}_${channelId}_${messageTs}`;
   storeSessionData(
     key,
     {
@@ -129,6 +175,7 @@ export function trackAnonymousMessage(
       messageTs,
       originalQuestionerId,
       sessionId,
+      workspaceId,
       isProcessed: false, // "Send Reply to Questioner" 버튼이 클릭되었는지 여부
     },
     SessionType.ANONYMOUS_MESSAGE,
@@ -141,20 +188,30 @@ export function trackAnonymousMessage(
  * @param channelId 채널 ID
  * @returns Anonymous 메시지 정보 또는 null
  */
-export function getAnonymousMessageInfo(channelId: string): any {
-  const store = sessionStores[SessionType.ANONYMOUS_MESSAGE];
+export function getAnonymousMessageInfo(channelId: string, workspaceId = 'default'): any {
+  const rows = getDatabase()
+    .prepare(`
+      SELECT session_id AS sessionId, data_json AS dataJson, expires_at AS expiresAt
+      FROM sessions
+      WHERE session_type = ?
+    `)
+    .all(SessionType.ANONYMOUS_MESSAGE) as Array<{ sessionId: string; dataJson: string; expiresAt: number }>;
 
   // 해당 채널의 Anonymous 메시지 찾기
-  for (const [key, session] of store.entries()) {
-    // 내부 프로퍼티 제외하고 데이터 추출
-    const { _timerId, _createdAt, ...data } = session;
-    if (data.channelId === channelId && !data.isProcessed) {
+  for (const row of rows) {
+    if (row.expiresAt <= Date.now()) {
+      deleteSession(row.sessionId, SessionType.ANONYMOUS_MESSAGE);
+      continue;
+    }
+
+    const data = deserializeSessionData(row.dataJson);
+    if (data.channelId === channelId && data.workspaceId === workspaceId && !data.isProcessed) {
       return {
         messageTs: data.messageTs,
         originalQuestionerId: data.originalQuestionerId,
         sessionId: data.sessionId,
         isProcessed: data.isProcessed,
-        key,
+        key: row.sessionId,
       };
     }
   }
@@ -167,11 +224,11 @@ export function getAnonymousMessageInfo(channelId: string): any {
  * @param key Anonymous 메시지 키
  */
 export function markAnonymousMessageProcessed(key: string): void {
-  const store = sessionStores[SessionType.ANONYMOUS_MESSAGE];
-  const session = store.get(key);
+  const session = getSessionRow(key, SessionType.ANONYMOUS_MESSAGE);
 
   if (session) {
     session.isProcessed = true;
+    storeSessionData(key, session, SessionType.ANONYMOUS_MESSAGE, 7 * 24 * 60 * 60 * 1000);
     console.log(`Anonymous message marked as processed: ${key}`);
   } else {
     console.log(`Anonymous message not found for key: ${key}`);
@@ -184,20 +241,17 @@ export function markAnonymousMessageProcessed(key: string): void {
  * @param threadTs Thread timestamp (root message timestamp)
  * @returns Anonymous 메시지 정보 또는 null
  */
-export function getAnonymousThreadInfo(channelId: string, threadTs: string): any {
-  const store = sessionStores[SessionType.ANONYMOUS_MESSAGE];
-  const key = `${channelId}_${threadTs}`;
+export function getAnonymousThreadInfo(channelId: string, threadTs: string, workspaceId = 'default'): any {
+  const key = `${workspaceId}_${channelId}_${threadTs}`;
+  const session = getSessionRow(key, SessionType.ANONYMOUS_MESSAGE);
 
-  const session = store.get(key);
   if (session) {
-    // 내부 프로퍼티 제외하고 데이터 추출
-    const { _timerId, _createdAt, ...data } = session;
-    if (!data.isProcessed) {
+    if (!session.isProcessed) {
       return {
-        messageTs: data.messageTs,
-        originalQuestionerId: data.originalQuestionerId,
-        sessionId: data.sessionId,
-        isProcessed: data.isProcessed,
+        messageTs: session.messageTs,
+        originalQuestionerId: session.originalQuestionerId,
+        sessionId: session.sessionId,
+        isProcessed: session.isProcessed,
         key,
       };
     }

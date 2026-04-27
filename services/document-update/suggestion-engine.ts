@@ -1,6 +1,6 @@
 import { Logger } from 'services/common/logger';
 import { type ProcessedDocument, processDocument } from 'services/document/update-processor';
-import type { SlackMessage } from 'services/slack';
+import { type SlackMessage, getWorkspaceId } from 'services/slack';
 import { checkVectorStoreHealth } from 'services/vector/health-check';
 import { VectorStoreService } from 'services/vector/main-service';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
@@ -15,8 +15,9 @@ export class SuggestionEngine {
     currentDmChannelId: string,
   ): Promise<{ processedDoc: ProcessedDocument | null; shouldStop: boolean }> {
     try {
+      const workspaceId = await getWorkspaceId(client);
       // 벡터 스토어 건강 상태 확인
-      const healthCheckResult = await checkVectorStoreHealth(client, currentDmChannelId);
+      const healthCheckResult = await checkVectorStoreHealth(client, currentDmChannelId, workspaceId);
       if (!healthCheckResult.isHealthy) {
         if (healthCheckResult.blocks) {
           await client.chat.postMessage({
@@ -71,6 +72,7 @@ export class SuggestionEngine {
         validMessages,
         client,
         vectorStore,
+        workspaceId,
       );
 
       if (!processedDoc) {
@@ -107,7 +109,8 @@ export class SuggestionEngine {
   async performInitialSearch(knowledgeContent: string, currentDmChannelId: string, client: any): Promise<any[]> {
     try {
       const vectorStore = VectorStoreService.getInstance();
-      const searchResults = await vectorStore.similaritySearch(knowledgeContent, 5);
+      const workspaceId = await getWorkspaceId(client);
+      const searchResults = await vectorStore.similaritySearch(knowledgeContent, 5, workspaceId);
 
       if (!searchResults || searchResults.length === 0) {
         await client.chat.postMessage({

@@ -9,15 +9,20 @@ export class FaissRetrievalProvider implements RetrievalProvider {
     const vectorStore = VectorStoreService.getInstance();
     const limit = params.limit ?? 5;
 
-    Logger.info(`FaissRetrievalProvider: searching for "${params.query.substring(0, 50)}${params.query.length > 50 ? '...' : ''}" with limit=${limit}`);
-    return await vectorStore.similaritySearch(params.query, limit);
+    Logger.info(
+      `FaissRetrievalProvider: searching for "${params.query.substring(0, 50)}${params.query.length > 50 ? '...' : ''}" with limit=${limit}`,
+      {
+        workspaceId: params.workspaceId,
+      },
+    );
+    return await vectorStore.similaritySearch(params.query, limit, params.workspaceId);
   }
 
   async warmup(_params: RetrievalWarmupParams): Promise<void> {
     Logger.info('FaissRetrievalProvider: no warm-up needed.');
   }
 
-  isHealthy(): boolean {
-    return VectorStoreService.getInstance().isHealthy();
+  isHealthy(workspaceId?: string): boolean {
+    return VectorStoreService.getInstance().isHealthy(workspaceId);
   }
 }

@@ -8,29 +8,29 @@ import {
   setLastMessageTimestamp,
   setProgressMessageTimestamp,
 } from 'services/common';
-import { SessionType, getSessionData, storeSessionData, generateSessionId } from 'services/common';
+import { SessionType, generateSessionId, getSessionData, storeSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import {
   type DocumentUpdate,
+  calculateDynamicOrder,
+  clearFileSelectionState,
   clearSearchResults,
+  getFileSelectionState,
+  getNextSuggestion,
   getSearchResults,
   getStoredDocumentUpdates,
-  storeDocumentUpdates,
-  storeSearchResults,
+  incrementSuggestionCount,
   // 새로운 파일 선택 상태 관리 함수들
   initializeFileSelectionState,
-  getFileSelectionState,
-  resetFileSelectionAfterApply,
-  markSuggestionAsApplied,
-  incrementSuggestionCount,
   isMaxSuggestionsReached,
-  calculateDynamicOrder,
-  getNextSuggestion,
-  clearFileSelectionState,
+  markSuggestionAsApplied,
+  resetFileSelectionAfterApply,
+  storeDocumentUpdates,
+  storeSearchResults,
 } from 'services/document/document-store';
+import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { type ProcessedDocument, processDocument } from 'services/document/update-processor';
-import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
 import { GithubService } from 'services/github';
 import { type SlackMessage, getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
@@ -99,10 +99,13 @@ async function showFileSelectionDropdown(
     });
 
     // Cache all files
-    await workspaceStore.setMarkdownFilesCache(workspaceId, markdownFiles.map((file) => ({
-      name: file.name,
-      path: file.path,
-    })));
+    await workspaceStore.setMarkdownFilesCache(
+      workspaceId,
+      markdownFiles.map((file) => ({
+        name: file.name,
+        path: file.path,
+      })),
+    );
 
     // Get writable files after caching
     fileList = await workspaceStore.getWritableFiles(workspaceId);
@@ -265,6 +268,7 @@ export const suggestUpdatesCallback = async ({
   const currentDmChannelId = body.channel?.id;
   const messageTsOfButtonClicked = body.container?.message_ts;
   const vectorStore = VectorStoreService.getInstance();
+  const currentWorkspaceId = await getWorkspaceId(client);
 
   // ========== CONCURRENCY CONTROL FOR MANAGER START UPDATE PROCESS ==========
   const value = body.actions?.[0]?.value;
@@ -405,13 +409,13 @@ export const suggestUpdatesCallback = async ({
             const isManagerOwnWork = sessionData.userId === userId; // Manager processing their own suggestion
             const isSameChannel = sessionData.originalChannelId === currentDmChannelId;
             const isThreadInteraction = !!sessionData.originalThreadTs; // Interaction happened in a thread
-            const shouldNotify = sessionData.originalChannelId && 
-                                !isSameChannel && 
-                                !isManagerOwnWork &&
-                                !isThreadInteraction;
-                                
-            logger.info(`[DEBUG] Notification check: originalChannelId=${sessionData.originalChannelId}, currentDmChannelId=${currentDmChannelId}, userId=${sessionData.userId}, managerId=${userId}, isManagerOwnWork=${isManagerOwnWork}, isSameChannel=${isSameChannel}, isThreadInteraction=${isThreadInteraction}, shouldNotify=${shouldNotify}`);
-            
+            const shouldNotify =
+              sessionData.originalChannelId && !isSameChannel && !isManagerOwnWork && !isThreadInteraction;
+
+            logger.info(
+              `[DEBUG] Notification check: originalChannelId=${sessionData.originalChannelId}, currentDmChannelId=${currentDmChannelId}, userId=${sessionData.userId}, managerId=${userId}, isManagerOwnWork=${isManagerOwnWork}, isSameChannel=${isSameChannel}, isThreadInteraction=${isThreadInteraction}, shouldNotify=${shouldNotify}`,
+            );
+
             if (shouldNotify) {
               logger.info(`[DEBUG] Sending notification to original channel: ${sessionData.originalChannelId}`);
               await notifyOriginalChannel(sessionData, managerName, client, logger);
@@ -540,13 +544,12 @@ export const suggestUpdatesCallback = async ({
 
     // 로깅 체크를 여기로 이동
     const workspaceId = await getWorkspaceId(client);
-    
+
     // 매니저가 처음 문서 업데이트 프로세스를 시작하는 경우와 실제 제안을 표시하는 경우 구분
     // 조건: index가 없고, action이 없고, sessionId만 있는 경우는 initial start
-    const isInitialProcessStart = (typeof parsedValue?.index === 'undefined') && 
-      !parsedValue?.action && 
-      !!parsedValue?.sessionId;
-    
+    const isInitialProcessStart =
+      typeof parsedValue?.index === 'undefined' && !parsedValue?.action && !!parsedValue?.sessionId;
+
     console.log(`[DEBUG] Logging condition check:`, {
       parsedValueIndex: parsedValue?.index,
       indexType: typeof parsedValue?.index,
@@ -554,9 +557,9 @@ export const suggestUpdatesCallback = async ({
       continueToFileSelection: parsedValue?.continueToFileSelection,
       isFileBasedReview: parsedValue?.isFileBasedReview,
       sessionId: parsedValue?.sessionId,
-      isInitialProcessStart
+      isInitialProcessStart,
     });
-      
+
     if (isInitialProcessStart) {
       // 매니저가 처음 "🚀 Start Update Process" 버튼을 클릭한 경우
       // Get actual knowledge content from session data
@@ -567,7 +570,7 @@ export const suggestUpdatesCallback = async ({
           actualKnowledgeContent = sessionData.extractedKnowledge;
         }
       }
-      
+
       await logButtonClick(
         userId,
         workspaceId,
@@ -651,7 +654,7 @@ export const suggestUpdatesCallback = async ({
           // sourceMessages가 없으면 일반 messages를 fallback으로 사용
           sourceMessages = sessionData.messages.map((msg: any) => ({
             ...msg,
-            username: msg.username || msg.user || 'Unknown User', // Fix undefined username  
+            username: msg.username || msg.user || 'Unknown User', // Fix undefined username
           }));
           console.log(`[DEBUG] Using session messages as fallback:`, sourceMessages.length);
         }
@@ -716,9 +719,9 @@ export const suggestUpdatesCallback = async ({
         );
 
         // 새로운 로직: 모든 파일 선택 (Recommended 포함)은 동일하게 처리
-        const initialSearchResults = getSearchResults(userId) || [];
+        const initialSearchResults = getSearchResults(userId, currentWorkspaceId) || [];
         let fileSpecificResults: Document<DocumentMetadata>[] = [];
-        
+
         if (parsedValue.isDefaultFile) {
           // Case 1: Default/recommended file selected
           logger.info('Default/recommended file selected - performing file-specific search');
@@ -736,10 +739,11 @@ export const suggestUpdatesCallback = async ({
               knowledgeContent,
               parsedValue.selectedFile,
               5, // 파일별 검색에서 최대 5개 결과
+              currentWorkspaceId,
             );
           }
         } else {
-          // Case 2: Specific file selected  
+          // Case 2: Specific file selected
           logger.info(`Searching in specific file: ${parsedValue.selectedFile}`);
           logger.info(`[SEARCH DEBUG] Query used for file-specific search: "${knowledgeContent}"`);
           if (getUpdateRetrievalProvider() === 'qmd') {
@@ -755,6 +759,7 @@ export const suggestUpdatesCallback = async ({
               knowledgeContent,
               parsedValue.selectedFile,
               5, // 파일별 검색에서 최대 5개 결과
+              currentWorkspaceId,
             );
           }
         }
@@ -774,12 +779,13 @@ export const suggestUpdatesCallback = async ({
           true, // isFileSelected = true
           parsedValue.selectedFile, // selectedFile
           initialSearchResults, // initialSearchResults
-          fileSpecificResults // fileSpecificResults
+          fileSpecificResults, // fileSpecificResults
+          currentWorkspaceId,
         );
-        
+
         // 동적 순서 계산하여 첫 번째 suggestion 가져오기
-        searchResults = calculateDynamicOrder(userId);
-        
+        searchResults = calculateDynamicOrder(userId, currentWorkspaceId);
+
         logger.info(`Dynamic order calculated: ${searchResults.length} total documents available`);
 
         // Check if we found any results
@@ -807,14 +813,14 @@ export const suggestUpdatesCallback = async ({
         logger.info(
           `Using cached search results, isFileBasedReview: ${parsedValue.isFileBasedReview}, selectedFile: ${parsedValue.selectedFile}`,
         );
-        
+
         // 파일 선택 안함: initial search 결과만 사용 (calculateDynamicOrder는 파일 선택시에만 사용)
         if (!parsedValue.isFileBasedReview) {
-          searchResults = getSearchResults(userId) || [];
+          searchResults = getSearchResults(userId, currentWorkspaceId) || [];
           logger.info(`Using initial search results only (no file selected): ${searchResults.length} documents`);
         } else {
           // 파일 선택함: 동적 순서 계산 (file-specific + initial search 조합)
-          searchResults = calculateDynamicOrder(userId);
+          searchResults = calculateDynamicOrder(userId, currentWorkspaceId);
           logger.info(`Using dynamic order (file selected): ${searchResults.length} documents`);
         }
         isFirstSuggestion = false;
@@ -825,13 +831,14 @@ export const suggestUpdatesCallback = async ({
         logger.info(`User skipped suggestion ${currentIndex} for nodeId: ${parsedValue.currentNodeId}`);
 
         // 새로운 로직: Skip 시에는 카운트 증가하지 않음 (다음 suggestion에서 증가함)
-        
-        const currentFileState = getFileSelectionState(userId);
+
+        const currentFileState = getFileSelectionState(userId, currentWorkspaceId);
         const suggestionNumber = currentFileState?.currentSuggestionCount || 1;
-        const fileName = parsedValue.currentNodeId ? 
-          searchResults.find(doc => doc.metadata?.nodeId === parsedValue.currentNodeId)?.metadata?.fileName || 'Unknown file'
+        const fileName = parsedValue.currentNodeId
+          ? searchResults.find((doc) => doc.metadata?.nodeId === parsedValue.currentNodeId)?.metadata?.fileName ||
+            'Unknown file'
           : 'Unknown file';
-        
+
         // 로그: Skip 버튼 클릭
         try {
           const workspaceId = await getWorkspaceId(client);
@@ -858,12 +865,14 @@ export const suggestUpdatesCallback = async ({
         } catch (logError) {
           logger.error('Failed to log skip suggestion:', logError);
         }
-        
+
         // Use response_url to replace the current message with skip confirmation
         const responseUrl = (body as any).response_url;
         if (responseUrl) {
           try {
-            logger.info(`Skip message: suggestionNumber=${suggestionNumber}, fileName=${fileName}, nodeId=${parsedValue.currentNodeId}`);
+            logger.info(
+              `Skip message: suggestionNumber=${suggestionNumber}, fileName=${fileName}, nodeId=${parsedValue.currentNodeId}`,
+            );
 
             const response = await fetch(responseUrl, {
               method: 'POST',
@@ -884,7 +893,9 @@ export const suggestUpdatesCallback = async ({
             });
 
             if (response.ok) {
-              logger.info(`Successfully used response_url to show skip confirmation for suggestion ${suggestionNumber}`);
+              logger.info(
+                `Successfully used response_url to show skip confirmation for suggestion ${suggestionNumber}`,
+              );
             } else {
               logger.warn(
                 `Failed to use response_url for skip confirmation: ${response.status} ${response.statusText}`,
@@ -897,7 +908,7 @@ export const suggestUpdatesCallback = async ({
         } else {
           logger.warn('No response_url available for skip confirmation');
         }
-        
+
         // 새로운 로직: Skip 후 다음 suggestion으로 자동 진행
         // 다음 suggestion을 위해 index를 증가시키고 재귀 호출
         const nextButtonValue = {
@@ -907,7 +918,7 @@ export const suggestUpdatesCallback = async ({
           selectedFile: parsedValue.selectedFile,
           isDefaultFile: parsedValue.isDefaultFile,
         };
-        
+
         // 다음 suggestion 처리를 위해 현재 함수를 재귀 호출
         setTimeout(async () => {
           try {
@@ -928,7 +939,7 @@ export const suggestUpdatesCallback = async ({
             logger.error('Error processing next suggestion after skip:', nextError);
           }
         }, 500); // 500ms 딜레이로 안정성 확보
-        
+
         return; // Skip 처리 완료
       }
 
@@ -936,17 +947,15 @@ export const suggestUpdatesCallback = async ({
 
       if (parsedValue.action === 'keep' && parsedValue.currentNodeId) {
         // 새로운 로직: suggestion을 applied로 마킹
-        markSuggestionAsApplied(userId, parsedValue.currentNodeId);
+        markSuggestionAsApplied(userId, parsedValue.currentNodeId, currentWorkspaceId);
         logger.info(`Marked suggestion ${parsedValue.currentNodeId} as applied for user ${userId}`);
-        
-        const storedUpdates = getStoredDocumentUpdates(userId);
+
+        const storedUpdates = getStoredDocumentUpdates(userId, currentWorkspaceId);
         // nodeId로 찾기 (index는 file-specific search 후 달라질 수 있음)
         const currentUpdate = storedUpdates.find((update) => update.nodeId === parsedValue.currentNodeId);
 
         if (!currentUpdate) {
-          logger.error(
-            `Could not find stored document update for nodeId ${parsedValue.currentNodeId}`,
-          );
+          logger.error(`Could not find stored document update for nodeId ${parsedValue.currentNodeId}`);
 
           await client.chat.postMessage({
             channel: currentDmChannelId!,
@@ -1060,7 +1069,7 @@ export const suggestUpdatesCallback = async ({
               // Only notify other managers if this update came from a user suggestion (not manager's own work)
               const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
               const isFromUserSuggestion = sessionData?.userId && sessionData.userId !== userId;
-              
+
               if (isFromUserSuggestion) {
                 await notifyOtherManagersAboutUpdate(
                   currentUpdate,
@@ -1071,7 +1080,9 @@ export const suggestUpdatesCallback = async ({
                   client,
                   logger,
                 );
-                logger.info(`Notified other managers about update from user suggestion (original user: ${sessionData.userId})`);
+                logger.info(
+                  `Notified other managers about update from user suggestion (original user: ${sessionData.userId})`,
+                );
               } else {
                 logger.info(`Skipped notifying other managers - this is manager's own work (manager: ${userId})`);
               }
@@ -1080,10 +1091,10 @@ export const suggestUpdatesCallback = async ({
             }
           }
           // Apply Changes 성공 후 파일 선택 상태 초기화 (suggestion count 보존)
-          const currentFileState = getFileSelectionState(userId);
+          const currentFileState = getFileSelectionState(userId, currentWorkspaceId);
           if (currentFileState?.isFileSelected) {
             // 파일 선택 해제: initial search results로 전환 (suggestion count 보존)
-            resetFileSelectionAfterApply(userId, currentFileState.initialSearchResults);
+            resetFileSelectionAfterApply(userId, currentFileState.initialSearchResults, currentWorkspaceId);
           }
         } catch (error) {
           console.error('Failed to apply previous suggestion:', error);
@@ -1093,30 +1104,32 @@ export const suggestUpdatesCallback = async ({
       // Manager starting the update process for the first time
       isFirstSuggestion = true;
       currentIndex = 0;
-      storeDocumentUpdates(userId, []);
-      
+      storeDocumentUpdates(userId, [], undefined, undefined, currentWorkspaceId);
+
       // Check if this is coming from a channel suggestion (not direct DM)
       // If so, show the suggestion review screen first (unless continuing from review)
       if (sessionId && !parsedValue.continueToFileSelection) {
         const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
         // Only show review screen if this came from a different channel (not DM)
         // Skip if originalChannelId is same as currentDmChannelId (DM suggestion) or if originalChannelId is missing
-        if (sessionData?.originalChannelId && 
-            sessionData.originalChannelId !== currentDmChannelId && 
-            !sessionData.originalChannelId.startsWith('D')) {
+        if (
+          sessionData?.originalChannelId &&
+          sessionData.originalChannelId !== currentDmChannelId &&
+          !sessionData.originalChannelId.startsWith('D')
+        ) {
           // This is a channel suggestion - show review screen first
           logger.info(`Showing suggestion review for channel suggestion from ${sessionData.originalChannelId}`);
-          
+
           // Check if this is the manager's own suggestion or from another user
           const isManagerOwnSuggestion = sessionData.userId === userId;
           const userName = sessionData.userName || 'A team member';
-          
+
           // Create intro block with user profile image
           const introBlock: any = {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: isManagerOwnSuggestion 
+              text: isManagerOwnSuggestion
                 ? `Hi! I'm CHOIR, your documentation assistant.\n\nYou have a document update suggestion:`
                 : `Hi! I'm CHOIR, your documentation assistant.\n\n*${userName}* has a document update suggestion:`,
             },
@@ -1178,7 +1191,7 @@ export const suggestUpdatesCallback = async ({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: isManagerOwnSuggestion 
+              text: isManagerOwnSuggestion
                 ? `Please review your suggestion above and choose how to proceed:`
                 : `You requested this document update suggestion. Please review the content above and choose how to proceed:`,
             },
@@ -1223,7 +1236,7 @@ export const suggestUpdatesCallback = async ({
             unfurl_links: false,
             unfurl_media: false,
           });
-          
+
           return; // Exit here, wait for user to click "Continue to File Selection"
         }
       }
@@ -1245,11 +1258,11 @@ export const suggestUpdatesCallback = async ({
     }
 
     // Show appropriate loading message based on the stage
-    const loadingFileState = getFileSelectionState(userId);
-    const loadingText = 
+    const loadingFileState = getFileSelectionState(userId, currentWorkspaceId);
+    const loadingText =
       currentIndex === 0 && !isFileBasedReview
         ? '🔍 Finding relevant documents across all files...'
-        : loadingFileState?.isFileSelected 
+        : loadingFileState?.isFileSelected
           ? `📝 Generating suggestions for ${loadingFileState.selectedFile}...`
           : '📝 Generating update suggestions...';
 
@@ -1287,15 +1300,16 @@ export const suggestUpdatesCallback = async ({
       }
 
       // Store results for later use (for file-based review)
-      storeSearchResults(userId, searchResults);
-      
+      storeSearchResults(userId, searchResults, currentWorkspaceId);
+
       // 새로운 로직: 파일 선택 상태 초기화 (파일 미선택)
       initializeFileSelectionState(
         userId,
         false, // isFileSelected = false
         undefined, // selectedFile = undefined
         searchResults, // initialSearchResults
-        [] // fileSpecificResults = empty
+        [], // fileSpecificResults = empty
+        currentWorkspaceId,
       );
 
       // Log search results details
@@ -1312,7 +1326,7 @@ export const suggestUpdatesCallback = async ({
       try {
         const workspaceStore = new WorkspaceStore();
         let fileList = await workspaceStore.getWritableFiles(workspaceId);
-        
+
         if (!fileList || fileList.length === 0) {
           const config = await workspaceStore.getWorkspaceConfig(workspaceId);
           if (config?.githubRepo) {
@@ -1325,12 +1339,15 @@ export const suggestUpdatesCallback = async ({
               workspaceId: workspaceId,
               userId: userId,
             });
-            
-            await workspaceStore.setMarkdownFilesCache(workspaceId, markdownFiles.map((file) => ({
-              name: file.name,
-              path: file.path,
-            })));
-            
+
+            await workspaceStore.setMarkdownFilesCache(
+              workspaceId,
+              markdownFiles.map((file) => ({
+                name: file.name,
+                path: file.path,
+              })),
+            );
+
             fileList = await workspaceStore.getWritableFiles(workspaceId);
           }
         }
@@ -1346,7 +1363,7 @@ export const suggestUpdatesCallback = async ({
 
       if (!searchResults || searchResults.length === 0) {
         // No search results, redirect to new section creation
-        const allMarkdownFiles = vectorStore.getAllMarkdownFiles();
+        const allMarkdownFiles = vectorStore.getAllMarkdownFiles(currentWorkspaceId);
         if (allMarkdownFiles.length === 0) {
           await client.chat.postMessage({
             channel: currentDmChannelId,
@@ -1457,7 +1474,7 @@ export const suggestUpdatesCallback = async ({
         return;
       }
 
-      // Show file selection dropdown before first suggestion (update progress message)  
+      // Show file selection dropdown before first suggestion (update progress message)
       const progressTimestamp = getProgressMessageTimestamp(userId);
 
       // Use the actual channel where progress message was created
@@ -1497,15 +1514,17 @@ export const suggestUpdatesCallback = async ({
     }
 
     logger.info(`Debug: currentIndex=${currentIndex}, searchResults.length=${searchResults.length}`);
-    
+
     // 새로운 로직: completion 체크
-    const fileSelectionState = getFileSelectionState(userId);
-    const shouldComplete = fileSelectionState?.isFileSelected 
-      ? isMaxSuggestionsReached(userId)
+    const fileSelectionState = getFileSelectionState(userId, currentWorkspaceId);
+    const shouldComplete = fileSelectionState?.isFileSelected
+      ? isMaxSuggestionsReached(userId, currentWorkspaceId)
       : currentIndex >= searchResults.length;
-    
-    logger.info(`Completion check: fileSelected=${fileSelectionState?.isFileSelected}, maxReached=${fileSelectionState?.isFileSelected ? isMaxSuggestionsReached(userId) : 'N/A'}, shouldComplete=${shouldComplete}`);
-    
+
+    logger.info(
+      `Completion check: fileSelected=${fileSelectionState?.isFileSelected}, maxReached=${fileSelectionState?.isFileSelected ? isMaxSuggestionsReached(userId, currentWorkspaceId) : 'N/A'}, shouldComplete=${shouldComplete}`,
+    );
+
     if (shouldComplete) {
       // Try to delete the progress message first, then send completion message
       const progressTimestamp = getProgressMessageTimestamp(userId);
@@ -1523,149 +1542,158 @@ export const suggestUpdatesCallback = async ({
       }
 
       try {
-          // Get workspace info for new section/file creation
-          const workspaceId = await getWorkspaceId(client);
-          const workspaceStore = new WorkspaceStore();
-          const config = await workspaceStore.getWorkspaceConfig(workspaceId);
-          
-          let fileList = await workspaceStore.getWritableFiles(workspaceId);
-          if ((!fileList || fileList.length === 0) && config?.githubRepo) {
-            // Load files if not cached
-            const { owner, repo, path } = config.githubRepo;
-            const githubService = GithubService.getInstance();
-            const markdownFiles = await githubService.getAllMarkdownFiles({
-              owner,
-              repo,
-              path,
-              workspaceId: workspaceId,
-              userId: userId,
-            });
-            
-            await workspaceStore.setMarkdownFilesCache(workspaceId, markdownFiles.map((file) => ({
+        // Get workspace info for new section/file creation
+        const workspaceId = await getWorkspaceId(client);
+        const workspaceStore = new WorkspaceStore();
+        const config = await workspaceStore.getWorkspaceConfig(workspaceId);
+
+        let fileList = await workspaceStore.getWritableFiles(workspaceId);
+        if ((!fileList || fileList.length === 0) && config?.githubRepo) {
+          // Load files if not cached
+          const { owner, repo, path } = config.githubRepo;
+          const githubService = GithubService.getInstance();
+          const markdownFiles = await githubService.getAllMarkdownFiles({
+            owner,
+            repo,
+            path,
+            workspaceId: workspaceId,
+            userId: userId,
+          });
+
+          await workspaceStore.setMarkdownFilesCache(
+            workspaceId,
+            markdownFiles.map((file) => ({
               name: file.name,
               path: file.path,
-            })));
-            
-            fileList = await workspaceStore.getWritableFiles(workspaceId);
-          }
+            })),
+          );
 
-          // Create new section suggestion for completion
-          let newSectionSessionId = null;
-          let recommendedFileName = '';
-          let completionNewFileDefaults: { fileName: string; initialContent: string } | undefined;
-          
-          try {
-            const { createNewSectionFromKnowledge, generateNewFileDefaults } = await import('services/llm/content-generator');
-            const availableFiles = (fileList || []).map((file) => ({
-              fileName: file.name,
-              githubUrl: `https://github.com/${config?.githubRepo?.owner}/${config?.githubRepo?.repo}/blob/main/${file.path}`,
-              description: `${file.name} - Documentation file`,
-            }));
+          fileList = await workspaceStore.getWritableFiles(workspaceId);
+        }
 
-            if (availableFiles.length > 0) {
-              // Generate new section suggestion
-              const newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
-              
-              if (newSectionSuggestion) {
-                // Store new section data in session
-                newSectionSessionId = `new_section_${userId}_${Date.now()}`;
-                recommendedFileName = newSectionSuggestion.recommendedFile;
-                const recommendedFileInfo = availableFiles.find(
-                  (file) => file.fileName === newSectionSuggestion.recommendedFile,
-                );
-                const githubUrl = recommendedFileInfo?.githubUrl || availableFiles[0]?.githubUrl || '';
+        // Create new section suggestion for completion
+        let newSectionSessionId = null;
+        let recommendedFileName = '';
+        let completionNewFileDefaults: { fileName: string; initialContent: string } | undefined;
 
-                storeSessionData(
-                  newSectionSessionId,
-                  {
-                    sectionTitle: newSectionSuggestion.sectionTitle,
-                    sectionContent: newSectionSuggestion.sectionContent,
-                    recommendedFile: newSectionSuggestion.recommendedFile,
-                    reasoning: newSectionSuggestion.reasoning,
-                    githubUrl: githubUrl,
-                    originalChannelId: knowledgeSourceChannelId,
-                    originalThreadTs: knowledgeSourceThreadTs,
-                    sessionId: sessionId,
-                  },
-                  SessionType.NEW_SECTION,
-                );
-              }
+        try {
+          const { createNewSectionFromKnowledge, generateNewFileDefaults } = await import(
+            'services/llm/content-generator'
+          );
+          const availableFiles = (fileList || []).map((file) => ({
+            fileName: file.name,
+            githubUrl: `https://github.com/${config?.githubRepo?.owner}/${config?.githubRepo?.repo}/blob/main/${file.path}`,
+            description: `${file.name} - Documentation file`,
+          }));
 
-              // Generate new file defaults for completion Create New File button
-              completionNewFileDefaults = await generateNewFileDefaults(knowledgeContent, fileList || []);
-              logger.info(`Generated completion new file defaults: ${completionNewFileDefaults.fileName}`);
+          if (availableFiles.length > 0) {
+            // Generate new section suggestion
+            const newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
+
+            if (newSectionSuggestion) {
+              // Store new section data in session
+              newSectionSessionId = `new_section_${userId}_${Date.now()}`;
+              recommendedFileName = newSectionSuggestion.recommendedFile;
+              const recommendedFileInfo = availableFiles.find(
+                (file) => file.fileName === newSectionSuggestion.recommendedFile,
+              );
+              const githubUrl = recommendedFileInfo?.githubUrl || availableFiles[0]?.githubUrl || '';
+
+              storeSessionData(
+                newSectionSessionId,
+                {
+                  sectionTitle: newSectionSuggestion.sectionTitle,
+                  sectionContent: newSectionSuggestion.sectionContent,
+                  recommendedFile: newSectionSuggestion.recommendedFile,
+                  reasoning: newSectionSuggestion.reasoning,
+                  githubUrl: githubUrl,
+                  originalChannelId: knowledgeSourceChannelId,
+                  originalThreadTs: knowledgeSourceThreadTs,
+                  sessionId: sessionId,
+                },
+                SessionType.NEW_SECTION,
+              );
             }
-          } catch (error) {
-            logger.warn('Failed to create new section suggestion for completion:', error);
-          }
 
-          // Create completion blocks with new section and new file options
-          const completionBlocks = [
-            {
-              type: 'section',
-              block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
-              text: {
-                type: 'mrkdwn',
-                text: "🎉 *Review Complete!* We've gone through all relevant documents. \n\nWould you like to create new content instead?",
-              },
+            // Generate new file defaults for completion Create New File button
+            completionNewFileDefaults = await generateNewFileDefaults(knowledgeContent, fileList || []);
+            logger.info(`Generated completion new file defaults: ${completionNewFileDefaults.fileName}`);
+          }
+        } catch (error) {
+          logger.warn('Failed to create new section suggestion for completion:', error);
+        }
+
+        // Create completion blocks with new section and new file options
+        const completionBlocks = [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
+            text: {
+              type: 'mrkdwn',
+              text: "🎉 *Review Complete!* We've gone through all relevant documents. \n\nWould you like to create new content instead?",
             },
-            {
-              type: 'actions',
-              elements: [
-                ...(newSectionSessionId ? [{
-                  type: 'button',
-                  text: {
-                    type: 'plain_text',
-                    text: '💡 Create New Section',
-                    emoji: true,
-                  },
-                  action_id: 'create_new_section',
-                  value: JSON.stringify({
-                    newSectionSessionId,
-                    userId,
-                  }),
-                }] : []),
-                {
-                  type: 'button',
-                  text: {
-                    type: 'plain_text',
-                    text: '📄 Create New File',
-                    emoji: true,
-                  },
-                  action_id: 'show_create_file_modal',
-                  value: (() => {
-                    // Store large data in session to avoid 2001 character limit
-                    const createFileSessionId = generateSessionId('create_file');
-                    storeSessionData(
-                      createFileSessionId,
-                      {
-                        sessionId,
-                        knowledgeContent,
-                        knowledgeSourceChannelId,
-                        knowledgeSourceThreadTs,
-                        ...(completionNewFileDefaults && {
-                          defaultFileName: completionNewFileDefaults.fileName,
-                          defaultInitialContent: completionNewFileDefaults.initialContent,
-                        }),
+          },
+          {
+            type: 'actions',
+            elements: [
+              ...(newSectionSessionId
+                ? [
+                    {
+                      type: 'button',
+                      text: {
+                        type: 'plain_text',
+                        text: '💡 Create New Section',
+                        emoji: true,
                       },
-                      SessionType.CREATE_FILE_MODAL,
-                      24 * 60 * 60 * 1000, // 24시간 후 만료
-                    );
-                    return createFileSessionId;
-                  })(),
+                      action_id: 'create_new_section',
+                      value: JSON.stringify({
+                        newSectionSessionId,
+                        userId,
+                      }),
+                    },
+                  ]
+                : []),
+              {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: '📄 Create New File',
+                  emoji: true,
                 },
-              ],
-            },
-            {
-              type: 'context',
-              elements: [
-                {
-                  type: 'mrkdwn',
-                  text: 'Or mention me anytime with new knowledge to review and update docs! 👋',
-                },
-              ],
-            },
-          ];
+                action_id: 'show_create_file_modal',
+                value: (() => {
+                  // Store large data in session to avoid 2001 character limit
+                  const createFileSessionId = generateSessionId('create_file');
+                  storeSessionData(
+                    createFileSessionId,
+                    {
+                      sessionId,
+                      knowledgeContent,
+                      knowledgeSourceChannelId,
+                      knowledgeSourceThreadTs,
+                      ...(completionNewFileDefaults && {
+                        defaultFileName: completionNewFileDefaults.fileName,
+                        defaultInitialContent: completionNewFileDefaults.initialContent,
+                      }),
+                    },
+                    SessionType.CREATE_FILE_MODAL,
+                    24 * 60 * 60 * 1000, // 24시간 후 만료
+                  );
+                  return createFileSessionId;
+                })(),
+              },
+            ],
+          },
+          {
+            type: 'context',
+            elements: [
+              {
+                type: 'mrkdwn',
+                text: 'Or mention me anytime with new knowledge to review and update docs! 👋',
+              },
+            ],
+          },
+        ];
 
         // Send completion message with new options
         await client.chat.postMessage({
@@ -1679,7 +1707,7 @@ export const suggestUpdatesCallback = async ({
         logger.info('Successfully sent completion message with new options');
       } catch (error) {
         logger.error('Error creating completion message:', error);
-        
+
         // Fallback to simple completion message
         await client.chat.postMessage({
           channel: currentDmChannelId,
@@ -1700,34 +1728,35 @@ export const suggestUpdatesCallback = async ({
       }
 
       // 새로운 로직: completion 시 상태 정리
-      clearFileSelectionState(userId);
+      clearFileSelectionState(userId, currentWorkspaceId);
       logger.info(`Cleared file selection state for user ${userId} after completion`);
 
       return;
     }
 
     // 새로운 로직: 다음 suggestion 가져오기 및 카운트 증가
-    const nextSuggestion = getNextSuggestion(userId);
+    const nextSuggestion = getNextSuggestion(userId, currentWorkspaceId);
     if (!nextSuggestion) {
       logger.warn(`No next suggestion available for user ${userId}`);
       // 다시 completion 체크 후 completion 처리
       return;
     }
-    
+
     const currentDoc = nextSuggestion;
-    
+
     // suggestion 번호 계산 (카운트 증가 전에)
-    const currentFileState = getFileSelectionState(userId);
+    const currentFileState = getFileSelectionState(userId, currentWorkspaceId);
     const suggestionDisplayNumber = (currentFileState?.currentSuggestionCount || 0) + 1;
-    
+
     // suggestion 카운트 증가 (표시 후)
-    incrementSuggestionCount(userId);
+    incrementSuggestionCount(userId, currentWorkspaceId);
     const processedDoc: ProcessedDocument | null = await processDocument(
       currentDoc,
       knowledgeContent,
       validMessages,
       client,
       vectorStore,
+      currentWorkspaceId,
     );
 
     // processedDoc이 null이거나 변경사항이 없어도 사용자에게 표시 (자동 스킵 방지)
@@ -1768,7 +1797,7 @@ export const suggestUpdatesCallback = async ({
       updateAnchor: processedDoc.updateAnchor,
     };
 
-    const currentUpdates = getStoredDocumentUpdates(userId);
+    const currentUpdates = getStoredDocumentUpdates(userId, currentWorkspaceId);
     const existingUpdateIndex = currentUpdates.findIndex(
       (update) => update.nodeId === documentUpdateEntry.nodeId && update.index === currentIndex,
     );
@@ -1777,7 +1806,7 @@ export const suggestUpdatesCallback = async ({
     } else {
       currentUpdates.push(documentUpdateEntry);
     }
-    storeDocumentUpdates(userId, currentUpdates);
+    storeDocumentUpdates(userId, currentUpdates, undefined, undefined, currentWorkspaceId);
 
     const blocks: (KnownBlock | Block)[] = [];
 
@@ -1795,7 +1824,7 @@ export const suggestUpdatesCallback = async ({
     } as DocumentMetadata);
 
     const suggestionTitleText = `📝 *Update Suggestion ${suggestionNumber}*`;
-    
+
     const anchorLineText = processedDoc.updateAnchor?.startLine
       ? processedDoc.updateAnchor.endLine && processedDoc.updateAnchor.endLine !== processedDoc.updateAnchor.startLine
         ? `\nAnchor: lines ${processedDoc.updateAnchor.startLine}-${processedDoc.updateAnchor.endLine}`
@@ -2066,7 +2095,6 @@ Section: ${sectionInfo}${anchorLineText}`;
   } catch (error) {
     console.error('suggestUpdatesCallback에서 오류:', error);
 
-
     if (currentDmChannelId) {
       try {
         await client.chat.postMessage({
@@ -2087,9 +2115,9 @@ Section: ${sectionInfo}${anchorLineText}`;
         console.error('DM 전송 오류:', dmError);
       }
     }
-    
+
     // 새로운 로직: 에러 발생 시에도 상태 정리
-    clearFileSelectionState(userId);
+    clearFileSelectionState(userId, currentWorkspaceId);
     logger.info(`Cleared file selection state for user ${userId} after error`);
   }
 };

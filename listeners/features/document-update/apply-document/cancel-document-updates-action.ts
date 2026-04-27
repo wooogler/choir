@@ -2,7 +2,7 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import { deleteProgressMessageTimestamp, getLastMessageTimestamp, getProgressMessageTimestamp } from 'services/common';
 import { logButtonClick } from 'services/common/user-interaction-logger';
 import { getFileSelectionState } from 'services/document/document-store';
-import { getWorkspaceId, getUserName } from 'services/slack';
+import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 /**
@@ -28,18 +28,19 @@ export const cancelDocumentUpdatesCallback = async ({
 
     const parsedValue = JSON.parse(value);
     const { originalChannelId, originalThreadTs, index, isFirstSuggestion } = parsedValue;
+    const workspaceId = await getWorkspaceId(client);
 
     // Apply된 suggestion 수를 확인해서 cancel vs stop 결정
-    const fileSelectionState = getFileSelectionState(userId);
+    const fileSelectionState = getFileSelectionState(userId, workspaceId);
     const appliedCount = fileSelectionState?.appliedSuggestions.size || 0;
-    
+
     // 메시지 텍스트 결정: Apply된 것이 없으면 cancel, 있으면 stop
     const isCancel = appliedCount === 0;
-    
+
     const cancelMessage = isCancel
       ? '👋 Review cancelled'
       : `✅ Review stopped! We've applied ${appliedCount} suggestion${appliedCount > 1 ? 's' : ''} to the documentation.`;
-    
+
     const notificationMessage = isCancel
       ? 'cancelled their document update review'
       : `stopped their document update review after applying ${appliedCount} suggestion${appliedCount > 1 ? 's' : ''}`;
@@ -160,7 +161,7 @@ export const cancelDocumentUpdatesCallback = async ({
       try {
         // Get user name for the notification
         const userName = await getUserName(userId, client);
-        
+
         await client.chat.postMessage({
           channel: originalChannelId,
           ...(originalThreadTs ? { thread_ts: originalThreadTs } : {}),
@@ -181,7 +182,9 @@ export const cancelDocumentUpdatesCallback = async ({
       }
     }
 
-    logger.info(`Document update ${isCancel ? 'cancelled' : 'stopped'} by user ${userId} (applied ${appliedCount} suggestions)`);
+    logger.info(
+      `Document update ${isCancel ? 'cancelled' : 'stopped'} by user ${userId} (applied ${appliedCount} suggestions)`,
+    );
   } catch (error) {
     logger.error('Error cancelling document updates:', error);
 

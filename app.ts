@@ -9,7 +9,7 @@ import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { getRetrievalProvider } from 'services/retrieval';
 import { isQmdRetrievalEnabled } from 'services/retrieval/provider-config';
 import { getGithubRepo } from 'services/slack';
-import { FileSlackInstallationStore } from 'services/slack/file-installation-store';
+import { SqliteSlackInstallationStore } from 'services/slack/sqlite-installation-store';
 import { ensureWorkspaceInitialized } from 'services/slack/workspace-bootstrap';
 import { GitHubSyncService } from 'services/sync/github-sync-service';
 import { VectorStoreService } from 'services/vector/main-service';
@@ -51,7 +51,7 @@ function createReceiver(): ExpressReceiver | undefined {
       clientSecret: slackConfig.clientSecret,
       stateSecret: slackConfig.stateSecret,
       redirectUri: slackConfig.redirectUri,
-      installationStore: new FileSlackInstallationStore(),
+      installationStore: new SqliteSlackInstallationStore(),
       scopes: slackConfig.scopes,
       installerOptions: {
         directInstall: false,

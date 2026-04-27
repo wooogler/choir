@@ -1,10 +1,10 @@
 import { classifyMessageIntent } from 'services/llm/document-editor';
 import {
+  getOrInitBotUserId,
   getOrganizationDescription,
   getOrganizationName,
   getUserName,
   getWorkspaceId,
-  getOrInitBotUserId,
 } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { getAnonymousThreadInfo } from '../../services/common/session-store';
@@ -13,17 +13,6 @@ import { handleGeneralConversationMessage } from '../features/conversation/gener
 import { handleDMClearCommand } from '../features/dm/clear-handler';
 import { handleUpdateRequestMessage } from '../features/document-update/extract-knowledge/update-request-handler';
 import { handleQuestionMessage } from '../features/qa/question-handler';
-
-// 봇 ID 캐싱 - 성능 최적화
-let cachedBotUserId: string | null = null;
-
-async function getBotUserId(client: any): Promise<string> {
-  if (!cachedBotUserId) {
-    const botInfo = await client.auth.test();
-    cachedBotUserId = botInfo.user_id;
-  }
-  return cachedBotUserId!;
-}
 
 /**
  * 메시지 처리를 위한 공통 함수
@@ -76,7 +65,8 @@ export async function handleIncomingMessage(client: any, event: any, message: st
           // mention된 경우 정상적인 메시지 처리 흐름으로 넘어감 (모든 익명 체크 우회)
         } else {
           // mention되지 않은 경우에만 익명 thread 체크
-          const anonymousInfo = getAnonymousThreadInfo(event.channel, event.thread_ts);
+          const workspaceId = await getWorkspaceId(client);
+          const anonymousInfo = getAnonymousThreadInfo(event.channel, event.thread_ts, workspaceId);
           if (anonymousInfo) {
             // Bot 메시지는 전달하지 않음 (CHOIR의 안내 메시지 등)
             if (('bot_id' in event && event.bot_id) || event.subtype === 'bot_message') {
