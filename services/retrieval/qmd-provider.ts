@@ -5,6 +5,7 @@ import { Logger } from 'services/common/logger';
 import { getGithubRepo } from 'services/slack';
 import type { DocumentMetadata } from 'services/vector/types';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
+import { sectionPathToOriginalPath } from 'services/document/markdown-section-splitter';
 import { expandQueryWithOpenAI } from './openai-query-expansion';
 import { searchQmdLexWithFallback } from './qmd-lex-search';
 import type { RetrievalDocument, RetrievalProvider, RetrievalSearchParams, RetrievalWarmupParams } from './types';
@@ -72,7 +73,7 @@ interface QmdModule {
 interface StoreCacheEntry {
   store: QmdStore;
   indexedAt?: string;
-  repoRoot: string;
+  sectionsRoot: string;
   owner: string;
   repo: string;
   branch?: string;
@@ -106,41 +107,43 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     return path.join(workspaceRoot, 'state', 'qmd-index.sqlite');
   }
 
+  private getSectionsRoot(workspaceId: string): string {
+    return WorkspaceMirrorService.getInstance().getSectionsRoot(workspaceId);
+  }
+
   private buildGithubUrl(owner: string, repo: string, branch: string | undefined, relativePath: string): string {
     const ref = branch || 'main';
     const normalizedPath = relativePath.split(path.sep).join(path.posix.sep).replace(/^\/+/, '');
     return `https://github.com/${owner}/${repo}/blob/${ref}/${normalizedPath}`;
   }
 
-  private getRelativePathFromQmdPath(repoRoot: string, rawPath: string, displayPath?: string): string {
+  private getRelativePathFromQmdPath(sectionsRoot: string, rawPath: string, displayPath?: string): string {
+    let sectionRelativePath: string;
+
     if (rawPath.startsWith('qmd://')) {
       const virtualPath = rawPath.replace(/^qmd:\/\//, '');
       const separatorIndex = virtualPath.indexOf('/');
-      if (separatorIndex >= 0) {
-        return virtualPath.slice(separatorIndex + 1);
-      }
-    }
-
-    if (displayPath) {
+      sectionRelativePath = separatorIndex >= 0 ? virtualPath.slice(separatorIndex + 1) : virtualPath;
+    } else if (displayPath) {
       const normalizedDisplayPath = displayPath.split(path.sep).join(path.posix.sep).replace(/^\/+/, '');
       const separatorIndex = normalizedDisplayPath.indexOf('/');
-      if (separatorIndex >= 0) {
-        return normalizedDisplayPath.slice(separatorIndex + 1);
-      }
+      sectionRelativePath = separatorIndex >= 0 ? normalizedDisplayPath.slice(separatorIndex + 1) : normalizedDisplayPath;
+    } else {
+      const absolutePath = path.isAbsolute(rawPath) ? rawPath : path.join(sectionsRoot, rawPath);
+      sectionRelativePath = path.relative(sectionsRoot, absolutePath).split(path.sep).join(path.posix.sep);
     }
 
-    const absolutePath = path.isAbsolute(rawPath) ? rawPath : path.join(repoRoot, rawPath);
-    return path.relative(repoRoot, absolutePath).split(path.sep).join(path.posix.sep);
+    return sectionPathToOriginalPath(sectionRelativePath);
   }
 
   private mapLexResultToDocument(params: {
     result: QmdSearchResult;
-    repoRoot: string;
+    sectionsRoot: string;
     owner: string;
     repo: string;
     branch?: string;
   }): RetrievalDocument {
-    const relativePath = this.getRelativePathFromQmdPath(params.repoRoot, params.result.filepath, params.result.displayPath);
+    const relativePath = this.getRelativePathFromQmdPath(params.sectionsRoot, params.result.filepath, params.result.displayPath);
     const body = params.result.body || '';
     const title = params.result.title || path.posix.basename(relativePath);
 
@@ -160,12 +163,12 @@ export class QmdRetrievalProvider implements RetrievalProvider {
 
   private mapHybridResultToDocument(params: {
     result: QmdHybridQueryResult;
-    repoRoot: string;
+    sectionsRoot: string;
     owner: string;
     repo: string;
     branch?: string;
   }): RetrievalDocument {
-    const relativePath = this.getRelativePathFromQmdPath(params.repoRoot, params.result.file, params.result.displayPath);
+    const relativePath = this.getRelativePathFromQmdPath(params.sectionsRoot, params.result.file, params.result.displayPath);
     const body = params.result.bestChunk || params.result.body || '';
     const title = params.result.title || path.posix.basename(relativePath);
 
@@ -238,13 +241,16 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       return cached;
     }
 
+    const sectionsRoot = this.getSectionsRoot(workspaceId);
+    await mirrorService.populateSectionsIfEmpty(workspaceId);
+
     const qmd = await this.loadQmdModule();
     const store = await qmd.createStore({
       dbPath: this.getDbPath(workspaceId),
       config: {
         collections: {
           docs: {
-            path: repoRoot,
+            path: sectionsRoot,
             pattern: '**/*.md',
           },
         },
@@ -256,7 +262,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     const entry: StoreCacheEntry = {
       store,
       indexedAt: syncState?.updatedAt,
-      repoRoot,
+      sectionsRoot,
       owner: repoInfo.owner,
       repo: repoInfo.repo,
       branch: repoInfo.branch,
@@ -298,7 +304,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     }
 
     const mirrorService = WorkspaceMirrorService.getInstance();
-    const repoRoot = mirrorService.getRepoRoot(workspaceId);
+    const sectionsRoot = this.getSectionsRoot(workspaceId);
     const syncState = await mirrorService.getSyncState(workspaceId);
     const dbPath = this.getDbPath(workspaceId);
 
@@ -311,7 +317,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       config: {
         collections: {
           docs: {
-            path: repoRoot,
+            path: sectionsRoot,
             pattern: '**/*.md',
           },
         },
@@ -323,7 +329,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       this.storeCache.set(workspaceId, {
         store,
         indexedAt: syncState?.updatedAt,
-        repoRoot,
+        sectionsRoot,
         owner: repoInfo.owner,
         repo: repoInfo.repo,
         branch: repoInfo.branch,
@@ -331,7 +337,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
 
       Logger.info(`QmdRetrievalProvider: rebuilt QMD index for workspace ${workspaceId}`, {
         dbPath,
-        repoRoot,
+        sectionsRoot,
         updateResult,
         embedResult,
       });
@@ -388,7 +394,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
           return results.map((result) =>
             this.mapHybridResultToDocument({
               result,
-              repoRoot: storeEntry.repoRoot,
+              sectionsRoot: storeEntry.sectionsRoot,
               owner: storeEntry.owner,
               repo: storeEntry.repo,
               branch: storeEntry.branch,
@@ -423,7 +429,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       return results.map((result) =>
         this.mapLexResultToDocument({
           result,
-          repoRoot: storeEntry.repoRoot,
+          sectionsRoot: storeEntry.sectionsRoot,
           owner: storeEntry.owner,
           repo: storeEntry.repo,
           branch: storeEntry.branch,

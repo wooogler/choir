@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { Document } from '@langchain/core/documents';
 import { Logger } from 'services/common/logger';
@@ -5,6 +6,7 @@ import { expandQueryWithOpenAI } from 'services/retrieval/openai-query-expansion
 import { getGithubRepo } from 'services/slack';
 import type { DocumentMetadata } from 'services/vector/types';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
+import { sectionPathToOriginalPath, stripItemHeadingPrefix } from 'services/document/markdown-section-splitter';
 import type { RetrievalDocument } from 'services/retrieval';
 import { searchQmdLexWithFallback } from 'services/retrieval/qmd-lex-search';
 import { type UpdateAnchor, stripSnippetHeader } from './update-anchor';
@@ -78,7 +80,7 @@ interface QmdModule {
 interface StoreCacheEntry {
   store: QmdStore;
   indexedAt?: string;
-  repoRoot: string;
+  sectionsRoot: string;
   owner: string;
   repo: string;
   branch?: string;
@@ -97,87 +99,6 @@ function matchesSelectedFile(relativePath: string, selectedFile?: string): boole
     normalizedRelativePath.endsWith(`/${normalizedSelectedFile}`) ||
     path.posix.basename(normalizedRelativePath) === path.posix.basename(normalizedSelectedFile)
   );
-}
-
-function isFenceLine(line: string): boolean {
-  return line.trim().startsWith('```');
-}
-
-function isBoundaryLine(line: string): boolean {
-  const trimmed = line.trim();
-  return trimmed === '' || /^#{1,6}\s/.test(trimmed);
-}
-
-function isInsideCodeFence(lines: string[], lineIndex: number): boolean {
-  let fenceCount = 0;
-
-  for (let index = 0; index <= lineIndex; index += 1) {
-    if (isFenceLine(lines[index] || '')) {
-      fenceCount += 1;
-    }
-  }
-
-  return fenceCount % 2 === 1;
-}
-
-function getBlockAroundLine(body: string, startLine: number, snippetLines: number): { text: string; startLine: number; endLine: number } {
-  const lines = body.split('\n');
-  if (lines.length === 0) {
-    return {
-      text: '',
-      startLine: startLine || 1,
-      endLine: startLine || 1,
-    };
-  }
-
-  let startIndex = Math.max(0, startLine - 1);
-  let endIndex = Math.min(lines.length - 1, startIndex + Math.max(0, snippetLines - 1));
-
-  if (isInsideCodeFence(lines, startIndex) || isFenceLine(lines[startIndex] || '')) {
-    while (startIndex > 0 && !isFenceLine(lines[startIndex - 1] || '')) {
-      startIndex -= 1;
-    }
-    while (endIndex < lines.length - 1 && !isFenceLine(lines[endIndex] || '')) {
-      endIndex += 1;
-    }
-    if (endIndex < lines.length - 1 && isFenceLine(lines[endIndex + 1] || '')) {
-      endIndex += 1;
-    }
-  } else {
-    while (startIndex > 0 && !isBoundaryLine(lines[startIndex - 1] || '')) {
-      startIndex -= 1;
-    }
-    while (endIndex < lines.length - 1 && !isBoundaryLine(lines[endIndex + 1] || '')) {
-      endIndex += 1;
-    }
-  }
-
-  return {
-    text: lines.slice(startIndex, endIndex + 1).join('\n').trim(),
-    startLine: startIndex + 1,
-    endLine: endIndex + 1,
-  };
-}
-
-function findChunkLineRange(body: string, chunk: string): { startLine: number; snippetLines: number } | null {
-  const normalizedChunk = chunk.trim();
-  if (!body || !normalizedChunk) {
-    return null;
-  }
-
-  const chunkIndex = body.indexOf(normalizedChunk);
-  if (chunkIndex < 0) {
-    return null;
-  }
-
-  const prefix = body.slice(0, chunkIndex);
-  const startLine = prefix.split('\n').length;
-  const snippetLines = Math.max(1, normalizedChunk.split('\n').length);
-
-  return {
-    startLine,
-    snippetLines,
-  };
 }
 
 export class QmdUpdateAnchorService {
@@ -211,25 +132,23 @@ export class QmdUpdateAnchorService {
     return process.env.QMD_WARMUP_QUERY?.trim() || 'documentation';
   }
 
-  private getRelativePath(repoRoot: string, rawPath: string, displayPath?: string): string {
+  private getRelativePath(sectionsRoot: string, rawPath: string, displayPath?: string): string {
+    let sectionRelativePath: string;
+
     if (rawPath.startsWith('qmd://')) {
       const virtualPath = rawPath.replace(/^qmd:\/\//, '');
       const separatorIndex = virtualPath.indexOf('/');
-      if (separatorIndex >= 0) {
-        return virtualPath.slice(separatorIndex + 1);
-      }
-    }
-
-    if (displayPath) {
+      sectionRelativePath = separatorIndex >= 0 ? virtualPath.slice(separatorIndex + 1) : virtualPath;
+    } else if (displayPath) {
       const normalizedDisplayPath = displayPath.split(path.sep).join(path.posix.sep).replace(/^\/+/, '');
       const separatorIndex = normalizedDisplayPath.indexOf('/');
-      if (separatorIndex >= 0) {
-        return normalizedDisplayPath.slice(separatorIndex + 1);
-      }
+      sectionRelativePath = separatorIndex >= 0 ? normalizedDisplayPath.slice(separatorIndex + 1) : normalizedDisplayPath;
+    } else {
+      const absolutePath = path.isAbsolute(rawPath) ? rawPath : path.join(sectionsRoot, rawPath);
+      sectionRelativePath = path.relative(sectionsRoot, absolutePath).split(path.sep).join(path.posix.sep);
     }
 
-    const absolutePath = path.isAbsolute(rawPath) ? rawPath : path.join(repoRoot, rawPath);
-    return path.relative(repoRoot, absolutePath).split(path.sep).join(path.posix.sep);
+    return sectionPathToOriginalPath(sectionRelativePath);
   }
 
   private buildGithubUrl(owner: string, repo: string, branch: string | undefined, relativePath: string): string {
@@ -260,7 +179,7 @@ export class QmdUpdateAnchorService {
     }
 
     const mirrorService = WorkspaceMirrorService.getInstance();
-    const repoRoot = mirrorService.getRepoRoot(workspaceId);
+    const sectionsRoot = mirrorService.getSectionsRoot(workspaceId);
     const syncState = await mirrorService.getSyncState(workspaceId);
     const cached = this.storeCache.get(workspaceId);
 
@@ -279,7 +198,7 @@ export class QmdUpdateAnchorService {
       config: {
         collections: {
           docs: {
-            path: repoRoot,
+            path: sectionsRoot,
             pattern: '**/*.md',
           },
         },
@@ -291,7 +210,7 @@ export class QmdUpdateAnchorService {
     const entry: StoreCacheEntry = {
       store,
       indexedAt: syncState?.updatedAt,
-      repoRoot,
+      sectionsRoot,
       owner: repoInfo.owner,
       repo: repoInfo.repo,
       branch: repoInfo.branch,
@@ -356,7 +275,7 @@ export class QmdUpdateAnchorService {
       .map((result) => ({
         result,
         relativePath: this.getRelativePath(
-          storeEntry.repoRoot,
+          storeEntry.sectionsRoot,
           'file' in result ? result.file : result.filepath,
           result.displayPath,
         ),
@@ -364,37 +283,63 @@ export class QmdUpdateAnchorService {
       .filter(({ relativePath }) => matchesSelectedFile(relativePath, params.selectedFile))
       .slice(0, limit);
 
+    const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(params.workspaceId);
+
     return filteredResults.map(({ result, relativePath }) => {
-      const body = result.body || '';
-      const bestChunk = stripSnippetHeader(('bestChunk' in result ? result.bestChunk : '') || '');
-      const chunkLocation = findChunkLineRange(body, bestChunk);
-      const snippetResult =
-        body && !chunkLocation
-          ? qmd.extractSnippet(body, params.query, Number(process.env.QMD_UPDATE_SNIPPET_MAX_LEN || 500))
-          : null;
-      const snippetBody = bestChunk || stripSnippetHeader(snippetResult?.snippet || '') || body;
-      const snippetStartLine = chunkLocation?.startLine || (snippetResult ? snippetResult.linesBefore + 1 : 1);
-      const snippetLines = chunkLocation?.snippetLines || snippetResult?.snippetLines || Math.max(1, snippetBody.split('\n').length);
-      const blockResult = getBlockAroundLine(body || snippetBody, snippetStartLine, snippetLines);
-      const focusLine = snippetResult?.line || snippetStartLine;
+      const sectionBody = result.body || '';
+      const itemText = stripItemHeadingPrefix(sectionBody).trim();
+
+      // Locate the item text in the original file to get accurate line numbers.
+      let startLine = 1;
+      let endLine = 1;
+      let originalText = itemText;
+      try {
+        const originalFilePath = path.join(repoRoot, relativePath);
+        const originalContent = fs.readFileSync(originalFilePath, 'utf-8').replace(/\r\n/g, '\n');
+        const matchIndex = originalContent.indexOf(itemText);
+        if (matchIndex >= 0) {
+          startLine = originalContent.slice(0, matchIndex).split('\n').length;
+          endLine = startLine + itemText.split('\n').length - 1;
+        } else {
+          Logger.warn(`QmdUpdateAnchorService: item text not found in original file ${relativePath}`, {
+            workspaceId: params.workspaceId,
+            itemTextPreview: itemText.slice(0, 80),
+          });
+          // Fall back to extractSnippet if exact match fails
+          const fallback = qmd.extractSnippet(
+            originalContent,
+            params.query,
+            Number(process.env.QMD_UPDATE_SNIPPET_MAX_LEN || 500),
+          );
+          if (fallback?.snippet) {
+            originalText = stripSnippetHeader(fallback.snippet).trim();
+            startLine = (fallback.linesBefore ?? 0) + 1;
+            endLine = startLine + (fallback.snippetLines ?? 1) - 1;
+          }
+        }
+      } catch (error) {
+        Logger.warn(`QmdUpdateAnchorService: could not read original file ${relativePath}`, error as Error);
+      }
+
+      const focusLine = startLine;
 
       const updateAnchor: UpdateAnchor = {
         source: 'qmd',
-        anchorId: `qmd:${relativePath}:${blockResult.startLine}:${focusLine}`,
+        anchorId: `qmd:${relativePath}:${startLine}:${focusLine}`,
         filePath: relativePath,
-        snippet: snippetBody,
-        originalText: blockResult.text || snippetBody,
+        snippet: sectionBody,
+        originalText,
         title: result.title,
         score: result.score,
-        startLine: blockResult.startLine,
-        endLine: blockResult.endLine,
+        startLine,
+        endLine,
         focusLine,
-        snippetLines,
+        snippetLines: Math.max(1, originalText.split('\n').length),
         chunkPos: 'chunkPos' in result ? result.chunkPos : undefined,
       };
 
       return new Document<DocumentMetadata>({
-        pageContent: blockResult.text || snippetBody,
+        pageContent: sectionBody,
         metadata: {
           fileName: relativePath,
           nodeId: updateAnchor.anchorId,
@@ -402,7 +347,7 @@ export class QmdUpdateAnchorService {
           headingPath: result.title,
           nodeType: 'document',
           githubUrl: this.buildGithubUrl(storeEntry.owner, storeEntry.repo, storeEntry.branch, relativePath),
-          originalContent: blockResult.text || snippetBody,
+          originalContent: originalText,
           updateAnchor,
         },
       });

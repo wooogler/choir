@@ -15,7 +15,7 @@ CHOIR is a Slack bot for organization knowledge workflows. It indexes markdown d
 - Slack Bolt
 - OpenAI
 - GitHub API via Octokit
-- FAISS-based vector search
+- FAISS-based vector search by default, with optional QMD retrieval
 
 ## Getting started
 
@@ -47,6 +47,9 @@ Optional but commonly used:
 - `MANAGER_PROMOTION_PASSWORD`
 - `CHOIR_CONSENT_FORM_URL`
 - `SLACK_APP_ID`
+
+QMD question-answer retrieval can be enabled explicitly with `RETRIEVAL_PROVIDER=qmd`.
+To use QMD for document-update anchoring as well, set `UPDATE_RETRIEVAL_PROVIDER=qmd`.
 
 `env.sample` documents the full set currently used by the app.
 

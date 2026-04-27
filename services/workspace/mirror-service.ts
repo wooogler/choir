@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Logger } from 'services/common/logger';
 import type { MarkdownFile } from 'services/github';
+import { splitMarkdownToItems } from 'services/document/markdown-section-splitter';
 
 export type WorkspaceSyncSource = 'startup' | 'webhook' | 'manual-refresh' | 'document-update' | 'create-file';
 
@@ -45,9 +46,14 @@ export class WorkspaceMirrorService {
     return path.join(this.getStateRoot(workspaceId), 'sync-state.json');
   }
 
+  public getSectionsRoot(workspaceId: string): string {
+    return path.join(this.getWorkspaceRoot(workspaceId), 'sections');
+  }
+
   private ensureWorkspaceLayout(workspaceId: string): void {
     fs.mkdirSync(this.getRepoRoot(workspaceId), { recursive: true });
     fs.mkdirSync(this.getStateRoot(workspaceId), { recursive: true });
+    fs.mkdirSync(this.getSectionsRoot(workspaceId), { recursive: true });
   }
 
   private resolveMirrorPath(workspaceId: string, relativePath: string): string {
@@ -69,8 +75,64 @@ export class WorkspaceMirrorService {
     await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
     await fs.promises.writeFile(targetPath, content, 'utf-8');
 
+    await this.writeSectionFiles(workspaceId, relativePath, content);
+
     Logger.info(`Workspace mirror wrote file: ${relativePath}`, { workspaceId, targetPath });
     return targetPath;
+  }
+
+  public async populateSectionsIfEmpty(workspaceId: string): Promise<void> {
+    const sectionsRoot = this.getSectionsRoot(workspaceId);
+    const repoRoot = this.getRepoRoot(workspaceId);
+
+    if (!fs.existsSync(repoRoot)) return;
+
+    const sectionsHasFiles =
+      fs.existsSync(sectionsRoot) &&
+      fs.readdirSync(sectionsRoot).some((entry) => {
+        const entryPath = path.join(sectionsRoot, entry);
+        return fs.statSync(entryPath).isDirectory();
+      });
+
+    if (sectionsHasFiles) return;
+
+    Logger.info(`QmdRetrievalProvider: sections/ is empty, rebuilding from repo/`, { workspaceId });
+
+    const stack = [repoRoot];
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      const entries = await fs.promises.readdir(current, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(fullPath);
+        } else if (entry.isFile() && entry.name.endsWith('.md')) {
+          const relativePath = path.relative(repoRoot, fullPath).split(path.sep).join(path.posix.sep);
+          const content = await fs.promises.readFile(fullPath, 'utf-8');
+          await this.writeSectionFiles(workspaceId, relativePath, content);
+        }
+      }
+    }
+  }
+
+  private async writeSectionFiles(workspaceId: string, relativePath: string, content: string): Promise<void> {
+    const sectionsRoot = this.getSectionsRoot(workspaceId);
+    const withoutExt = relativePath.replace(/\.md$/i, '');
+    const sectionDir = path.join(sectionsRoot, withoutExt);
+
+    if (fs.existsSync(sectionDir)) {
+      await fs.promises.rm(sectionDir, { recursive: true, force: true });
+    }
+    await fs.promises.mkdir(sectionDir, { recursive: true });
+
+    const fileBaseName = path.posix.basename(relativePath, '.md');
+    const items = splitMarkdownToItems(content, fileBaseName);
+    for (const item of items) {
+      const itemFilePath = path.join(sectionDir, `${item.index}.md`);
+      await fs.promises.writeFile(itemFilePath, item.content, 'utf-8');
+    }
+
+    Logger.info(`Workspace mirror wrote ${items.length} item file(s) for: ${relativePath}`, { workspaceId });
   }
 
   public async writeMarkdownFiles(workspaceId: string, markdownFiles: MarkdownFile[]): Promise<void> {
@@ -80,10 +142,68 @@ export class WorkspaceMirrorService {
       await this.writeMarkdownFile(workspaceId, markdownFile.path, markdownFile.content);
     }
 
-    await this.removeOrphanedMarkdownFiles(
-      workspaceId,
-      new Set(markdownFiles.map((file) => path.posix.normalize(file.path).replace(/^\/+/, ''))),
+    const expectedPaths = new Set(markdownFiles.map((file) => path.posix.normalize(file.path).replace(/^\/+/, '')));
+    await this.removeOrphanedMarkdownFiles(workspaceId, expectedPaths);
+    await this.removeOrphanedSectionDirs(workspaceId, expectedPaths);
+  }
+
+  private async removeOrphanedSectionDirs(workspaceId: string, expectedPaths: Set<string>): Promise<void> {
+    const sectionsRoot = this.getSectionsRoot(workspaceId);
+    if (!fs.existsSync(sectionsRoot)) {
+      return;
+    }
+
+    // Expected section dirs: one per expected file (strip .md, preserve subdirs)
+    const expectedSectionDirs = new Set(
+      Array.from(expectedPaths).map((p) => p.replace(/\.md$/i, '')),
     );
+
+    const topLevelEntries = await fs.promises.readdir(sectionsRoot, { withFileTypes: true });
+    for (const entry of topLevelEntries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      await this.removeOrphanedSectionDirsRecursive(
+        path.join(sectionsRoot, entry.name),
+        entry.name,
+        sectionsRoot,
+        expectedSectionDirs,
+        workspaceId,
+      );
+    }
+  }
+
+  private async removeOrphanedSectionDirsRecursive(
+    dirPath: string,
+    relativeDirPath: string,
+    sectionsRoot: string,
+    expectedSectionDirs: Set<string>,
+    workspaceId: string,
+  ): Promise<void> {
+    if (expectedSectionDirs.has(relativeDirPath)) {
+      return; // This dir is still needed
+    }
+
+    // Check if any subdirectory matches an expected section dir
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    const subDirs = entries.filter((e) => e.isDirectory());
+
+    if (subDirs.length === 0) {
+      // Leaf dir not in expected set → remove
+      await fs.promises.rm(dirPath, { recursive: true, force: true });
+      Logger.info(`Workspace mirror removed orphaned section dir: ${relativeDirPath}`, { workspaceId });
+      return;
+    }
+
+    for (const subDir of subDirs) {
+      await this.removeOrphanedSectionDirsRecursive(
+        path.join(dirPath, subDir.name),
+        `${relativeDirPath}/${subDir.name}`,
+        sectionsRoot,
+        expectedSectionDirs,
+        workspaceId,
+      );
+    }
   }
 
   private async removeOrphanedMarkdownFiles(workspaceId: string, expectedPaths: Set<string>): Promise<void> {
