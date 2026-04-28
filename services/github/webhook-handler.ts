@@ -69,6 +69,7 @@ export async function handleGitHubPushEvent(
     const owner = repository.owner.name || repository.owner.login;
     const repo = repository.name;
     const branch = ref.replace('refs/heads/', '');
+    const defaultBranch = repository.default_branch;
 
     logger.info(`GitHub push event received: ${owner}/${repo} on branch ${branch}`);
     logger.info(`Commits: ${commits?.length || 0}`);
@@ -90,7 +91,7 @@ export async function handleGitHubPushEvent(
     logger.info(`Repository ${owner}/${repo} matches current workspace, performing auto-reload`);
 
     // 자동 reload 수행
-    await performAutoReloadForWorkspace(owner, repo, branch, commits, client, logger);
+    await performAutoReloadForWorkspace(owner, repo, branch, commits, client, logger, defaultBranch);
   } catch (error) {
     logger.error('Error handling GitHub push event:', error);
   }
@@ -105,7 +106,8 @@ async function performAutoReloadForWorkspace(
   branch: string,
   commits: any[],
   client: WebClient,
-  logger: any
+  logger: any,
+  defaultBranch?: string
 ): Promise<void> {
   try {
     const workspaceId = await getWorkspaceId(client);
@@ -117,7 +119,7 @@ async function performAutoReloadForWorkspace(
     }
 
     // 브랜치가 다르면 스킵 (기본 브랜치만 처리)
-    const configBranch = repoInfo.branch || 'main';
+    const configBranch = repoInfo.branch || defaultBranch || 'main';
     if (branch !== configBranch) {
       logger.info(`Skipping auto-reload: branch ${branch} != ${configBranch}`);
       return;

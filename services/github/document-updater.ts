@@ -158,6 +158,7 @@ export async function applyDocumentUpdatesToGithub({
         path: currentMarkdownFile.path,
         content: updatedMarkdownForGithub,
         message: commitMessage,
+        branch,
         workspaceId,
         userId,
       });

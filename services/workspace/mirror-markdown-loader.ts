@@ -53,7 +53,8 @@ export class WorkspaceMirrorMarkdownLoader {
 
     markdownPaths.sort();
 
-    const branch = params.branch || 'main';
+    const syncState = await WorkspaceMirrorService.getInstance().getSyncState(params.workspaceId);
+    const branch = params.branch || syncState?.branch || 'main';
     const markdownFiles: MarkdownFile[] = [];
 
     for (const absolutePath of markdownPaths) {

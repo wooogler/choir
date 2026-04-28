@@ -213,7 +213,7 @@ export class QmdUpdateAnchorService {
       sectionsRoot,
       owner: repoInfo.owner,
       repo: repoInfo.repo,
-      branch: repoInfo.branch,
+      branch: repoInfo.branch || syncState?.branch,
     };
 
     this.storeCache.set(workspaceId, entry);

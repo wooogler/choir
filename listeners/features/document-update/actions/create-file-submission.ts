@@ -102,6 +102,7 @@ export const createFileSubmissionCallback = async ({
     const { owner, repo, path, branch } = config.githubRepo;
     const githubService = GithubService.getInstance();
     const documentUpdateService = DocumentUpdateService.getInstance();
+    const branchName = branch || (await githubService.getDefaultBranch(owner, repo, workspaceId, userId));
 
     // Create the file in GitHub
     const filePath = path ? `${path}/${fileName}` : fileName;
@@ -113,6 +114,7 @@ export const createFileSubmissionCallback = async ({
         path: filePath,
         content: fileContent,
         message: `Create ${fileName}`,
+        branch: branchName,
         workspaceId,
         userId,
       });
@@ -150,6 +152,7 @@ export const createFileSubmissionCallback = async ({
         owner,
         repo,
         path: filePath,
+        branch: branchName,
         workspaceId,
         userId,
       });
@@ -161,7 +164,7 @@ export const createFileSubmissionCallback = async ({
           content: createdFile.content,
           owner,
           repo,
-          branch,
+          branch: branchName,
           source: 'create-file',
         });
 
@@ -171,7 +174,7 @@ export const createFileSubmissionCallback = async ({
           name: fileName,
           path: filePath,
           content: createdFile.content,
-          githubUrl: `https://github.com/${owner}/${repo}/blob/main/${filePath}`,
+          githubUrl: `https://github.com/${owner}/${repo}/blob/${branchName}/${filePath}`,
           tree: parseMarkdownToTree(createdFile.content),
         };
 
@@ -235,7 +238,7 @@ export const createFileSubmissionCallback = async ({
           block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
           text: {
             type: 'mrkdwn',
-            text: `✅ *File created successfully!*\n\n📄 <https://github.com/${owner}/${repo}/blob/${branch || 'main'}/${filePath}|*${fileName}*> has been created in your GitHub repository.`,
+            text: `✅ *File created successfully!*\n\n📄 <https://github.com/${owner}/${repo}/blob/${branchName}/${filePath}|*${fileName}*> has been created in your GitHub repository.`,
           },
         },
         {
@@ -270,7 +273,7 @@ export const createFileSubmissionCallback = async ({
           logger.warn('Failed to get user info for notification:', error);
         }
 
-        const notificationText = `📄 New File Created by ${createdBy}: <https://github.com/${owner}/${repo}/blob/${branch}/${filePath}|${fileName}>`;
+        const notificationText = `📄 New File Created by ${createdBy}: <https://github.com/${owner}/${repo}/blob/${branchName}/${filePath}|${fileName}>`;
 
         await client.chat.postMessage({
           channel: knowledgeSourceChannelId,
@@ -337,8 +340,8 @@ export const createFileSubmissionCallback = async ({
         owner,
         repo,
         githubPath: path,
-        branch: branch || 'main',
-        fullGithubUrl: `https://github.com/${owner}/${repo}/blob/main/${filePath}`,
+        branch: branchName,
+        fullGithubUrl: `https://github.com/${owner}/${repo}/blob/${branchName}/${filePath}`,
         fileIndexed: true, // Since we successfully indexed it
         sessionCompleted: !!sessionId,
       },

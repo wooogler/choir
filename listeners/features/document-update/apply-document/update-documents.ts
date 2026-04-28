@@ -165,7 +165,8 @@ const applySelectedToGithubAction = async ({
 
       if (config?.githubRepo && fileName) {
         const { owner, repo, branch } = config.githubRepo;
-        const branchName = branch || 'main';
+        const branchName =
+          branch || (await GithubService.getInstance().getDefaultBranch(owner, repo, workspaceId, userId));
         // Find the file path from selected updates
         const updateWithPath = selectedUpdates.find((u) => u.fileName === fileName);
         if (updateWithPath) {
@@ -457,6 +458,7 @@ export const handleNewSectionModalSubmission = async ({
       buttonChannelId,
       originalChannelId,
       originalThreadTs,
+      branch: sessionBranch,
     } = sessionData;
 
     // Use selected file if available, otherwise fall back to recommended file
@@ -659,6 +661,11 @@ export const handleNewSectionModalSubmission = async ({
     }
 
     const { owner, repo } = parsedUrl;
+    const branchMatch = githubUrl.match(/\/blob\/([^/]+)\//);
+    const branchName =
+      sessionBranch ||
+      branchMatch?.[1] ||
+      (await GithubService.getInstance().getDefaultBranch(owner, repo, currentWorkspaceId, userId));
 
     // 5. 커밋 메시지 생성
     const userName = await getUserName(userId, client);
@@ -676,6 +683,9 @@ Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''
       path: markdownFile.path, // 실제 파일 경로 사용
       content: updatedMarkdown,
       message: commitMessage,
+      branch: branchName,
+      workspaceId: currentWorkspaceId,
+      userId,
     });
 
     // 7. Skip DM success message - will be shown in updated message instead
@@ -683,7 +693,7 @@ Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''
     // 8. Update the original message to show completion
     try {
       // Generate URLs for the new section
-      const editUrl = `https://github.com/${owner}/${repo}/edit/main/${markdownFile.path}`;
+      const editUrl = `https://github.com/${owner}/${repo}/edit/${branchName}/${markdownFile.path}`;
       const commitDiffUrl = updateResult.commitSha
         ? `https://github.com/${owner}/${repo}/commit/${updateResult.commitSha}`
         : '';

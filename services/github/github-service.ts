@@ -368,16 +368,20 @@ class GithubService {
     path: string;
     content: string;
     message?: string;
+    branch?: string;
     workspaceId?: string;
     userId?: string;
   }): Promise<{ commitSha: string }> {
     try {
       const octokit = await this.getOctokit(params.workspaceId, params.userId);
+      const actualBranch =
+        params.branch || (await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId));
       const currentFileResponse = await this.throttledRequest(() =>
         octokit.rest.repos.getContent({
           owner: params.owner,
           repo: params.repo,
           path: params.path,
+          ref: actualBranch,
         }),
       );
       const currentFile = (currentFileResponse as any).data;
@@ -402,6 +406,7 @@ class GithubService {
           message: commitMessage,
           content: Buffer.from(params.content).toString('base64'),
           sha: currentFile.sha,
+          branch: actualBranch,
         }),
       );
       
@@ -413,13 +418,18 @@ class GithubService {
       );
       cacheKeys.forEach((key) => this.fileContentCache.delete(key));
 
-      Logger.info(`Successfully updated file: ${params.path}`);
+      Logger.info(`Successfully updated file: ${params.path}`, {
+        owner: params.owner,
+        repo: params.repo,
+        branch: actualBranch,
+      });
       return { commitSha };
     } catch (error) {
       Logger.error('Failed to update file', error as Error, {
         owner: params.owner,
         repo: params.repo,
         path: params.path,
+        branch: params.branch,
       });
       throw new GitHubError('Failed to update file', {
         code: ErrorCodes.GITHUB_UPDATE_FAILED,
@@ -645,12 +655,14 @@ class GithubService {
     path: string;
     content: string;
     message: string;
+    branch?: string;
     workspaceId?: string;
     userId?: string;
   }): Promise<void> {
     try {
       const octokit = await this.getOctokit(params.workspaceId, params.userId);
-      const defaultBranch = await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId);
+      const actualBranch =
+        params.branch || (await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId));
 
       // Check if file already exists
       try {
@@ -658,7 +670,7 @@ class GithubService {
           owner: params.owner,
           repo: params.repo,
           path: params.path,
-          ref: defaultBranch,
+          ref: actualBranch,
         });
 
         // If we get here, file exists
@@ -686,16 +698,18 @@ class GithubService {
           path: params.path,
           message: commitMessage,
           content: Buffer.from(params.content).toString('base64'),
-          branch: defaultBranch,
+          branch: actualBranch,
         });
       });
 
-      Logger.info(`Successfully created file ${params.path} in ${params.owner}/${params.repo}`);
+      Logger.info(`Successfully created file ${params.path} in ${params.owner}/${params.repo}`, {
+        branch: actualBranch,
+      });
     } catch (error) {
       Logger.error('Failed to create file', error as Error);
       throw new GitHubError('Failed to create file', {
         code: ErrorCodes.GITHUB_CONNECTION_FAILED,
-        metadata: { owner: params.owner, repo: params.repo, path: params.path },
+        metadata: { owner: params.owner, repo: params.repo, path: params.path, branch: params.branch },
       });
     }
   }
@@ -707,19 +721,21 @@ class GithubService {
     owner: string;
     repo: string;
     path: string;
+    branch?: string;
     workspaceId?: string;
     userId?: string;
   }): Promise<{ content: string; sha: string } | null> {
     try {
       const octokit = await this.getOctokit(params.workspaceId, params.userId);
-      const defaultBranch = await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId);
+      const actualBranch =
+        params.branch || (await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId));
 
       const response = await this.throttledRequest(async () => {
         return octokit.rest.repos.getContent({
           owner: params.owner,
           repo: params.repo,
           path: params.path,
-          ref: defaultBranch,
+          ref: actualBranch,
         });
       });
 

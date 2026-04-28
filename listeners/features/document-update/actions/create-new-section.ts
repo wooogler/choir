@@ -116,8 +116,8 @@ export const createNewSectionAction = async ({
 
     // GitHub 편집 URL 생성 함수
     const { owner, repo, path, branch } = config.githubRepo;
+    const branchName = branch || (await GithubService.getInstance().getDefaultBranch(owner, repo, workspaceId, userId));
     const createEditUrl = (filePath: string) => {
-      const branchName = branch || 'main';
       return `https://github.com/${owner}/${repo}/edit/${branchName}/${filePath}`;
     };
 
@@ -151,7 +151,7 @@ export const createNewSectionAction = async ({
         recommendedFile,
         owner,
         repo,
-        branch: branch || 'main',
+        branch: branchName,
         fileOptions: fileOptions,
         copyText,
         sectionTitle,

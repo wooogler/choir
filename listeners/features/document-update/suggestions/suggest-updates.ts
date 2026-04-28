@@ -1580,9 +1580,18 @@ export const suggestUpdatesCallback = async ({
           const { createNewSectionFromKnowledge, generateNewFileDefaults } = await import(
             'services/llm/content-generator'
           );
+          const branchName = config?.githubRepo
+            ? config.githubRepo.branch ||
+              (await GithubService.getInstance().getDefaultBranch(
+                config.githubRepo.owner,
+                config.githubRepo.repo,
+                workspaceId,
+                userId,
+              ))
+            : 'main';
           const availableFiles = (fileList || []).map((file) => ({
             fileName: file.name,
-            githubUrl: `https://github.com/${config?.githubRepo?.owner}/${config?.githubRepo?.repo}/blob/main/${file.path}`,
+            githubUrl: `https://github.com/${config?.githubRepo?.owner}/${config?.githubRepo?.repo}/blob/${branchName}/${file.path}`,
             description: `${file.name} - Documentation file`,
           }));
 
@@ -1951,7 +1960,8 @@ Section: ${sectionInfo}${anchorLineText}`;
     let directEditUrl = '';
     if (config?.githubRepo) {
       const { owner, repo, branch } = config.githubRepo;
-      const branchName = branch || 'main';
+      const branchName =
+        branch || (await GithubService.getInstance().getDefaultBranch(owner, repo, await getWorkspaceId(client), userId));
       directEditUrl = `https://github.com/${owner}/${repo}/edit/${branchName}/${processedDoc.fileName}`;
     }
 

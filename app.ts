@@ -257,7 +257,12 @@ async function initializeSingleWorkspaceOnStartup(): Promise<{
     app.logger.info(`Using saved GitHub repository: ${repoInfo.owner}/${repoInfo.repo}`);
 
     // 먼저 캐시에서 벡터 스토어 초기화 시도
-    const cacheInitialized = await vectorStore.initializeFromCacheOnly(repoInfo.owner, repoInfo.repo, workspaceId);
+    const cacheInitialized = await vectorStore.initializeFromCacheOnly(
+      repoInfo.owner,
+      repoInfo.repo,
+      workspaceId,
+      repoInfo.branch,
+    );
 
     if (cacheInitialized) {
       app.logger.info('Vector store successfully initialized from cache. Skipping GitHub API calls.');

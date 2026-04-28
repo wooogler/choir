@@ -435,7 +435,12 @@ export class VectorStoreService {
   /**
    * 캐시에서 벡터 스토어 초기화 시도 (GitHub API 호출 없이)
    */
-  public async initializeFromCacheOnly(owner: string, repo: string, workspaceId?: string): Promise<boolean> {
+  public async initializeFromCacheOnly(
+    owner: string,
+    repo: string,
+    workspaceId?: string,
+    branch = 'main',
+  ): Promise<boolean> {
     try {
       const state = this.getState(workspaceId);
       if (isQmdRetrievalEnabled()) {
@@ -473,7 +478,7 @@ export class VectorStoreService {
             name: fileName,
             path: fileName,
             content: '', // 캐시에서 로드할 때는 전체 내용 불필요
-            githubUrl: `https://github.com/${owner}/${repo}/blob/main/${fileName}`,
+            githubUrl: `https://github.com/${owner}/${repo}/blob/${branch}/${fileName}`,
             tree: tree,
           });
         }

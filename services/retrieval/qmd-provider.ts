@@ -265,7 +265,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       sectionsRoot,
       owner: repoInfo.owner,
       repo: repoInfo.repo,
-      branch: repoInfo.branch,
+      branch: repoInfo.branch || syncState?.branch,
     };
 
     this.storeCache.set(workspaceId, entry);
@@ -332,7 +332,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
         sectionsRoot,
         owner: repoInfo.owner,
         repo: repoInfo.repo,
-        branch: repoInfo.branch,
+        branch: repoInfo.branch || syncState?.branch,
       });
 
       Logger.info(`QmdRetrievalProvider: rebuilt QMD index for workspace ${workspaceId}`, {

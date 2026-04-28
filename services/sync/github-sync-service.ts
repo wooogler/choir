@@ -9,6 +9,17 @@ export class GitHubSyncService {
   private static instance: GitHubSyncService;
   private readonly mirrorMarkdownLoader = WorkspaceMirrorMarkdownLoader.getInstance();
 
+  private getBranchFromMarkdownFiles(markdownFiles: MarkdownFile[]): string | undefined {
+    for (const file of markdownFiles) {
+      const match = file.githubUrl.match(/\/blob\/([^/]+)\//);
+      if (match?.[1]) {
+        return match[1];
+      }
+    }
+
+    return undefined;
+  }
+
   public static getInstance(): GitHubSyncService {
     if (!GitHubSyncService.instance) {
       GitHubSyncService.instance = new GitHubSyncService();
@@ -26,12 +37,17 @@ export class GitHubSyncService {
     source: WorkspaceSyncSource;
     commitSha?: string;
   }): Promise<void> {
-    await WorkspaceMirrorService.getInstance().syncMarkdownFiles(params);
+    const branch = params.branch || this.getBranchFromMarkdownFiles(params.markdownFiles);
+    await WorkspaceMirrorService.getInstance().syncMarkdownFiles({
+      ...params,
+      branch,
+    });
 
     Logger.info(`GitHubSyncService: synced ${params.markdownFiles.length} markdown files to workspace mirror`, {
       workspaceId: params.workspaceId,
       owner: params.owner,
       repo: params.repo,
+      branch,
       source: params.source,
     });
   }
@@ -59,7 +75,7 @@ export class GitHubSyncService {
       workspaceId: params.workspaceId,
       owner: repoInfo.owner,
       repo: repoInfo.repo,
-      branch: repoInfo.branch,
+      branch: repoInfo.branch || this.getBranchFromMarkdownFiles(markdownFiles),
       markdownFiles,
       source: params.source,
     });
@@ -115,7 +131,7 @@ export class GitHubSyncService {
       workspaceId: params.workspaceId,
       owner: params.owner,
       repo: params.repo,
-      branch: params.branch,
+      branch: params.branch || this.getBranchFromMarkdownFiles(markdownFiles),
       markdownFiles,
       source: params.source,
     });
