@@ -1,5 +1,6 @@
 import { App, ExpressReceiver, LogLevel } from '@slack/bolt';
 import * as dotenv from 'dotenv';
+import path from 'node:path';
 import { SlackUsageMonitor, usageMonitoringMiddleware } from 'services/slack/usage-monitor';
 import registerListeners from './listeners';
 
@@ -105,6 +106,41 @@ app.use(usageMonitoringMiddleware);
 const gitHubSyncService = GitHubSyncService.getInstance();
 const vectorStore = VectorStoreService.getInstance();
 
+function setupPublicSite(): void {
+  if (!receiver) {
+    return;
+  }
+
+  const publicRoot = path.join(process.cwd(), 'public');
+
+  receiver.router.get('/', (_req: any, res: any) => {
+    res.sendFile(path.join(publicRoot, 'index.html'));
+  });
+
+  receiver.router.get('/assets/:fileName', (req: any, res: any) => {
+    const fileName = String(req.params.fileName || '');
+    const allowedFiles = new Set(['site.css', 'site.js']);
+
+    if (!allowedFiles.has(fileName)) {
+      return res.status(404).send('Not found');
+    }
+
+    return res.sendFile(path.join(publicRoot, 'assets', fileName));
+  });
+
+  receiver.router.get('/healthz', (_req: any, res: any) => {
+    res.status(200).json({ ok: true });
+  });
+
+  receiver.router.get('/readyz', (_req: any, res: any) => {
+    res.status(200).json({
+      ok: true,
+      slackMode: slackConfig.mode,
+      qmdRetrieval: isQmdRetrievalEnabled(),
+    });
+  });
+}
+
 function shouldWarmupQmdOnStartup(): boolean {
   return process.env.QMD_WARMUP_ON_STARTUP !== 'false';
 }
@@ -145,6 +181,7 @@ function warmupQmdServicesOnStartup(workspaceId: string): void {
 
 /** Register Listeners */
 registerListeners(app);
+setupPublicSite();
 
 // Note: app_home_opened event is registered in registerListeners()
 
