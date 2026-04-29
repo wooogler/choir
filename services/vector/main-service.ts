@@ -71,6 +71,12 @@ export class VectorStoreService {
     return state;
   }
 
+  public clearWorkspaceState(workspaceId: string): void {
+    const workspaceKey = this.getWorkspaceKey(workspaceId);
+    this.workspaceStates.delete(workspaceKey);
+    Logger.info(`VectorStoreService: cleared workspace state`, { workspaceId });
+  }
+
   /**
    * 벡터 스토어 초기화
    */

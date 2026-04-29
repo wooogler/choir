@@ -117,6 +117,14 @@ export class SqliteSlackInstallationStore implements InstallationStore {
     });
   }
 
+  async deleteWorkspaceInstallation(workspaceId: string): Promise<void> {
+    await this.deleteInstallation({
+      teamId: workspaceId,
+      enterpriseId: undefined,
+      isEnterpriseInstall: false,
+    });
+  }
+
   private async fetchLegacyInstallation(id: string): Promise<Installation<'v1' | 'v2', boolean> | null> {
     const targetPath = this.getLegacyInstallationPath(id);
     if (!fs.existsSync(targetPath)) {

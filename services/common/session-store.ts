@@ -142,6 +142,45 @@ export function removeSessionData(sessionId: string, sessionType: SessionType = 
   return deleteSession(sessionId, sessionType);
 }
 
+export function purgeWorkspaceSessions(workspaceId: string): number {
+  const rows = getDatabase()
+    .prepare('SELECT session_type AS sessionType, session_id AS sessionId, data_json AS dataJson FROM sessions')
+    .all() as Array<{ sessionType: SessionType; sessionId: string; dataJson: string }>;
+
+  let removedCount = 0;
+  for (const row of rows) {
+    let sessionData: any;
+    try {
+      sessionData = deserializeSessionData(row.dataJson);
+    } catch {
+      sessionData = {};
+    }
+
+    const belongsToWorkspace =
+      row.sessionId.startsWith(`${workspaceId}_`) ||
+      row.sessionId.includes(`:${workspaceId}:`) ||
+      sessionData.workspaceId === workspaceId ||
+      sessionData.currentWorkspaceId === workspaceId;
+
+    if (!belongsToWorkspace) {
+      continue;
+    }
+
+    const sessionKey = getSessionKey(row.sessionId, row.sessionType);
+    const timer = sessionTimers.get(sessionKey);
+    if (timer) {
+      clearTimeout(timer);
+      sessionTimers.delete(sessionKey);
+    }
+
+    if (deleteSession(row.sessionId, row.sessionType)) {
+      removedCount += 1;
+    }
+  }
+
+  return removedCount;
+}
+
 /**
  * 새로운 고유 세션 ID를 생성합니다.
  * @param prefix 세션 ID 접두사 (기본값: 'session')

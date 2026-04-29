@@ -50,6 +50,12 @@ export class WorkspaceMirrorService {
     return path.join(this.getWorkspaceRoot(workspaceId), 'sections');
   }
 
+  public async purgeWorkspaceCache(workspaceId: string): Promise<void> {
+    const workspaceRoot = this.getWorkspaceRoot(workspaceId);
+    await fs.promises.rm(workspaceRoot, { recursive: true, force: true });
+    Logger.info(`Workspace mirror purged cache for workspace: ${workspaceId}`, { workspaceId, workspaceRoot });
+  }
+
   private ensureWorkspaceLayout(workspaceId: string): void {
     fs.mkdirSync(this.getRepoRoot(workspaceId), { recursive: true });
     fs.mkdirSync(this.getStateRoot(workspaceId), { recursive: true });

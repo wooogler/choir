@@ -10,6 +10,7 @@
     "dev:prod": "NODE_ENV=production ts-node -r tsconfig-paths/register app.ts",
     "dev:web": "NODE_ENV=development ENABLE_WEB_CONTENT=true ts-node -r tsconfig-paths/register app.ts",
     "migrate:sqlite": "ts-node -r tsconfig-paths/register scripts/migrate-to-sqlite.ts",
+    "purge:workspace-cache": "ts-node -r tsconfig-paths/register scripts/purge-workspace-cache.ts",
     "lint": "node scripts/run-biome-changed.js check",
     "lint:fix": "node scripts/run-biome-changed.js write",
     "lint:all": "npx @biomejs/biome check *.ts listeners services scripts __tests__ src",

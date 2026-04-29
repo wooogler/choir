@@ -80,6 +80,11 @@ function deleteAppState(stateType: string, userId: string, workspaceId?: string)
   getDatabase().prepare('DELETE FROM app_state WHERE state_key = ?').run(getStateKey(stateType, userId, workspaceId));
 }
 
+export function purgeWorkspaceAppState(workspaceId: string): number {
+  const result = getDatabase().prepare('DELETE FROM app_state WHERE state_key LIKE ?').run(`%:${workspaceId}:%`);
+  return result.changes;
+}
+
 function serializeFileSelectionState(state: FileSelectionState): Omit<FileSelectionState, 'appliedSuggestions'> & {
   appliedSuggestions: string[];
 } {

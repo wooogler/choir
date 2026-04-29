@@ -2,7 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { closeDatabase } from 'services/db/connection';
-import { type DocumentUpdate, getStoredDocumentUpdates, storeDocumentUpdates } from 'services/document/document-store';
+import {
+  type DocumentUpdate,
+  getStoredDocumentUpdates,
+  purgeWorkspaceAppState,
+  storeDocumentUpdates,
+} from 'services/document/document-store';
+import { SessionType, getSessionData, purgeWorkspaceSessions, storeSessionData } from 'services/common/session-store';
 
 const createDocumentUpdate = (fileName: string): DocumentUpdate => ({
   index: 0,
@@ -48,5 +54,37 @@ describe('workspace state isolation', () => {
 
     expect(getStoredDocumentUpdates(userId, 'TA')).toEqual([workspaceAUpdate]);
     expect(getStoredDocumentUpdates(userId, 'TB')).toEqual([workspaceBUpdate]);
+  });
+
+  it('purges app state and sessions for only the selected workspace', () => {
+    const userId = 'U123';
+    const workspaceAUpdate = createDocumentUpdate('a.md');
+    const workspaceBUpdate = createDocumentUpdate('b.md');
+
+    storeDocumentUpdates(userId, [workspaceAUpdate], undefined, undefined, 'TA');
+    storeDocumentUpdates(userId, [workspaceBUpdate], undefined, undefined, 'TB');
+    storeSessionData(
+      'session-a',
+      { workspaceId: 'TA', value: 'remove-me' },
+      SessionType.DOCUMENT_UPDATE,
+    );
+    storeSessionData(
+      'session-b',
+      { workspaceId: 'TB', value: 'keep-me' },
+      SessionType.DOCUMENT_UPDATE,
+    );
+
+    expect(purgeWorkspaceAppState('TA')).toBe(1);
+    expect(purgeWorkspaceSessions('TA')).toBe(1);
+
+    expect(getStoredDocumentUpdates(userId, 'TA')).toEqual([]);
+    expect(getStoredDocumentUpdates(userId, 'TB')).toEqual([workspaceBUpdate]);
+    expect(getSessionData('session-a', SessionType.DOCUMENT_UPDATE)).toBeNull();
+    expect(getSessionData('session-b', SessionType.DOCUMENT_UPDATE)).toEqual({
+      workspaceId: 'TB',
+      value: 'keep-me',
+    });
+
+    purgeWorkspaceSessions('TB');
   });
 });
