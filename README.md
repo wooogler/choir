@@ -143,6 +143,32 @@ To auto-refresh documentation after repository changes:
 
 CHOIR will match the incoming repository against the workspace configuration and rebuild the vector store when the configured branch changes.
 
+## Podman deployment
+
+CHOIR can run as a Podman-managed container behind nginx. The container serves the landing page, Slack OAuth routes, Slack events, and health checks on port `3000`.
+
+Required host state:
+
+- `.env` with production Slack/OpenAI/GitHub settings
+- `data/` mounted into the container at `/app/data`
+- nginx proxying `https://your-domain/` to `http://127.0.0.1:3000`
+
+Build and deploy on this server:
+
+```bash
+./scripts/deploy-podman.sh choir.cs.vt.edu
+```
+
+The script builds `choir:latest`, installs a `choir.service` systemd unit, mounts `./data`, and checks `/healthz`.
+
+Useful commands:
+
+```bash
+sudo systemctl status choir
+sudo journalctl -u choir -f
+sudo systemctl restart choir
+```
+
 ## Local state
 
 CHOIR stores workspace configuration and connection state under `data/` in the project directory. That directory is runtime state and should not be treated as checked-in source.

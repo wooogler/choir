@@ -5,6 +5,7 @@
   "main": "dist/app.js",
   "scripts": {
     "build": "rm -rf dist && tsc && tsc-alias",
+    "start": "node dist/app.js",
     "dev": "NODE_ENV=development ts-node -r tsconfig-paths/register app.ts",
     "dev:watch": "nodemon --watch '**/*.ts' --exec 'ts-node -r tsconfig-paths/register' app.ts",
     "dev:prod": "NODE_ENV=production ts-node -r tsconfig-paths/register app.ts",
