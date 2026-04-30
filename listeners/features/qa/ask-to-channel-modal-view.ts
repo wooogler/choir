@@ -2,7 +2,7 @@ import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
 import { createQAChannelMessage, createQAChannelPreview, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { logModalSubmit } from '../../../services/common/user-interaction-logger';
+import { logModalSubmit } from '../../../services/common/interaction-tracker';
 
 /**
  * 채널 선택 모달 제출 처리

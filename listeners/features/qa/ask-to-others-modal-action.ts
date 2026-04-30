@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logButtonClick } from 'services/common/interaction-tracker';
 import { createPrivateMessagePreview, getManagers, getUserName, getWorkspaceId } from 'services/slack';
 
 /**
@@ -42,8 +42,6 @@ export const askToOthersModalCallback = async ({
     logger.warn('Failed to update ephemeral message via response_url:', error);
   }
 
-
-
   try {
     const sessionId = body.actions[0].value;
     if (!sessionId) {
@@ -68,8 +66,6 @@ export const askToOthersModalCallback = async ({
       });
       return;
     }
-
-
 
     // 질문자 이름 가져오기
     const questionerName = await getUserName(body.user.id, client);

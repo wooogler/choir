@@ -3,7 +3,6 @@ import { clearFileSelectionState } from 'services/document/document-store';
 import { answerQuestion } from 'services/llm/qa-service';
 import { getRetrievalProvider } from 'services/retrieval';
 import { getOrganizationDescription, getOrganizationName, getWorkspaceId } from 'services/slack';
-import { DocumentEnhancer } from 'services/web-content/document-enhancer';
 
 export class QuestionProcessor {
   async processQuestion(userMessage: string, historyMessages: any[], client: any, logger: any, userId?: string) {
@@ -26,24 +25,12 @@ export class QuestionProcessor {
       const retrievalProvider = getRetrievalProvider();
       Logger.info(`QuestionProcessor: Using retrieval provider "${retrievalProvider.name}"`);
 
-      let relevantDocs = await retrievalProvider.search({
+      const relevantDocs = await retrievalProvider.search({
         query: userMessage,
         limit: 5,
         workspaceId,
       });
       Logger.info(`QuestionProcessor: retrieval returned ${relevantDocs.length} documents`);
-
-      // 웹 콘텐츠가 있는 문서들의 pageContent를 확장
-      relevantDocs = relevantDocs.map((doc) => {
-        if (doc.metadata.webContent && doc.metadata.webContent.length > 0) {
-          const enhancedContent = DocumentEnhancer.getFullContentForSearch(doc);
-          return {
-            ...doc,
-            pageContent: enhancedContent,
-          };
-        }
-        return doc;
-      });
 
       // 워크스페이스 정보 가져오기
       let workspaceName = '';

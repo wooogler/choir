@@ -5,10 +5,10 @@ import {
   getLastMessageTimestamp,
   getProgressMessageTimestamp,
 } from 'services/common';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logButtonClick } from 'services/common/interaction-tracker';
 import { removeDocumentUpdate } from 'services/document/document-store';
 import { getWorkspaceId } from 'services/slack';
-import suggestUpdatesCallback from '../suggestions/suggest-updates';
+import suggestUpdatesCallback from '../suggestions/suggest-updates-handler';
 
 /**
  * 문서 업데이트 제안을 거절하고 다음 제안을 보여주는 핸들러

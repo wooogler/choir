@@ -2,14 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Document } from '@langchain/core/documents';
 import { Logger } from 'services/common/logger';
+import { sectionPathToOriginalPath } from 'services/document/markdown-section-splitter';
 import { getGithubRepo } from 'services/slack';
 import type { DocumentMetadata } from 'services/vector/types';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
-import { sectionPathToOriginalPath } from 'services/document/markdown-section-splitter';
 import { expandQueryWithOpenAI } from './openai-query-expansion';
 import { searchQmdLexWithFallback } from './qmd-lex-search';
 import type { RetrievalDocument, RetrievalProvider, RetrievalSearchParams, RetrievalWarmupParams } from './types';
-import { FaissRetrievalProvider } from './faiss-provider';
 
 type QmdSearchMode = 'lex' | 'hybrid';
 
@@ -81,13 +80,14 @@ interface StoreCacheEntry {
 
 export class QmdRetrievalProvider implements RetrievalProvider {
   public readonly name = 'qmd' as const;
-  private readonly fallbackProvider = new FaissRetrievalProvider();
   private readonly storeCache = new Map<string, StoreCacheEntry>();
   private qmdModulePromise?: Promise<QmdModule>;
 
   private async loadQmdModule(): Promise<QmdModule> {
     if (!this.qmdModulePromise) {
-      const importQmd = new Function('specifier', 'return import(specifier);') as (specifier: string) => Promise<QmdModule>;
+      const importQmd = new Function('specifier', 'return import(specifier);') as (
+        specifier: string,
+      ) => Promise<QmdModule>;
       this.qmdModulePromise = importQmd('@tobilu/qmd');
     }
 
@@ -127,7 +127,8 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     } else if (displayPath) {
       const normalizedDisplayPath = displayPath.split(path.sep).join(path.posix.sep).replace(/^\/+/, '');
       const separatorIndex = normalizedDisplayPath.indexOf('/');
-      sectionRelativePath = separatorIndex >= 0 ? normalizedDisplayPath.slice(separatorIndex + 1) : normalizedDisplayPath;
+      sectionRelativePath =
+        separatorIndex >= 0 ? normalizedDisplayPath.slice(separatorIndex + 1) : normalizedDisplayPath;
     } else {
       const absolutePath = path.isAbsolute(rawPath) ? rawPath : path.join(sectionsRoot, rawPath);
       sectionRelativePath = path.relative(sectionsRoot, absolutePath).split(path.sep).join(path.posix.sep);
@@ -143,7 +144,11 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     repo: string;
     branch?: string;
   }): RetrievalDocument {
-    const relativePath = this.getRelativePathFromQmdPath(params.sectionsRoot, params.result.filepath, params.result.displayPath);
+    const relativePath = this.getRelativePathFromQmdPath(
+      params.sectionsRoot,
+      params.result.filepath,
+      params.result.displayPath,
+    );
     const body = params.result.body || '';
     const title = params.result.title || path.posix.basename(relativePath);
 
@@ -168,7 +173,11 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     repo: string;
     branch?: string;
   }): RetrievalDocument {
-    const relativePath = this.getRelativePathFromQmdPath(params.sectionsRoot, params.result.file, params.result.displayPath);
+    const relativePath = this.getRelativePathFromQmdPath(
+      params.sectionsRoot,
+      params.result.file,
+      params.result.displayPath,
+    );
     const body = params.result.bestChunk || params.result.body || '';
     const title = params.result.title || path.posix.basename(relativePath);
 
@@ -186,7 +195,10 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     });
   }
 
-  private async syncStoreIndex(store: QmdStore, forceEmbed = false): Promise<{
+  private async syncStoreIndex(
+    store: QmdStore,
+    forceEmbed = false,
+  ): Promise<{
     updateResult: QmdUpdateResult;
     embedResult?: QmdEmbedResult;
   }> {
@@ -351,7 +363,10 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       try {
         await store.close();
       } catch (closeError) {
-        Logger.warn(`QmdRetrievalProvider: failed to close store after rebuild failure for workspace ${workspaceId}`, closeError as Error);
+        Logger.warn(
+          `QmdRetrievalProvider: failed to close store after rebuild failure for workspace ${workspaceId}`,
+          closeError as Error,
+        );
       }
       throw error;
     }
@@ -359,24 +374,27 @@ export class QmdRetrievalProvider implements RetrievalProvider {
 
   async search(params: RetrievalSearchParams): Promise<RetrievalDocument[]> {
     if (!params.workspaceId) {
-      Logger.warn('QmdRetrievalProvider: workspaceId missing, falling back to FAISS');
-      return await this.fallbackProvider.search(params);
+      Logger.warn('QmdRetrievalProvider: workspaceId missing, returning empty results');
+      return [];
     }
 
     try {
       const storeEntry = await this.getOrCreateStore(params.workspaceId);
       if (!storeEntry) {
-        return await this.fallbackProvider.search(params);
+        return [];
       }
 
       const limit = params.limit ?? 5;
       const searchMode = this.getSearchMode();
 
-      Logger.info(`QmdRetrievalProvider: searching for "${params.query.substring(0, 50)}${params.query.length > 50 ? '...' : ''}"`, {
-        workspaceId: params.workspaceId,
-        limit,
-        searchMode,
-      });
+      Logger.info(
+        `QmdRetrievalProvider: searching for "${params.query.substring(0, 50)}${params.query.length > 50 ? '...' : ''}"`,
+        {
+          workspaceId: params.workspaceId,
+          limit,
+          searchMode,
+        },
+      );
 
       if (searchMode === 'hybrid') {
         const queries = await expandQueryWithOpenAI({
@@ -402,11 +420,14 @@ export class QmdRetrievalProvider implements RetrievalProvider {
           );
         }
 
-        Logger.info('QmdRetrievalProvider: hybrid search returned no results, falling back to lexical candidate search.', {
-          workspaceId: params.workspaceId,
-          query: params.query,
-          queries,
-        });
+        Logger.info(
+          'QmdRetrievalProvider: hybrid search returned no results, falling back to lexical candidate search.',
+          {
+            workspaceId: params.workspaceId,
+            query: params.query,
+            queries,
+          },
+        );
       }
 
       const { results, matchedCandidate, queryCandidates } = await searchQmdLexWithFallback({
@@ -434,20 +455,22 @@ export class QmdRetrievalProvider implements RetrievalProvider {
           repo: storeEntry.repo,
           branch: storeEntry.branch,
         }),
-        );
+      );
     } catch (error) {
       Logger.warn(
-        `QmdRetrievalProvider: failed to use QMD, falling back to FAISS for query "${params.query.substring(0, 50)}${params.query.length > 50 ? '...' : ''}".`,
+        `QmdRetrievalProvider: search failed for query "${params.query.substring(0, 50)}${params.query.length > 50 ? '...' : ''}".`,
         error as Error,
       );
-      return await this.fallbackProvider.search(params);
+      return [];
     }
   }
 
   async warmup(params: RetrievalWarmupParams): Promise<void> {
     const storeEntry = await this.getOrCreateStore(params.workspaceId);
     if (!storeEntry) {
-      Logger.warn(`QmdRetrievalProvider: skipping warm-up because no store is available for workspace ${params.workspaceId}`);
+      Logger.warn(
+        `QmdRetrievalProvider: skipping warm-up because no store is available for workspace ${params.workspaceId}`,
+      );
       return;
     }
 
@@ -474,6 +497,6 @@ export class QmdRetrievalProvider implements RetrievalProvider {
   }
 
   isHealthy(): boolean {
-    return this.storeCache.size > 0 || this.fallbackProvider.isHealthy();
+    return this.storeCache.size > 0;
   }
 }

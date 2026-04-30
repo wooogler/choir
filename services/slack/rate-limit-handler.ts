@@ -1,4 +1,3 @@
-import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
 
 export interface RateLimitError extends Error {
@@ -13,7 +12,7 @@ export function isRateLimitError(error: any): error is RateLimitError {
 }
 
 export async function withRateLimit<T>(operation: () => Promise<T>, description: string, maxRetries = 3): Promise<T> {
-  let lastError: Error;
+  let lastError: Error | undefined;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -38,32 +37,15 @@ export async function withRateLimit<T>(operation: () => Promise<T>, description:
     }
   }
 
-  throw lastError!;
+  throw lastError ?? new Error(`Rate limit operation failed without an error: ${description}`);
 }
 
-export async function safeSlackCall<T>(
-  client: WebClient,
-  operation: () => Promise<T>,
-  description: string,
-  fallbackMessage?: string,
-): Promise<T | null> {
+export async function safeSlackCall<T>(operation: () => Promise<T>, description: string): Promise<T | null> {
   try {
     return await withRateLimit(operation, description);
   } catch (error) {
     if (isRateLimitError(error)) {
       Logger.error(`Rate limit exceeded for ${description} after retries. Operation failed.`, error as Error);
-
-      if (fallbackMessage) {
-        try {
-          // Try to send a simple message about the rate limit
-          await client.chat.postMessage({
-            channel: 'general', // This might need to be parameterized
-            text: fallbackMessage,
-          });
-        } catch (fallbackError) {
-          Logger.error('Failed to send rate limit fallback message:', fallbackError as Error);
-        }
-      }
     } else {
       Logger.error(`Error in ${description}:`, error as Error);
     }
@@ -72,15 +54,6 @@ export async function safeSlackCall<T>(
   }
 }
 
-export async function notifyRateLimit(client: WebClient, channelOrUserId: string, context: string): Promise<void> {
-  try {
-    await client.chat.postMessage({
-      channel: channelOrUserId,
-      text: `⏳ I'm experiencing high traffic and need to slow down a bit. Your ${context} request is being processed but may take a moment longer than usual. Thank you for your patience!`,
-      unfurl_links: false,
-      unfurl_media: false,
-    });
-  } catch (error) {
-    Logger.error('Failed to send rate limit notification:', error as Error);
-  }
+export function createRateLimitNotificationText(context: string): string {
+  return `⏳ I'm experiencing high traffic and need to slow down a bit. Your ${context} request is being processed but may take a moment longer than usual. Thank you for your patience!`;
 }

@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, SlackViewAction, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
-import { logModalSubmit } from 'services/common/user-interaction-logger';
+import { logModalSubmit } from 'services/common/interaction-tracker';
 import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';

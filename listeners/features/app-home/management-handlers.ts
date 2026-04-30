@@ -1,5 +1,5 @@
 import type { App } from '@slack/bolt';
-import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/user-interaction-logger';
+import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
 import {
   addManager,
   getCHOIRUsers,
@@ -9,10 +9,9 @@ import {
   removeManager,
   setCHOIRUsers,
 } from 'services/slack';
-import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
-import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 export const registerManagementHandlers = (app: App) => {
   app.action('request_manager_permission', async ({ ack, body, client, logger }) => {
@@ -588,10 +587,10 @@ export const registerManagementHandlers = (app: App) => {
         {
           managersCount: managers.length,
           managerIds: managers,
-          managerInfos: managerInfos.map(info => ({
+          managerInfos: managerInfos.map((info) => ({
             id: info.id,
             name: info.name,
-            displayName: info.displayName
+            displayName: info.displayName,
           })),
         },
         client,
@@ -1102,14 +1101,7 @@ export const registerManagementHandlers = (app: App) => {
       if (success) {
         await ack();
 
-        // Update writable files index after changing read-only files configuration
-        const vectorStore = VectorStoreService.getInstance();
-        try {
-          await vectorStore.updateReadOnlyFilesConfiguration(workspaceId);
-          logger.info('Successfully updated writable files index after read-only files change');
-        } catch (vectorError) {
-          logger.warn('Failed to update writable files index:', vectorError);
-        }
+        // QMD manages its own index; no additional update needed after read-only files change
 
         await client.chat.postEphemeral({
           user: body.user.id,
@@ -1148,7 +1140,7 @@ export const registerManagementHandlers = (app: App) => {
           readOnlyFiles: selectedFiles,
         });
 
-        // Log successful update  
+        // Log successful update
         await logAppHomeModalSubmit(
           body.user.id,
           workspaceId,
@@ -1233,5 +1225,4 @@ export const registerManagementHandlers = (app: App) => {
     await ack();
     logger.info('Open private DM URL button clicked - handled by deep link');
   });
-
 };

@@ -1,5 +1,5 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
-import { logAppHomeButtonClick } from 'services/common/user-interaction-logger';
+import { logAppHomeButtonClick } from 'services/common/interaction-tracker';
 import { parseMarkdownToTree } from 'services/document';
 import { treeToMarkdown } from 'services/document/markdown';
 import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
@@ -11,7 +11,7 @@ import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'serv
 import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { appHomeOpenedCallback } from '../../../event-handlers/app-home-handler';
+import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 /**
  * Reload files from GitHub and update vector store
@@ -446,14 +446,7 @@ export const rebuildQmdIndexAction = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text:
-              `✅ *QMD index rebuilt successfully*\n` +
-              `*Indexed:* ${rebuildResult.updateResult.indexed}\n` +
-              `*Updated:* ${rebuildResult.updateResult.updated}\n` +
-              `*Unchanged:* ${rebuildResult.updateResult.unchanged}\n` +
-              `*Removed:* ${rebuildResult.updateResult.removed}\n` +
-              `*Docs embedded:* ${processedDocs}\n` +
-              `*Chunks embedded:* ${embeddedChunks}`,
+            text: `✅ *QMD index rebuilt successfully*\n*Indexed:* ${rebuildResult.updateResult.indexed}\n*Updated:* ${rebuildResult.updateResult.updated}\n*Unchanged:* ${rebuildResult.updateResult.unchanged}\n*Removed:* ${rebuildResult.updateResult.removed}\n*Docs embedded:* ${processedDocs}\n*Chunks embedded:* ${embeddedChunks}`,
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
         },

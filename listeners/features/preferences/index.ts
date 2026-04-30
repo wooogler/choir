@@ -1,9 +1,13 @@
 import type { App } from '@slack/bolt';
+import { diagnoseVectorStoreAction } from '../index-management/vector-store-diagnosis';
+import {
+  normalizeMarkdownFilesAction,
+  rebuildQmdIndexAction,
+  reloadFromGithubAction,
+} from '../index-management/vector-store-management';
 import { githubRepoUrlInputCallback, testGithubConnectionCallback } from './github-connection';
 import { addManagerCallback, removeManagerCallback, selectUserCallback } from './manage-permissions';
 import qaChannelActions from './qa-channel-actions'; // default export { register }
-import { diagnoseVectorStoreAction } from './vector-store/vector-store-diagnosis';
-import { normalizeMarkdownFilesAction, rebuildQmdIndexAction, reloadFromGithubAction } from './vector-store/vector-store-management';
 
 export const registerPreferencesFeature = (app: App) => {
   // Manage Permissions
@@ -31,5 +35,5 @@ export const registerPreferencesFeature = (app: App) => {
 // export * from "./manage-permissions";
 // export * from "./github-connection";
 // export * from "./qa-channel-actions";
-// export * from "./vector-store/vector-store-diagnosis";
-// export * from "./vector-store/vector-store-management";
+// export * from "../index-management/vector-store-diagnosis";
+// export * from "../index-management/vector-store-management";

@@ -7,8 +7,8 @@ import {
   getWorkspaceId,
 } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { logMessageProcessing } from '../../services/common/interaction-tracker';
 import { getAnonymousThreadInfo } from '../../services/common/session-store';
-import { logMessageProcessing } from '../../services/common/user-interaction-logger';
 import { handleGeneralConversationMessage } from '../features/conversation/general-conversation-handler';
 import { handleDMClearCommand } from '../features/dm/clear-handler';
 import { handleUpdateRequestMessage } from '../features/document-update/extract-knowledge/update-request-handler';

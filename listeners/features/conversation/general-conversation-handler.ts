@@ -1,7 +1,7 @@
 import type { Logger } from '@slack/bolt';
 import type { WebClient } from '@slack/web-api';
-import { generateSessionId, SessionType, storeSessionData } from 'services/common/session-store';
-import { logMessageProcessing } from 'services/common/user-interaction-logger';
+import { logMessageProcessing } from 'services/common/interaction-tracker';
+import { SessionType, generateSessionId, storeSessionData } from 'services/common/session-store';
 import { respondToGeneralConversation } from 'services/llm/chat-responder';
 import {
   getGithubRepo,

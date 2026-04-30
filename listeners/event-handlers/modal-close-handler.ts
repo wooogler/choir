@@ -1,11 +1,17 @@
 import type { AllMiddlewareArgs, App, SlackViewMiddlewareArgs } from '@slack/bolt';
-import { logButtonClick, logAppHomeButtonClick } from 'services/common/user-interaction-logger';
+import { logAppHomeButtonClick, logButtonClick } from 'services/common/interaction-tracker';
 import { getWorkspaceId } from 'services/slack';
 
 /**
  * App Home Modal cancel/close 처리 콜백
  */
-const appHomeModalCloseCallback = async ({ ack, body, view, client, logger }: AllMiddlewareArgs & SlackViewMiddlewareArgs) => {
+const appHomeModalCloseCallback = async ({
+  ack,
+  body,
+  view,
+  client,
+  logger,
+}: AllMiddlewareArgs & SlackViewMiddlewareArgs) => {
   await ack();
   const startTime = Date.now();
 

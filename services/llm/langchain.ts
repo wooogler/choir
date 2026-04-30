@@ -18,7 +18,6 @@ export interface DocumentMetadata {
   githubUrl: string;
   headingPath?: string; // UI 표시용 (배열을 "heading1 > heading2" 형태로 변환)
   originalContent: string; // document update용 원본 내용
-  webContent?: Array<{ url: string; title: string; content: string }>; // 웹 콘텐츠 향상 기능용
 }
 
 /**

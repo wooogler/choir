@@ -1,10 +1,6 @@
 import type { App, SlackActionMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
-import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/user-interaction-logger';
-import {
-  getOrganizationName,
-  getWorkspaceId,
-  setOrganizationName,
-} from 'services/slack';
+import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
+import { getOrganizationName, getWorkspaceId, setOrganizationName } from 'services/slack';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 
 export const registerOrganizationHandlers = (app: App) => {

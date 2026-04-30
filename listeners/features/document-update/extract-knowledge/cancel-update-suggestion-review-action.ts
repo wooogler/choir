@@ -2,7 +2,7 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import { Logger } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 import { SessionType, getSessionData } from 'services/common';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logButtonClick } from 'services/common/interaction-tracker';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 

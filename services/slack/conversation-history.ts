@@ -27,7 +27,6 @@ export interface SlackMessage {
   [key: string]: any;
 }
 
-
 // Process message text to handle user and bot mentions
 export async function processMessageText(text: string, client: WebClient): Promise<string> {
   // Regular expression to find all user/bot mentions like <@U089Q1VAB3J>
@@ -73,7 +72,7 @@ function getReferenceTimestamp(event: any): number {
   if (!event.thread_ts) {
     return Date.now();
   }
-  
+
   // Use thread parent timestamp as reference point - no API call needed
   return Number.parseFloat(event.thread_ts) * 1000;
 }
@@ -370,9 +369,6 @@ export async function getFilteredConversationHistory(
   }
 }
 
-/**
- * Check if user is a CHOIR user (authorized to use CHOIR features)
- */
-export function isCHOIRUser(userId: string, choirUsers: string[]): boolean {
+export function isUserInCHOIRList(userId: string, choirUsers: string[]): boolean {
   return choirUsers.includes(userId);
 }

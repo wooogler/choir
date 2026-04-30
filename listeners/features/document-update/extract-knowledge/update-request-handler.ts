@@ -1,6 +1,6 @@
 import type { WebClient } from '@slack/web-api';
 import { SessionType, generateSessionId, storeSessionData } from 'services/common';
-import { logKnowledgeExtraction, logUpdateRequestProcessing } from 'services/common/user-interaction-logger';
+import { logKnowledgeExtraction, logUpdateRequestProcessing } from 'services/common/interaction-tracker';
 import { extractKnowledgeFromMessages } from 'services/llm/knowledge-extractor';
 import {
   type SlackMessage,
@@ -79,7 +79,6 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
     });
 
     if (!filteredMessages?.length) {
-
       await client.chat.update({
         channel: originalChannelId,
         ts: loadingMessage.ts,
@@ -351,16 +350,18 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           managersCount: managers.length,
           sourceMessageCount: filteredMessages.length,
           hasKnowledgeItem: !!extractionResult.cleanContent,
-          sourceMessages: await Promise.all(filteredMessages.map(async (msg) => {
-            const userId = msg.user || msg.bot_id || 'unknown';
-            const username = userId !== 'unknown' ? await getUserName(userId, client) : 'Unknown';
-            return {
-              userId,
-              username,
-              text: msg.text || '', // 메시지 내용 전체 저장
-              ts: msg.ts || '',
-            };
-          })),
+          sourceMessages: await Promise.all(
+            filteredMessages.map(async (msg) => {
+              const userId = msg.user || msg.bot_id || 'unknown';
+              const username = userId !== 'unknown' ? await getUserName(userId, client) : 'Unknown';
+              return {
+                userId,
+                username,
+                text: msg.text || '', // 메시지 내용 전체 저장
+                ts: msg.ts || '',
+              };
+            }),
+          ),
         },
         client,
       );

@@ -77,7 +77,9 @@ function setAppState(stateType: string, userId: string, value: unknown, workspac
 }
 
 function deleteAppState(stateType: string, userId: string, workspaceId?: string): void {
-  getDatabase().prepare('DELETE FROM app_state WHERE state_key = ?').run(getStateKey(stateType, userId, workspaceId));
+  getDatabase()
+    .prepare('DELETE FROM app_state WHERE state_key = ?')
+    .run(getStateKey(stateType, userId, workspaceId));
 }
 
 export function purgeWorkspaceAppState(workspaceId: string): number {
@@ -112,24 +114,6 @@ export const getStoredDocumentUpdates = (userId: string, workspaceId?: string): 
   );
 };
 
-// 사용자의 thread_ts 가져오기
-export const getStoredThreadTs = (userId: string, workspaceId?: string): string | undefined => {
-  return getAppState<{ documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }>(
-    'document_updates',
-    userId,
-    workspaceId,
-  )?.thread_ts;
-};
-
-// 사용자의 channel_id 가져오기
-export const getStoredChannelId = (userId: string, workspaceId?: string): string | undefined => {
-  return getAppState<{ documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }>(
-    'document_updates',
-    userId,
-    workspaceId,
-  )?.channel_id;
-};
-
 // 사용자의 documentUpdates 저장하기
 export const storeDocumentUpdates = (
   userId: string,
@@ -144,28 +128,16 @@ export const storeDocumentUpdates = (
     workspaceId,
   ) || { documentUpdates: [] };
 
-  setAppState('document_updates', userId, {
-    documentUpdates: updates,
-    thread_ts: thread_ts || existing.thread_ts,
-    channel_id: channel_id || existing.channel_id,
-  }, workspaceId);
-};
-
-// 사용자의 thread 정보 저장하기
-export const storeThreadInfo = (userId: string, thread_ts: string, channel_id: string, workspaceId?: string): void => {
-  const existing = getAppState<{ documentUpdates: DocumentUpdate[]; thread_ts?: string; channel_id?: string }>(
+  setAppState(
     'document_updates',
     userId,
+    {
+      documentUpdates: updates,
+      thread_ts: thread_ts || existing.thread_ts,
+      channel_id: channel_id || existing.channel_id,
+    },
     workspaceId,
   );
-
-  if (existing) {
-    setAppState('document_updates', userId, {
-      ...existing,
-      thread_ts,
-      channel_id,
-    }, workspaceId);
-  }
 };
 
 // 특정 문서 업데이트의 updatedNodeContent 수정하기
@@ -204,36 +176,6 @@ export const updateDocumentContent = (
   return true;
 };
 
-// 사용자의 선택된 문서 ID 가져오기
-export const getSelectedNodeIds = (userId: string, workspaceId?: string): string[] => {
-  return getAppState<string[]>('selected_node_ids', userId, workspaceId) || [];
-};
-
-// 사용자의 선택된 문서 ID 초기화
-export const clearSelectedNodeIds = (userId: string, workspaceId?: string): void => {
-  setAppState('selected_node_ids', userId, [], workspaceId);
-};
-
-// 사용자의 선택된 문서 ID 추가
-export const addSelectedNodeId = (userId: string, nodeId: string, workspaceId?: string): void => {
-  setAppState('selected_node_ids', userId, [...new Set([...getSelectedNodeIds(userId, workspaceId), nodeId])], workspaceId);
-};
-
-// 사용자의 선택된 문서 ID 제거
-export const removeSelectedNodeId = (userId: string, nodeId: string, workspaceId?: string): void => {
-  setAppState(
-    'selected_node_ids',
-    userId,
-    getSelectedNodeIds(userId, workspaceId).filter((id) => id !== nodeId),
-    workspaceId,
-  );
-};
-
-// 사용자의 선택된 문서 ID 설정
-export const setSelectedNodeIds = (userId: string, nodeIds: string[], workspaceId?: string): void => {
-  setAppState('selected_node_ids', userId, [...new Set(nodeIds)], workspaceId);
-};
-
 // 검색 결과 캐시 관련 함수들 - 다시 활성화
 export function storeSearchResults(
   userId: string,
@@ -246,11 +188,6 @@ export function storeSearchResults(
 // 검색 결과 가져오기 - 캐시된 결과 반환
 export function getSearchResults(userId: string, workspaceId?: string): Document<DocumentMetadata>[] {
   return getAppState<Document<DocumentMetadata>[]>('search_results', userId, workspaceId) || [];
-}
-
-// 검색 결과 삭제하기
-export function clearSearchResults(userId: string, workspaceId?: string) {
-  deleteAppState('search_results', userId, workspaceId);
 }
 
 // 특정 문서 업데이트 삭제하기
@@ -273,26 +210,6 @@ export const removeDocumentUpdate = (userId: string, index: number, workspaceId?
 
   return true;
 };
-
-export function updateSearchResultDocument(
-  userId: string,
-  updatedDocument: Document<DocumentMetadata>,
-  workspaceId?: string,
-): void {
-  const searchResults = getSearchResults(userId, workspaceId);
-  const docIndex = searchResults.findIndex((doc) => doc.metadata?.nodeId === updatedDocument.metadata?.nodeId);
-
-  if (docIndex !== -1) {
-    searchResults[docIndex] = updatedDocument;
-    storeSearchResults(userId, searchResults, workspaceId);
-    console.info(`Updated search result document for node: ${updatedDocument.metadata?.nodeId}`);
-  }
-}
-
-export function updateSearchResultsForFile(userId: string, updatedFile: any): void {
-  // 이 함수는 현재 벡터 스토어 업데이트로 충분하므로 빈 구현
-  console.info(`Search results will be updated through vector store for file: ${updatedFile.name}`);
-}
 
 // ===== 새로운 파일 선택 상태 관리 함수들 =====
 

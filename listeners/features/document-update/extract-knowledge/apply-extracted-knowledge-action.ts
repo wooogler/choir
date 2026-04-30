@@ -5,7 +5,7 @@ import type { Block, KnownBlock } from '@slack/web-api';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { getUserName } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import suggestUpdatesCallback from '../suggestions/suggest-updates';
+import suggestUpdatesCallback from '../suggestions/suggest-updates-handler';
 
 /**
  * Handle "Apply Updates" button click
@@ -91,15 +91,13 @@ export const applyExtractedKnowledgeCallback = async ({
 
     logger.info(`Manager ${managerName} (${managerId}) claimed processing for session ${sessionId}`);
 
-
-
     // 4. Update other managers' messages to show conflict state
     await updateOtherManagerMessages(sessionData, managerId, managerName, client, logger);
 
     // 5. Notify original channel about who started processing (skip if manager's own work OR thread interaction)
     const isManagerOwnWork = sessionData.userId === managerId; // Manager processing their own suggestion
     const isThreadInteraction = !!sessionData.originalThreadTs; // Interaction happened in a thread
-    
+
     if (!isManagerOwnWork && !isThreadInteraction) {
       await notifyOriginalChannel(sessionData, managerName, client, logger);
       logger.info(`[DEBUG] Sent notification to original channel - channel-level interaction`);
@@ -139,18 +137,18 @@ export const applyExtractedKnowledgeCallback = async ({
         appId = tokenParts[2]; // App ID is the third part
       }
     }
-    
+
     // Use App Home deep link format for apps with App Home
-    const workingDmUrl = appId 
+    const workingDmUrl = appId
       ? `slack://app?team=${teamId}&id=${appId}&tab=messages`
       : `slack://user?team=${teamId}&id=${botUserId}&tab=messages`;
-      
+
     logger.info('[DEBUG] Apply Knowledge - Deep link info:', {
       teamId,
       botUserId,
       appId: appId || 'NOT_FOUND',
       dmUrl: workingDmUrl,
-      hasAppToken: !!process.env.SLACK_APP_TOKEN
+      hasAppToken: !!process.env.SLACK_APP_TOKEN,
     });
 
     // 3. Update current manager with processing confirmation via response_url

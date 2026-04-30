@@ -2,7 +2,7 @@ import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, trackAnonymousMessage } from 'services/common';
 import { createPrivateMessage, createPrivateMessagePreview, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { logModalSubmit } from '../../../services/common/user-interaction-logger';
+import { logModalSubmit } from '../../../services/common/interaction-tracker';
 
 /**
  * 멤버 선택 모달 제출 처리

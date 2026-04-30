@@ -9,12 +9,11 @@ import {
   setProgressMessageTimestamp,
 } from 'services/common';
 import { SessionType, generateSessionId, getSessionData, storeSessionData } from 'services/common';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logButtonClick } from 'services/common/interaction-tracker';
 import {
   type DocumentUpdate,
   calculateDynamicOrder,
   clearFileSelectionState,
-  clearSearchResults,
   getFileSelectionState,
   getNextSuggestion,
   getSearchResults,
@@ -37,7 +36,7 @@ import { VectorStoreService } from 'services/vector/main-service';
 import type { DocumentMetadata } from 'services/vector/types';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { applySelectedToGithubAction } from '../apply-document/update-documents';
+import { applySelectedToGithubAction } from '../apply-document/apply-document-handler';
 
 /**
  * Create a link to the original message using Slack permalink format
@@ -842,7 +841,7 @@ export const suggestUpdatesCallback = async ({
         // 로그: Skip 버튼 클릭
         try {
           const workspaceId = await getWorkspaceId(client);
-          const { logButtonClick } = await import('services/common/user-interaction-logger');
+          const { logButtonClick } = await import('services/common/interaction-tracker');
           await logButtonClick(
             userId,
             workspaceId,
@@ -1961,7 +1960,8 @@ Section: ${sectionInfo}${anchorLineText}`;
     if (config?.githubRepo) {
       const { owner, repo, branch } = config.githubRepo;
       const branchName =
-        branch || (await GithubService.getInstance().getDefaultBranch(owner, repo, await getWorkspaceId(client), userId));
+        branch ||
+        (await GithubService.getInstance().getDefaultBranch(owner, repo, await getWorkspaceId(client), userId));
       directEditUrl = `https://github.com/${owner}/${repo}/edit/${branchName}/${processedDoc.fileName}`;
     }
 
@@ -2066,7 +2066,7 @@ Section: ${sectionInfo}${anchorLineText}`;
     // Log suggestion display
     try {
       const workspaceId = await getWorkspaceId(client);
-      const { logMessageProcessing } = await import('services/common/user-interaction-logger');
+      const { logMessageProcessing } = await import('services/common/interaction-tracker');
       await logMessageProcessing(
         userId,
         workspaceId,

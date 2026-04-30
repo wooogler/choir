@@ -1,5 +1,5 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
-import { logModalSubmit } from 'services/common/user-interaction-logger';
+import { logModalSubmit } from 'services/common/interaction-tracker';
 import { convertMarkdownToSlackText, updateDocumentContent } from 'services/document';
 import { createAppendSuggestionBlock } from 'services/document/update-processor';
 import { createDiffBlock, getWorkspaceId } from 'services/slack';

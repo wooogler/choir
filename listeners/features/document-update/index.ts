@@ -6,9 +6,9 @@ import { fileSelectionForUpdateAction, startFileBasedReviewAction } from './acti
 import { getEditLinkAction } from './actions/get-edit-link';
 import { showCreateFileModalCallback } from './actions/show-create-file-modal';
 import { viewAnalyzedMessagesAction } from './actions/view-analyzed-messages';
+import { applySelectedToGithubAction, handleNewSectionModalSubmission } from './apply-document/apply-document-handler';
 import { cancelDocumentUpdatesCallback } from './apply-document/cancel-document-updates-action';
-import { rejectUpdateCallback } from './apply-document/reject-update'; // Named export from reject-update.ts
-import { applySelectedToGithubAction, handleNewSectionModalSubmission } from './apply-document/update-documents'; // Named export from update-documents.ts
+import { rejectUpdateCallback } from './apply-document/reject-update';
 import { applyExtractedKnowledgeCallback } from './extract-knowledge/apply-extracted-knowledge-action';
 import { cancelKnowledgeExtractionCallback } from './extract-knowledge/cancel-knowledge-extraction-action';
 import { cancelUpdateSuggestionReviewCallback } from './extract-knowledge/cancel-update-suggestion-review-action';
@@ -17,7 +17,7 @@ import { openKnowledgeEditManagerModalCallback } from './extract-knowledge/open-
 import { sendUpdateSuggestionToManagerCallback } from './extract-knowledge/send-update-suggestion-to-manager-action';
 // Action Callbacks
 import { showSuggestionEditorModal } from './suggestions/show-suggestion-editor-modal';
-import { suggestUpdatesCallback } from './suggestions/suggest-updates'; // Named export
+import { suggestUpdatesCallback } from './suggestions/suggest-updates-handler';
 
 import { handleKnowledgeEditManagerModal } from './extract-knowledge/knowledge-edit-manager-modal-view'; // View ID: knowledge_edit_manager_modal
 import { handleKnowledgeEditModal } from './extract-knowledge/knowledge-edit-modal-view'; // View ID: knowledge_edit_modal

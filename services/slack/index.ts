@@ -83,13 +83,13 @@ export {
 // Conversation History
 export {
   getFilteredConversationHistory,
-  isCHOIRUser as isCHOIRUserFromHistory,
+  isUserInCHOIRList,
 } from './conversation-history';
 
 // Rate Limit Handling
 export {
   withRateLimit,
-  notifyRateLimit,
+  createRateLimitNotificationText,
   safeSlackCall,
   isRateLimitError,
 } from './rate-limit-handler';

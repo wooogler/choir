@@ -486,7 +486,7 @@ export const registerGitHubHandlers = (app: App) => {
           },
         });
 
-        const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
+        const { logAppHomeModalSubmit } = await import('services/common/interaction-tracker');
         await logAppHomeModalSubmit(
           userId,
           workspaceId,
@@ -617,7 +617,7 @@ export const registerGitHubHandlers = (app: App) => {
         });
 
         // Log no files found
-        const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
+        const { logAppHomeModalSubmit } = await import('services/common/interaction-tracker');
         await logAppHomeModalSubmit(
           userId,
           workspaceId,
@@ -664,7 +664,7 @@ export const registerGitHubHandlers = (app: App) => {
           });
 
           // Log successful connection
-          const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
+          const { logAppHomeModalSubmit } = await import('services/common/interaction-tracker');
           await logAppHomeModalSubmit(
             userId,
             workspaceId,
@@ -692,7 +692,7 @@ export const registerGitHubHandlers = (app: App) => {
           });
 
           // Log vector store failure
-          const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
+          const { logAppHomeModalSubmit } = await import('services/common/interaction-tracker');
           await logAppHomeModalSubmit(
             userId,
             workspaceId,
@@ -758,7 +758,7 @@ export const registerGitHubHandlers = (app: App) => {
 
       // Log error
       try {
-        const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
+        const { logAppHomeModalSubmit } = await import('services/common/interaction-tracker');
         await logAppHomeModalSubmit(
           userId,
           workspaceId,

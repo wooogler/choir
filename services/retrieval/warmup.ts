@@ -1,6 +1,5 @@
 import { Logger } from 'services/common/logger';
 import { getRetrievalProvider } from 'services/retrieval';
-import { isQmdRetrievalEnabled } from 'services/retrieval/provider-config';
 
 export function getQmdWarmupQuery(): string {
   return process.env.QMD_WARMUP_QUERY?.trim() || 'documentation';
@@ -12,7 +11,7 @@ export function scheduleQmdWarmup(params: {
   delayMs?: number;
   enabled?: boolean;
 }): void {
-  if (params.enabled === false || !isQmdRetrievalEnabled()) {
+  if (params.enabled === false) {
     return;
   }
 

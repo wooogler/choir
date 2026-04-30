@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import type { ModalView } from '@slack/web-api';
-import { SessionType, getSessionData, storeSessionData, generateSessionId } from 'services/common';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { SessionType, generateSessionId, getSessionData, storeSessionData } from 'services/common';
+import { logButtonClick } from 'services/common/interaction-tracker';
 import { GithubService } from 'services/github';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
@@ -51,7 +51,7 @@ export const createNewSectionAction = async ({
       originalThreadTs,
       sessionId,
     } = newSectionData;
-    
+
     // 디버깅: 세션에서 가져온 데이터 확인
     console.log(`[DEBUG] 세션에서 가져온 sectionTitle: "${sectionTitle}"`);
     console.log(`[DEBUG] 세션에서 가져온 sectionContent: "${sectionContent}"`);
@@ -83,10 +83,13 @@ export const createNewSectionAction = async ({
       });
 
       // Cache all files
-      await workspaceStore.setMarkdownFilesCache(workspaceId, markdownFiles.map((file) => ({
-        name: file.name,
-        path: file.path,
-      })));
+      await workspaceStore.setMarkdownFilesCache(
+        workspaceId,
+        markdownFiles.map((file) => ({
+          name: file.name,
+          path: file.path,
+        })),
+      );
 
       // Get writable files after caching
       fileList = await workspaceStore.getWritableFiles(workspaceId);

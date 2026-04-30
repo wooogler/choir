@@ -1,5 +1,5 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logButtonClick } from 'services/common/interaction-tracker';
 import { getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -72,14 +72,14 @@ export const startFileBasedReviewAction = async ({
     const selectionKey = `${userId}_${messageTs}`;
     let selectedFile = fileSelections.get(selectionKey) || parsedValue.selectedFile;
     let isUsingDefaultFile = false;
-    
+
     // If no explicit selection was made, but we have a defaultFilePath, use it
     if (!selectedFile && defaultFilePath) {
       selectedFile = defaultFilePath;
       isUsingDefaultFile = true;
       logger.info(`No explicit file selection, using default file: ${defaultFilePath}`);
     }
-    
+
     // Check if a file was actually selected
     let shouldUseFileBasedReview = true;
     if (!selectedFile) {
@@ -96,13 +96,15 @@ export const startFileBasedReviewAction = async ({
       fileSelections.delete(selectionKey);
     }
 
-    logger.info(`Starting review with selectedFile: ${selectedFile}, shouldUseFileBasedReview: ${shouldUseFileBasedReview}, sessionId: ${sessionId}`);
+    logger.info(
+      `Starting review with selectedFile: ${selectedFile}, shouldUseFileBasedReview: ${shouldUseFileBasedReview}, sessionId: ${sessionId}`,
+    );
 
     // Show user's selection using response_url instead of deleting message
     if (responseUrl) {
       try {
         let messageText, blockText;
-        
+
         if (!shouldUseFileBasedReview) {
           messageText = `📚 Reviewing all relevant files`;
           blockText = `📚 *Reviewing all relevant files*\n\n_I'll search across all your documentation to find the most relevant content for your knowledge._`;
@@ -116,7 +118,7 @@ export const startFileBasedReviewAction = async ({
             blockText = `📁 *Selected file:* ${selectedFileName}`;
           }
         }
-        
+
         const response = await fetch(responseUrl, {
           method: 'POST',
           headers: {
@@ -148,7 +150,7 @@ export const startFileBasedReviewAction = async ({
     }
 
     // Now trigger the actual suggestion flow with the selected file
-    const { suggestUpdatesCallback } = await import('../suggestions/suggest-updates');
+    const { suggestUpdatesCallback } = await import('../suggestions/suggest-updates-handler');
 
     // Create a modified body for the suggest updates callback
     const isDefaultFile = selectedFile === defaultFilePath;

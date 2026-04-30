@@ -1,4 +1,4 @@
-import { logMessageProcessing } from 'services/common/user-interaction-logger';
+import { logMessageProcessing } from 'services/common/interaction-tracker';
 import { getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -80,7 +80,7 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
     }
 
     // 시간순으로 정렬 (최신 메시지가 먼저 오도록)
-    allChoirMessages.sort((a: any, b: any) => parseFloat(b.ts) - parseFloat(a.ts));
+    allChoirMessages.sort((a: any, b: any) => Number.parseFloat(b.ts) - Number.parseFloat(a.ts));
 
     // 최근 5개 메시지만 선택
     const messagesToClear = allChoirMessages.slice(0, 5);
@@ -167,7 +167,9 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
       client,
     );
 
-    logger.info(`Clear confirmation shown for ${messagesToClear.length} recent CHOIR messages (out of ${allChoirMessages.length} total) in DM ${event.channel}`);
+    logger.info(
+      `Clear confirmation shown for ${messagesToClear.length} recent CHOIR messages (out of ${allChoirMessages.length} total) in DM ${event.channel}`,
+    );
     return true;
   } catch (error) {
     logger.error('Error in handleDMClearCommand:', error);

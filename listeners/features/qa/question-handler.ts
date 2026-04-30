@@ -1,5 +1,5 @@
 import { SessionType, generateSessionId, getSessionData, storeSessionData } from 'services/common';
-import { logQuestionProcessing } from 'services/common/user-interaction-logger';
+import { logQuestionProcessing } from 'services/common/interaction-tracker';
 import { convertMarkdownToSlackText } from 'services/document/markdown';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { QuestionProcessor } from 'services/qa/question-processor';
@@ -446,25 +446,15 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         botResponse: cleanResponseForSharing,
         historyMessageCount: historyResult.messages?.length || 0,
         historyUsers: Array.from(historyUsers),
-        hasWebContent: relevantDocs.some((doc) => doc.metadata.webContent && doc.metadata.webContent.length > 0),
         relevantDocs: relevantDocs.map((doc: any) => ({
           fileName: doc.metadata.fileName,
           headingPath: doc.metadata.headingPath,
-          hasWebContent: !!(doc.metadata.webContent && doc.metadata.webContent.length > 0),
-          // 소스 내용 추가 (webContent가 있으면 1000자 제한, 없으면 전체 내용)
-          sourceContent:
-            doc.metadata.webContent && doc.metadata.webContent.length > 0
-              ? doc.pageContent.length > 1000
-                ? doc.pageContent.substring(0, 1000) + '...'
-                : doc.pageContent
-              : doc.pageContent,
-          // 메타데이터 정보도 포함
+          sourceContent: doc.pageContent,
           metadata: {
             fileName: doc.metadata.fileName,
             sectionName: doc.metadata.sectionName,
             headingPath: doc.metadata.headingPath,
             githubUrl: doc.metadata.githubUrl,
-            webContentLength: doc.metadata.webContent ? doc.metadata.webContent.length : 0,
           },
         })),
       },
@@ -498,21 +488,12 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           relevantDocs: relevantDocs.map((doc: any) => ({
             fileName: doc.metadata.fileName,
             headingPath: doc.metadata.headingPath,
-            hasWebContent: !!(doc.metadata.webContent && doc.metadata.webContent.length > 0),
-            // 소스 내용 추가 (webContent가 있으면 1000자 제한, 없으면 전체 내용)
-            sourceContent:
-              doc.metadata.webContent && doc.metadata.webContent.length > 0
-                ? doc.pageContent.length > 1000
-                  ? doc.pageContent.substring(0, 1000) + '...'
-                  : doc.pageContent
-                : doc.pageContent,
-            // 메타데이터 정보도 포함
+            sourceContent: doc.pageContent,
             metadata: {
               fileName: doc.metadata.fileName,
               sectionName: doc.metadata.sectionName,
               headingPath: doc.metadata.headingPath,
               githubUrl: doc.metadata.githubUrl,
-              webContentLength: doc.metadata.webContent ? doc.metadata.webContent.length : 0,
             },
           })),
         }),

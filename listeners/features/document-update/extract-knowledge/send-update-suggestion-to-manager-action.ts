@@ -2,9 +2,9 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import { Logger } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logButtonClick } from 'services/common/interaction-tracker';
 import { getChannelName, getManagers, getUserName, getWorkspaceId } from 'services/slack';
-import { createMessageLink } from '../suggestions/suggest-updates';
+import { createMessageLink } from '../suggestions/suggest-updates-handler';
 
 /**
  * Handle "Pass Suggestion to Manager" button click

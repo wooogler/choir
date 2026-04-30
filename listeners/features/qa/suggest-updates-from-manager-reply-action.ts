@@ -1,9 +1,9 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logButtonClick } from 'services/common/interaction-tracker';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { suggestUpdatesCallback } from '../document-update/suggestions/suggest-updates';
+import { suggestUpdatesCallback } from '../document-update/suggestions/suggest-updates-handler';
 
 /**
  * Manager가 "Update Documentation" 버튼을 클릭했을 때 처리

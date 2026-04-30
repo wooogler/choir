@@ -1,5 +1,5 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logButtonClick } from 'services/common/interaction-tracker';
 import { getStoredDocumentUpdates } from 'services/document/document-store';
 import { getWorkspaceId } from 'services/slack';
 

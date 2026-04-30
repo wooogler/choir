@@ -267,62 +267,31 @@ async function initializeSingleWorkspaceOnStartup(): Promise<{
   if (repoInfo) {
     app.logger.info(`Using saved GitHub repository: ${repoInfo.owner}/${repoInfo.repo}`);
 
-    // 먼저 캐시에서 벡터 스토어 초기화 시도
-    const cacheInitialized = await vectorStore.initializeFromCacheOnly(
-      repoInfo.owner,
-      repoInfo.repo,
-      workspaceId,
-      repoInfo.branch,
-    );
-
-    if (cacheInitialized) {
-      app.logger.info('Vector store successfully initialized from cache. Skipping GitHub API calls.');
-      const hydratedFromMirror = await gitHubSyncService.hydrateVectorStoreFromMirror({
+    try {
+      const { markdownFiles, loadedFrom } = await gitHubSyncService.loadWorkspaceMarkdownFiles({
         workspaceId,
         owner: repoInfo.owner,
         repo: repoInfo.repo,
         branch: repoInfo.branch,
+        path: repoInfo.path,
+        userId: workspaceOwner,
+        source: 'startup',
       });
 
-      if (hydratedFromMirror) {
-        app.logger.info('Hydrated markdown file metadata from workspace mirror after cache restore.');
-      }
-    } else {
-      app.logger.info('Cache not available or invalid. Loading markdown files via sync service...');
-
-      try {
-        const { markdownFiles, loadedFrom } = await gitHubSyncService.loadWorkspaceMarkdownFiles({
-          workspaceId,
+      if (markdownFiles.length > 0) {
+        app.logger.info(`Loaded ${markdownFiles.length} markdown files from ${loadedFrom}.`);
+        await vectorStore.setMarkdownFiles(markdownFiles, {
           owner: repoInfo.owner,
           repo: repoInfo.repo,
-          branch: repoInfo.branch,
-          path: repoInfo.path,
-          userId: workspaceOwner,
-          source: 'startup',
+          workspaceId: workspaceId,
         });
-
-        if (markdownFiles.length > 0) {
-          app.logger.info(`Loaded ${markdownFiles.length} markdown files from ${loadedFrom}.`);
-          await vectorStore.setMarkdownFiles(markdownFiles, {
-            owner: repoInfo.owner,
-            repo: repoInfo.repo,
-            workspaceId: workspaceId,
-          });
-        } else {
-          app.logger.info('No markdown files available from mirror or GitHub. Starting with empty vector store.');
-          await vectorStore.setMarkdownFiles([], {
-            owner: 'empty',
-            repo: 'empty',
-          });
-        }
-      } catch (error) {
-        app.logger.info('Connected GitHub repository not accessible. Starting with empty vector store.');
-        // Initialize empty vector store
-        await vectorStore.setMarkdownFiles([], {
-          owner: 'empty',
-          repo: 'empty',
-        });
+      } else {
+        app.logger.info('No markdown files available from mirror or GitHub. Starting with empty store.');
+        await vectorStore.setMarkdownFiles([], { owner: 'empty', repo: 'empty' });
       }
+    } catch (error) {
+      app.logger.info('Connected GitHub repository not accessible. Starting with empty store.');
+      await vectorStore.setMarkdownFiles([], { owner: 'empty', repo: 'empty' });
     }
   } else {
     app.logger.info('No GitHub repository configured. Starting with empty vector store.');

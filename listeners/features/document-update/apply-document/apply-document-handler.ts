@@ -8,7 +8,7 @@ import type {
   ViewSubmitAction,
 } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
-import { logButtonClick, logModalSubmit } from 'services/common/user-interaction-logger';
+import { logButtonClick, logModalSubmit } from 'services/common/interaction-tracker';
 import { DocumentUpdate, getStoredDocumentUpdates } from 'services/document';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { GithubService, applyDocumentUpdatesToGithub } from 'services/github';

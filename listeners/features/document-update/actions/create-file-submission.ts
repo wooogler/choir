@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs, ViewSubmitAction } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
-import { logModalSubmit } from 'services/common/user-interaction-logger';
+import { logModalSubmit } from 'services/common/interaction-tracker';
 import { DocumentUpdateService } from 'services/document/document-update-service';
 import { GithubService } from 'services/github';
 import { getUserName, getWorkspaceId } from 'services/slack';
@@ -178,27 +178,9 @@ export const createFileSubmissionCallback = async ({
           tree: parseMarkdownToTree(createdFile.content),
         };
 
-        // Use DocumentProcessor for web content enhancement (similar to initial load)
-        const { DocumentProcessor } = await import('services/vector/document-processor');
-        const documentProcessor = new DocumentProcessor();
-        const documents = await documentProcessor.prepareDocuments([markdownFile]);
-
-        if (documents.length > 0) {
-          // Add to vector store using the same method as bulk initialization
-          const success = await vectorStore.addDocumentsToVectorStore(documents, workspaceId);
-
-          if (success) {
-            // Update markdownFiles array to include the new file
-            vectorStore.addToMarkdownFiles(markdownFile, workspaceId);
-            logger.info(
-              `Successfully indexed new file ${fileName} with web content enhancement (${documents.length} documents)`,
-            );
-          } else {
-            logger.error(`Failed to add documents to vector store for ${fileName}`);
-          }
-        } else {
-          logger.warn(`No documents generated from new file ${fileName}`);
-        }
+        // Register new file in the in-memory file list; QMD index updates on next sync
+        vectorStore.addToMarkdownFiles(markdownFile, workspaceId);
+        logger.info(`Registered new file ${fileName} in markdown file registry`);
 
         // Update workspace config file list (similar to reload)
         try {

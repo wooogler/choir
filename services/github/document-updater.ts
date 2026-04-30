@@ -1,6 +1,6 @@
 import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
-import { type DocumentUpdate, updateDocTreeWithChanges } from 'services/document';
+import type { DocumentUpdate } from 'services/document';
 import { DocumentUpdateService } from 'services/document/document-update-service';
 import { applyAnchorReplacement } from 'services/document/update-anchor';
 import { parseGithubUrl } from 'services/slack';
@@ -29,7 +29,7 @@ export async function applyDocumentUpdatesToGithub({
     if (!updatesByFile.has(update.fileName)) {
       updatesByFile.set(update.fileName, []);
     }
-    updatesByFile.get(update.fileName)!.push(update);
+    updatesByFile.get(update.fileName)?.push(update);
   }
 
   const githubService = GithubService.getInstance();
@@ -81,8 +81,8 @@ export async function applyDocumentUpdatesToGithub({
             // 기존 노드 내용과 비교하여 실제 변경사항이 있는지 확인
             const currentNode = currentMarkdownFile.tree.nodeMap.get(update.nodeId);
             if (currentNode) {
-              const { toString } = await import('mdast-util-to-string');
-              const currentContent = toString(currentNode);
+              const { toString: nodeToText } = await import('mdast-util-to-string');
+              const currentContent = nodeToText(currentNode);
 
               // 내용이 다른 경우에만 업데이트 처리
               if (currentContent.trim() !== update.updatedNodeContent.trim()) {
@@ -186,21 +186,21 @@ export async function applyDocumentUpdatesToGithub({
   }
 
   const results: { fileName: string; success: boolean; message: string; commitSha?: string }[] = [];
-  successfulUpdates.forEach(({ fileName, commitSha }) => {
+  for (const { fileName, commitSha } of successfulUpdates) {
     results.push({
       fileName,
       success: true,
       message: `✅ Successfully updated ${fileName} on GitHub and attempted vector store sync.`,
       commitSha,
     });
-  });
-  failedUpdates.forEach((fileName) => {
+  }
+  for (const fileName of failedUpdates) {
     results.push({
       fileName,
       success: false,
       message: `❌ Failed to update ${fileName}. Check logs for details.`,
     });
-  });
+  }
 
   return results;
 }

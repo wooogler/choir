@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
-import { logButtonClick } from 'services/common/user-interaction-logger';
+import { logButtonClick } from 'services/common/interaction-tracker';
 import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -239,7 +239,7 @@ export const cancelKnowledgeExtractionCallback = async ({
       const sessionId = body.actions?.[0]?.value;
       let originalChannelId = body.channel?.id || 'unknown';
       let originalThreadTs = undefined;
-      
+
       // Try to get original channel and thread info from session data for proper targeting
       if (sessionId) {
         try {
@@ -253,7 +253,7 @@ export const cancelKnowledgeExtractionCallback = async ({
           logger.warn('Could not get session data for error message targeting:', sessionError);
         }
       }
-      
+
       const ephemeralParams: any = {
         channel: originalChannelId,
         user: body.user.id,
@@ -268,12 +268,12 @@ export const cancelKnowledgeExtractionCallback = async ({
           },
         ],
       };
-      
+
       // Only add thread_ts if we're in a thread
       if (originalThreadTs) {
         ephemeralParams.thread_ts = originalThreadTs;
       }
-      
+
       await client.chat.postEphemeral(ephemeralParams);
     } catch (ephemeralError) {
       logger.error('Failed to send error ephemeral message:', ephemeralError);

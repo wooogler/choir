@@ -1,5 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { WebClient } from '@slack/web-api';
 import { getDataPath } from 'services/common/data-path';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
@@ -11,7 +11,14 @@ export interface UserInteractionLog {
   userName?: string;
   workspaceId: string;
   workspaceName?: string;
-  interactionType: 'message' | 'button_click' | 'modal_submit' | 'app_home_button_click' | 'app_home_modal_submit' | 'command' | 'error';
+  interactionType:
+    | 'message'
+    | 'button_click'
+    | 'modal_submit'
+    | 'app_home_button_click'
+    | 'app_home_modal_submit'
+    | 'command'
+    | 'error';
   action: string;
   channelId: string;
   channelName?: string;
@@ -39,7 +46,7 @@ export interface LogMetadata {
   [key: string]: any;
 }
 
-class UserInteractionLogger {
+class InteractionTracker {
   private logDir: string;
   private currentDate: string;
 
@@ -116,7 +123,7 @@ class UserInteractionLogger {
         metadata,
       };
 
-      const logLine = JSON.stringify(logEntry) + '\n';
+      const logLine = `${JSON.stringify(logEntry)}\n`;
       const logFilePath = this.getLogFilePath();
       console.log(`[DEBUG] Writing log to file: ${logFilePath}, action: ${logEntry.action}`);
       fs.appendFileSync(logFilePath, logLine);
@@ -365,7 +372,7 @@ class UserInteractionLogger {
     additionalMetadata: LogMetadata = {},
     client?: WebClient,
   ): Promise<void> {
-    console.log(`[DEBUG] logButtonClick called:`, { userId, workspaceId, buttonAction, success });
+    console.log('[DEBUG] logButtonClick called:', { userId, workspaceId, buttonAction, success });
     try {
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, channelId, client);
@@ -826,7 +833,7 @@ class UserInteractionLogger {
     additionalMetadata: LogMetadata = {},
     client?: WebClient,
   ): Promise<void> {
-    console.log(`[DEBUG] logAppHomeButtonClick called:`, { userId, workspaceId, buttonAction, success });
+    console.log('[DEBUG] logAppHomeButtonClick called:', { userId, workspaceId, buttonAction, success });
     try {
       if (client) {
         const names = await getAllCachedNames(userId, workspaceId, 'app_home', client);
@@ -1032,22 +1039,22 @@ class UserInteractionLogger {
 }
 
 // 싱글톤 인스턴스 생성
-export const userInteractionLogger = new UserInteractionLogger();
+export const interactionTracker = new InteractionTracker();
 
 // 편의 함수들 (기존 호환성)
-export const logMessageProcessing = userInteractionLogger.logMessageProcessing.bind(userInteractionLogger);
-export const logQuestionProcessing = userInteractionLogger.logQuestionProcessing.bind(userInteractionLogger);
-export const logUpdateRequestProcessing = userInteractionLogger.logUpdateRequestProcessing.bind(userInteractionLogger);
-export const logButtonClick = userInteractionLogger.logButtonClick.bind(userInteractionLogger);
-export const logModalSubmit = userInteractionLogger.logModalSubmit.bind(userInteractionLogger);
-export const logError = userInteractionLogger.logError.bind(userInteractionLogger);
-export const logKnowledgeExtraction = userInteractionLogger.logKnowledgeExtraction.bind(userInteractionLogger);
-export const logManagerNotification = userInteractionLogger.logManagerNotification.bind(userInteractionLogger);
-export const logDocumentUpdate = userInteractionLogger.logDocumentUpdate.bind(userInteractionLogger);
+export const logMessageProcessing = interactionTracker.logMessageProcessing.bind(interactionTracker);
+export const logQuestionProcessing = interactionTracker.logQuestionProcessing.bind(interactionTracker);
+export const logUpdateRequestProcessing = interactionTracker.logUpdateRequestProcessing.bind(interactionTracker);
+export const logButtonClick = interactionTracker.logButtonClick.bind(interactionTracker);
+export const logModalSubmit = interactionTracker.logModalSubmit.bind(interactionTracker);
+export const logError = interactionTracker.logError.bind(interactionTracker);
+export const logKnowledgeExtraction = interactionTracker.logKnowledgeExtraction.bind(interactionTracker);
+export const logManagerNotification = interactionTracker.logManagerNotification.bind(interactionTracker);
+export const logDocumentUpdate = interactionTracker.logDocumentUpdate.bind(interactionTracker);
 
 // App Home 전용 로깅 함수들
-export const logAppHomeButtonClick = userInteractionLogger.logAppHomeButtonClick.bind(userInteractionLogger);
-export const logAppHomeModalSubmit = userInteractionLogger.logAppHomeModalSubmit.bind(userInteractionLogger);
+export const logAppHomeButtonClick = interactionTracker.logAppHomeButtonClick.bind(interactionTracker);
+export const logAppHomeModalSubmit = interactionTracker.logAppHomeModalSubmit.bind(interactionTracker);
 
 // 새로운 캐시된 이름 포함 로깅 함수들
-export const logInteractionWithNames = userInteractionLogger.logInteraction.bind(userInteractionLogger);
+export const logInteractionWithNames = interactionTracker.logInteraction.bind(interactionTracker);
