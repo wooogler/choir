@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { WebClient } from '@slack/web-api';
 import { anonymizationService } from 'services/anonymization/anonymization-service';
+import { getDataPath } from 'services/common/data-path';
 
 interface UserCache {
   [userId: string]: {
@@ -38,7 +39,7 @@ class NameCacheService {
   private readonly CACHE_EXPIRY_DAYS = 7; // Cache expires after 7 days
 
   constructor() {
-    this.cacheDir = path.join(process.cwd(), 'data', 'cache');
+    this.cacheDir = getDataPath('cache');
     this.cacheFile = path.join(this.cacheDir, 'name-mappings.json');
     this.cache = {
       users: {},

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { FaissStore } from '@langchain/community/vectorstores/faiss';
 import { Document } from '@langchain/core/documents';
+import { getDataPath } from 'services/common/data-path';
 import { Logger } from '../common/logger';
 import type { EmbeddingService } from './embedding-service';
 import { MultiFileFAISSManager } from './multi-file-faiss-manager';
@@ -28,7 +29,7 @@ export class FAISSStoreManager {
 
   constructor(embeddingService: EmbeddingService, useMultiFile = false) {
     this.embeddingService = embeddingService;
-    this.indexPath = path.join(process.cwd(), 'data', 'faiss-index');
+    this.indexPath = getDataPath('faiss-index');
     this.useMultiFileMode = useMultiFile;
 
     // 멀티파일 매니저 초기화

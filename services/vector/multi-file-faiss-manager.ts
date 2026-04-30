@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { FaissStore } from '@langchain/community/vectorstores/faiss';
 import { Document } from '@langchain/core/documents';
+import { getDataPath } from 'services/common/data-path';
 import { Logger } from '../common/logger';
 import type { EmbeddingService } from './embedding-service';
 import { type DocumentMetadata, VectorStoreError } from './types';
@@ -36,7 +37,7 @@ export class MultiFileFAISSManager {
   constructor(embeddingService: EmbeddingService, maxLoadedStores = 10) {
     this.embeddingService = embeddingService;
     this.maxLoadedStores = maxLoadedStores;
-    this.indexRootPath = path.join(process.cwd(), 'data', 'multi-faiss-index');
+    this.indexRootPath = getDataPath('multi-faiss-index');
     this.indexBasePath = path.join(this.indexRootPath, 'default');
 
     // 인덱스 디렉토리 생성

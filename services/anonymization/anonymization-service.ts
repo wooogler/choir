@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { getDataPath } from 'services/common/data-path';
 import { generateFakeName } from './name-dictionary';
 
 export interface AnonymizationMapping {
@@ -26,7 +27,7 @@ export class AnonymizationService {
   private anonymizationData: AnonymizationData;
 
   constructor() {
-    this.cacheDir = path.join(process.cwd(), 'data', 'cache');
+    this.cacheDir = getDataPath('cache');
     this.cacheFile = path.join(this.cacheDir, 'anonymization-mappings.json');
     this.anonymizationData = { anonymization: {} };
     this.ensureCacheDirectory();

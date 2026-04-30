@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { WebClient } from '@slack/web-api';
+import { getDataPath } from 'services/common/data-path';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
 import { Logger } from 'services/common/logger';
 import { decryptJson, encryptJson } from 'services/db/crypto';
@@ -49,7 +50,7 @@ export class WorkspaceStore {
   private logger: Console;
 
   constructor(logger: Console = console) {
-    this.dataPath = path.join(process.cwd(), 'data');
+    this.dataPath = getDataPath();
     this.logger = logger;
     this.ensureDataDirectory();
   }

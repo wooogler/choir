@@ -7,8 +7,8 @@ import registerListeners from './listeners';
 import { AppConfig } from '@/config';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
-import { getRetrievalProvider } from 'services/retrieval';
 import { isQmdRetrievalEnabled } from 'services/retrieval/provider-config';
+import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { getGithubRepo } from 'services/slack';
 import { SqliteSlackInstallationStore } from 'services/slack/sqlite-installation-store';
 import { ensureWorkspaceInitialized } from 'services/slack/workspace-bootstrap';
@@ -146,37 +146,11 @@ function shouldWarmupQmdOnStartup(): boolean {
 }
 
 function warmupQmdServicesOnStartup(workspaceId: string): void {
-  if (!isQmdRetrievalEnabled() || !shouldWarmupQmdOnStartup()) {
-    return;
-  }
-
-  const query = process.env.QMD_WARMUP_QUERY?.trim() || 'documentation';
-
-  setTimeout(() => {
-    void (async () => {
-      try {
-        app.logger.info('Starting background QMD warm-up.', {
-          workspaceId,
-          query,
-        });
-
-        const retrievalProvider = getRetrievalProvider();
-        await retrievalProvider.warmup?.({
-          workspaceId,
-          query,
-        });
-
-        app.logger.info('Background QMD warm-up finished.', {
-          workspaceId,
-        });
-      } catch (error) {
-        app.logger.warn('Background QMD warm-up failed.', error as Error, {
-          workspaceId,
-          query,
-        });
-      }
-    })();
-  }, 0);
+  scheduleQmdWarmup({
+    workspaceId,
+    reason: 'startup',
+    enabled: shouldWarmupQmdOnStartup(),
+  });
 }
 
 /** Register Listeners */

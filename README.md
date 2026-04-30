@@ -74,7 +74,7 @@ For local development with Socket Mode:
 pnpm dev:socket
 ```
 
-This reads `.env.development`, uses `SLACK_MODE=single`, and stores local state in `data/choir-dev.db`, so it can run alongside the deployed OAuth service.
+This reads `.env.development`, uses `SLACK_MODE=single`, and stores local state under `data/dev/`, so it can run alongside the deployed OAuth service without sharing workspace mirrors or caches.
 
 For HTTP/OAuth debugging on a separate local port:
 
@@ -87,7 +87,7 @@ Notes:
 - `pnpm dev` uses Socket Mode because `NODE_ENV=development`.
 - `pnpm dev:prod` uses HTTP mode because `NODE_ENV=production`.
 - `pnpm dev:socket` is the recommended no-deploy loop for feature debugging.
-- `pnpm dev:oauth` listens on port `3001`; expose that port with ngrok or a dev nginx route when testing OAuth install/redirect behavior.
+- `pnpm dev:oauth` listens on port `3030`; expose that port with ngrok or a dev nginx route when testing OAuth install/redirect behavior.
 - GitHub webhooks are only exposed in HTTP mode.
 
 ## Slack Installation Modes
@@ -117,7 +117,7 @@ Legacy JSON files under `data/*-config.json` and `data/slack-installations/` are
 
 - `pnpm dev`: local development in Socket Mode
 - `pnpm dev:socket`: isolated Socket Mode development using `.env.development` and `data/choir-dev.db`
-- `pnpm dev:oauth`: isolated OAuth/HTTP development on port `3001`
+- `pnpm dev:oauth`: isolated OAuth/HTTP development on port `3030`
 - `pnpm dev:watch`: development with `nodemon`
 - `pnpm dev:prod`: HTTP-mode runtime
 - `pnpm dev:web`: development with web content enhancement enabled

@@ -5,7 +5,7 @@ import type { ResponseInput, ResponseInputContent } from 'openai/resources/respo
 import { anonymizeText, deAnonymizeText } from 'services/common/name-cache';
 import { getOpenAIConfig } from './llm-config';
 
-dotenv.config();
+dotenv.config({ path: process.env.ENV_FILE || process.env.DOTENV_CONFIG_PATH || '.env' });
 
 let openAI: OpenAI | null = null;
 

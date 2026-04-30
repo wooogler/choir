@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { getDataPath } from 'services/common/data-path';
 import { Logger } from 'services/common/logger';
 import type { MarkdownFile } from 'services/github';
 import { splitMarkdownToItems } from 'services/document/markdown-section-splitter';
@@ -31,7 +32,7 @@ export class WorkspaceMirrorService {
   }
 
   public getWorkspaceRoot(workspaceId: string): string {
-    return path.join(process.cwd(), 'data', 'workspaces', workspaceId);
+    return getDataPath('workspaces', workspaceId);
   }
 
   public getRepoRoot(workspaceId: string): string {

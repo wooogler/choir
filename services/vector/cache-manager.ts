@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { getDataPath } from 'services/common/data-path';
 import type { DocumentTree, ExtendedNode } from 'services/document';
 import type { MarkdownFile } from '../github';
 import type { EmbeddingCacheData } from './types';
@@ -14,7 +15,7 @@ export class VectorCacheManager {
 
   constructor(logger: Console = console) {
     // 캐시 디렉토리 설정
-    this.cachePath = path.join(process.cwd(), 'data');
+    this.cachePath = getDataPath();
     this.logger = logger;
 
     // 캐시 디렉토리 존재 확인 및 생성

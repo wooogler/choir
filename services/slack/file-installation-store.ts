@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Installation, InstallationQuery, InstallationStore } from '@slack/oauth';
+import { getDataPath } from 'services/common/data-path';
 import { Logger } from 'services/common/logger';
 
 function getInstallationId(query: InstallationQuery<boolean>): string {
@@ -34,7 +35,7 @@ function safeFileName(id: string): string {
 export class FileSlackInstallationStore implements InstallationStore {
   private readonly rootPath: string;
 
-  constructor(rootPath = path.join(process.cwd(), 'data', 'slack-installations')) {
+  constructor(rootPath = getDataPath('slack-installations')) {
     this.rootPath = rootPath;
   }
 

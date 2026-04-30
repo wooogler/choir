@@ -1,5 +1,6 @@
 import { Logger } from 'services/common/logger';
 import { GithubService, type MarkdownFile } from 'services/github';
+import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { getGithubRepo } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceMirrorMarkdownLoader } from 'services/workspace/mirror-markdown-loader';
@@ -50,6 +51,13 @@ export class GitHubSyncService {
       branch,
       source: params.source,
     });
+
+    if (params.source !== 'startup') {
+      scheduleQmdWarmup({
+        workspaceId: params.workspaceId,
+        reason: `github-sync:${params.source}`,
+      });
+    }
   }
 
   public async syncWorkspaceFromGithub(params: {

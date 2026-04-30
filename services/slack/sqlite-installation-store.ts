@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Installation, InstallationQuery, InstallationStore } from '@slack/oauth';
+import { getDataPath } from 'services/common/data-path';
 import { decryptJson, encryptJson } from 'services/db/crypto';
 import { getDatabase } from 'services/db/connection';
 import { Logger } from 'services/common/logger';
@@ -34,7 +35,7 @@ function safeFileName(id: string): string {
 }
 
 export class SqliteSlackInstallationStore implements InstallationStore {
-  constructor(private readonly legacyRootPath = path.join(process.cwd(), 'data', 'slack-installations')) {}
+  constructor(private readonly legacyRootPath = getDataPath('slack-installations')) {}
 
   private getLegacyInstallationPath(id: string): string {
     return path.join(this.legacyRootPath, `${safeFileName(id)}.json`);

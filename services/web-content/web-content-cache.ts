@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type { Document } from '@langchain/core/documents';
+import { getDataPath } from 'services/common/data-path';
 
 /**
  * 웹 콘텐츠 캐시 항목 타입
@@ -34,7 +35,7 @@ export class WebContentCache {
   private isDirty = false;
 
   private constructor() {
-    this.cachePath = path.join(process.cwd(), 'data', 'web-content-cache.json');
+    this.cachePath = getDataPath('web-content-cache.json');
     this.cacheData = this.loadCacheFromDisk();
   }
 

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { WebClient } from '@slack/web-api';
+import { getDataPath } from 'services/common/data-path';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { getAllCachedNames } from './name-cache';
 
@@ -43,7 +44,7 @@ class UserInteractionLogger {
   private currentDate: string;
 
   constructor() {
-    this.logDir = path.join(process.cwd(), 'data', 'logs');
+    this.logDir = getDataPath('logs');
     this.currentDate = new Date().toISOString().split('T')[0];
     this.ensureLogDirectory();
   }

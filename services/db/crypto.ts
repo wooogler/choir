@@ -1,12 +1,13 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { getDataPath } from 'services/common/data-path';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32;
 
 function getLocalKeyFilePath(): string {
-  return path.resolve(process.cwd(), process.env.CHOIR_DB_KEY_FILE || 'data/.choir-db-key');
+  return path.resolve(process.cwd(), process.env.CHOIR_DB_KEY_FILE || getDataPath('.choir-db-key'));
 }
 
 function getEncryptionKey(): Buffer {
