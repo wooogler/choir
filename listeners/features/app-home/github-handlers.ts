@@ -1,8 +1,9 @@
 import type { App } from '@slack/bolt';
 import { GithubService } from 'services/github';
 import { GitHubOAuthDeviceFlow } from 'services/github/oauth-device-flow';
+import { getRepositoryAccessError, normalizeRepositoryPath } from 'services/github/repository-access';
+import { getWorkspaceId, parseGithubUrl, storeGithubRepo } from 'services/slack';
 import { GitHubSyncService } from 'services/sync/github-sync-service';
-import { getWorkspaceId, storeGithubRepo } from 'services/slack';
 import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
@@ -83,7 +84,7 @@ function buildRepositorySelectionView(
         type: 'section' as const,
         text: {
           type: 'mrkdwn' as const,
-          text: '📂 *Select a GitHub repository to connect*\n\nOnly public repositories that you can write to and that already contain `.md` files are shown below.',
+          text: '📂 *Select a GitHub repository to connect*\n\nChoose a public repository you can write to, or paste a public GitHub repository URL below. Private repositories are not supported.',
         },
       },
       {
@@ -102,6 +103,24 @@ function buildRepositorySelectionView(
           type: 'plain_text' as const,
           text: 'Repository',
         },
+        optional: true,
+      },
+      {
+        type: 'input' as const,
+        block_id: 'repository_url_block',
+        element: {
+          type: 'plain_text_input' as const,
+          action_id: 'repository_url',
+          placeholder: {
+            type: 'plain_text' as const,
+            text: 'https://github.com/owner/repo or /tree/branch/docs',
+          },
+        },
+        label: {
+          type: 'plain_text' as const,
+          text: 'Repository URL',
+        },
+        optional: true,
       },
       {
         type: 'input' as const,
@@ -326,10 +345,8 @@ export const registerGitHubHandlers = (app: App) => {
 
       const workspaceStore = new WorkspaceStore();
       const userGithubInfo = await workspaceStore.getUserGithubInfo(workspaceId, userId);
-      const hasEnvToken = !!process.env.GITHUB_TOKEN;
 
-      // Check if we have either user GitHub info or environment token
-      if (!userGithubInfo && !hasEnvToken) {
+      if (!userGithubInfo) {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
@@ -338,8 +355,7 @@ export const registerGitHubHandlers = (app: App) => {
         return;
       }
 
-      // Use user token if available, otherwise use environment token
-      const accessToken = userGithubInfo?.accessToken || process.env.GITHUB_TOKEN!;
+      const accessToken = userGithubInfo.accessToken;
 
       const loadingViewResponse = await client.views.open({
         trigger_id: (body as any).trigger_id,
@@ -350,26 +366,25 @@ export const registerGitHubHandlers = (app: App) => {
       const githubOAuth = GitHubOAuthDeviceFlow.getInstance();
       const repositories = await githubOAuth.getRepositoriesWithMarkdown(accessToken);
 
-      const repoOptions = repositories
-        .slice(0, 10)
-        .map((repo) => ({
-          text: {
-            type: 'plain_text' as const,
-            text: formatRepositoryOptionText(repo),
-          },
-          description: repo.markdownStats
-            ? {
-                type: 'plain_text' as const,
-                text: `${repo.markdownStats.markdownFiles} markdown files · ${(repo.markdownStats.markdownRatio * 100).toFixed(1)}% of ${repo.markdownStats.totalFiles} files`,
-              }
-            : undefined,
-          value: JSON.stringify({
-            owner: repo.owner.login,
-            repo: repo.name,
-            url: repo.html_url,
-            private: repo.private,
-          }),
-        }));
+      const repoOptions = repositories.slice(0, 10).map((repo) => ({
+        text: {
+          type: 'plain_text' as const,
+          text: formatRepositoryOptionText(repo),
+        },
+        description: repo.markdownStats
+          ? {
+              type: 'plain_text' as const,
+              text: `${repo.markdownStats.markdownFiles} markdown files · ${(repo.markdownStats.markdownRatio * 100).toFixed(1)}% of ${repo.markdownStats.totalFiles} files`,
+            }
+          : undefined,
+        value: JSON.stringify({
+          owner: repo.owner.login,
+          repo: repo.name,
+          url: repo.html_url,
+          private: repo.private,
+          branch: repo.default_branch,
+        }),
+      }));
 
       if (repoOptions.length === 0) {
         if (repositoryBrowseViewId) {
@@ -447,22 +462,30 @@ export const registerGitHubHandlers = (app: App) => {
 
   app.view('select_repository_modal', async ({ ack, body, client, logger, view }) => {
     const startTime = Date.now();
+    const metadata = JSON.parse(view.private_metadata || '{}');
+    const { userId, workspaceId } = metadata;
+    const selectedRepo = view.state.values.repository_select_block.repository_select.selected_option?.value;
+    const repositoryUrl = view.state.values.repository_url_block?.repository_url?.value?.trim() || '';
+    const pathInput = normalizeRepositoryPath(view.state.values.path_input_block.path_input.value || '');
+    let didAck = false;
+    const acknowledge = async (response?: any) => {
+      didAck = true;
+      if (response === undefined) {
+        await ack();
+      } else {
+        await ack(response);
+      }
+    };
 
     try {
-      const selectedRepo = view.state.values.repository_select_block.repository_select.selected_option?.value;
-      const path = view.state.values.path_input_block.path_input.value || '';
-
-      if (!selectedRepo) {
-        await ack({
+      if (!selectedRepo && !repositoryUrl) {
+        await acknowledge({
           response_action: 'errors',
           errors: {
-            repository_select_block: 'Please select a repository.',
+            repository_select_block: 'Choose a repository or paste a GitHub repository URL.',
           },
         });
 
-        // Log validation error
-        const metadata = JSON.parse(view.private_metadata || '{}');
-        const { userId, workspaceId } = metadata;
         const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
         await logAppHomeModalSubmit(
           userId,
@@ -470,28 +493,101 @@ export const registerGitHubHandlers = (app: App) => {
           'select_repository_modal',
           Date.now() - startTime,
           false,
-          'Repository selection modal submitted without selecting a repository',
+          'Repository selection modal submitted without selecting a repository or URL',
           {
             error: 'No repository selected',
-            enteredPath: path,
+            enteredPath: pathInput,
           },
           client,
         );
         return;
       }
 
-      await ack();
+      if (selectedRepo && repositoryUrl) {
+        await acknowledge({
+          response_action: 'errors',
+          errors: {
+            repository_url_block: 'Use either the repository picker or a URL, not both.',
+          },
+        });
+        return;
+      }
 
-      const metadata = JSON.parse(view.private_metadata || '{}');
-      const { userId, workspaceId } = metadata;
+      let repoInfo: {
+        owner: string;
+        repo: string;
+        url: string;
+        private?: boolean;
+        branch?: string;
+        path?: string;
+      };
 
-      const repoInfo = JSON.parse(selectedRepo);
+      if (selectedRepo) {
+        repoInfo = JSON.parse(selectedRepo);
+        if (repoInfo.private) {
+          await acknowledge({
+            response_action: 'errors',
+            errors: {
+              repository_select_block: 'Private repositories are not supported. Please choose a public repository.',
+            },
+          });
+          return;
+        }
+      } else {
+        const parsedRepo = parseGithubUrl(repositoryUrl);
+        if (!parsedRepo) {
+          await acknowledge({
+            response_action: 'errors',
+            errors: {
+              repository_url_block: 'Enter a valid GitHub repository URL.',
+            },
+          });
+          return;
+        }
+
+        repoInfo = {
+          owner: parsedRepo.owner,
+          repo: parsedRepo.repo,
+          url: `https://github.com/${parsedRepo.owner}/${parsedRepo.repo}`,
+          branch: parsedRepo.branch,
+          path: parsedRepo.path,
+        };
+      }
+
+      await acknowledge();
+
+      const workspaceStore = new WorkspaceStore();
+      const userGithubInfo = await workspaceStore.getUserGithubInfo(workspaceId, userId);
+      if (!userGithubInfo) {
+        await client.chat.postEphemeral({
+          user: userId,
+          channel: userId,
+          text: '❌ Please connect your GitHub account first.',
+        });
+        return;
+      }
+
+      const githubOAuth = GitHubOAuthDeviceFlow.getInstance();
+      const repository = await githubOAuth.getRepository(userGithubInfo.accessToken, repoInfo.owner, repoInfo.repo);
+      const accessError = getRepositoryAccessError(repository);
+      if (accessError) {
+        await client.chat.postEphemeral({
+          user: userId,
+          channel: userId,
+          text: `❌ ${accessError}`,
+        });
+        return;
+      }
+
+      const branch = repoInfo.branch || repository.default_branch;
+      const repositoryPath = pathInput || normalizeRepositoryPath(repoInfo.path);
 
       await storeGithubRepo(workspaceId, {
         owner: repoInfo.owner,
         repo: repoInfo.repo,
-        url: repoInfo.url,
-        path: path.trim(),
+        url: repository.html_url || repoInfo.url,
+        path: repositoryPath,
+        branch,
       });
 
       await client.chat.postEphemeral({
@@ -507,7 +603,8 @@ export const registerGitHubHandlers = (app: App) => {
       const markdownFiles = await githubService.getAllMarkdownFiles({
         owner: repoInfo.owner,
         repo: repoInfo.repo,
-        path: path.trim(),
+        path: repositoryPath,
+        ref: branch,
         workspaceId: workspaceId,
         userId: userId,
       });
@@ -527,12 +624,13 @@ export const registerGitHubHandlers = (app: App) => {
           'select_repository_modal',
           Date.now() - startTime,
           true,
-          `Repository connected but no markdown files found - ${repoInfo.owner}/${repoInfo.repo} at path: "${path.trim()}"`,
+          `Repository connected but no markdown files found - ${repoInfo.owner}/${repoInfo.repo} at path: "${repositoryPath}"`,
           {
             selectedRepository: `${repoInfo.owner}/${repoInfo.repo}`,
             repositoryUrl: repoInfo.url,
-            repositoryPath: path.trim(),
-            isPrivate: repoInfo.private,
+            repositoryPath,
+            branch,
+            isPrivate: repository.private,
             filesFound: 0,
             vectorStoreInitialized: false,
           },
@@ -543,6 +641,7 @@ export const registerGitHubHandlers = (app: App) => {
           workspaceId,
           owner: repoInfo.owner,
           repo: repoInfo.repo,
+          branch,
           markdownFiles,
           source: 'manual-refresh',
         });
@@ -572,15 +671,16 @@ export const registerGitHubHandlers = (app: App) => {
             'select_repository_modal',
             Date.now() - startTime,
             true,
-            `Successfully connected repository - ${repoInfo.owner}/${repoInfo.repo} at path: "${path.trim()}" with ${markdownFiles.length} files`,
+            `Successfully connected repository - ${repoInfo.owner}/${repoInfo.repo} at path: "${repositoryPath}" with ${markdownFiles.length} files`,
             {
               selectedRepository: `${repoInfo.owner}/${repoInfo.repo}`,
               repositoryUrl: repoInfo.url,
-              repositoryPath: path.trim(),
-              isPrivate: repoInfo.private,
+              repositoryPath,
+              branch,
+              isPrivate: repository.private,
               filesFound: markdownFiles.length,
               vectorStoreInitialized: true,
-              fileNames: markdownFiles.map(f => f.name),
+              fileNames: markdownFiles.map((file) => file.name),
             },
             client,
           );
@@ -599,12 +699,13 @@ export const registerGitHubHandlers = (app: App) => {
             'select_repository_modal',
             Date.now() - startTime,
             false,
-            `Repository connected but vector store initialization failed - ${repoInfo.owner}/${repoInfo.repo} at path: "${path.trim()}" with ${markdownFiles.length} files`,
+            `Repository connected but vector store initialization failed - ${repoInfo.owner}/${repoInfo.repo} at path: "${repositoryPath}" with ${markdownFiles.length} files`,
             {
               selectedRepository: `${repoInfo.owner}/${repoInfo.repo}`,
               repositoryUrl: repoInfo.url,
-              repositoryPath: path.trim(),
-              isPrivate: repoInfo.private,
+              repositoryPath,
+              branch,
+              isPrivate: repository.private,
               filesFound: markdownFiles.length,
               vectorStoreInitialized: false,
               error: 'Vector store initialization failed',
@@ -639,17 +740,24 @@ export const registerGitHubHandlers = (app: App) => {
       }, 1000);
     } catch (error) {
       logger.error('Error processing repository selection:', error);
-      await ack({
-        response_action: 'errors',
-        errors: {
-          repository_select_block: 'An error occurred while connecting the repository. Please try again.',
-        },
+      if (!didAck) {
+        await acknowledge({
+          response_action: 'errors',
+          errors: {
+            repository_select_block: 'Error connecting the repository. Please try again.',
+          },
+        });
+        return;
+      }
+
+      await client.chat.postEphemeral({
+        user: userId || body.user.id,
+        channel: userId || body.user.id,
+        text: '❌ Error connecting the repository. Please try again.',
       });
 
       // Log error
       try {
-        const metadata = JSON.parse(view.private_metadata || '{}');
-        const { userId, workspaceId } = metadata;
         const { logAppHomeModalSubmit } = await import('services/common/user-interaction-logger');
         await logAppHomeModalSubmit(
           userId,

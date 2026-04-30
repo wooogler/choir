@@ -1,6 +1,6 @@
-import { Document } from 'langchain/document';
+import { Document } from '@langchain/core/documents';
 import type { BlockContent, Code, Heading, ListItem, Paragraph } from 'mdast';
-import { toString } from 'mdast-util-to-string';
+import { toString as mdastToString } from 'mdast-util-to-string';
 import type { DocumentTree, ExtendedNode } from 'services/document';
 import { is } from 'unist-util-is';
 import { visit } from 'unist-util-visit';
@@ -45,14 +45,16 @@ export function createDocumentsFromTree(
   visit(docTree.root, 'heading', (node) => {
     const headingNode = node as Heading & ExtendedNode;
     if (headingNode.sectionId && headingNode.id) {
-      const headingText = toString(headingNode);
+      const headingText = mdastToString(headingNode);
       headingMap.set(headingNode.sectionId, headingText);
 
       // 섹션별 헤딩 노드 수집
-      if (!sectionToHeadings.has(headingNode.sectionId)) {
-        sectionToHeadings.set(headingNode.sectionId, []);
+      let sectionHeadings = sectionToHeadings.get(headingNode.sectionId);
+      if (!sectionHeadings) {
+        sectionHeadings = [];
+        sectionToHeadings.set(headingNode.sectionId, sectionHeadings);
       }
-      sectionToHeadings.get(headingNode.sectionId)!.push(headingNode);
+      sectionHeadings.push(headingNode);
     }
   });
 
@@ -88,7 +90,7 @@ export function createDocumentsFromTree(
     // 단락 노드 처리
     if (is(node, 'paragraph')) {
       const paraNode = node as Paragraph & ExtendedNode;
-      const text = toString(paraNode);
+      const text = mdastToString(paraNode);
 
       // 계층적 문맥 구성
       const contextPrefix = formatHeadingContext(headingPath, fileName);
@@ -124,7 +126,7 @@ export function createDocumentsFromTree(
     // 리스트 아이템 처리
     if (is(node, 'listItem')) {
       const listItemNode = node as ListItem & ExtendedNode;
-      const text = toString(listItemNode);
+      const text = mdastToString(listItemNode);
 
       // 계층적 문맥 구성 (listItem에는 - 접두사 포함)
       const contextPrefix = formatHeadingContext(headingPath, fileName);
@@ -196,7 +198,7 @@ export function createDocumentsFromTree(
     // 블록쿼트 처리
     if (is(node, 'blockquote')) {
       const blockNode = node as BlockContent & ExtendedNode;
-      const text = toString(blockNode);
+      const text = mdastToString(blockNode);
 
       // 계층적 문맥 구성
       const contextPrefix = formatHeadingContext(headingPath, fileName);
@@ -230,17 +232,17 @@ export function createDocumentsFromTree(
   const sectionsWithContent = new Set<string>();
 
   // 생성된 Document들에서 사용된 섹션ID들 수집
-  documents.forEach((doc) => {
+  for (const doc of documents) {
     if (doc.metadata.sectionId) {
       sectionsWithContent.add(doc.metadata.sectionId);
     }
-  });
+  }
 
   // 모든 섹션 중 콘텐츠가 없는 섹션들을 찾아 placeholder Document 생성
   for (const [sectionId, headingNode] of docTree.sectionMap.entries()) {
     if (!sectionsWithContent.has(sectionId)) {
       // 빈 섹션 발견 - placeholder Document 생성
-      const headingText = toString(headingNode);
+      const headingText = mdastToString(headingNode);
 
       // 헤딩 경로 구성
       const ancestors = getAncestorNodes(headingNode, nodeParentMap);
@@ -296,7 +298,7 @@ export function getAncestorNodes(node: ExtendedNode, parentMap: Map<string, Exte
   const ancestors: ExtendedNode[] = [];
   let current: ExtendedNode | undefined = node;
 
-  while (current && current.id) {
+  while (current?.id) {
     const parent = parentMap.get(current.id);
     if (parent) {
       ancestors.unshift(parent); // 최상위 조상이 앞에 오도록 배치
@@ -351,7 +353,7 @@ function buildSectionHierarchy(
   }
 
   const currentHeading = currentHeadings[0] as Heading & ExtendedNode;
-  const currentHeadingText = toString(currentHeading);
+  const currentHeadingText = mdastToString(currentHeading);
 
   // 부모 섹션들을 재귀적으로 찾아서 경로 구성
   if (currentHeading.parentId) {
@@ -379,17 +381,19 @@ function buildSectionHierarchy(
 export function formatHeadingContext(headingPath: string[], fileName: string): string {
   // 마크다운 헤더 형식으로 파일명과 섹션 경로 생성
   const fileHeader = `# ${fileName}`;
-  
+
   if (headingPath && headingPath.length > 0) {
     // 섹션 경로를 각각 헤더 레벨로 변환 (## 부터 시작)
-    const sectionHeaders = headingPath.map((section, index) => {
-      const headerLevel = '#'.repeat(index + 2); // ##, ###, #### ...
-      return `${headerLevel} ${section}`;
-    }).join('\n');
-    
+    const sectionHeaders = headingPath
+      .map((section, index) => {
+        const headerLevel = '#'.repeat(index + 2); // ##, ###, #### ...
+        return `${headerLevel} ${section}`;
+      })
+      .join('\n');
+
     return `${fileHeader}\n${sectionHeaders}\n\n`;
   }
-  
+
   return `${fileHeader}\n\n`;
 }
 
@@ -470,12 +474,13 @@ function extractCodeEntities(code: string, language: string): string[] {
 
   // 모든 패턴에 대해 매칭
   for (const pattern of langPatterns) {
-    let match;
-    while ((match = pattern.exec(code)) !== null) {
+    let match: RegExpExecArray | null = pattern.exec(code);
+    while (match !== null) {
       if (match[1] && match[1].length > 2) {
         // 너무 짧은 식별자 제외
         entities.push(match[1]);
       }
+      match = pattern.exec(code);
     }
   }
 
@@ -531,7 +536,7 @@ function splitTextByParagraphsAndSentences(text: string, targetSize: number): st
       if (sentenceChunk) chunks.push(sentenceChunk);
     }
     // 적당한 크기의 문단은 청크에 추가
-    else if ((currentChunk + '\n\n' + para).length <= targetSize) {
+    else if (`${currentChunk}\n\n${para}`.length <= targetSize) {
       currentChunk += (currentChunk ? '\n\n' : '') + para;
     } else {
       if (currentChunk) chunks.push(currentChunk);
@@ -567,10 +572,10 @@ function splitCodeByLogicalBlocks(code: string, language: string, targetSize: nu
 
   // 패턴으로 블록 추출
   const blocks: string[] = [];
-  let match;
+  let match: RegExpExecArray | null = pattern.exec(code);
   let lastIndex = 0;
 
-  while ((match = pattern.exec(code)) !== null) {
+  while (match !== null) {
     // 현재 블록
     const block = match[0];
 
@@ -584,6 +589,7 @@ function splitCodeByLogicalBlocks(code: string, language: string, targetSize: nu
 
     blocks.push(block);
     lastIndex = match.index + block.length;
+    match = pattern.exec(code);
   }
 
   // 남은 텍스트 처리
@@ -644,7 +650,7 @@ function splitByParagraphs(text: string, targetSize: number): string[] {
   let currentChunk = '';
 
   for (const para of paragraphs) {
-    if ((currentChunk + '\n\n' + para).length <= targetSize) {
+    if (`${currentChunk}\n\n${para}`.length <= targetSize) {
       currentChunk += (currentChunk ? '\n\n' : '') + para;
     } else {
       if (currentChunk) chunks.push(currentChunk);
@@ -666,7 +672,7 @@ function splitByLines(text: string, targetSize: number): string[] {
   let currentChunk = '';
 
   for (const line of lines) {
-    if ((currentChunk + '\n' + line).length <= targetSize) {
+    if (`${currentChunk}\n${line}`.length <= targetSize) {
       currentChunk += (currentChunk ? '\n' : '') + line;
     } else {
       if (currentChunk) chunks.push(currentChunk);

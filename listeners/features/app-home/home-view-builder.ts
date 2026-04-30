@@ -1,5 +1,6 @@
 import type { Logger } from '@slack/bolt';
 import type { WebClient } from '@slack/web-api';
+import { isQmdRetrievalEnabled } from 'services/retrieval/provider-config';
 import {
   getCHOIRUsers,
   getGithubRepo,
@@ -9,7 +10,6 @@ import {
   isManager,
   isWorkspaceOwner,
 } from 'services/slack';
-import { isQmdRetrievalEnabled } from 'services/retrieval/provider-config';
 import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 
@@ -50,11 +50,7 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
     userGithubInfo,
   );
 
-  const organizationNameBlocks = buildOrganizationNameBlocks(
-    isUserManager,
-    isOwner,
-    organizationName,
-  );
+  const organizationNameBlocks = buildOrganizationNameBlocks(isUserManager, isOwner, organizationName);
 
   const logDownloadBlocks = buildLogDownloadBlocks(isUserManager, isOwner);
 
@@ -81,26 +77,26 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
   ];
 
   // 모든 사용자에게 Messages 탭으로 이동할 수 있는 버튼 제공
-      // Get team and app info for deep link
-    const authTest = await client.auth.test();
-    const teamId = authTest.team_id;
-    const botUserId = authTest.user_id;
-    
-    // Extract app ID from SLACK_APP_TOKEN (format: xapp-1-{APP_ID}-...)
-    let appId = process.env.SLACK_APP_ID;
-    if (!appId && process.env.SLACK_APP_TOKEN) {
-      const tokenParts = process.env.SLACK_APP_TOKEN.split('-');
-      if (tokenParts.length >= 3 && tokenParts[0] === 'xapp') {
-        appId = tokenParts[2]; // App ID is the third part
-      }
+  // Get team and app info for deep link
+  const authTest = await client.auth.test();
+  const teamId = authTest.team_id;
+  const botUserId = authTest.user_id;
+
+  // Extract app ID from SLACK_APP_TOKEN (format: xapp-1-{APP_ID}-...)
+  let appId = process.env.SLACK_APP_ID;
+  if (!appId && process.env.SLACK_APP_TOKEN) {
+    const tokenParts = process.env.SLACK_APP_TOKEN.split('-');
+    if (tokenParts.length >= 3 && tokenParts[0] === 'xapp') {
+      appId = tokenParts[2]; // App ID is the third part
     }
-    
-    logger.info('[DEBUG] App Home - Deep link info:', {
-      teamId,
-      botUserId,
-      appId: appId || 'NOT_FOUND',
-      hasAppToken: !!process.env.SLACK_APP_TOKEN
-    });
+  }
+
+  logger.info('[DEBUG] App Home - Deep link info:', {
+    teamId,
+    botUserId,
+    appId: appId || 'NOT_FOUND',
+    hasAppToken: !!process.env.SLACK_APP_TOKEN,
+  });
 
   homeBlocks.push(
     {
@@ -123,7 +119,7 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
           style: 'primary',
           action_id: 'start_chat_url',
           // Use App Home deep link format for apps with App Home
-          url: appId 
+          url: appId
             ? `slack://app?team=${teamId}&id=${appId}&tab=messages`
             : `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
         },
@@ -372,19 +368,7 @@ const buildDocumentConnectionBlocks = async (
     },
   });
 
-  // Check if environment token is available
-  const hasEnvToken = !!process.env.GITHUB_TOKEN;
-
-  if (hasEnvToken) {
-    // Show environment token status instead of personal GitHub connection
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: '*GitHub Access:* ✅ Environment token configured\n\nUsing GitHub Personal Access Token from environment variables.',
-      },
-    });
-  } else if (userGithubInfo) {
+  if (userGithubInfo) {
     blocks.push(
       {
         type: 'section',
@@ -438,7 +422,7 @@ const buildDocumentConnectionBlocks = async (
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '*Personal GitHub Access:* ❌ Not connected\n\nConnect your personal GitHub account to access your private repositories.',
+          text: '*Personal GitHub Access:* ❌ Not connected\n\nConnect your GitHub account to access public repositories you can write to.',
         },
       },
       {
@@ -459,7 +443,7 @@ const buildDocumentConnectionBlocks = async (
     );
   }
 
-  if ((isUserManager || isOwner) && (userGithubInfo || hasEnvToken)) {
+  if ((isUserManager || isOwner) && userGithubInfo) {
     const savedRepoInfo = await getGithubRepo(workspaceId);
     if (savedRepoInfo) {
       blocks.push({
@@ -498,7 +482,7 @@ const buildDocumentConnectionBlocks = async (
     });
   }
 
-  if ((isUserManager || isOwner) && (userGithubInfo || hasEnvToken)) {
+  if ((isUserManager || isOwner) && userGithubInfo) {
     const savedRepoInfo = await getGithubRepo(workspaceId);
     if (savedRepoInfo) {
       const vectorStore = VectorStoreService.getInstance();
@@ -615,11 +599,7 @@ const buildDocumentConnectionBlocks = async (
   return blocks;
 };
 
-const buildOrganizationNameBlocks = (
-  isUserManager: boolean,
-  isOwner: boolean,
-  organizationName: string,
-) => {
+const buildOrganizationNameBlocks = (isUserManager: boolean, isOwner: boolean, organizationName: string) => {
   if (!isUserManager && !isOwner) {
     return [];
   }
@@ -774,7 +754,7 @@ const buildReadOnlyFilesBlocks = async (
   // 캐시가 없는 경우, GitHub 연결 안내와 함께 섹션 표시
   if (!markdownFiles || markdownFiles.length === 0) {
     const config = await workspaceStore.getWorkspaceConfig(workspaceId);
-    
+
     // GitHub 레포지토리가 연결되어 있지 않은 경우
     if (!config?.githubRepo) {
       return [
@@ -805,7 +785,7 @@ const buildReadOnlyFilesBlocks = async (
         },
       ];
     }
-    
+
     // GitHub는 연결되어 있지만 파일이 캐시되지 않은 경우
     return [
       {

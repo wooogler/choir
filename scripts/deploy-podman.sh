@@ -9,6 +9,7 @@ APP_PORT="${APP_PORT:-3000}"
 HOST_BIND="${HOST_BIND:-127.0.0.1:${APP_PORT}}"
 SERVICE_NAME="${SERVICE_NAME:-choir.service}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ALLOW_PUBLIC_BIND="${ALLOW_PUBLIC_BIND:-false}"
 
 cd "$PROJECT_ROOT"
 
@@ -29,7 +30,19 @@ if [ ! -f Containerfile ]; then
   exit 1
 fi
 
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pnpm is not installed or not on PATH."
+  exit 1
+fi
+
 mkdir -p data
+
+if [[ "$ALLOW_PUBLIC_BIND" != "true" && ! "$HOST_BIND" =~ ^(127\.|localhost:|\[::1\]:|::1:) ]]; then
+  echo "Refusing to deploy with non-loopback HOST_BIND=${HOST_BIND}."
+  echo "Bind CHOIR to localhost and let nginx expose only HTTPS."
+  echo "Set ALLOW_PUBLIC_BIND=true only if you intentionally want Podman to publish the app port externally."
+  exit 1
+fi
 
 EXPECTED_REDIRECT="SLACK_REDIRECT_URI=https://${DOMAIN}/slack/oauth_redirect"
 if ! grep -q "^${EXPECTED_REDIRECT}$" .env; then
@@ -43,6 +56,14 @@ if ss -ltn 2>/dev/null | grep -qE "127\\.0\\.0\\.1:${APP_PORT}\\b|0\\.0\\.0\\.0:
     echo "Stop the current dev server first, for example: fuser -k ${APP_PORT}/tcp"
     exit 1
   fi
+fi
+
+echo "Building TypeScript output..."
+pnpm build
+
+if [ ! -f dist/app.js ]; then
+  echo "dist/app.js not found after build."
+  exit 1
 fi
 
 echo "Building image ${IMAGE_NAME}..."
@@ -93,6 +114,12 @@ for attempt in {1..30}; do
 
   sleep 2
 done
+
+if ss -ltnH 2>/dev/null | grep -qE "[[:space:]](0\\.0\\.0\\.0|\\*|\\[::\\]|::):${APP_PORT}[[:space:]]"; then
+  echo "Port ${APP_PORT} is listening on a public interface."
+  echo "This is unsafe for CHOIR; keep Podman bound to 127.0.0.1 and expose the app through nginx HTTPS only."
+  exit 1
+fi
 
 if command -v nginx >/dev/null 2>&1; then
   echo "Testing nginx configuration..."

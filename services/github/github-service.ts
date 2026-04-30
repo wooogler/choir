@@ -86,16 +86,11 @@ class GithubService {
   }
 
   /**
-   * 워크스페이스와 사용자 컨텍스트에서 적절한 GitHub 토큰을 가져옴
-   * 환경 변수 토큰이 있으면 항상 우선 사용
+   * 워크스페이스와 사용자 컨텍스트에서 적절한 GitHub 토큰을 가져옴.
+   * Hosted multi-workspace deployments must not use a server-wide GitHub token,
+   * because each workspace/user should authorize repository access separately.
    */
   private async getGitHubToken(workspaceId?: string, userId?: string): Promise<string | undefined> {
-    // 환경 변수 토큰이 있으면 항상 우선 사용
-    if (process.env.GITHUB_TOKEN) {
-      Logger.info('Using environment GitHub token');
-      return process.env.GITHUB_TOKEN;
-    }
-
     if (!workspaceId || !userId) {
       return undefined;
     }
@@ -120,18 +115,18 @@ class GithubService {
   private async getOctokit(workspaceId?: string, userId?: string): Promise<Octokit> {
     const token = await this.getGitHubToken(workspaceId, userId);
     const tokenKey = token || 'no-token';
+    const cachedOctokit = this.octokitInstances.get(tokenKey);
 
-    if (!this.octokitInstances.has(tokenKey)) {
-      this.octokitInstances.set(
-        tokenKey,
-        new Octokit({
-          auth: token,
-        }),
-      );
-      Logger.info(`Created new Octokit instance for token: ${tokenKey.substring(0, 10)}...`);
+    if (cachedOctokit) {
+      return cachedOctokit;
     }
 
-    return this.octokitInstances.get(tokenKey)!;
+    const octokit = new Octokit({
+      auth: token,
+    });
+    this.octokitInstances.set(tokenKey, octokit);
+    Logger.info(`Created new Octokit instance for token: ${tokenKey.substring(0, 10)}...`);
+    return octokit;
   }
 
   // Utility methods
@@ -145,7 +140,7 @@ class GithubService {
         return await fn();
       } catch (error: any) {
         if (error.status === 403 || error.status === 429) {
-          const delayMs = this.throttleOptions.baseDelay * Math.pow(2, i);
+          const delayMs = this.throttleOptions.baseDelay * 2 ** i;
           Logger.warn(`Rate limit hit, retrying in ${delayMs}ms (attempt ${i + 1}/${retries})`);
           await this.delay(delayMs);
         } else {
@@ -394,9 +389,7 @@ class GithubService {
 
       // CHOIR에서 호출하는 모든 업데이트에 [choir-auto] 태그 추가
       const baseMessage = params.message || 'Update markdown content';
-      const commitMessage = baseMessage.includes('[choir-auto]') 
-        ? baseMessage 
-        : `${baseMessage} [choir-auto]`;
+      const commitMessage = baseMessage.includes('[choir-auto]') ? baseMessage : `${baseMessage} [choir-auto]`;
 
       const updateResponse = await this.throttledRequest(() =>
         octokit.rest.repos.createOrUpdateFileContents({
@@ -409,14 +402,16 @@ class GithubService {
           branch: actualBranch,
         }),
       );
-      
+
       const commitSha = (updateResponse as any).data.commit.sha;
 
       // Invalidate cache for this file
       const cacheKeys = Array.from(this.fileContentCache.keys()).filter((key) =>
         key.startsWith(`${params.owner}/${params.repo}/${params.path}:`),
       );
-      cacheKeys.forEach((key) => this.fileContentCache.delete(key));
+      for (const key of cacheKeys) {
+        this.fileContentCache.delete(key);
+      }
 
       Logger.info(`Successfully updated file: ${params.path}`, {
         owner: params.owner,
@@ -476,17 +471,19 @@ class GithubService {
           success: false,
           message: `Repository not found: ${params.owner}/${params.repo}. Please check the repository name.`,
         };
-      } else if (err.status === 401 || err.status === 403) {
+      }
+
+      if (err.status === 401 || err.status === 403) {
         return {
           success: false,
           message: 'Authentication failed: GitHub token is invalid or lacks permissions.',
         };
-      } else {
-        return {
-          success: false,
-          message: `GitHub connection failed: ${err.message || 'Unknown error'}`,
-        };
       }
+
+      return {
+        success: false,
+        message: `GitHub connection failed: ${err.message || 'Unknown error'}`,
+      };
     }
   }
 
@@ -553,7 +550,7 @@ class GithubService {
 
             if (line.startsWith('@@')) {
               const match = line.match(/@@ -\d+,\d+ \+(\d+),\d+ @@/);
-              if (match && match[1]) {
+              if (match?.[1]) {
                 targetLineNumber = Number.parseInt(match[1], 10) - 1;
               }
               continue;
@@ -686,9 +683,7 @@ class GithubService {
       }
 
       // CHOIR에서 호출하는 파일 생성에도 [choir-auto] 태그 추가
-      const commitMessage = params.message.includes('[choir-auto]') 
-        ? params.message 
-        : `${params.message} [choir-auto]`;
+      const commitMessage = params.message.includes('[choir-auto]') ? params.message : `${params.message} [choir-auto]`;
 
       // Create the file
       await this.throttledRequest(async () => {

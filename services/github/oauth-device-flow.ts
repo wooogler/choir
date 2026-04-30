@@ -59,7 +59,7 @@ export class GitHubOAuthDeviceFlow {
   private constructor() {
     this.clientId = process.env.GITHUB_OAUTH_CLIENT_ID || '';
     this.clientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET || '';
-    this.scopes = ['repo', 'read:user', 'user:email'];
+    this.scopes = ['public_repo', 'read:user', 'user:email'];
 
     if (!this.clientId || !this.clientSecret) {
       throw new Error('GitHub OAuth credentials not configured');
@@ -114,6 +114,7 @@ export class GitHubOAuthDeviceFlow {
   async pollForAccessToken(deviceCode: string, interval = 5): Promise<AccessTokenResponse> {
     const maxAttempts = 120; // 10 minutes max (120 * 5 seconds)
     let attempts = 0;
+    let pollingInterval = interval;
 
     while (attempts < maxAttempts) {
       try {
@@ -140,15 +141,15 @@ export class GitHubOAuthDeviceFlow {
         if (data.error === 'authorization_pending') {
           // User hasn't completed authorization yet, continue polling
           attempts++;
-          await new Promise((resolve) => setTimeout(resolve, interval * 1000));
+          await new Promise((resolve) => setTimeout(resolve, pollingInterval * 1000));
           continue;
         }
 
         if (data.error === 'slow_down') {
           // GitHub is asking us to slow down
-          interval += 5;
+          pollingInterval += 5;
           attempts++;
-          await new Promise((resolve) => setTimeout(resolve, interval * 1000));
+          await new Promise((resolve) => setTimeout(resolve, pollingInterval * 1000));
           continue;
         }
 
@@ -258,6 +259,27 @@ export class GitHubOAuthDeviceFlow {
       return repositories;
     } catch (error) {
       Logger.error('Failed to get user repositories:', error as Error);
+      throw error;
+    }
+  }
+
+  async getRepository(accessToken: string, owner: string, repo: string): Promise<GitHubRepository> {
+    try {
+      const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+        headers: {
+          Authorization: `token ${accessToken}`,
+          Accept: 'application/vnd.github.v3+json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`GitHub API error: ${response.status} ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      Logger.error(`Failed to get repository ${owner}/${repo}:`, error as Error);
       throw error;
     }
   }

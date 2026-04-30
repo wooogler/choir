@@ -34,7 +34,7 @@ export class GitHubCommitManager {
 
   constructor(token?: string) {
     this.octokit = new Octokit({
-      auth: token || process.env.GITHUB_TOKEN,
+      auth: token,
     });
   }
 
@@ -103,7 +103,7 @@ export class GitHubCommitManager {
 
             if (line.startsWith('@@')) {
               const match = line.match(/@@ -\d+,\d+ \+(\d+),\d+ @@/);
-              if (match && match[1]) {
+              if (match?.[1]) {
                 targetLineNumber = Number.parseInt(match[1], 10) - 1;
               }
               continue;

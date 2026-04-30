@@ -1,5 +1,7 @@
 import type { AllMiddlewareArgs, BlockAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { GithubService } from 'services/github';
+import { GitHubOAuthDeviceFlow } from 'services/github/oauth-device-flow';
+import { getRepositoryAccessError, normalizeRepositoryPath } from 'services/github/repository-access';
 import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from 'services/slack';
 import { GitHubSyncService } from 'services/sync/github-sync-service';
 import { VectorStoreService } from 'services/vector/main-service';
@@ -123,135 +125,148 @@ export const testGithubConnectionCallback = async ({
       return;
     }
 
-    // GitHub 연결 테스트
-    const githubService = GithubService.getInstance();
-    const testResult = await githubService.testConnection({
+    const workspaceStore = new WorkspaceStore();
+    const userGithubInfo = await workspaceStore.getUserGithubInfo(workspaceId, userId);
+    if (!userGithubInfo) {
+      await client.chat.postEphemeral({
+        channel: body.channel?.id || userId,
+        user: userId,
+        text: 'Please connect your GitHub account first.',
+      });
+      return;
+    }
+
+    const githubOAuth = GitHubOAuthDeviceFlow.getInstance();
+    const repository = await githubOAuth.getRepository(userGithubInfo.accessToken, repoInfo.owner, repoInfo.repo);
+    const accessError = getRepositoryAccessError(repository);
+    if (accessError) {
+      await client.chat.postEphemeral({
+        channel: body.channel?.id || userId,
+        user: userId,
+        text: `❌ ${accessError}`,
+      });
+      return;
+    }
+
+    const branch = repoInfo.branch || repository.default_branch;
+    const repositoryPath = normalizeRepositoryPath(repoInfo.path);
+
+    logger.info('GitHub connection test successful', { repoInfo, branch, repositoryPath });
+
+    // 연결 성공 시 저장소 정보 저장
+    await storeGithubRepo(workspaceId, {
       owner: repoInfo.owner,
       repo: repoInfo.repo,
-      workspaceId: workspaceId,
-      userId: userId,
+      path: repositoryPath,
+      url: repository.html_url || repoInfo.url,
+      branch,
     });
 
-    logger.info(`GitHub connection test result:`, { testResult, repoInfo });
+    // 새로운 GitHub 리포지토리에서 파일들을 가져오고 벡터 스토어 업데이트
+    let markdownFiles = [];
+    try {
+      const githubService = GithubService.getInstance();
+      logger.info(`Loading markdown files from ${repoInfo.owner}/${repoInfo.repo}`);
+      markdownFiles = await githubService.getAllMarkdownFiles({
+        owner: repoInfo.owner,
+        repo: repoInfo.repo,
+        path: repositoryPath,
+        ref: branch,
+        workspaceId: workspaceId,
+        userId: userId,
+      });
+      logger.info(`Successfully loaded ${markdownFiles.length} files from repository`);
 
-    if (testResult.success) {
-      // 연결 성공 시 저장소 정보 저장
-      await storeGithubRepo(workspaceId, repoInfo);
+      // 파일 목록을 워크스페이스 설정에 캐시
+      const fileList = markdownFiles.map((file) => ({
+        name: file.name,
+        path: file.path,
+      }));
+      await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
+      logger.info(`Cached ${fileList.length} markdown files in workspace configuration`);
 
-      // 새로운 GitHub 리포지토리에서 파일들을 가져오고 벡터 스토어 업데이트
-      let markdownFiles = [];
-      try {
-        const githubService = GithubService.getInstance();
-        // Load markdown files without specifying branch (let GitHub service handle default branch)
-        logger.info(`Loading markdown files from ${repoInfo.owner}/${repoInfo.repo}`);
-        markdownFiles = await githubService.getAllMarkdownFiles({
-          owner: repoInfo.owner,
-          repo: repoInfo.repo,
-          path: repoInfo.path || '',
-          workspaceId: workspaceId,
-          userId: userId,
-        });
-        logger.info(`Successfully loaded ${markdownFiles.length} files from repository`);
-
-        // 파일 목록을 워크스페이스 설정에 캐시
-        const workspaceStore = new WorkspaceStore();
-        const fileList = markdownFiles.map((file) => ({
-          name: file.name,
-          path: file.path,
-        }));
-        await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
-        logger.info(`Cached ${fileList.length} markdown files in workspace configuration`);
-
-        await GitHubSyncService.getInstance().syncWorkspaceFromMarkdownFiles({
-          workspaceId,
-          owner: repoInfo.owner,
-          repo: repoInfo.repo,
-          branch: repoInfo.branch,
-          markdownFiles,
-          source: 'manual-refresh',
-        });
-
-        const vectorStore = VectorStoreService.getInstance();
-        // 새로운 파일들로 벡터스토어 설정 (기존 캐시 교체)
-        await vectorStore.setMarkdownFiles(markdownFiles, {
-          owner: repoInfo.owner,
-          repo: repoInfo.repo,
-          workspaceId,
-        });
-        logger.info(
-          `Vector store rebuilt with ${markdownFiles.length} files from new GitHub repository for workspace ${workspaceId}`,
-        );
-      } catch (error) {
-        logger.error('Error rebuilding vector store after GitHub connection:', error);
-      }
-
-      // 1단계: 연결 성공 알림
-      await client.chat.postEphemeral({
-        channel: body.channel?.id || userId,
-        user: userId,
-        text: `✅ Repository connected successfully!\n📁 Loading ${markdownFiles.length} markdown files...`,
+      await GitHubSyncService.getInstance().syncWorkspaceFromMarkdownFiles({
+        workspaceId,
+        owner: repoInfo.owner,
+        repo: repoInfo.repo,
+        branch,
+        markdownFiles,
+        source: 'manual-refresh',
       });
 
-      // 2단계: 벡터스토어 업데이트 완료 후 알림
-      setTimeout(async () => {
-        try {
-          await client.chat.postEphemeral({
-            channel: body.channel?.id || userId,
-            user: userId,
-            text: `🔄 Vector store updated with ${markdownFiles.length} files.\n🏠 Refreshing home screen...`,
-          });
-        } catch (error) {
-          logger.error('Error sending update message:', error);
-        }
-      }, 500);
-
-      // 3단계: 홈 화면 자동 새로고침
-      setTimeout(async () => {
-        try {
-          // Create mock event and args for the callback
-          const mockEvent = {
-            type: 'app_home_opened' as const,
-            user: userId,
-            tab: 'home' as const,
-            event_ts: Date.now().toString(),
-          };
-
-          const handlerArgs = {
-            client,
-            event: mockEvent,
-            logger,
-            context: {},
-            payload: mockEvent,
-          };
-
-          // Call the home handler callback directly to refresh the view
-          await appHomeOpenedCallback(handlerArgs as any);
-
-          logger.info(`Home screen refreshed for user ${userId} after GitHub connection`);
-
-          // 4단계: 최종 완료 알림
-          await client.chat.postEphemeral({
-            channel: body.channel?.id || userId,
-            user: userId,
-            text: `🎉 All done! Repository "${repoInfo.owner}/${repoInfo.repo}" is now connected and ready to use.`,
-          });
-        } catch (error) {
-          logger.error('Error refreshing home view:', error);
-          await client.chat.postEphemeral({
-            channel: body.channel?.id || userId,
-            user: userId,
-            text: '🎉 Repository connected successfully! Please refresh the Home tab to see the updated connection.',
-          });
-        }
-      }, 1500);
-    } else {
-      // 실패 메시지 전송
-      await client.chat.postEphemeral({
-        channel: body.channel?.id || userId,
-        user: userId,
-        text: `❌ ${testResult.message}`,
+      const vectorStore = VectorStoreService.getInstance();
+      // 새로운 파일들로 벡터스토어 설정 (기존 캐시 교체)
+      await vectorStore.setMarkdownFiles(markdownFiles, {
+        owner: repoInfo.owner,
+        repo: repoInfo.repo,
+        workspaceId,
       });
+      logger.info(
+        `Vector store rebuilt with ${markdownFiles.length} files from new GitHub repository for workspace ${workspaceId}`,
+      );
+    } catch (error) {
+      logger.error('Error rebuilding vector store after GitHub connection:', error);
     }
+
+    // 1단계: 연결 성공 알림
+    await client.chat.postEphemeral({
+      channel: body.channel?.id || userId,
+      user: userId,
+      text: `✅ Repository connected successfully!\n📁 Loading ${markdownFiles.length} markdown files...`,
+    });
+
+    // 2단계: 벡터스토어 업데이트 완료 후 알림
+    setTimeout(async () => {
+      try {
+        await client.chat.postEphemeral({
+          channel: body.channel?.id || userId,
+          user: userId,
+          text: `🔄 Vector store updated with ${markdownFiles.length} files.\n🏠 Refreshing home screen...`,
+        });
+      } catch (error) {
+        logger.error('Error sending update message:', error);
+      }
+    }, 500);
+
+    // 3단계: 홈 화면 자동 새로고침
+    setTimeout(async () => {
+      try {
+        // Create mock event and args for the callback
+        const mockEvent = {
+          type: 'app_home_opened' as const,
+          user: userId,
+          tab: 'home' as const,
+          event_ts: Date.now().toString(),
+        };
+
+        const handlerArgs = {
+          client,
+          event: mockEvent,
+          logger,
+          context: {},
+          payload: mockEvent,
+        };
+
+        // Call the home handler callback directly to refresh the view
+        await appHomeOpenedCallback(handlerArgs as any);
+
+        logger.info(`Home screen refreshed for user ${userId} after GitHub connection`);
+
+        // 4단계: 최종 완료 알림
+        await client.chat.postEphemeral({
+          channel: body.channel?.id || userId,
+          user: userId,
+          text: `🎉 All done! Repository "${repoInfo.owner}/${repoInfo.repo}" is now connected and ready to use.`,
+        });
+      } catch (error) {
+        logger.error('Error refreshing home view:', error);
+        await client.chat.postEphemeral({
+          channel: body.channel?.id || userId,
+          user: userId,
+          text: '🎉 Repository connected successfully! Please refresh the Home tab to see the updated connection.',
+        });
+      }
+    }, 1500);
   } catch (error) {
     logger.error('Error testing GitHub connection:', error);
 

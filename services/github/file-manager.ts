@@ -42,7 +42,7 @@ export class GitHubFileManager {
 
   constructor(token?: string) {
     this.octokit = new Octokit({
-      auth: token || process.env.GITHUB_TOKEN,
+      auth: token,
     });
   }
 
@@ -56,7 +56,7 @@ export class GitHubFileManager {
         return await fn();
       } catch (error: any) {
         if (error.status === 403 || error.status === 429) {
-          const delayMs = this.throttleOptions.baseDelay * Math.pow(2, i);
+          const delayMs = this.throttleOptions.baseDelay * 2 ** i;
           Logger.warn(`Rate limit hit, retrying in ${delayMs}ms (attempt ${i + 1}/${retries})`);
           await this.delay(delayMs);
         } else {
@@ -314,7 +314,9 @@ export class GitHubFileManager {
       const cacheKeys = Array.from(this.fileContentCache.keys()).filter((key) =>
         key.startsWith(`${owner}/${repo}/${path}:`),
       );
-      cacheKeys.forEach((key) => this.fileContentCache.delete(key));
+      for (const key of cacheKeys) {
+        this.fileContentCache.delete(key);
+      }
 
       Logger.info(`Successfully updated file: ${path}`);
     } catch (error) {
@@ -364,17 +366,19 @@ export class GitHubFileManager {
           success: false,
           message: `Repository not found: ${owner}/${repo}. Please check the repository name.`,
         };
-      } else if (err.status === 401 || err.status === 403) {
+      }
+
+      if (err.status === 401 || err.status === 403) {
         return {
           success: false,
           message: 'Authentication failed: GitHub token is invalid or lacks permissions.',
         };
-      } else {
-        return {
-          success: false,
-          message: `GitHub connection failed: ${err.message || 'Unknown error'}`,
-        };
       }
+
+      return {
+        success: false,
+        message: `GitHub connection failed: ${err.message || 'Unknown error'}`,
+      };
     }
   }
 

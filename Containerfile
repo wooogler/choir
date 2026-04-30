@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-bookworm-slim AS build
+FROM node:22-bookworm-slim AS deps
 
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV QMD_FORCE_CPU_ONLY=true
+ENV NODE_ENV=production
 
 WORKDIR /app
 
@@ -12,7 +13,6 @@ RUN apt-get update && \
       ca-certificates \
       cmake \
       g++ \
-      git \
       make \
       pkg-config \
       python3 && \
@@ -20,15 +20,22 @@ RUN apt-get update && \
 
 RUN corepack enable && corepack prepare pnpm@10.8.1 --activate
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --prod --frozen-lockfile --store-dir=/pnpm/store && \
+    rm -rf /pnpm/store \
+      node_modules/.pnpm/@node-llama-cpp+linux-arm64@* \
+      node_modules/.pnpm/@node-llama-cpp+linux-armv7l@* \
+      node_modules/.pnpm/@node-llama-cpp+linux-x64-cuda@* \
+      node_modules/.pnpm/@node-llama-cpp+linux-x64-cuda-ext@* \
+      node_modules/.pnpm/@node-llama-cpp+linux-x64-vulkan@* \
+      node_modules/@node-llama-cpp/linux-arm64 \
+      node_modules/@node-llama-cpp/linux-armv7l \
+      node_modules/@node-llama-cpp/linux-x64-cuda \
+      node_modules/@node-llama-cpp/linux-x64-cuda-ext \
+      node_modules/@node-llama-cpp/linux-x64-vulkan
 
-COPY . .
-RUN pnpm build
-RUN pnpm prune --prod
-
-FROM node:20-bookworm-slim AS runner
+FROM node:22-bookworm-slim AS runner
 
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -46,10 +53,10 @@ RUN apt-get update && \
       libgomp1 && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=build --chown=node:node /app/dist ./dist
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/package.json ./package.json
+COPY --from=deps --chown=node:node /app/node_modules ./node_modules
+COPY --chown=node:node dist ./dist
 COPY --chown=node:node public ./public
+COPY --chown=node:node package.json ./package.json
 
 RUN mkdir -p /app/data && chown -R node:node /app/data
 

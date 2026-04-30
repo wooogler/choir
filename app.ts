@@ -1,6 +1,6 @@
+import path from 'node:path';
 import { App, ExpressReceiver, LogLevel } from '@slack/bolt';
 import * as dotenv from 'dotenv';
-import path from 'node:path';
 import { SlackUsageMonitor, usageMonitoringMiddleware } from 'services/slack/usage-monitor';
 import registerListeners from './listeners';
 
@@ -15,7 +15,7 @@ import { ensureWorkspaceInitialized } from 'services/slack/workspace-bootstrap';
 import { GitHubSyncService } from 'services/sync/github-sync-service';
 import { VectorStoreService } from 'services/vector/main-service';
 
-dotenv.config();
+dotenv.config({ path: process.env.ENV_FILE || process.env.DOTENV_CONFIG_PATH || '.env' });
 
 function applyQmdCpuOnlyDefaults(): void {
   if (process.env.QMD_FORCE_CPU_ONLY === 'false') {
@@ -363,6 +363,34 @@ async function initializeSingleWorkspaceOnStartup(): Promise<{
 }
 
 /** Start Bolt App */
+let isShuttingDown = false;
+
+async function shutdown(signal: string): Promise<void> {
+  if (isShuttingDown) {
+    return;
+  }
+
+  isShuttingDown = true;
+  app.logger.info(`Received ${signal}. Stopping Bolt app...`);
+
+  try {
+    await app.stop();
+    app.logger.info('Bolt app stopped.');
+    process.exit(0);
+  } catch (error) {
+    app.logger.error('Error while stopping Bolt app', error);
+    process.exit(1);
+  }
+}
+
+process.once('SIGTERM', () => {
+  void shutdown('SIGTERM');
+});
+
+process.once('SIGINT', () => {
+  void shutdown('SIGINT');
+});
+
 (async () => {
   try {
     if (!validateCurrentProvider()) {

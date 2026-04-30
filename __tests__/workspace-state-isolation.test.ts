@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { SessionType, getSessionData, purgeWorkspaceSessions, storeSessionData } from 'services/common/session-store';
 import { closeDatabase } from 'services/db/connection';
 import {
   type DocumentUpdate,
@@ -8,7 +9,7 @@ import {
   purgeWorkspaceAppState,
   storeDocumentUpdates,
 } from 'services/document/document-store';
-import { SessionType, getSessionData, purgeWorkspaceSessions, storeSessionData } from 'services/common/session-store';
+import { type WorkspaceConfig, WorkspaceStore } from 'services/workspace/workspace-store';
 
 const createDocumentUpdate = (fileName: string): DocumentUpdate => ({
   index: 0,
@@ -26,6 +27,23 @@ const createDocumentUpdate = (fileName: string): DocumentUpdate => ({
   timestamp: '123',
   suggestionType: 'UPDATE',
 });
+
+const createWorkspaceConfig = (workspaceId: string, managerId: string): WorkspaceConfig => ({
+  workspaceId,
+  managers: [managerId],
+  choirUsers: [managerId],
+  organizationName: workspaceId,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+});
+
+const githubUser = {
+  id: 123,
+  login: 'manager',
+  name: 'Manager',
+  email: 'manager@example.com',
+  avatar_url: 'https://example.com/avatar.png',
+};
 
 describe('workspace state isolation', () => {
   let tempDir: string;
@@ -63,16 +81,8 @@ describe('workspace state isolation', () => {
 
     storeDocumentUpdates(userId, [workspaceAUpdate], undefined, undefined, 'TA');
     storeDocumentUpdates(userId, [workspaceBUpdate], undefined, undefined, 'TB');
-    storeSessionData(
-      'session-a',
-      { workspaceId: 'TA', value: 'remove-me' },
-      SessionType.DOCUMENT_UPDATE,
-    );
-    storeSessionData(
-      'session-b',
-      { workspaceId: 'TB', value: 'keep-me' },
-      SessionType.DOCUMENT_UPDATE,
-    );
+    storeSessionData('session-a', { workspaceId: 'TA', value: 'remove-me' }, SessionType.DOCUMENT_UPDATE);
+    storeSessionData('session-b', { workspaceId: 'TB', value: 'keep-me' }, SessionType.DOCUMENT_UPDATE);
 
     expect(purgeWorkspaceAppState('TA')).toBe(1);
     expect(purgeWorkspaceSessions('TA')).toBe(1);
@@ -86,5 +96,26 @@ describe('workspace state isolation', () => {
     });
 
     purgeWorkspaceSessions('TB');
+  });
+
+  it('scopes GitHub OAuth tokens by workspace and user', async () => {
+    const userId = 'U123';
+    const workspaceStore = new WorkspaceStore();
+
+    await workspaceStore.saveWorkspaceConfig(createWorkspaceConfig('TA', userId));
+    await workspaceStore.saveWorkspaceConfig(createWorkspaceConfig('TB', userId));
+
+    await workspaceStore.setUserGithubToken('TA', userId, {
+      accessToken: 'github-token-a',
+      user: githubUser,
+    });
+    await workspaceStore.setUserGithubToken('TB', userId, {
+      accessToken: 'github-token-b',
+      user: githubUser,
+    });
+
+    expect(await workspaceStore.getUserGithubToken('TA', userId)).toBe('github-token-a');
+    expect(await workspaceStore.getUserGithubToken('TB', userId)).toBe('github-token-b');
+    expect(await workspaceStore.getUserGithubToken('TA', 'U999')).toBeNull();
   });
 });

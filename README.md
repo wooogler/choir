@@ -42,7 +42,8 @@ Minimum variables for local development:
 
 Optional but commonly used:
 
-- `GITHUB_TOKEN`
+- `GITHUB_OAUTH_CLIENT_ID`
+- `GITHUB_OAUTH_CLIENT_SECRET`
 - `GITHUB_WEBHOOK_SECRET`
 - `MANAGER_PROMOTION_PASSWORD`
 - `CHOIR_CONSENT_FORM_URL`
@@ -51,7 +52,7 @@ Optional but commonly used:
 QMD question-answer retrieval can be enabled explicitly with `RETRIEVAL_PROVIDER=qmd`.
 To use QMD for document-update anchoring as well, set `UPDATE_RETRIEVAL_PROVIDER=qmd`.
 
-`env.sample` documents the full set currently used by the app.
+`env.sample` documents the full set currently used by the app. CHOIR does not use a server-wide GitHub token for repository access in multi-workspace mode; each manager connects their own GitHub account.
 
 ### 3. Create the Slack app
 
@@ -70,19 +71,23 @@ If you plan to run in HTTP mode, update the manifest request URLs before install
 For local development with Socket Mode:
 
 ```bash
-pnpm dev
+pnpm dev:socket
 ```
 
-For HTTP mode:
+This reads `.env.development`, uses `SLACK_MODE=single`, and stores local state in `data/choir-dev.db`, so it can run alongside the deployed OAuth service.
+
+For HTTP/OAuth debugging on a separate local port:
 
 ```bash
-pnpm dev:prod
+pnpm dev:oauth
 ```
 
 Notes:
 
 - `pnpm dev` uses Socket Mode because `NODE_ENV=development`.
 - `pnpm dev:prod` uses HTTP mode because `NODE_ENV=production`.
+- `pnpm dev:socket` is the recommended no-deploy loop for feature debugging.
+- `pnpm dev:oauth` listens on port `3001`; expose that port with ngrok or a dev nginx route when testing OAuth install/redirect behavior.
 - GitHub webhooks are only exposed in HTTP mode.
 
 ## Slack Installation Modes
@@ -111,6 +116,8 @@ Legacy JSON files under `data/*-config.json` and `data/slack-installations/` are
 ## Scripts
 
 - `pnpm dev`: local development in Socket Mode
+- `pnpm dev:socket`: isolated Socket Mode development using `.env.development` and `data/choir-dev.db`
+- `pnpm dev:oauth`: isolated OAuth/HTTP development on port `3001`
 - `pnpm dev:watch`: development with `nodemon`
 - `pnpm dev:prod`: HTTP-mode runtime
 - `pnpm dev:web`: development with web content enhancement enabled
@@ -152,6 +159,7 @@ Required host state:
 - `.env` with production Slack/OpenAI/GitHub settings
 - `data/` mounted into the container at `/app/data`
 - nginx proxying `https://your-domain/` to `http://127.0.0.1:3000`
+- Podman binding the app port to loopback only, never `0.0.0.0`
 
 Build and deploy on this server:
 
@@ -160,6 +168,7 @@ Build and deploy on this server:
 ```
 
 The script builds `choir:latest`, installs a `choir.service` systemd unit, mounts `./data`, and checks `/healthz`.
+It refuses non-loopback `HOST_BIND` values by default so the app port is not exposed directly to the network.
 
 Useful commands:
 
