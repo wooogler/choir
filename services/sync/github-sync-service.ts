@@ -1,8 +1,8 @@
 import { Logger } from 'services/common/logger';
+import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService, type MarkdownFile } from 'services/github';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { getGithubRepo } from 'services/slack';
-import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceMirrorMarkdownLoader } from 'services/workspace/mirror-markdown-loader';
 import { WorkspaceMirrorService, type WorkspaceSyncSource } from 'services/workspace/mirror-service';
 
@@ -169,7 +169,7 @@ export class GitHubSyncService {
     }
 
     VectorStoreService.getInstance().setLoadedMarkdownFiles(mirroredMarkdownFiles, params.workspaceId);
-    Logger.info(`GitHubSyncService: hydrated vector store metadata from mirror`, {
+    Logger.info('GitHubSyncService: hydrated vector store metadata from mirror', {
       workspaceId: params.workspaceId,
       owner: params.owner,
       repo: params.repo,

@@ -5,15 +5,14 @@ import { SlackUsageMonitor, usageMonitoringMiddleware } from 'services/slack/usa
 import registerListeners from './listeners';
 
 import { AppConfig } from '@/config';
+import { VectorStoreService } from 'services/file-registry/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
-import { isQmdRetrievalEnabled } from 'services/retrieval/provider-config';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { getGithubRepo } from 'services/slack';
 import { SqliteSlackInstallationStore } from 'services/slack/sqlite-installation-store';
 import { ensureWorkspaceInitialized } from 'services/slack/workspace-bootstrap';
 import { GitHubSyncService } from 'services/sync/github-sync-service';
-import { VectorStoreService } from 'services/vector/main-service';
 
 dotenv.config({ path: process.env.ENV_FILE || process.env.DOTENV_CONFIG_PATH || '.env' });
 
@@ -136,7 +135,7 @@ function setupPublicSite(): void {
     res.status(200).json({
       ok: true,
       slackMode: slackConfig.mode,
-      qmdRetrieval: isQmdRetrievalEnabled(),
+      qmdRetrieval: true,
     });
   });
 }

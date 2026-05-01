@@ -2,13 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Document } from '@langchain/core/documents';
 import { Logger } from 'services/common/logger';
-import { expandQueryWithOpenAI } from 'services/retrieval/openai-query-expansion';
-import { getGithubRepo } from 'services/slack';
-import type { DocumentMetadata } from 'services/vector/types';
-import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { sectionPathToOriginalPath, stripItemHeadingPrefix } from 'services/document/markdown-section-splitter';
+import type { DocumentMetadata } from 'services/file-registry/types';
 import type { RetrievalDocument } from 'services/retrieval';
+import { expandQueryWithOpenAI } from 'services/retrieval/openai-query-expansion';
 import { searchQmdLexWithFallback } from 'services/retrieval/qmd-lex-search';
+import { getGithubRepo } from 'services/slack';
+import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { type UpdateAnchor, stripSnippetHeader } from './update-anchor';
 
 interface QmdLexResult {
@@ -116,7 +116,9 @@ export class QmdUpdateAnchorService {
 
   private async loadQmdModule(): Promise<QmdModule> {
     if (!this.qmdModulePromise) {
-      const importQmd = new Function('specifier', 'return import(specifier);') as (specifier: string) => Promise<QmdModule>;
+      const importQmd = new Function('specifier', 'return import(specifier);') as (
+        specifier: string,
+      ) => Promise<QmdModule>;
       this.qmdModulePromise = importQmd('@tobilu/qmd');
     }
 
@@ -142,7 +144,8 @@ export class QmdUpdateAnchorService {
     } else if (displayPath) {
       const normalizedDisplayPath = displayPath.split(path.sep).join(path.posix.sep).replace(/^\/+/, '');
       const separatorIndex = normalizedDisplayPath.indexOf('/');
-      sectionRelativePath = separatorIndex >= 0 ? normalizedDisplayPath.slice(separatorIndex + 1) : normalizedDisplayPath;
+      sectionRelativePath =
+        separatorIndex >= 0 ? normalizedDisplayPath.slice(separatorIndex + 1) : normalizedDisplayPath;
     } else {
       const absolutePath = path.isAbsolute(rawPath) ? rawPath : path.join(sectionsRoot, rawPath);
       sectionRelativePath = path.relative(sectionsRoot, absolutePath).split(path.sep).join(path.posix.sep);
@@ -357,7 +360,9 @@ export class QmdUpdateAnchorService {
   public async warmup(params: { workspaceId: string; query?: string }): Promise<void> {
     const storeEntry = await this.getOrCreateStore(params.workspaceId);
     if (!storeEntry) {
-      Logger.warn(`QmdUpdateAnchorService: skipping warm-up because no store is available for workspace ${params.workspaceId}`);
+      Logger.warn(
+        `QmdUpdateAnchorService: skipping warm-up because no store is available for workspace ${params.workspaceId}`,
+      );
       return;
     }
 

@@ -1,11 +1,11 @@
 import type { Document } from '@langchain/core/documents';
 import type { WebClient } from '@slack/web-api';
+import type { VectorStoreService } from 'services/file-registry/main-service';
+import type { DocumentMetadata } from 'services/file-registry/types';
 import { type NewSectionSuggestion, createNewSectionFromKnowledge } from 'services/llm/content-generator';
 import { editMarkdownWithKnowledge } from 'services/llm/document-editor';
 import { createDiffBlock } from 'services/slack';
 import type { SlackMessage } from 'services/slack';
-import type { VectorStoreService } from 'services/vector/main-service';
-import type { DocumentMetadata } from 'services/vector/types';
 import { convertMarkdownToSlackText } from './markdown';
 import type { UpdateAnchor } from './update-anchor';
 
@@ -104,7 +104,7 @@ export async function processDocument(
 ): Promise<ProcessedDocument | null> {
   try {
     if (!doc.metadata?.fileName || !doc.metadata?.githubUrl || !doc.metadata?.nodeId) {
-      console.log(`메타데이터 누락된 문서 건너뜀:`, doc.metadata);
+      console.log('메타데이터 누락된 문서 건너뜀:', doc.metadata);
       return null;
     }
 

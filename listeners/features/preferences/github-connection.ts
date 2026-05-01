@@ -1,10 +1,10 @@
 import type { AllMiddlewareArgs, BlockAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
 import { GitHubOAuthDeviceFlow } from 'services/github/oauth-device-flow';
 import { getRepositoryAccessError, normalizeRepositoryPath } from 'services/github/repository-access';
 import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from 'services/slack';
 import { GitHubSyncService } from 'services/sync/github-sync-service';
-import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
 

@@ -1,7 +1,7 @@
 import type { Document } from '@langchain/core/documents';
 import { getDatabase } from 'services/db/connection';
+import type { DocumentMetadata } from '../file-registry/types';
 import type { SlackMessage } from '../slack';
-import type { DocumentMetadata } from '../vector/types';
 import type { UpdateAnchor } from './update-anchor';
 
 export interface DocumentUpdate {

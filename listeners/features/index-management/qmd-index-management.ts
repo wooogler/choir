@@ -3,12 +3,11 @@ import { logAppHomeButtonClick } from 'services/common/interaction-tracker';
 import { parseMarkdownToTree } from 'services/document';
 import { treeToMarkdown } from 'services/document/markdown';
 import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
+import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
 import { getRetrievalProvider } from 'services/retrieval';
-import { isQmdRetrievalEnabled } from 'services/retrieval/provider-config';
 import { QmdRetrievalProvider } from 'services/retrieval/qmd-provider';
 import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
-import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
@@ -87,7 +86,7 @@ export const reloadFromGithubAction = async ({
 
     // 저장소 정보가 없으면 VectorStoreService에서 현재 로드된 파일들로부터 추출
     if (!repoInfo) {
-      const extractedRepoInfo = vectorStore.extractRepoInfoFromFiles();
+      const extractedRepoInfo = vectorStore.extractRepoInfoFromFiles(workspaceId);
       if (extractedRepoInfo) {
         repoInfo = extractedRepoInfo;
       }
@@ -355,24 +354,6 @@ export const rebuildQmdIndexAction = async ({
       return;
     }
 
-    if (!isQmdRetrievalEnabled()) {
-      await client.chat.postMessage({
-        channel: body.user.id,
-        text: '❌ QMD retrieval is not enabled in this environment.',
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: '❌ QMD retrieval is not enabled in this environment.',
-            },
-            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-          },
-        ],
-      });
-      return;
-    }
-
     const repoInfo = await getGithubRepo(workspaceId);
     if (!repoInfo) {
       await client.chat.postMessage({
@@ -598,7 +579,7 @@ export const normalizeMarkdownFilesAction = async ({
     if (!repoInfo) {
       logger.info('No repository info found, trying to extract from vector store...');
 
-      const extractedRepoInfo = vectorStore.extractRepoInfoFromFiles();
+      const extractedRepoInfo = vectorStore.extractRepoInfoFromFiles(workspaceId);
 
       if (extractedRepoInfo) {
         repoInfo = extractedRepoInfo;

@@ -61,7 +61,7 @@ export async function formatSlackMessageBlock(message: SlackMessage, truncate = 
 
   const fullDisplayText = `*${message.username || '사용자'}* ${timestamp}\n${message.text}`;
   const displayText =
-    truncate && fullDisplayText.length > 70 ? fullDisplayText.substring(0, 70) + '...' : fullDisplayText;
+    truncate && fullDisplayText.length > 70 ? `${fullDisplayText.substring(0, 70)}...` : fullDisplayText;
 
   const key = storeMessage(message);
 
@@ -145,12 +145,12 @@ export async function replaceMentionsInText(text: string, client: WebClient): Pr
 export const removeDuplicateMessages = (messages: SlackMessage[]): SlackMessage[] => {
   const uniqueMessages = new Map<string, SlackMessage>();
 
-  messages.forEach((msg) => {
+  for (const msg of messages) {
     const key = `${msg.userId}-${msg.ts}-${msg.text}`;
     if (!uniqueMessages.has(key)) {
       uniqueMessages.set(key, msg);
     }
-  });
+  }
 
   return Array.from(uniqueMessages.values()).sort(
     (a, b) => Number.parseInt(a.ts || '0') - Number.parseInt(b.ts || '0'),

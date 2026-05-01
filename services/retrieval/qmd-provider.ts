@@ -3,8 +3,8 @@ import path from 'node:path';
 import { Document } from '@langchain/core/documents';
 import { Logger } from 'services/common/logger';
 import { sectionPathToOriginalPath } from 'services/document/markdown-section-splitter';
+import type { DocumentMetadata } from 'services/file-registry/types';
 import { getGithubRepo } from 'services/slack';
-import type { DocumentMetadata } from 'services/vector/types';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { expandQueryWithOpenAI } from './openai-query-expansion';
 import { searchQmdLexWithFallback } from './qmd-lex-search';
@@ -242,7 +242,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
 
     if (cached) {
       if (syncState?.updatedAt && syncState.updatedAt !== cached.indexedAt) {
-        Logger.info(`QmdRetrievalProvider: workspace mirror changed, refreshing QMD index`, {
+        Logger.info('QmdRetrievalProvider: workspace mirror changed, refreshing QMD index', {
           workspaceId,
           updatedAt: syncState.updatedAt,
         });

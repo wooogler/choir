@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { WebClient } from '@slack/web-api';
 import { getDataPath } from 'services/common/data-path';
-import { withRateLimit } from 'services/slack/rate-limit-handler';
 import { Logger } from 'services/common/logger';
-import { decryptJson, encryptJson } from 'services/db/crypto';
 import { getDatabase } from 'services/db/connection';
+import { decryptJson, encryptJson } from 'services/db/crypto';
+import { withRateLimit } from 'services/slack/rate-limit-handler';
 
 export interface WorkspaceConfig {
   workspaceId: string;
@@ -336,7 +336,7 @@ export class WorkspaceStore {
    */
   public async getCachedMarkdownFiles(workspaceId: string): Promise<Array<{ name: string; path: string }> | null> {
     const config = await this.getWorkspaceConfig(workspaceId);
-    
+
     // 캐시가 아예 없는 경우에만 null 반환
     if (!config?.markdownFiles) {
       return null;
@@ -351,7 +351,7 @@ export class WorkspaceStore {
       if (cacheAge > twentyFourHours) {
         Logger.info(`Markdown files cache expired for workspace ${workspaceId}, triggering background refresh`);
         // 백그라운드 새로고침 (await 하지 않음)
-        this.refreshMarkdownFilesCache(workspaceId).catch(error => {
+        this.refreshMarkdownFilesCache(workspaceId).catch((error) => {
           Logger.warn('Background markdown files refresh failed:', error);
         });
       }
@@ -374,8 +374,10 @@ export class WorkspaceStore {
       // GithubService를 동적으로 import하여 순환 의존성 방지
       const GithubServiceModule = await import('services/github/github-service');
       const githubService = GithubServiceModule.default.getInstance();
-      
-      Logger.info(`Refreshing markdown files cache for workspace ${workspaceId} from GitHub repo ${config.githubRepo.owner}/${config.githubRepo.repo}`);
+
+      Logger.info(
+        `Refreshing markdown files cache for workspace ${workspaceId} from GitHub repo ${config.githubRepo.owner}/${config.githubRepo.repo}`,
+      );
 
       const markdownFiles = await githubService.getAllMarkdownFiles({
         owner: config.githubRepo.owner,
@@ -389,9 +391,11 @@ export class WorkspaceStore {
         name: file.name,
         path: file.path,
       }));
-      
+
       await this.setMarkdownFilesCache(workspaceId, fileList);
-      Logger.info(`Successfully refreshed markdown files cache for workspace ${workspaceId}, found ${fileList.length} files`);
+      Logger.info(
+        `Successfully refreshed markdown files cache for workspace ${workspaceId}, found ${fileList.length} files`,
+      );
 
       try {
         const { GitHubSyncService } = await import('services/sync/github-sync-service');
@@ -409,13 +413,15 @@ export class WorkspaceStore {
 
       // 벡터 스토어도 백그라운드에서 업데이트 (선택적)
       try {
-        const { VectorStoreService } = await import('services/vector/main-service');
+        const { VectorStoreService } = await import('services/file-registry/main-service');
         const vectorStore = VectorStoreService.getInstance();
-        
+
         // 캐시를 사용하지 않고 새로 초기화
         const success = await vectorStore.initialize(markdownFiles, false, true, workspaceId);
         if (success) {
-          Logger.info(`Successfully updated vector store for workspace ${workspaceId} with ${markdownFiles.length} files`);
+          Logger.info(
+            `Successfully updated vector store for workspace ${workspaceId} with ${markdownFiles.length} files`,
+          );
         }
       } catch (vectorError) {
         // 벡터 스토어 업데이트 실패는 로그만 남기고 진행

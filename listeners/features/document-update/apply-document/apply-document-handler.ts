@@ -11,11 +11,11 @@ import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick, logModalSubmit } from 'services/common/interaction-tracker';
 import { DocumentUpdate, getStoredDocumentUpdates } from 'services/document';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
+import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService, applyDocumentUpdatesToGithub } from 'services/github';
 import { getUserName, parseGithubUrl } from 'services/slack';
 import { getWorkspaceId } from 'services/slack';
 import { createDocumentUpdateText } from 'services/slack/message-text-utils';
-import { VectorStoreService } from 'services/vector/main-service';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 // Store user selection state
@@ -351,15 +351,13 @@ const applySelectedToGithubAction = async ({
       const errorMessage = `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : 'Unknown error'}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`;
 
       // 이미 연 DM 채널이 있으면 재사용, 없으면 새로 열기
-      let targetChannelId: string | undefined;
-
       if (dmResult?.ok && dmResult.channel?.id) {
-        targetChannelId = dmResult.channel.id;
+        const targetChannel = dmResult.channel.id;
 
         // 로딩 메시지가 있으면 업데이트, 없으면 새 메시지
         if (loadingMessage?.ok && loadingMessage.ts) {
           await client.chat.update({
-            channel: targetChannelId!,
+            channel: targetChannel,
             ts: loadingMessage.ts,
             text: errorMessage,
             blocks: [
@@ -375,7 +373,7 @@ const applySelectedToGithubAction = async ({
           });
         } else {
           await client.chat.postMessage({
-            channel: targetChannelId!,
+            channel: targetChannel,
             text: errorMessage,
             blocks: [
               {
@@ -474,7 +472,7 @@ export const handleNewSectionModalSubmission = async ({
     logger.info(`Recommended file: ${recommendedFile}`);
 
     // 디버깅: 모달 values 전체 구조 확인
-    logger.info(`Modal values structure:`, JSON.stringify(values, null, 2));
+    logger.info('Modal values structure:', JSON.stringify(values, null, 2));
 
     if (!sectionTitle || !sectionBody) {
       await client.chat.postMessage({
@@ -730,7 +728,7 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
           ],
         });
 
-        logger.info(`Updated button message after successful section creation`);
+        logger.info('Updated button message after successful section creation');
       }
       // Check for main message from integrated UI
       else if (sessionId) {
@@ -751,7 +749,7 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
             ],
           });
 
-          logger.info(`Updated main message after successful section creation`);
+          logger.info('Updated main message after successful section creation');
         }
         // Check for empty vector store message
         else if (sessionData?.emptyVectorStoreMessageTs && sessionData?.emptyVectorStoreChannelId) {
@@ -768,7 +766,7 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
             ],
           });
 
-          logger.info(`Updated empty vector store message after successful section creation`);
+          logger.info('Updated empty vector store message after successful section creation');
         }
       }
     } catch (updateError) {

@@ -1,4 +1,4 @@
-import type { DocumentMetadata } from 'services/vector/types';
+import type { DocumentMetadata } from 'services/file-registry/types';
 
 /**
  * 헤딩 텍스트를 GitHub 앵커 링크로 변환하는 함수
@@ -67,8 +67,8 @@ export function formatFullPathWithLinks(metadata: DocumentMetadata): string {
     const fileLink = `<${githubUrl}|${fileName}>`;
     const sectionPath = formatSectionPathWithLinks(metadata);
     return `${fileLink} > ${sectionPath}`;
-  } else {
-    const sectionPath = formatSectionPath(metadata);
-    return `${fileName} > ${sectionPath}`;
   }
+
+  const sectionPath = formatSectionPath(metadata);
+  return `${fileName} > ${sectionPath}`;
 }

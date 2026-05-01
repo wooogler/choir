@@ -1,6 +1,6 @@
 import type { Logger } from '@slack/bolt';
 import type { WebClient } from '@slack/web-api';
-import { isQmdRetrievalEnabled } from 'services/retrieval/provider-config';
+import { VectorStoreService } from 'services/file-registry/main-service';
 import {
   getCHOIRUsers,
   getGithubRepo,
@@ -10,7 +10,6 @@ import {
   isManager,
   isWorkspaceOwner,
 } from 'services/slack';
-import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 
 export const buildHomeView = async (client: WebClient, logger: Logger, workspaceId: string, userId: string) => {
@@ -486,7 +485,7 @@ const buildDocumentConnectionBlocks = async (
     const savedRepoInfo = await getGithubRepo(workspaceId);
     if (savedRepoInfo) {
       const vectorStore = VectorStoreService.getInstance();
-      const diagnosis = vectorStore.diagnoseVectorStore();
+      const diagnosis = vectorStore.diagnoseVectorStore(workspaceId);
       const managementButtons: Array<Record<string, unknown>> = [
         {
           type: 'button',
@@ -546,35 +545,33 @@ const buildDocumentConnectionBlocks = async (
         },
       ];
 
-      if (isQmdRetrievalEnabled()) {
-        managementButtons.push({
-          type: 'button',
+      managementButtons.push({
+        type: 'button',
+        text: {
+          type: 'plain_text',
+          text: 'Rebuild QMD Index',
+          emoji: true,
+        },
+        action_id: 'rebuild_qmd_index',
+        confirm: {
+          title: {
+            type: 'plain_text',
+            text: 'Rebuild QMD Index?',
+          },
           text: {
             type: 'plain_text',
-            text: 'Rebuild QMD Index',
-            emoji: true,
+            text: 'This will delete the local QMD SQLite index and rebuild it from the synced markdown mirror. Use this after chunking changes or if retrieval looks stale.',
           },
-          action_id: 'rebuild_qmd_index',
           confirm: {
-            title: {
-              type: 'plain_text',
-              text: 'Rebuild QMD Index?',
-            },
-            text: {
-              type: 'plain_text',
-              text: 'This will delete the local QMD SQLite index and rebuild it from the synced markdown mirror. Use this after chunking changes or if retrieval looks stale.',
-            },
-            confirm: {
-              type: 'plain_text',
-              text: 'Rebuild',
-            },
-            deny: {
-              type: 'plain_text',
-              text: 'Cancel',
-            },
+            type: 'plain_text',
+            text: 'Rebuild',
           },
-        });
-      }
+          deny: {
+            type: 'plain_text',
+            text: 'Cancel',
+          },
+        },
+      });
 
       blocks.push(
         {

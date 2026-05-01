@@ -21,11 +21,11 @@ if ! command -v podman >/dev/null 2>&1; then
 fi
 
 if [ ! -f .env ]; then
-  echo ".env not found. Create it from env.sample before deploying."
+  echo ".env not found. Create it from .env.example before deploying."
   exit 1
 fi
 
-if [ ! -f Containerfile ]; then
+if [ ! -f deployment/Containerfile ]; then
   echo "Containerfile not found."
   exit 1
 fi
@@ -67,7 +67,7 @@ if [ ! -f dist/app.js ]; then
 fi
 
 echo "Building image ${IMAGE_NAME}..."
-podman build -t "$IMAGE_NAME" -f Containerfile .
+podman build -t "$IMAGE_NAME" -f deployment/Containerfile .
 
 echo "Copying image to root podman storage..."
 podman save "$IMAGE_NAME" | sudo podman load

@@ -2,9 +2,9 @@ import { Logger } from 'services/common/logger';
 import { purgeWorkspaceSessions } from 'services/common/session-store';
 import { purgeWorkspaceAppState } from 'services/document/document-store';
 import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
+import { VectorStoreService } from 'services/file-registry/main-service';
 import { getRetrievalProvider } from 'services/retrieval';
 import { SqliteSlackInstallationStore } from 'services/slack/sqlite-installation-store';
-import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 

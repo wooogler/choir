@@ -137,7 +137,7 @@ async function performAutoReloadForWorkspace(
     const firstManager = managers[0];
 
     // VectorStoreService를 직접 사용해서 reload 수행
-    const { VectorStoreService } = await import('services/vector/main-service');
+    const { VectorStoreService } = await import('services/file-registry/main-service');
     const { GithubService } = await import('services/github');
 
     const githubService = GithubService.getInstance();

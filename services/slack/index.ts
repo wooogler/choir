@@ -37,14 +37,14 @@ export {
   removeDuplicateMessages,
   formatTimestampToDateString,
   formatSlackMessageSection,
-} from './message-utils';
+} from './message-store';
 
 // Repository Management
 export {
   storeGithubRepo,
   getGithubRepo,
   parseGithubUrl,
-} from './repository-management';
+} from '../github/repository-management';
 
 // Q&A Channel
 export {
@@ -64,9 +64,6 @@ export {
   setOrganizationDescription,
   getOrganizationDescription,
 } from './organization';
-
-// Home Screen
-export { HomeScreenService } from './home-screen';
 
 // Utils
 export {

@@ -1,7 +1,7 @@
 import type { Document } from '@langchain/core/documents';
-import type { DocumentMetadata } from 'services/vector/types';
+import type { DocumentMetadata } from 'services/file-registry/types';
 
-export type RetrievalProviderName = 'faiss' | 'qmd';
+export type RetrievalProviderName = 'qmd';
 
 export interface RetrievalSearchParams {
   query: string;

@@ -32,7 +32,8 @@
       "@/constants": ["src/constants"],
       "@/config": ["src/config"],
       "@/utils": ["src/utils"],
-      "services/*": ["services/*"]
+      "services/*": ["services/*"],
+      "types/*": ["src/types/*"]
     } /* Specify a set of entries that re-map imports to additional lookup locations. */,
     // "rootDirs": [],                                   /* Allow multiple folders to be treated as one when resolving modules. */
     // "typeRoots": [],                                  /* Specify multiple folders that act like './node_modules/@types'. */
@@ -99,9 +100,5 @@
     // "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
     "skipLibCheck": true /* Skip type checking all .d.ts files. */
   },
-  "exclude": [
-    "node_modules",
-    "dist",
-    "__tests__"
-  ]
+  "exclude": ["node_modules", "dist", "__tests__"]
 }

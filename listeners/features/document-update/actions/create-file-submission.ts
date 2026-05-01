@@ -2,9 +2,9 @@ import type { AllMiddlewareArgs, SlackViewMiddlewareArgs, ViewSubmitAction } fro
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/interaction-tracker';
 import { DocumentUpdateService } from 'services/document/document-update-service';
+import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
 import { getUserName, getWorkspaceId } from 'services/slack';
-import { VectorStoreService } from 'services/vector/main-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -89,6 +89,22 @@ export const createFileSubmissionCallback = async ({
         },
       ],
     });
+    const updateProcessingMessage = async (message: { text: string; blocks: any[] }) => {
+      if (processingMessage.ts) {
+        await client.chat.update({
+          channel: channelId,
+          ts: processingMessage.ts,
+          ...message,
+        });
+        return;
+      }
+
+      logger.warn('Processing message timestamp missing; posting a new status message instead.');
+      await client.chat.postMessage({
+        channel: channelId,
+        ...message,
+      });
+    };
 
     // Get workspace configuration
     const workspaceId = await getWorkspaceId(client);
@@ -123,9 +139,7 @@ export const createFileSubmissionCallback = async ({
     } catch (githubError: any) {
       // Handle file already exists error
       if (githubError.status === 422 || githubError.message?.includes('already exists')) {
-        await client.chat.update({
-          channel: channelId,
-          ts: processingMessage.ts!,
+        await updateProcessingMessage({
           text: '❌ File creation failed',
           blocks: [
             {
@@ -210,9 +224,7 @@ export const createFileSubmissionCallback = async ({
     }
 
     // Update processing message to success (without Start Review button - process ends here)
-    await client.chat.update({
-      channel: channelId,
-      ts: processingMessage.ts!,
+    await updateProcessingMessage({
       text: '✅ File created successfully!',
       blocks: [
         {

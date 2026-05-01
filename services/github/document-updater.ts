@@ -3,8 +3,8 @@ import { Logger } from 'services/common/logger';
 import type { DocumentUpdate } from 'services/document';
 import { DocumentUpdateService } from 'services/document/document-update-service';
 import { applyAnchorReplacement } from 'services/document/update-anchor';
+import { VectorStoreService } from 'services/file-registry/main-service';
 import { parseGithubUrl } from 'services/slack';
-import { VectorStoreService } from 'services/vector/main-service';
 import GithubService from './github-service';
 
 /**

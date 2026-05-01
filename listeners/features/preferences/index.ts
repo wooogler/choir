@@ -1,10 +1,10 @@
 import type { App } from '@slack/bolt';
-import { diagnoseVectorStoreAction } from '../index-management/vector-store-diagnosis';
+import { diagnoseVectorStoreAction } from '../index-management/qmd-index-diagnosis';
 import {
   normalizeMarkdownFilesAction,
   rebuildQmdIndexAction,
   reloadFromGithubAction,
-} from '../index-management/vector-store-management';
+} from '../index-management/qmd-index-management';
 import { githubRepoUrlInputCallback, testGithubConnectionCallback } from './github-connection';
 import { addManagerCallback, removeManagerCallback, selectUserCallback } from './manage-permissions';
 import qaChannelActions from './qa-channel-actions'; // default export { register }
