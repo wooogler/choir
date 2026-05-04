@@ -1,9 +1,15 @@
 node_modules
 .DS_Store
+.env.*
+!.env.example
 .env.slack
 .env
 .env.development
 dist
+coverage/
+.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
 .choir/*
 output/
 data/
