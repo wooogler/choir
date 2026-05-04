@@ -107,20 +107,26 @@ app.use(usageMonitoringMiddleware);
 const gitHubSyncService = GitHubSyncService.getInstance();
 const vectorStore = VectorStoreService.getInstance();
 
+function getExpressRouter(): any {
+  // HTTP mode: use the ExpressReceiver's router
+  if (receiver) return receiver.router;
+  // Socket Mode: Bolt still starts an Express server internally via SocketModeReceiver
+  return (app as any).receiver?.router;
+}
+
 function setupPublicSite(): void {
-  if (!receiver) {
-    return;
-  }
+  const router = getExpressRouter();
+  if (!router) return;
 
   const publicRoot = path.join(process.cwd(), 'public');
   const docsAppRoot = path.join(publicRoot, 'docs-app');
   const docsAppIndex = path.join(docsAppRoot, 'index.html');
 
-  receiver.router.get('/', (_req: any, res: any) => {
+  router.get('/', (_req: any, res: any) => {
     res.sendFile(path.join(publicRoot, 'index.html'));
   });
 
-  receiver.router.get('/assets/:fileName', (req: any, res: any) => {
+  router.get('/assets/:fileName', (req: any, res: any) => {
     const fileName = String(req.params.fileName || '');
     const allowedFiles = new Set(['site.css', 'site.js']);
 
@@ -131,11 +137,11 @@ function setupPublicSite(): void {
     return res.sendFile(path.join(publicRoot, 'assets', fileName));
   });
 
-  receiver.router.get('/healthz', (_req: any, res: any) => {
+  router.get('/healthz', (_req: any, res: any) => {
     res.status(200).json({ ok: true });
   });
 
-  receiver.router.get('/readyz', (_req: any, res: any) => {
+  router.get('/readyz', (_req: any, res: any) => {
     res.status(200).json({
       ok: true,
       slackMode: slackConfig.mode,
@@ -146,11 +152,11 @@ function setupPublicSite(): void {
   // Serve built SPA assets (JS, CSS, etc.)
   if (fs.existsSync(docsAppRoot)) {
     const serveStatic = require('serve-static');
-    receiver.router.use('/docs-app', serveStatic(docsAppRoot));
+    router.use('/docs-app', serveStatic(docsAppRoot));
   }
 
   // API: return raw markdown for a file in the workspace mirror
-  receiver.router.get('/api/docs/:workspaceId/*', async (req: any, res: any) => {
+  router.get('/api/docs/:workspaceId/*', async (req: any, res: any) => {
     try {
       const workspaceId = String(req.params.workspaceId);
       const filePath = String(req.params[0] || '');
@@ -178,7 +184,7 @@ function setupPublicSite(): void {
   });
 
   // SPA fallback: /docs/* → serve SPA index.html
-  receiver.router.get('/docs/*', (_req: any, res: any) => {
+  router.get('/docs/*', (_req: any, res: any) => {
     if (fs.existsSync(docsAppIndex)) {
       return res.sendFile(docsAppIndex);
     }
