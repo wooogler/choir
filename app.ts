@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { App, ExpressReceiver, LogLevel } from '@slack/bolt';
 import * as dotenv from 'dotenv';
@@ -13,6 +14,7 @@ import { getGithubRepo } from 'services/slack';
 import { SqliteSlackInstallationStore } from 'services/slack/sqlite-installation-store';
 import { ensureWorkspaceInitialized } from 'services/slack/workspace-bootstrap';
 import { GitHubSyncService } from 'services/sync/github-sync-service';
+import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 
 dotenv.config({ path: process.env.ENV_FILE || process.env.DOTENV_CONFIG_PATH || '.env' });
 
@@ -111,6 +113,8 @@ function setupPublicSite(): void {
   }
 
   const publicRoot = path.join(process.cwd(), 'public');
+  const docsAppRoot = path.join(publicRoot, 'docs-app');
+  const docsAppIndex = path.join(docsAppRoot, 'index.html');
 
   receiver.router.get('/', (_req: any, res: any) => {
     res.sendFile(path.join(publicRoot, 'index.html'));
@@ -137,6 +141,48 @@ function setupPublicSite(): void {
       slackMode: slackConfig.mode,
       qmdRetrieval: true,
     });
+  });
+
+  // Serve built SPA assets (JS, CSS, etc.)
+  if (fs.existsSync(docsAppRoot)) {
+    const serveStatic = require('serve-static');
+    receiver.router.use('/docs-app', serveStatic(docsAppRoot));
+  }
+
+  // API: return raw markdown for a file in the workspace mirror
+  receiver.router.get('/api/docs/:workspaceId/*', async (req: any, res: any) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      const filePath = String(req.params[0] || '');
+
+      if (!filePath) {
+        return res.status(400).json({ error: 'filePath is required' });
+      }
+
+      const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
+      const resolved = path.resolve(repoRoot, filePath);
+
+      if (!resolved.startsWith(path.resolve(repoRoot))) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      if (!fs.existsSync(resolved)) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      const content = await fs.promises.readFile(resolved, 'utf-8');
+      return res.json({ content, filePath });
+    } catch (err) {
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // SPA fallback: /docs/* → serve SPA index.html
+  receiver.router.get('/docs/*', (_req: any, res: any) => {
+    if (fs.existsSync(docsAppIndex)) {
+      return res.sendFile(docsAppIndex);
+    }
+    return res.status(503).send('Docs viewer not built. Run: pnpm build:web');
   });
 }
 
@@ -189,7 +235,7 @@ const setupGitHubWebhook = () => {
     }
 
     // Add raw body parser middleware for webhook endpoint (for signature verification)
-    receiver.router.use('/webhook/github', (req: any, res: any, next: any) => {
+    receiver.router.use('/webhook/github', (req: any, _res: any, next: any) => {
       let body = '';
       req.setEncoding('utf8');
       req.on('data', (chunk: any) => {

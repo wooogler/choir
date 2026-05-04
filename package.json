@@ -6,6 +6,7 @@
   "packageManager": "pnpm@10.8.1",
   "scripts": {
     "build": "rm -rf dist && tsc && tsc-alias",
+    "build:web": "pnpm --filter choir-web build",
     "start": "node dist/app.js",
     "dev": "NODE_ENV=development ts-node -r tsconfig-paths/register app.ts",
     "dev:socket": "ENV_FILE=.env.development SLACK_MODE=single NODE_ENV=development CHOIR_DATA_DIR=data/dev DATABASE_URL=file:data/dev/choir-dev.db PORT=3030 ts-node -r tsconfig-paths/register app.ts",
