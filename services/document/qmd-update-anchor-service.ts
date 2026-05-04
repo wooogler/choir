@@ -164,10 +164,13 @@ export class QmdUpdateAnchorService {
     const updateResult = (await store.update({ collections: ['docs'] })) as QmdUpdateResult;
 
     if (forceEmbed || updateResult.needsEmbedding > 0) {
-      Logger.info('QmdUpdateAnchorService: generating embeddings for refreshed QMD index.', {
-        forceEmbed,
-        needsEmbedding: updateResult.needsEmbedding,
-      });
+      Logger.info(
+        'QmdUpdateAnchorService: generating embeddings for refreshed QMD index. This can take a while on CPU.',
+        {
+          forceEmbed,
+          needsEmbedding: updateResult.needsEmbedding,
+        },
+      );
       await store.embed({ force: forceEmbed });
     }
 

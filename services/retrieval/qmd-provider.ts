@@ -206,10 +206,13 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     let embedResult: QmdEmbedResult | undefined;
 
     if (forceEmbed || updateResult.needsEmbedding > 0) {
-      Logger.info('QmdRetrievalProvider: generating embeddings for refreshed QMD index.', {
-        forceEmbed,
-        needsEmbedding: updateResult.needsEmbedding,
-      });
+      Logger.info(
+        'QmdRetrievalProvider: generating embeddings for refreshed QMD index. This can take a while on CPU.',
+        {
+          forceEmbed,
+          needsEmbedding: updateResult.needsEmbedding,
+        },
+      );
       embedResult = (await store.embed({ force: forceEmbed })) as QmdEmbedResult;
     }
 
