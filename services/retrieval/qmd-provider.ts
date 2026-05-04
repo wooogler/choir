@@ -5,6 +5,7 @@ import { Logger } from 'services/common/logger';
 import { sectionPathToOriginalPath } from 'services/document/markdown-section-splitter';
 import type { DocumentMetadata } from 'services/file-registry/types';
 import { getGithubRepo } from 'services/slack';
+import { PathMapService } from 'services/workspace/path-map-service';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { expandQueryWithOpenAI } from './openai-query-expansion';
 import { searchQmdLexWithFallback } from './qmd-lex-search';
@@ -111,9 +112,19 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     return WorkspaceMirrorService.getInstance().getSectionsRoot(workspaceId);
   }
 
-  private buildGithubUrl(owner: string, repo: string, branch: string | undefined, relativePath: string): string {
-    const ref = branch || 'main';
+  private buildGithubUrl(
+    owner: string,
+    repo: string,
+    branch: string | undefined,
+    relativePath: string,
+    workspaceId?: string,
+  ): string {
     const normalizedPath = relativePath.split(path.sep).join(path.posix.sep).replace(/^\/+/, '');
+    const docsBaseUrl = process.env.DOCS_BASE_URL?.replace(/\/$/, '');
+    if (docsBaseUrl && workspaceId) {
+      return `${docsBaseUrl}/docs/${workspaceId}/${normalizedPath}`;
+    }
+    const ref = branch || 'main';
     return `https://github.com/${owner}/${repo}/blob/${ref}/${normalizedPath}`;
   }
 
@@ -143,24 +154,26 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     owner: string;
     repo: string;
     branch?: string;
+    workspaceId: string;
   }): RetrievalDocument {
     const relativePath = this.getRelativePathFromQmdPath(
       params.sectionsRoot,
       params.result.filepath,
       params.result.displayPath,
     );
+    const originalPath = PathMapService.getInstance().getOriginalPath(params.workspaceId, relativePath);
     const body = params.result.body || '';
-    const title = params.result.title || path.posix.basename(relativePath);
+    const title = params.result.title || path.posix.basename(originalPath);
 
     return new Document<DocumentMetadata>({
       pageContent: body,
       metadata: {
-        fileName: relativePath,
+        fileName: originalPath,
         nodeId: `qmd:${relativePath}`,
         sectionName: title,
         headingPath: title,
         nodeType: 'document',
-        githubUrl: this.buildGithubUrl(params.owner, params.repo, params.branch, relativePath),
+        githubUrl: this.buildGithubUrl(params.owner, params.repo, params.branch, originalPath, params.workspaceId),
         originalContent: body,
       },
     });
@@ -172,24 +185,26 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     owner: string;
     repo: string;
     branch?: string;
+    workspaceId: string;
   }): RetrievalDocument {
     const relativePath = this.getRelativePathFromQmdPath(
       params.sectionsRoot,
       params.result.file,
       params.result.displayPath,
     );
+    const originalPath = PathMapService.getInstance().getOriginalPath(params.workspaceId, relativePath);
     const body = params.result.bestChunk || params.result.body || '';
-    const title = params.result.title || path.posix.basename(relativePath);
+    const title = params.result.title || path.posix.basename(originalPath);
 
     return new Document<DocumentMetadata>({
       pageContent: body,
       metadata: {
-        fileName: relativePath,
+        fileName: originalPath,
         nodeId: `qmd:${relativePath}`,
         sectionName: title,
         headingPath: title,
         nodeType: 'document',
-        githubUrl: this.buildGithubUrl(params.owner, params.repo, params.branch, relativePath),
+        githubUrl: this.buildGithubUrl(params.owner, params.repo, params.branch, originalPath, params.workspaceId),
         originalContent: body,
       },
     });
@@ -419,6 +434,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
               owner: storeEntry.owner,
               repo: storeEntry.repo,
               branch: storeEntry.branch,
+              workspaceId: params.workspaceId!,
             }),
           );
         }
@@ -457,6 +473,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
           owner: storeEntry.owner,
           repo: storeEntry.repo,
           branch: storeEntry.branch,
+          workspaceId: params.workspaceId!,
         }),
       );
     } catch (error) {

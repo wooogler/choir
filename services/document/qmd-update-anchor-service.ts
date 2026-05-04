@@ -8,6 +8,7 @@ import type { RetrievalDocument } from 'services/retrieval';
 import { expandQueryWithOpenAI } from 'services/retrieval/openai-query-expansion';
 import { searchQmdLexWithFallback } from 'services/retrieval/qmd-lex-search';
 import { getGithubRepo } from 'services/slack';
+import { PathMapService } from 'services/workspace/path-map-service';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { type UpdateAnchor, stripSnippetHeader } from './update-anchor';
 
@@ -292,6 +293,7 @@ export class QmdUpdateAnchorService {
     const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(params.workspaceId);
 
     return filteredResults.map(({ result, relativePath }) => {
+      const originalPath = PathMapService.getInstance().getOriginalPath(params.workspaceId, relativePath);
       const sectionBody = result.body || '';
       const itemText = stripItemHeadingPrefix(sectionBody).trim();
 
@@ -300,7 +302,7 @@ export class QmdUpdateAnchorService {
       let endLine = 1;
       let originalText = itemText;
       try {
-        const originalFilePath = path.join(repoRoot, relativePath);
+        const originalFilePath = path.join(repoRoot, originalPath);
         const originalContent = fs.readFileSync(originalFilePath, 'utf-8').replace(/\r\n/g, '\n');
         const matchIndex = originalContent.indexOf(itemText);
         if (matchIndex >= 0) {
@@ -332,7 +334,7 @@ export class QmdUpdateAnchorService {
       const updateAnchor: UpdateAnchor = {
         source: 'qmd',
         anchorId: `qmd:${relativePath}:${startLine}:${focusLine}`,
-        filePath: relativePath,
+        filePath: originalPath,
         snippet: sectionBody,
         originalText,
         title: result.title,
@@ -347,12 +349,12 @@ export class QmdUpdateAnchorService {
       return new Document<DocumentMetadata>({
         pageContent: sectionBody,
         metadata: {
-          fileName: relativePath,
+          fileName: originalPath,
           nodeId: updateAnchor.anchorId,
           sectionName: result.title,
           headingPath: result.title,
           nodeType: 'document',
-          githubUrl: this.buildGithubUrl(storeEntry.owner, storeEntry.repo, storeEntry.branch, relativePath),
+          githubUrl: this.buildGithubUrl(storeEntry.owner, storeEntry.repo, storeEntry.branch, originalPath),
           originalContent: originalText,
           updateAnchor,
         },

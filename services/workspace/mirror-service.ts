@@ -4,6 +4,7 @@ import { getDataPath } from 'services/common/data-path';
 import { Logger } from 'services/common/logger';
 import type { MarkdownFile } from 'services/github';
 import { splitMarkdownToItems } from 'services/document/markdown-section-splitter';
+import { PathMapService } from './path-map-service';
 
 export type WorkspaceSyncSource = 'startup' | 'webhook' | 'manual-refresh' | 'document-update' | 'create-file';
 
@@ -83,6 +84,7 @@ export class WorkspaceMirrorService {
     await fs.promises.writeFile(targetPath, content, 'utf-8');
 
     await this.writeSectionFiles(workspaceId, relativePath, content);
+    await PathMapService.getInstance().upsert(workspaceId, relativePath);
 
     Logger.info(`Workspace mirror wrote file: ${relativePath}`, { workspaceId, targetPath });
     return targetPath;
@@ -152,6 +154,7 @@ export class WorkspaceMirrorService {
     const expectedPaths = new Set(markdownFiles.map((file) => path.posix.normalize(file.path).replace(/^\/+/, '')));
     await this.removeOrphanedMarkdownFiles(workspaceId, expectedPaths);
     await this.removeOrphanedSectionDirs(workspaceId, expectedPaths);
+    await PathMapService.getInstance().save(workspaceId, markdownFiles.map((f) => f.path));
   }
 
   private async removeOrphanedSectionDirs(workspaceId: string, expectedPaths: Set<string>): Promise<void> {

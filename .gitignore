@@ -6,6 +6,7 @@ node_modules
 .env
 .env.development
 dist
+public/docs-app/
 coverage/
 .tsbuildinfo
 npm-debug.log*
