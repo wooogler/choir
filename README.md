@@ -17,6 +17,19 @@ CHOIR is a Slack bot for organization knowledge workflows. It indexes markdown d
 - GitHub API via Octokit
 - FAISS-based vector search by default, with optional QMD retrieval
 
+## Project layout
+
+- `app.ts`: app bootstrap and HTTP routes
+- `listeners/`: Slack event, action, and view handlers
+- `services/`: GitHub, Slack, retrieval, document, LLM, workspace, and persistence logic
+- `src/`: shared config, constants, types, and utilities
+- `public/`: static web assets
+- `scripts/`: maintenance and migration scripts
+- `docs/`: architecture and implementation notes
+- `deployment/`: container and nginx deployment files
+
+See [docs/architecture.md](docs/architecture.md) for a fuller map of the codebase.
+
 ## Getting started
 
 ### 1. Install dependencies
