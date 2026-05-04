@@ -7,7 +7,7 @@ import {
 } from 'services/document/document-store';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { applySelectedToGithubAction } from '../../apply-document/apply-document-handler';
+import { applySelectedToGithubAction } from '../../apply-document/apply-selected-to-github-action';
 import { notifyOtherManagersAboutUpdate } from '../manager-notifications';
 
 export async function handleKeep(params: {

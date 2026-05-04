@@ -6,8 +6,9 @@ import { fileSelectionForUpdateAction, startFileBasedReviewAction } from './acti
 import { getEditLinkAction } from './actions/get-edit-link';
 import { showCreateFileModalCallback } from './actions/show-create-file-modal';
 import { viewAnalyzedMessagesAction } from './actions/view-analyzed-messages';
-import { applySelectedToGithubAction, handleNewSectionModalSubmission } from './apply-document/apply-document-handler';
+import { applySelectedToGithubAction } from './apply-document/apply-selected-to-github-action';
 import { cancelDocumentUpdatesCallback } from './apply-document/cancel-document-updates-action';
+import { handleNewSectionModalSubmission } from './apply-document/new-section-modal-submission';
 import { rejectUpdateCallback } from './apply-document/reject-update';
 import { applyExtractedKnowledgeCallback } from './extract-knowledge/apply-extracted-knowledge-action';
 import { cancelKnowledgeExtractionCallback } from './extract-knowledge/cancel-knowledge-extraction-action';
