@@ -107,16 +107,23 @@ app.use(usageMonitoringMiddleware);
 const gitHubSyncService = GitHubSyncService.getInstance();
 const vectorStore = VectorStoreService.getInstance();
 
-function getExpressRouter(): any {
-  // HTTP mode: use the ExpressReceiver's router
-  if (receiver) return receiver.router;
-  // Socket Mode: Bolt still starts an Express server internally via SocketModeReceiver
-  return (app as any).receiver?.router;
-}
-
 function setupPublicSite(): void {
-  const router = getExpressRouter();
-  if (!router) return;
+  let router: any;
+
+  if (receiver) {
+    // HTTP mode: piggyback on ExpressReceiver's router
+    router = receiver.router;
+  } else {
+    // Socket Mode: SocketModeReceiver has no Express router, so spin up our own server
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const express = require('express');
+    const standalone = express();
+    const port = Number(process.env.PORT || 3000);
+    standalone.listen(port, () => {
+      app.logger.info(`Docs HTTP server listening on port ${port}`);
+    });
+    router = standalone;
+  }
 
   const publicRoot = path.join(process.cwd(), 'public');
   const docsAppRoot = path.join(publicRoot, 'docs-app');
