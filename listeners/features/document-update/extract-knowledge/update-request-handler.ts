@@ -182,6 +182,8 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       if (event.thread_ts) {
         channelType = 'Thread Discussion';
       }
+      const logChannelType: 'public' | 'private' | 'dm' =
+        event.channel_type === 'private' || event.channel_type === 'dm' ? event.channel_type : 'public';
 
       // Check if conversation contains Q&A shared content (no longer needed as separate flag)
       // Q&A context is now handled directly in extractKnowledgeFromMessages
@@ -198,6 +200,44 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
 
       // Extract knowledge from messages with organizational context
       const extractionResult = await extractKnowledgeFromMessages(filteredMessages, organizationalContext, client);
+
+      if (!extractionResult.cleanContent.trim()) {
+        await client.chat.update({
+          channel: originalChannelId,
+          ts: loadingMessage.ts,
+          ...createEnhancedMessage({
+            text: 'I couldn’t find documentable knowledge in the recent conversation.',
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: 'I couldn’t find documentable knowledge in the recent conversation.\n\nPlease include the specific policy, deadline, file, or process that should change, then try again.',
+                },
+                block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+              },
+            ],
+          }),
+        });
+
+        await logKnowledgeExtraction(
+          userId,
+          workspaceId,
+          originalChannelId,
+          logChannelType,
+          !!event.thread_ts,
+          Date.now() - startTime,
+          false,
+          '',
+          filteredMessages.length,
+          {
+            reason: 'No organizational knowledge found',
+            messageCount: filteredMessages.length,
+          },
+          client,
+        );
+        return;
+      }
 
       // Update loading message with the suggested update content (remove intermediate "Analyzed X messages" step)
       const blocks = [
@@ -336,7 +376,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         userId,
         workspaceId,
         originalChannelId,
-        event.channel_type || 'public',
+        logChannelType,
         isThreadMention,
         totalProcessingTime,
         true,

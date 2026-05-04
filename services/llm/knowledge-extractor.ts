@@ -28,7 +28,7 @@ function extractUserCommentFromBlocks(blocks: any[]): string | null {
   if (!blocks || blocks.length === 0) return null;
 
   for (const block of blocks) {
-    if (block.block_id && block.block_id.includes('user_comment') && block.type === 'section' && block.text?.text) {
+    if (block.block_id?.includes('user_comment') && block.type === 'section' && block.text?.text) {
       return block.text.text;
     }
   }
@@ -144,22 +144,14 @@ export async function extractKnowledgeFromMessages(
       // Check if this is a QA_SHARE_INTRO message (answered or unanswered)
       const isQAShareAnswered =
         originalMsg.metadata?.messageType === 'qa_share_intro_answered' ||
-        (originalMsg.blocks &&
-          originalMsg.blocks.some(
-            (block: any) => block.block_id && block.block_id.includes('qa_share_intro_answered'),
-          ));
+        originalMsg.blocks?.some((block: any) => block.block_id?.includes('qa_share_intro_answered'));
 
       const isQAShareUnanswered =
         originalMsg.metadata?.messageType === 'qa_share_intro_unanswered' ||
-        (originalMsg.blocks &&
-          originalMsg.blocks.some(
-            (block: any) => block.block_id && block.block_id.includes('qa_share_intro_unanswered'),
-          ));
+        originalMsg.blocks?.some((block: any) => block.block_id?.includes('qa_share_intro_unanswered'));
 
       // Check if this message has a USER_COMMENT block
-      const hasUserComment =
-        originalMsg.blocks &&
-        originalMsg.blocks.some((block: any) => block.block_id && block.block_id.includes('user_comment'));
+      const hasUserComment = originalMsg.blocks?.some((block: any) => block.block_id?.includes('user_comment'));
 
       // Handle Q&A SHARE messages (these should be excluded from conversation)
       if ((isQAShareAnswered || isQAShareUnanswered) && msg.role === 'CHOIR') {
@@ -237,7 +229,7 @@ export async function extractKnowledgeFromMessages(
       }
     } else if (latestCHOIRAnswer) {
       // If no qa_share_intro but there's a regular CHOIR answer, use it as context
-      qaContextSection += `\n\n**CHOIR's Recent Answer (Current Documentation State)**:\n**Team Member Question:** ${latestCHOIRAnswer.question}\n**CHOIR Answer:** ${latestCHOIRAnswer.answer}\n\nThe above shows what CHOIR knows from existing documentation. Focus on identifying NEW information, policy changes, or corrections mentioned in the conversation.`;
+      qaContextSection += `\n\n**CHOIR's Recent Answer (Current Documentation State)**:\n**Team Member Question:** ${latestCHOIRAnswer.question}\n**CHOIR Answer:** ${latestCHOIRAnswer.answer}\n\nThe above shows what CHOIR knows from existing documentation. Use it to resolve references in follow-up change requests. For example, if the follow-up says to change a value that appears in CHOIR's recent answer, treat it as a policy change or correction to that documented fact. Focus on identifying NEW information, policy changes, or corrections mentioned in the conversation.`;
     }
 
     const prompt = `Extract knowledge from this conversation. Base your response directly on what is mentioned in the messages.
@@ -256,7 +248,9 @@ What information is shared in the conversation that should be documented?`;
 
 Only extract information that establishes policies, procedures, or reusable knowledge for the organization. Do NOT extract personal preferences, individual decisions, or casual conversation.
 
-Start with a descriptive markdown section title (# [Topic Name]), then write the information in natural paragraph format. Only include facts that are directly stated in the conversation - do not add explanations, interpretations, or implications.
+Start with a descriptive markdown section title (# [Topic Name]), then write the information in natural paragraph format. Only include facts that are directly stated in the conversation or in the provided current-documentation context. Do not add explanations, interpretations, or implications.
+
+When CHOIR's recent answer is provided, treat it as the current documentation state. If a manager or authorized requester says to change, replace, update, increase, decrease, or correct a specific value from that recent answer, document the resulting updated fact using the subject from the recent answer.
 
 Do not attribute information to specific people in your output. Always preserve any URLs mentioned.
 

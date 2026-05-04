@@ -127,12 +127,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     if (event.channel_type === 'im') {
       const clearCommands = ['clear', 'reset', '/clear', '/reset', 'clear chat', 'reset chat'];
       const isClearCommand = clearCommands.some(
-        (cmd) =>
-          message.trim().toLowerCase() === cmd ||
-          message
-            .trim()
-            .toLowerCase()
-            .startsWith(cmd + ' '),
+        (cmd) => message.trim().toLowerCase() === cmd || message.trim().toLowerCase().startsWith(`${cmd} `),
       );
 
       if (isClearCommand) {
@@ -195,7 +190,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     } else if (messageIntent === 'update_request') {
       // 업데이트 요청으로 처리
       logger.info('MessageRouter: Routing to handleUpdateRequestMessage');
-      routingResult = await handleUpdateRequestMessage(client, event, logger);
+      routingResult = (await handleUpdateRequestMessage(client, event, logger)) ?? true;
       logger.info('MessageRouter: handleUpdateRequestMessage completed');
     } else {
       // 일반 대화로 처리
