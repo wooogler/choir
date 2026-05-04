@@ -7,6 +7,7 @@ export type SlackMode = 'single' | 'oauth';
 const DEFAULT_SLACK_SCOPES = [
   'app_mentions:read',
   'channels:history',
+  'channels:join',
   'channels:read',
   'chat:write',
   'groups:history',

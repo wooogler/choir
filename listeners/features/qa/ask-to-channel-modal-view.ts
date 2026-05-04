@@ -4,6 +4,65 @@ import { createQAChannelMessage, createQAChannelPreview, getUserName, getWorkspa
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { logModalSubmit } from '../../../services/common/interaction-tracker';
 
+async function postQAChannelMessage(params: {
+  client: any;
+  qaChannelId: string;
+  messageText: string;
+  messageBlocks: any[];
+  logger: any;
+}) {
+  const { client, qaChannelId, messageText, messageBlocks, logger } = params;
+
+  try {
+    return await client.chat.postMessage({
+      channel: qaChannelId,
+      text: messageText,
+      blocks: messageBlocks,
+    });
+  } catch (error: any) {
+    if (error?.data?.error !== 'not_in_channel') {
+      throw error;
+    }
+
+    logger.warn(`Bot is not in Q&A channel ${qaChannelId}; attempting to join before posting.`);
+    try {
+      await client.conversations.join({ channel: qaChannelId });
+    } catch (joinError: any) {
+      if (joinError?.data?.error === 'missing_scope' && joinError?.data?.needed === 'channels:join') {
+        throw new Error(
+          'The bot is not in the configured Q&A channel and cannot join automatically because the Slack app is missing the channels:join scope. Add channels:join and reinstall the app, or invite the bot to the Q&A channel manually.',
+        );
+      }
+      throw joinError;
+    }
+
+    return await client.chat.postMessage({
+      channel: qaChannelId,
+      text: messageText,
+      blocks: messageBlocks,
+    });
+  }
+}
+
+async function notifySubmitFailure(client: any, userId: string, message: string): Promise<void> {
+  try {
+    const dm = await client.conversations.open({ users: userId });
+    await client.chat.postMessage({
+      channel: dm.channel?.id || userId,
+      text: message,
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: message },
+          block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+        },
+      ],
+    });
+  } catch {
+    // Keep the original submit error as the useful failure signal.
+  }
+}
+
 /**
  * 채널 선택 모달 제출 처리
  */
@@ -69,6 +128,13 @@ export const askToChannelSubmitCallback = async ({
 
     // 사용자 이름 가져오기
     const userName = await getUserName(userId, client);
+    const canAnswer = sessionData.canAnswer ?? true;
+    const question = sessionData.originalQuestion?.trim();
+    const response = sessionData.botResponse?.trim();
+
+    if (!question || (canAnswer && !response)) {
+      throw new Error('Missing Q&A session question or response content');
+    }
 
     // Q&A 채널 이름 가져오기
     let channelName = 'qna';
@@ -83,9 +149,9 @@ export const askToChannelSubmitCallback = async ({
     const messageBlocks = await createQAChannelMessage(
       channelName,
       userId,
-      sessionData.originalQuestion,
-      sessionData.botResponse,
-      true, // canAnswer - assume true for channel sharing
+      question,
+      response || '',
+      canAnswer,
       isAnonymous,
       userName,
       userComment,
@@ -96,19 +162,21 @@ export const askToChannelSubmitCallback = async ({
     const messageText = createQAChannelPreview(
       channelName,
       userId,
-      sessionData.originalQuestion,
-      sessionData.botResponse,
-      true, // canAnswer - assume true for channel sharing
+      question,
+      response || '',
+      canAnswer,
       isAnonymous,
       userName,
       userComment,
     );
 
     // Q&A 채널에 메시지 전달
-    await client.chat.postMessage({
-      channel: qaChannelId,
-      text: messageText,
-      blocks: messageBlocks,
+    const postedMessage = await postQAChannelMessage({
+      client,
+      qaChannelId,
+      messageText,
+      messageBlocks,
+      logger,
     });
 
     // 사용자에게 성공 메시지 전송 (원본 채널이 있는 경우)
@@ -129,7 +197,11 @@ export const askToChannelSubmitCallback = async ({
       });
     }
 
-    logger.info(`Q&A posted to channel ${qaChannelId} by user ${userId}`);
+    logger.info(`Q&A posted to channel ${qaChannelId} by user ${userId}`, {
+      messageTs: postedMessage.ts,
+      canAnswer,
+      isAnonymous,
+    });
 
     // 로그: 성공
     const workspaceId = await getWorkspaceId(client);
@@ -164,10 +236,12 @@ export const askToChannelSubmitCallback = async ({
         userComment,
         originalChannelId: sessionData.originalChannelId,
         originalThreadTs: sessionData.originalThreadTs,
-        question: sessionData.originalQuestion,
-        questionLength: sessionData.originalQuestion?.length || 0,
-        response: sessionData.botResponse,
-        responseLength: sessionData.botResponse?.length || 0,
+        question,
+        questionLength: question.length,
+        response,
+        responseLength: response?.length || 0,
+        canAnswer,
+        postedMessageTs: postedMessage.ts,
       },
       client,
       actualChannelId,
@@ -175,6 +249,13 @@ export const askToChannelSubmitCallback = async ({
     );
   } catch (error) {
     logger.error('Error submitting channel selection:', error);
+    await notifySubmitFailure(
+      client,
+      body.user.id,
+      `❌ I couldn't post your Q&A to the configured Q&A channel. ${
+        error instanceof Error ? error.message : 'Please check that I have access to the channel and try again.'
+      }`,
+    );
 
     // 로그: 실패
     try {
