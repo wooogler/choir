@@ -162,11 +162,65 @@ function setupPublicSite(): void {
     router.use('/docs-app', serveStatic(docsAppRoot));
   }
 
-  // API: return raw markdown for a file in the workspace mirror
-  router.get(/^\/api\/docs\/([^/]+)\/(.+)$/, async (req: any, res: any) => {
+  router.get('/api/docs/:workspaceId', async (req: any, res: any) => {
     try {
-      const workspaceId = String(req.params[0]);
-      const filePath = String(req.params[1]);
+      const workspaceId = String(req.params.workspaceId);
+      const syncState = await WorkspaceMirrorService.getInstance().getSyncState(workspaceId);
+      const repo =
+        syncState?.owner && syncState?.repo
+          ? {
+              owner: syncState.owner,
+              name: syncState.repo,
+              branch: syncState.branch,
+              url: `https://github.com/${syncState.owner}/${syncState.repo}`,
+            }
+          : null;
+      const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
+
+      if (!fs.existsSync(repoRoot)) {
+        return res.json({ files: [], repo });
+      }
+
+      const files: Array<{ path: string; name: string }> = [];
+      const stack = [repoRoot];
+      while (stack.length > 0) {
+        const current = stack.pop();
+        if (!current) continue;
+
+        const entries = await fs.promises.readdir(current, { withFileTypes: true });
+        for (const entry of entries) {
+          const entryPath = path.join(current, entry.name);
+          if (entry.isDirectory()) {
+            stack.push(entryPath);
+            continue;
+          }
+
+          if (!entry.isFile() || !entry.name.endsWith('.md')) {
+            continue;
+          }
+
+          const relativePath = path.relative(repoRoot, entryPath).split(path.sep).join(path.posix.sep);
+          files.push({
+            path: relativePath,
+            name: path.posix.basename(relativePath, '.md'),
+          });
+        }
+      }
+
+      files.sort((left, right) => left.path.localeCompare(right.path, undefined, { numeric: true }));
+      return res.json({ files, repo });
+    } catch (err) {
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // API: return raw markdown for a file in the workspace mirror
+  router.get('/api/docs/:workspaceId/*splat', async (req: any, res: any) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      const filePath = Array.isArray(req.params.splat)
+        ? req.params.splat.join('/')
+        : String(req.params.splat);
 
       if (!filePath) {
         return res.status(400).json({ error: 'filePath is required' });
@@ -191,7 +245,7 @@ function setupPublicSite(): void {
   });
 
   // SPA fallback: /docs/* → serve SPA index.html
-  router.get('/docs/*', (_req: any, res: any) => {
+  router.get('/docs/*splat', (_req: any, res: any) => {
     if (fs.existsSync(docsAppIndex)) {
       return res.sendFile(docsAppIndex);
     }
