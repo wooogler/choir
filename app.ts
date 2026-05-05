@@ -163,10 +163,10 @@ function setupPublicSite(): void {
   }
 
   // API: return raw markdown for a file in the workspace mirror
-  router.get('/api/docs/:workspaceId/*', async (req: any, res: any) => {
+  router.get(/^\/api\/docs\/([^/]+)\/(.+)$/, async (req: any, res: any) => {
     try {
-      const workspaceId = String(req.params.workspaceId);
-      const filePath = String(req.params[0] || '');
+      const workspaceId = String(req.params[0]);
+      const filePath = String(req.params[1]);
 
       if (!filePath) {
         return res.status(400).json({ error: 'filePath is required' });
