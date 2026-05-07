@@ -229,6 +229,7 @@ h1 {
   padding: 0 20px;
   border: 1px solid var(--ink);
   border-radius: 8px;
+  font: inherit;
   font-weight: 750;
   text-decoration: none;
 }
@@ -240,6 +241,14 @@ h1 {
 
 .button.primary:hover {
   background: #000;
+}
+
+.button:disabled,
+.button:disabled:hover {
+  color: #7a8394;
+  background: #e8ecf3;
+  border-color: #cfd6e2;
+  cursor: not-allowed;
 }
 
 .button.secondary {
