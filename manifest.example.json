@@ -1,0 +1,53 @@
+{
+  "display_information": {
+    "name": "CHOIR",
+    "description": "Chat-based Helper for Organizational Intelligence Repository",
+    "background_color": "#75787b"
+  },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": true,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "bot_user": {
+      "display_name": "CHOIR",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "redirect_urls": ["https://your-domain.example/slack/oauth_redirect"],
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "channels:history",
+        "channels:join",
+        "channels:read",
+        "chat:write",
+        "groups:history",
+        "im:history",
+        "im:read",
+        "im:write",
+        "mpim:history",
+        "mpim:read",
+        "mpim:write",
+        "team:read",
+        "users:read",
+        "files:write"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://your-domain.example/slack/events",
+      "bot_events": ["app_uninstalled", "app_home_opened", "app_mention", "message.im", "message.mpim"]
+    },
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://your-domain.example/slack/events"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

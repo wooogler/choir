@@ -10,7 +10,7 @@ importers:
     dependencies:
       '@langchain/community':
         specifier: ^0.3.48
-        version: 0.3.48(@langchain/core@0.3.62(openai@4.104.0(ws@8.18.2)(zod@3.25.76)))(axios@1.9.0)(better-sqlite3@12.9.0)(ignore@5.3.2)(jsonwebtoken@9.0.2)(lodash@4.17.21)(openai@4.104.0(ws@8.18.2)(zod@3.25.76))(puppeteer@24.9.0(typescript@5.8.3))(weaviate-client@3.6.2)(ws@8.18.2)
+        version: 0.3.48(@langchain/core@0.3.62(openai@4.104.0(ws@8.18.2)(zod@3.25.76)))(axios@1.9.0)(better-sqlite3@12.9.0)(ignore@5.3.2)(jsonwebtoken@9.0.2)(lodash@4.17.21)(openai@4.104.0(ws@8.18.2)(zod@3.25.76))(puppeteer@24.9.0(typescript@6.0.3))(weaviate-client@3.6.2)(ws@8.18.2)
       '@langchain/core':
         specifier: ^0.3.62
         version: 0.3.62(openai@4.104.0(ws@8.18.2)(zod@3.25.76))
@@ -25,7 +25,7 @@ importers:
         version: 7.9.2
       '@tobilu/qmd':
         specifier: ^2.0.1
-        version: 2.0.1(@cfworker/json-schema@4.1.1)(typescript@5.8.3)
+        version: 2.0.1(@cfworker/json-schema@4.1.1)(typescript@6.0.3)
       archiver:
         specifier: ^7.0.1
         version: 7.0.1
@@ -38,6 +38,9 @@ importers:
       dotenv:
         specifier: ~16.4.7
         version: 16.4.7
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
       faiss-node:
         specifier: ^0.5.1
         version: 0.5.1
@@ -55,10 +58,13 @@ importers:
         version: 4.104.0(ws@8.18.2)(zod@3.25.76)
       puppeteer:
         specifier: ^24.9.0
-        version: 24.9.0(typescript@5.8.3)
+        version: 24.9.0(typescript@6.0.3)
       remark-parse:
         specifier: ^11.0.0
         version: 11.0.0
+      serve-static:
+        specifier: ^2.2.1
+        version: 2.2.1
       unified:
         specifier: ^11.0.5
         version: 11.0.5
@@ -104,7 +110,7 @@ importers:
         version: 3.1.10
       ts-jest:
         specifier: ^29.4.0
-        version: 29.4.0(@babel/core@7.29.0)(@jest/transform@30.0.2)(@jest/types@30.0.1)(babel-jest@30.0.2(@babel/core@7.29.0))(jest-util@30.0.2)(jest@30.0.3(@types/node@24.0.13))(typescript@5.8.3)
+        version: 29.4.0(@babel/core@7.29.0)(@jest/transform@30.0.2)(@jest/types@30.0.1)(babel-jest@30.0.2(@babel/core@7.29.0))(jest-util@30.0.2)(jest@30.0.3(@types/node@24.0.13))(typescript@6.0.3)
       tsc-alias:
         specifier: ^1.8.16
         version: 1.8.16
@@ -112,8 +118,8 @@ importers:
         specifier: ^4.2.0
         version: 4.2.0
       typescript:
-        specifier: ^5.7.2
-        version: 5.8.3
+        specifier: ^6.0.3
+        version: 6.0.3
 
   web:
     dependencies:
@@ -2268,10 +2274,6 @@ packages:
   bl@4.1.0:
     resolution: {integrity: sha512-1W07cM9gS6DcLperZfFSj+bWLtaPGSOHWhPiGzXmvVJbRLdG82sH/Kn8EtW1VqWVA54AKf2h5k5BbnIbwF3h6w==}
 
-  body-parser@2.2.0:
-    resolution: {integrity: sha512-02qvAaxv8tp7fBa/mw1ga98OGm+eCbqzJOKoRt70sLmfEEi+jyBYVTDGfCL/k06/4EMk/z01gCe7HoCH/f2LTg==}
-    engines: {node: '>=18'}
-
   body-parser@2.2.2:
     resolution: {integrity: sha512-oP5VkATKlNwcgvxi0vM0p/D3n2C3EReYVX+DNYs5TjZFn/oQt2j+4sVJtSMr18pdRr8wjTcBl6LoV+FUwzPmNA==}
     engines: {node: '>=18'}
@@ -2786,10 +2788,6 @@ packages:
     engines: {node: '>= 16'}
     peerDependencies:
       express: '>= 4.11'
-
-  express@5.1.0:
-    resolution: {integrity: sha512-DT9ck5YIRU+8GYzzU5kT3eHGA5iL+1Zd0EutOmTE9Dtk+Tvuzd23VBU+ec7HPNSTxXYO55gPV/hq4pSBJDjFpA==}
-    engines: {node: '>= 18'}
 
   express@5.2.1:
     resolution: {integrity: sha512-hIS4idWWai69NezIdRt2xFVofaF4j+6INOpJlVOLDO8zXGpUVEVzIYk12UUi2JzjEzWL3IOAxcTubgz9Po0yXw==}
@@ -4418,10 +4416,6 @@ packages:
   pure-rand@7.0.1:
     resolution: {integrity: sha512-oTUZM/NAZS8p7ANR3SHh30kXB+zK2r2BPcEn/awJIbOvq82WoMN4p62AWWp3Hhw50G0xMsw1mhIBLqHw64EcNQ==}
 
-  qs@6.14.0:
-    resolution: {integrity: sha512-YWWTjgABSKcvs/nWBi9PycY/JiPJqOD4JA6o9Sej2AtvSGarXxKC3OQSk4pAarbdQlKAh5D4FCQkJNkW+GAn3w==}
-    engines: {node: '>=0.6'}
-
   qs@6.15.0:
     resolution: {integrity: sha512-mAZTtNCeetKMH+pSjrb76NAM8V9a05I9aBZOHztWy/UqcJdQYNsf59vrRKWnojAT9Y+GbIvoTBC++CPHqpDBhQ==}
     engines: {node: '>=0.6'}
@@ -4657,8 +4651,8 @@ packages:
     resolution: {integrity: sha512-uaW0WwXKpL9blXE2o0bRhoL2EGXIrZxQ2ZQ4mgcfoBxdFmQold+qWsD2jLrfZ0trjKL6vOw0j//eAwcALFjKSw==}
     engines: {node: '>= 18'}
 
-  serve-static@2.2.0:
-    resolution: {integrity: sha512-61g9pCh0Vnh7IutZjtLGGpTA355+OPn2TyDv/6ivP2h/AdAVX9azsoxmg2/M6nZeQZNYBEwIcsne1mJd9oQItQ==}
+  serve-static@2.2.1:
+    resolution: {integrity: sha512-xRXBn0pPqQTVQiC8wyQrKs2MOlX24zQ0POGaj0kultvoOCstBQM5yvOhAVSUwOMjQtTvsPWoNCHfPGwaaQJhTw==}
     engines: {node: '>= 18'}
 
   setprototypeof@1.2.0:
@@ -5027,6 +5021,11 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
   uc.micro@2.1.0:
     resolution: {integrity: sha512-ARDJmphmdvUk6Glw7y9DQ2bFkKBHwQHLi2lsaH6PPmz/Ka9sFOBsBluozhDltWmnv9u/cF6Rt87znRTPV+yp/A==}
 
@@ -5167,6 +5166,7 @@ packages:
 
   uuid@10.0.0:
     resolution: {integrity: sha512-8XkAphELsDnEGrDxUOHB3RGvXz6TeuYSGEZBOjtTtPm2lwhGBjLgOzLHB63IUWfBpNucQjND6d3AOudO+H3RWQ==}
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
     hasBin: true
 
   uuid@11.1.0:
@@ -5425,7 +5425,7 @@ snapshots:
       '@babel/traverse': 7.27.7
       '@babel/types': 7.27.7
       convert-source-map: 2.0.0
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       gensync: 1.0.0-beta.2
       json5: 2.2.3
       semver: 6.3.1
@@ -6279,13 +6279,13 @@ snapshots:
 
   '@kwsites/file-exists@1.1.1':
     dependencies:
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
 
   '@kwsites/promise-deferred@1.1.1': {}
 
-  '@langchain/community@0.3.48(@langchain/core@0.3.62(openai@4.104.0(ws@8.18.2)(zod@3.25.76)))(axios@1.9.0)(better-sqlite3@12.9.0)(ignore@5.3.2)(jsonwebtoken@9.0.2)(lodash@4.17.21)(openai@4.104.0(ws@8.18.2)(zod@3.25.76))(puppeteer@24.9.0(typescript@5.8.3))(weaviate-client@3.6.2)(ws@8.18.2)':
+  '@langchain/community@0.3.48(@langchain/core@0.3.62(openai@4.104.0(ws@8.18.2)(zod@3.25.76)))(axios@1.9.0)(better-sqlite3@12.9.0)(ignore@5.3.2)(jsonwebtoken@9.0.2)(lodash@4.17.21)(openai@4.104.0(ws@8.18.2)(zod@3.25.76))(puppeteer@24.9.0(typescript@6.0.3))(weaviate-client@3.6.2)(ws@8.18.2)':
     dependencies:
       '@langchain/core': 0.3.62(openai@4.104.0(ws@8.18.2)(zod@3.25.76))
       '@langchain/openai': 0.5.18(@langchain/core@0.3.62(openai@4.104.0(ws@8.18.2)(zod@3.25.76)))(ws@8.18.2)
@@ -6304,7 +6304,7 @@ snapshots:
       ignore: 5.3.2
       jsonwebtoken: 9.0.2
       lodash: 4.17.21
-      puppeteer: 24.9.0(typescript@5.8.3)
+      puppeteer: 24.9.0(typescript@6.0.3)
       weaviate-client: 3.6.2
       ws: 8.18.2
     transitivePeerDependencies:
@@ -6653,7 +6653,7 @@ snapshots:
 
   '@puppeteer/browsers@2.10.5':
     dependencies:
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       extract-zip: 2.0.1
       progress: 2.0.3
       proxy-agent: 6.5.0
@@ -6832,7 +6832,7 @@ snapshots:
       '@slack/types': 2.14.0
       '@slack/web-api': 7.9.2
       axios: 1.9.0
-      express: 5.1.0
+      express: 5.2.1
       path-to-regexp: 8.2.0
       raw-body: 3.0.0
       tsscmp: 1.0.6
@@ -7016,15 +7016,15 @@ snapshots:
       react-dom: 18.3.1(react@18.3.1)
       use-sync-external-store: 1.6.0(react@18.3.1)
 
-  '@tobilu/qmd@2.0.1(@cfworker/json-schema@4.1.1)(typescript@5.8.3)':
+  '@tobilu/qmd@2.0.1(@cfworker/json-schema@4.1.1)(typescript@6.0.3)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(@cfworker/json-schema@4.1.1)
       better-sqlite3: 12.9.0
       fast-glob: 3.3.3
-      node-llama-cpp: 3.18.1(typescript@5.8.3)
+      node-llama-cpp: 3.18.1(typescript@6.0.3)
       picomatch: 4.0.2
       sqlite-vec: 0.1.9
-      typescript: 5.8.3
+      typescript: 6.0.3
       yaml: 2.8.3
       zod: 4.3.6
     optionalDependencies:
@@ -7518,26 +7518,12 @@ snapshots:
       inherits: 2.0.4
       readable-stream: 3.6.2
 
-  body-parser@2.2.0:
-    dependencies:
-      bytes: 3.1.2
-      content-type: 1.0.5
-      debug: 4.4.1(supports-color@5.5.0)
-      http-errors: 2.0.0
-      iconv-lite: 0.6.3
-      on-finished: 2.4.1
-      qs: 6.14.0
-      raw-body: 3.0.0
-      type-is: 2.0.1
-    transitivePeerDependencies:
-      - supports-color
-
   body-parser@2.2.2:
     dependencies:
       bytes: 3.1.2
       content-type: 1.0.5
       debug: 4.4.3
-      http-errors: 2.0.0
+      http-errors: 2.0.1
       iconv-lite: 0.7.2
       on-finished: 2.4.1
       qs: 6.15.0
@@ -7742,14 +7728,14 @@ snapshots:
       object-assign: 4.1.1
       vary: 1.1.2
 
-  cosmiconfig@9.0.0(typescript@5.8.3):
+  cosmiconfig@9.0.0(typescript@6.0.3):
     dependencies:
       env-paths: 2.2.1
       import-fresh: 3.3.1
       js-yaml: 4.1.0
       parse-json: 5.2.0
     optionalDependencies:
-      typescript: 5.8.3
+      typescript: 6.0.3
 
   crc-32@1.2.2: {}
 
@@ -7997,38 +7983,6 @@ snapshots:
       express: 5.2.1
       ip-address: 10.1.0
 
-  express@5.1.0:
-    dependencies:
-      accepts: 2.0.0
-      body-parser: 2.2.0
-      content-disposition: 1.0.0
-      content-type: 1.0.5
-      cookie: 0.7.2
-      cookie-signature: 1.2.2
-      debug: 4.4.1(supports-color@5.5.0)
-      encodeurl: 2.0.0
-      escape-html: 1.0.3
-      etag: 1.8.1
-      finalhandler: 2.1.0
-      fresh: 2.0.0
-      http-errors: 2.0.0
-      merge-descriptors: 2.0.0
-      mime-types: 3.0.1
-      on-finished: 2.4.1
-      once: 1.4.0
-      parseurl: 1.3.3
-      proxy-addr: 2.0.7
-      qs: 6.14.0
-      range-parser: 1.2.1
-      router: 2.2.0
-      send: 1.2.0
-      serve-static: 2.2.0
-      statuses: 2.0.1
-      type-is: 2.0.1
-      vary: 1.1.2
-    transitivePeerDependencies:
-      - supports-color
-
   express@5.2.1:
     dependencies:
       accepts: 2.0.0
@@ -8037,26 +7991,26 @@ snapshots:
       content-type: 1.0.5
       cookie: 0.7.2
       cookie-signature: 1.2.2
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       depd: 2.0.0
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
       finalhandler: 2.1.0
       fresh: 2.0.0
-      http-errors: 2.0.0
+      http-errors: 2.0.1
       merge-descriptors: 2.0.0
       mime-types: 3.0.1
       on-finished: 2.4.1
       once: 1.4.0
       parseurl: 1.3.3
       proxy-addr: 2.0.7
-      qs: 6.14.0
+      qs: 6.15.0
       range-parser: 1.2.1
       router: 2.2.0
       send: 1.2.0
-      serve-static: 2.2.0
-      statuses: 2.0.1
+      serve-static: 2.2.1
+      statuses: 2.0.2
       type-is: 2.0.1
       vary: 1.1.2
     transitivePeerDependencies:
@@ -8066,7 +8020,7 @@ snapshots:
 
   extract-zip@2.0.1:
     dependencies:
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       get-stream: 5.2.0
       yauzl: 2.10.0
     optionalDependencies:
@@ -8128,12 +8082,12 @@ snapshots:
 
   finalhandler@2.1.0:
     dependencies:
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       encodeurl: 2.0.0
       escape-html: 1.0.3
       on-finished: 2.4.1
       parseurl: 1.3.3
-      statuses: 2.0.1
+      statuses: 2.0.2
     transitivePeerDependencies:
       - supports-color
 
@@ -8226,7 +8180,7 @@ snapshots:
     dependencies:
       basic-ftp: 5.0.5
       data-uri-to-buffer: 6.0.2
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
 
@@ -8499,14 +8453,14 @@ snapshots:
   http-proxy-agent@7.0.2:
     dependencies:
       agent-base: 7.1.3
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
 
   https-proxy-agent@7.0.6:
     dependencies:
       agent-base: 7.1.3
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
 
@@ -8651,7 +8605,7 @@ snapshots:
   istanbul-lib-source-maps@5.0.6:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.27
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       istanbul-lib-coverage: 3.2.2
     transitivePeerDependencies:
       - supports-color
@@ -9668,7 +9622,7 @@ snapshots:
   micromark@4.0.2:
     dependencies:
       '@types/debug': 4.1.12
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       decode-named-character-reference: 1.1.0
       devlop: 1.1.0
       micromark-core-commonmark: 2.0.3
@@ -9789,7 +9743,7 @@ snapshots:
 
   node-int64@0.4.0: {}
 
-  node-llama-cpp@3.18.1(typescript@5.8.3):
+  node-llama-cpp@3.18.1(typescript@6.0.3):
     dependencies:
       '@huggingface/jinja': 0.5.6
       async-retry: 1.3.3
@@ -9833,7 +9787,7 @@ snapshots:
       '@node-llama-cpp/win-x64-cuda': 3.18.1
       '@node-llama-cpp/win-x64-cuda-ext': 3.18.1
       '@node-llama-cpp/win-x64-vulkan': 3.18.1
-      typescript: 5.8.3
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
@@ -9967,7 +9921,7 @@ snapshots:
     dependencies:
       '@tootallnate/quickjs-emscripten': 0.23.0
       agent-base: 7.1.3
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       get-uri: 6.0.4
       http-proxy-agent: 7.0.2
       https-proxy-agent: 7.0.6
@@ -10225,7 +10179,7 @@ snapshots:
   proxy-agent@6.5.0:
     dependencies:
       agent-base: 7.1.3
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       http-proxy-agent: 7.0.2
       https-proxy-agent: 7.0.6
       lru-cache: 7.18.3
@@ -10250,7 +10204,7 @@ snapshots:
     dependencies:
       '@puppeteer/browsers': 2.10.5
       chromium-bidi: 5.1.0(devtools-protocol@0.0.1439962)
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       devtools-protocol: 0.0.1439962
       typed-query-selector: 2.12.0
       ws: 8.18.2
@@ -10260,11 +10214,11 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  puppeteer@24.9.0(typescript@5.8.3):
+  puppeteer@24.9.0(typescript@6.0.3):
     dependencies:
       '@puppeteer/browsers': 2.10.5
       chromium-bidi: 5.1.0(devtools-protocol@0.0.1439962)
-      cosmiconfig: 9.0.0(typescript@5.8.3)
+      cosmiconfig: 9.0.0(typescript@6.0.3)
       devtools-protocol: 0.0.1439962
       puppeteer-core: 24.9.0
       typed-query-selector: 2.12.0
@@ -10276,10 +10230,6 @@ snapshots:
       - utf-8-validate
 
   pure-rand@7.0.1: {}
-
-  qs@6.14.0:
-    dependencies:
-      side-channel: 1.1.0
 
   qs@6.15.0:
     dependencies:
@@ -10547,7 +10497,7 @@ snapshots:
 
   router@2.2.0:
     dependencies:
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       depd: 2.0.0
       is-promise: 4.0.0
       parseurl: 1.3.3
@@ -10581,21 +10531,21 @@ snapshots:
 
   send@1.2.0:
     dependencies:
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
       fresh: 2.0.0
-      http-errors: 2.0.0
+      http-errors: 2.0.1
       mime-types: 3.0.1
       ms: 2.1.3
       on-finished: 2.4.1
       range-parser: 1.2.1
-      statuses: 2.0.1
+      statuses: 2.0.2
     transitivePeerDependencies:
       - supports-color
 
-  serve-static@2.2.0:
+  serve-static@2.2.1:
     dependencies:
       encodeurl: 2.0.0
       escape-html: 1.0.3
@@ -10667,7 +10617,7 @@ snapshots:
     dependencies:
       '@kwsites/file-exists': 1.1.1
       '@kwsites/promise-deferred': 1.1.1
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
 
@@ -10696,7 +10646,7 @@ snapshots:
   socks-proxy-agent@8.0.5:
     dependencies:
       agent-base: 7.1.3
-      debug: 4.4.1(supports-color@5.5.0)
+      debug: 4.4.3
       socks: 2.8.4
     transitivePeerDependencies:
       - supports-color
@@ -10926,7 +10876,7 @@ snapshots:
 
   ts-error@1.0.6: {}
 
-  ts-jest@29.4.0(@babel/core@7.29.0)(@jest/transform@30.0.2)(@jest/types@30.0.1)(babel-jest@30.0.2(@babel/core@7.29.0))(jest-util@30.0.2)(jest@30.0.3(@types/node@24.0.13))(typescript@5.8.3):
+  ts-jest@29.4.0(@babel/core@7.29.0)(@jest/transform@30.0.2)(@jest/types@30.0.1)(babel-jest@30.0.2(@babel/core@7.29.0))(jest-util@30.0.2)(jest@30.0.3(@types/node@24.0.13))(typescript@6.0.3):
     dependencies:
       bs-logger: 0.2.6
       ejs: 3.1.10
@@ -10937,7 +10887,7 @@ snapshots:
       make-error: 1.3.6
       semver: 7.7.2
       type-fest: 4.41.0
-      typescript: 5.8.3
+      typescript: 6.0.3
       yargs-parser: 21.1.1
     optionalDependencies:
       '@babel/core': 7.29.0
@@ -10985,6 +10935,8 @@ snapshots:
   typed-query-selector@2.12.0: {}
 
   typescript@5.8.3: {}
+
+  typescript@6.0.3: {}
 
   uc.micro@2.1.0: {}
 

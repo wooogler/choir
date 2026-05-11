@@ -4,12 +4,19 @@ set -euo pipefail
 
 CONTAINER_NAME="${CONTAINER_NAME:-choir}"
 IMAGE_NAME="${IMAGE_NAME:-choir:latest}"
-DOMAIN="${1:-${DOMAIN:-choir.cs.vt.edu}}"
+DOMAIN="${1:-${DOMAIN:-}}"
 APP_PORT="${APP_PORT:-3000}"
 HOST_BIND="${HOST_BIND:-127.0.0.1:${APP_PORT}}"
 SERVICE_NAME="${SERVICE_NAME:-choir.service}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ALLOW_PUBLIC_BIND="${ALLOW_PUBLIC_BIND:-false}"
+
+if [ -z "$DOMAIN" ]; then
+  echo "Usage: $0 <public-domain>"
+  echo "Example: $0 choir.example.com"
+  echo "Or set DOMAIN=... in the environment before invoking."
+  exit 1
+fi
 
 cd "$PROJECT_ROOT"
 
@@ -44,10 +51,17 @@ if [[ "$ALLOW_PUBLIC_BIND" != "true" && ! "$HOST_BIND" =~ ^(127\.|localhost:|\[:
   exit 1
 fi
 
-EXPECTED_REDIRECT="SLACK_REDIRECT_URI=https://${DOMAIN}/slack/oauth_redirect"
-if ! grep -q "^${EXPECTED_REDIRECT}$" .env; then
-  echo "Warning: .env does not contain ${EXPECTED_REDIRECT}"
-  echo "Slack OAuth will fail unless SLACK_REDIRECT_URI and the Slack dashboard match."
+SLACK_MODE_VALUE="$(grep -E '^SLACK_MODE=' .env 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d ' ' || true)"
+SLACK_MODE_VALUE="${SLACK_MODE_VALUE:-single}"
+
+if [ "$SLACK_MODE_VALUE" = "oauth" ]; then
+  EXPECTED_REDIRECT="SLACK_REDIRECT_URI=https://${DOMAIN}/slack/oauth_redirect"
+  if ! grep -q "^${EXPECTED_REDIRECT}$" .env; then
+    echo "Warning: .env does not contain ${EXPECTED_REDIRECT}"
+    echo "Slack OAuth will fail unless SLACK_REDIRECT_URI and the Slack dashboard match."
+  fi
+else
+  echo "Detected SLACK_MODE=${SLACK_MODE_VALUE}. Make sure your Slack app's event/interactivity request URLs point to https://${DOMAIN}/slack/events."
 fi
 
 if ss -ltn 2>/dev/null | grep -qE "127\\.0\\.0\\.1:${APP_PORT}\\b|0\\.0\\.0\\.0:${APP_PORT}\\b|\\*:${APP_PORT}\\b"; then
@@ -66,11 +80,17 @@ if [ ! -f dist/app.js ]; then
   exit 1
 fi
 
-echo "Building image ${IMAGE_NAME}..."
-podman build -t "$IMAGE_NAME" -f deployment/Containerfile .
-
-echo "Copying image to root podman storage..."
-podman save "$IMAGE_NAME" | sudo podman load
+echo "Building image ${IMAGE_NAME} (rootful, with cache mounts)..."
+# --network=host lets the build container reach the npm/pnpm registries
+# directly via the host network. Required because the host uses
+# systemd-resolved (127.0.0.53) which isn't reachable from a default
+# podman network namespace.
+sudo podman build \
+  --network=host \
+  --format docker \
+  -t "$IMAGE_NAME" \
+  -f deployment/Containerfile \
+  .
 
 echo "Writing systemd service ${SERVICE_NAME}..."
 sudo tee "/etc/systemd/system/${SERVICE_NAME}" >/dev/null <<EOF

@@ -28,7 +28,15 @@
   },
   "author": "CHOIR contributors",
   "license": "MIT",
-  "keywords": ["slack", "bolt", "typescript", "github", "openai", "knowledge-base", "rag"],
+  "keywords": [
+    "slack",
+    "bolt",
+    "typescript",
+    "github",
+    "openai",
+    "knowledge-base",
+    "rag"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/wooogler/choir.git"
@@ -47,6 +55,7 @@
     "better-sqlite3": "^12.9.0",
     "diff": "^7.0.0",
     "dotenv": "~16.4.7",
+    "express": "^5.2.1",
     "faiss-node": "^0.5.1",
     "marked": "^15.0.6",
     "mdast-util-to-string": "^4.0.0",
@@ -54,6 +63,7 @@
     "openai": "^4.80.0",
     "puppeteer": "^24.9.0",
     "remark-parse": "^11.0.0",
+    "serve-static": "^2.2.1",
     "unified": "^11.0.5",
     "unist-util-is": "^6.0.0",
     "unist-util-visit": "^5.0.0",
@@ -73,6 +83,6 @@
     "ts-jest": "^29.4.0",
     "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.7.2"
+    "typescript": "^6.0.3"
   }
 }
