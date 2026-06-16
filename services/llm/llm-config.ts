@@ -10,7 +10,7 @@ export type LLMPurpose = 'qa' | 'document-update' | 'classification';
 // consistent across workspaces. Managers cannot change it from App Home.
 export const CLASSIFICATION_MODEL = 'gpt-5.4-nano-2026-03-17';
 
-const DEFAULT_MODEL = 'gpt-5-mini';
+const DEFAULT_MODEL = 'gpt-5.4-mini';
 
 export function validateOpenAIConfig(): boolean {
   if (!process.env.OPENAI_API_KEY) {
