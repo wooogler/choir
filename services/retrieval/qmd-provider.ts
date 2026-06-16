@@ -5,8 +5,8 @@ import { Logger } from 'services/common/logger';
 import { sectionPathToOriginalPath } from 'services/document/markdown-section-splitter';
 import type { DocumentMetadata } from 'services/file-registry/types';
 import { getGithubRepo } from 'services/slack';
-import { PathMapService } from 'services/workspace/path-map-service';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
+import { PathMapService } from 'services/workspace/path-map-service';
 import { expandQueryWithOpenAI } from './openai-query-expansion';
 import { searchQmdLexWithFallback } from './qmd-lex-search';
 import type { RetrievalDocument, RetrievalProvider, RetrievalSearchParams, RetrievalWarmupParams } from './types';
@@ -418,6 +418,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
         const queries = await expandQueryWithOpenAI({
           query: params.query,
           purpose: 'qa',
+          workspaceId: params.workspaceId,
         });
         const results = await storeEntry.store.search({
           queries,
@@ -503,6 +504,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     const queries = await expandQueryWithOpenAI({
       query,
       purpose: 'qa',
+      workspaceId: params.workspaceId,
     });
     await storeEntry.store.search({
       queries,

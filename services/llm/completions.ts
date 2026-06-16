@@ -1,26 +1,17 @@
 import dotenv from 'dotenv';
-import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type { ResponseInput, ResponseInputContent } from 'openai/resources/responses/responses';
 import { anonymizeText, deAnonymizeText } from 'services/common/name-cache';
-import { getOpenAIConfig } from './llm-config';
+import { type LLMPurpose, resolveLLMConfig } from './llm-config';
+import { getOpenAIClient } from './openai-client-factory';
 
 dotenv.config({ path: process.env.ENV_FILE || process.env.DOTENV_CONFIG_PATH || '.env' });
-
-let openAI: OpenAI | null = null;
-
-function initializeClient() {
-  const config = getOpenAIConfig();
-  openAI = new OpenAI({
-    apiKey: config.apiKey,
-  });
-}
-
-initializeClient();
 
 const MIN_RESPONSE_OUTPUT_TOKENS = 16;
 
 export interface ChatCompletionOptions {
+  workspaceId?: string;
+  purpose?: LLMPurpose;
   model?: string;
   temperature?: number;
   max_tokens?: number;
@@ -62,9 +53,10 @@ function toResponseInput(messages: ChatCompletionMessageParam[]): ResponseInput 
 
     return {
       type: 'message',
-      role: (normalizedRole === 'system' || normalizedRole === 'assistant' || normalizedRole === 'user'
-        ? normalizedRole
-        : 'user'),
+      role:
+        normalizedRole === 'system' || normalizedRole === 'assistant' || normalizedRole === 'user'
+          ? normalizedRole
+          : 'user',
       content: normalizeMessageContent(message.content) as string | ResponseInputContent[],
     };
   });
@@ -96,35 +88,33 @@ async function createResponseText(
   options: ChatCompletionOptions = {},
 ): Promise<string> {
   const {
-    model,
+    workspaceId,
+    purpose = 'qa',
+    model: explicitModel,
     temperature = 0,
     max_tokens = 1000,
     function_name = 'None',
-    debug = false,
+    debug = process.env.OPENAI_DEBUG === 'true',
     response_format,
   } = options;
 
-  if (!openAI) {
-    throw new Error('OpenAI client not initialized');
-  }
+  const resolved = await resolveLLMConfig(workspaceId, purpose);
+  const client = getOpenAIClient(resolved.apiKey);
+  const model = explicitModel || resolved.model;
 
-  const config = getOpenAIConfig();
   const processedMessages: ChatCompletionMessageParam[] = messages.map((message) => ({
     ...message,
     content: anonymizeText(normalizeMessageContent(message.content)),
   })) as ChatCompletionMessageParam[];
 
-  const response = await openAI.responses.create({
-    model: model || config.responsesModel,
+  const response = await client.responses.create({
+    model,
     input: toResponseInput(processedMessages),
     temperature,
     max_output_tokens: normalizeMaxOutputTokens(max_tokens),
     text: response_format
       ? {
-          format:
-            response_format.type === 'json_object'
-              ? { type: 'json_object' }
-              : { type: 'text' },
+          format: response_format.type === 'json_object' ? { type: 'json_object' } : { type: 'text' },
         }
       : undefined,
   });
@@ -149,28 +139,29 @@ export async function createStructuredResponse<T>(
   options: StructuredResponseOptions,
 ): Promise<T> {
   const {
-    model,
+    workspaceId,
+    purpose = 'qa',
+    model: explicitModel,
     temperature = 0,
     max_tokens = 1000,
     function_name = 'None',
-    debug = false,
+    debug = process.env.OPENAI_DEBUG === 'true',
     schemaName,
     schema,
     schemaDescription,
   } = options;
 
-  if (!openAI) {
-    throw new Error('OpenAI client not initialized');
-  }
+  const resolved = await resolveLLMConfig(workspaceId, purpose);
+  const client = getOpenAIClient(resolved.apiKey);
+  const model = explicitModel || resolved.model;
 
-  const config = getOpenAIConfig();
   const processedMessages: ChatCompletionMessageParam[] = messages.map((message) => ({
     ...message,
     content: anonymizeText(normalizeMessageContent(message.content)),
   })) as ChatCompletionMessageParam[];
 
-  const response = await openAI.responses.create({
-    model: model || config.responsesModel,
+  const response = await client.responses.create({
+    model,
     input: toResponseInput(processedMessages),
     temperature,
     max_output_tokens: normalizeMaxOutputTokens(max_tokens),

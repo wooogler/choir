@@ -1,7 +1,6 @@
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { Logger } from 'services/common/logger';
 import { createStructuredResponse } from 'services/llm/completions';
-import { getOpenAIConfig } from 'services/llm/llm-config';
 import { type QmdStructuredSearchQuery, buildQmdStructuredSearchQueries } from './qmd-lex-search';
 
 interface QueryExpansionResponse {
@@ -74,6 +73,7 @@ export async function expandQueryWithOpenAI(params: {
   query: string;
   intent?: string;
   purpose: 'qa' | 'update';
+  workspaceId?: string;
 }): Promise<QmdStructuredSearchQuery[]> {
   const normalizedQuery = params.query.trim().replace(/\s+/g, ' ');
   if (!normalizedQuery) {
@@ -113,9 +113,9 @@ User query: ${normalizedQuery}`,
   ];
 
   try {
-    const config = getOpenAIConfig();
     const result = await createStructuredResponse<QueryExpansionResponse>(messages, {
-      model: config.queryExpansionModel,
+      workspaceId: params.workspaceId,
+      purpose: params.purpose === 'qa' ? 'qa' : 'document-update',
       temperature: 0,
       max_tokens: 250,
       function_name: 'expandQueryWithOpenAI',

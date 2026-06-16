@@ -98,7 +98,11 @@ export async function handleCompletion(params: {
       }));
 
       if (availableFiles.length > 0) {
-        const newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
+        const newSectionSuggestion = await createNewSectionFromKnowledge(
+          knowledgeContent,
+          availableFiles,
+          workspaceId,
+        );
 
         if (newSectionSuggestion) {
           newSectionSessionId = `new_section_${userId}_${Date.now()}`;
@@ -123,7 +127,7 @@ export async function handleCompletion(params: {
           );
         }
 
-        completionNewFileDefaults = await generateNewFileDefaults(knowledgeContent, fileList || []);
+        completionNewFileDefaults = await generateNewFileDefaults(knowledgeContent, fileList || [], workspaceId);
         logger.info(`Generated completion new file defaults: ${completionNewFileDefaults.fileName}`);
       }
     } catch (error) {

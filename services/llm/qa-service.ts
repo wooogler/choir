@@ -28,6 +28,7 @@ export const answerQuestion = async (
   workspaceName?: string,
   organizationName?: string,
   organizationDescription?: string,
+  workspaceId?: string,
 ): Promise<AnswerResult> => {
   const context = formatContext(relevantDocs);
   const messages = await processMessageHistory(messageHistory, client);
@@ -96,11 +97,11 @@ Rules:
         },
       ],
       {
-        model: 'gpt-4o',
+        workspaceId,
+        purpose: 'qa',
         temperature: 0,
         max_tokens: 1000,
         function_name: 'answerQuestion',
-        debug: true,
         schemaName: 'qa_answer',
         schemaDescription: 'Whether the documentation can answer the question and the final response text',
         schema: {

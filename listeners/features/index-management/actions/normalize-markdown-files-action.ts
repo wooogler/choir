@@ -6,7 +6,7 @@ import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
 import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { appHomeOpenedCallback } from '../../../event-handlers/app-home-handler';
+import { refreshAppHomeSoon } from '../../app-home/refresh';
 
 export const normalizeMarkdownFilesAction = async ({
   ack,
@@ -231,30 +231,7 @@ export const normalizeMarkdownFilesAction = async ({
             ],
           });
 
-          // Auto-refresh home screen
-          setTimeout(async () => {
-            try {
-              const mockEvent = {
-                type: 'app_home_opened' as const,
-                user: body.user.id,
-                tab: 'home' as const,
-                event_ts: Date.now().toString(),
-              };
-
-              const handlerArgs = {
-                client,
-                event: mockEvent,
-                logger,
-                context: {},
-                payload: mockEvent,
-              };
-
-              await appHomeOpenedCallback(handlerArgs as any);
-              logger.info(`Home screen refreshed for user ${body.user.id} after markdown normalization`);
-            } catch (error) {
-              logger.error('Error refreshing home view after markdown normalization:', error);
-            }
-          }, 1000);
+          refreshAppHomeSoon({ client, logger, userId: body.user.id, reason: 'markdown normalization' });
 
           // Log successful normalization
           await logAppHomeButtonClick(

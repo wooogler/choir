@@ -87,7 +87,7 @@ export async function runInitialSearch(params: {
 
     if (fileList && fileList.length > 0) {
       const { generateNewFileDefaults } = await import('services/llm/content-generator');
-      newFileDefaults = await generateNewFileDefaults(knowledgeContent, fileList);
+      newFileDefaults = await generateNewFileDefaults(knowledgeContent, fileList, currentWorkspaceId);
       logger.info(`Generated new file defaults: ${newFileDefaults.fileName}`);
     }
   } catch (error) {
@@ -122,7 +122,11 @@ export async function runInitialSearch(params: {
 
     try {
       const { createNewSectionFromKnowledge } = await import('services/llm/content-generator');
-      const newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
+      const newSectionSuggestion = await createNewSectionFromKnowledge(
+        knowledgeContent,
+        availableFiles,
+        currentWorkspaceId,
+      );
 
       if (newSectionSuggestion) {
         const recommendedFileInfo = availableFiles.find(

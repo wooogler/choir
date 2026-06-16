@@ -8,8 +8,8 @@ import type { RetrievalDocument } from 'services/retrieval';
 import { expandQueryWithOpenAI } from 'services/retrieval/openai-query-expansion';
 import { searchQmdLexWithFallback } from 'services/retrieval/qmd-lex-search';
 import { getGithubRepo } from 'services/slack';
-import { PathMapService } from 'services/workspace/path-map-service';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
+import { PathMapService } from 'services/workspace/path-map-service';
 import { type UpdateAnchor, stripSnippetHeader } from './update-anchor';
 
 interface QmdLexResult {
@@ -258,6 +258,7 @@ export class QmdUpdateAnchorService {
     const queries = await expandQueryWithOpenAI({
       query: params.query,
       purpose: 'update',
+      workspaceId: params.workspaceId,
     });
     const hybridResults = await storeEntry.store.search({
       queries,
@@ -380,6 +381,7 @@ export class QmdUpdateAnchorService {
     const queries = await expandQueryWithOpenAI({
       query,
       purpose: 'update',
+      workspaceId: params.workspaceId,
     });
     await storeEntry.store.search({
       queries,

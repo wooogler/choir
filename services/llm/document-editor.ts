@@ -1,23 +1,22 @@
 import type { WebClient } from '@slack/web-api';
-import { anonymizeText, getAnonymizationMapping } from 'services/common/name-cache';
-import type { SlackMessage } from 'services/slack';
-import { getUserName } from 'services/slack';
-import { processMessageHistory, processMessageText } from 'services/slack/conversation-history';
+import { anonymizeText } from 'services/common/name-cache';
+import { processMessageHistory } from 'services/slack/conversation-history';
 import { createChatCompletion, createStructuredResponse } from './completions';
 
 export async function editMarkdownWithKnowledge(
   markdown: string,
   knowledgeContent: string,
   context?: { fileName?: string; sectionName?: string; headingPath?: string },
+  workspaceId?: string,
 ) {
   const anonymizedKnowledge = anonymizeText(knowledgeContent);
   const isEmpty = !markdown.trim();
 
   // 빈 섹션과 기존 내용에 대해 다른 프롬프트 사용
   if (isEmpty) {
-    return await createContentForEmptySection(anonymizedKnowledge, context);
+    return await createContentForEmptySection(anonymizedKnowledge, context, workspaceId);
   } else {
-    return await enhanceExistingContent(markdown, anonymizedKnowledge, context);
+    return await enhanceExistingContent(markdown, anonymizedKnowledge, context, workspaceId);
   }
 }
 
@@ -26,7 +25,8 @@ export async function editMarkdownWithKnowledge(
  */
 async function createContentForEmptySection(
   knowledgeContent: string,
-  context?: { fileName?: string; sectionName?: string; headingPath?: string },
+  context: { fileName?: string; sectionName?: string; headingPath?: string } | undefined,
+  workspaceId: string | undefined,
 ) {
   const contextInfo = context?.headingPath || context?.sectionName || 'Unknown section';
 
@@ -56,15 +56,11 @@ Generate content for this section:`,
       },
     ],
     {
-      model:
-        process.env.OPENAI_RESPONSES_MODEL ||
-        process.env.OPENAI_MODEL_NAME ||
-        process.env.OPENAI_MODEL ||
-        'gpt-4o-mini',
+      workspaceId,
+      purpose: 'document-update',
       temperature: 0,
       max_tokens: 300,
       function_name: 'createContentForEmptySection',
-      debug: true,
     },
   );
 
@@ -77,7 +73,8 @@ Generate content for this section:`,
 async function enhanceExistingContent(
   markdown: string,
   knowledgeContent: string,
-  context?: { fileName?: string; sectionName?: string; headingPath?: string },
+  context: { fileName?: string; sectionName?: string; headingPath?: string } | undefined,
+  workspaceId: string | undefined,
 ) {
   const contextInfo = context?.headingPath || context?.sectionName || 'Unknown section';
 
@@ -118,15 +115,11 @@ ${knowledgeContent}`,
       },
     ],
     {
-      model:
-        process.env.OPENAI_RESPONSES_MODEL ||
-        process.env.OPENAI_MODEL_NAME ||
-        process.env.OPENAI_MODEL ||
-        'gpt-4o-mini',
+      workspaceId,
+      purpose: 'document-update',
       temperature: 0,
       max_tokens: 500,
       function_name: 'enhanceExistingContent',
-      debug: true,
     },
   );
 
@@ -139,6 +132,7 @@ export async function classifyMessageIntent(
   descOrg: string,
   messageHistory?: any[],
   client?: WebClient,
+  workspaceId?: string,
 ): Promise<'question' | 'update_request' | 'general_conversation'> {
   // Anonymize the input message
   const anonymizedMessage = anonymizeText(message);
@@ -169,15 +163,11 @@ ${organizationName ? `\nOrganization: ${organizationName}` : ''}${descOrg ? `\nA
         { role: 'user', content: anonymizedMessage },
       ],
       {
+        workspaceId,
+        purpose: 'classification',
         temperature: 0,
         max_tokens: 16,
         function_name: 'classifyMessageIntent',
-        debug: true,
-        model:
-          process.env.OPENAI_RESPONSES_MODEL ||
-          process.env.OPENAI_MODEL_NAME ||
-          process.env.OPENAI_MODEL ||
-          'gpt-4o-mini',
         schemaName: 'message_intent',
         schemaDescription: 'Classification of user message intent',
         schema: {

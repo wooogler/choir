@@ -6,6 +6,7 @@ export async function respondToGeneralConversation(
   organizationName = 'our organization',
   descOrg = '',
   URLtoGithubORWebsite = '',
+  workspaceId?: string,
 ): Promise<string> {
   // 기본 응답 목록 또는 간단한 규칙 기반 응답
   const greetings = ['hello', 'hi', 'hey'];
@@ -42,6 +43,8 @@ Organization: ${organizationName}${descOrg ? `\nAbout: ${descOrg}` : ''}`,
         },
       ],
       {
+        workspaceId,
+        purpose: 'qa',
         temperature: 0,
         max_tokens: 150,
         function_name: 'respondToGeneralConversation',

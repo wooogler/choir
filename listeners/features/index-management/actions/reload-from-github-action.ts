@@ -4,7 +4,7 @@ import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
 import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { appHomeOpenedCallback } from '../../../event-handlers/app-home-handler';
+import { refreshAppHomeSoon } from '../../app-home/refresh';
 
 /**
  * Reload files from GitHub and update vector store.
@@ -187,30 +187,7 @@ export const reloadFromGithubAction = async ({
         ],
       });
 
-      // Auto-refresh home screen after a longer delay to avoid conflicts
-      setTimeout(async () => {
-        try {
-          const mockEvent = {
-            type: 'app_home_opened' as const,
-            user: body.user.id,
-            tab: 'home' as const,
-            event_ts: Date.now().toString(),
-          };
-
-          const handlerArgs = {
-            client,
-            event: mockEvent,
-            logger,
-            context: {},
-            payload: mockEvent,
-          };
-
-          await appHomeOpenedCallback(handlerArgs as any);
-          logger.info(`Home screen refreshed for user ${body.user.id} after GitHub reload`);
-        } catch (error) {
-          logger.error('Error refreshing home view after GitHub reload:', error);
-        }
-      }, 3000);
+      refreshAppHomeSoon({ client, logger, userId: body.user.id, reason: 'GitHub reload' }, 3000);
 
       // Log success
       await logAppHomeButtonClick(

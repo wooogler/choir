@@ -109,6 +109,7 @@ export async function extractKnowledgeFromMessages(
   messages: SlackMessage[],
   context?: OrganizationalContext,
   client?: WebClient,
+  workspaceId?: string,
 ): Promise<KnowledgeExtractionResult> {
   try {
     // Use processMessageHistory to format messages with user names (anonymization applied later in completions.ts)
@@ -262,11 +263,11 @@ If no documentable knowledge is found, respond with exactly: No organizational k
         },
       ],
       {
-        model: 'gpt-4o',
+        workspaceId,
+        purpose: 'document-update',
         temperature: 0,
         max_tokens: 2000,
         function_name: 'extractKnowledgeFromMessages',
-        debug: true,
       } as ChatCompletionOptions,
     );
 

@@ -54,6 +54,7 @@ export class QuestionProcessor {
         workspaceName,
         organizationName || undefined,
         organizationDescription || undefined,
+        workspaceId,
       );
 
       return {

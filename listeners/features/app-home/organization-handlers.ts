@@ -1,7 +1,7 @@
-import type { App, SlackActionMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
+import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
 import { getOrganizationName, getWorkspaceId, setOrganizationName } from 'services/slack';
-import { appHomeOpenedCallback } from '../../event-handlers/app-home-handler';
+import { refreshAppHomeSoon } from './refresh';
 
 export const registerOrganizationHandlers = (app: App) => {
   app.action('edit_organization_name', async ({ ack, body, client, logger }) => {
@@ -138,29 +138,7 @@ export const registerOrganizationHandlers = (app: App) => {
         text: `✅ Organization name updated to "${newName.trim()}"!`,
       });
 
-      setTimeout(async () => {
-        try {
-          const mockEvent = {
-            type: 'app_home_opened' as const,
-            user: body.user.id,
-            tab: 'home' as const,
-            event_ts: Date.now().toString(),
-          };
-
-          const handlerArgs = {
-            client,
-            event: mockEvent,
-            logger,
-            context: {},
-            payload: mockEvent,
-          };
-
-          await appHomeOpenedCallback(handlerArgs as any);
-          logger.info(`Home screen refreshed for user ${body.user.id} after organization name update`);
-        } catch (error) {
-          logger.error('Error refreshing home view after organization name update:', error);
-        }
-      }, 1000);
+      refreshAppHomeSoon({ client, logger, userId: body.user.id, reason: 'organization name update' });
 
       // Log successful update
       await logAppHomeModalSubmit(

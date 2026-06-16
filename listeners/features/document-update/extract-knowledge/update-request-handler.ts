@@ -199,7 +199,12 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       };
 
       // Extract knowledge from messages with organizational context
-      const extractionResult = await extractKnowledgeFromMessages(filteredMessages, organizationalContext, client);
+      const extractionResult = await extractKnowledgeFromMessages(
+        filteredMessages,
+        organizationalContext,
+        client,
+        workspaceId,
+      );
 
       if (!extractionResult.cleanContent.trim()) {
         await client.chat.update({

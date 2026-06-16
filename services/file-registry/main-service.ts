@@ -91,18 +91,6 @@ export class VectorStoreService {
     return null;
   }
 
-  public diagnoseVectorStore(workspaceId?: string) {
-    const fileCount = this.getState(workspaceId).markdownFiles.length;
-    return {
-      status: 'healthy' as const,
-      details: {
-        documentCount: fileCount,
-        vectorsCount: 0,
-        provider: 'qmd',
-      },
-    };
-  }
-
   public async resetAndRebuildVectorStore(workspaceId?: string): Promise<boolean> {
     if (!workspaceId) return false;
     try {

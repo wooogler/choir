@@ -155,11 +155,16 @@ export async function processDocument(
     }
     // 병렬로 LLM 호출: 메인 업데이트 + 새 섹션 제안
     const [llmEditedContent, newSectionSuggestion] = await Promise.all([
-      editMarkdownWithKnowledge(nodeContent, knowledgeContent, {
-        fileName: doc.metadata.fileName,
-        sectionName: doc.metadata.sectionName,
-        headingPath: doc.metadata.headingPath,
-      }),
+      editMarkdownWithKnowledge(
+        nodeContent,
+        knowledgeContent,
+        {
+          fileName: doc.metadata.fileName,
+          sectionName: doc.metadata.sectionName,
+          headingPath: doc.metadata.headingPath,
+        },
+        workspaceId,
+      ),
       (async () => {
         // 새 섹션 제안 생성을 위해 모든 마크다운 파일 목록 가져오기
         const allMarkdownFiles = vectorStore.getAllMarkdownFiles(workspaceId);
@@ -168,7 +173,7 @@ export async function processDocument(
           githubUrl: file.githubUrl,
           description: `${file.name} - Documentation file`,
         }));
-        return await createNewSectionFromKnowledge(knowledgeContent, availableFiles);
+        return await createNewSectionFromKnowledge(knowledgeContent, availableFiles, workspaceId);
       })(),
     ]);
 

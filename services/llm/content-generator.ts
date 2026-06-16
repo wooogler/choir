@@ -15,6 +15,7 @@ export interface NewFileDefaults {
 export async function generateNewFileDefaults(
   knowledgeContent: string,
   existingFiles: Array<{ name: string; path: string }>,
+  workspaceId?: string,
 ): Promise<NewFileDefaults> {
   const existingFileNames = existingFiles.map((file) => file.name).join('\n');
 
@@ -42,15 +43,11 @@ Generate a suitable file name and initial markdown content.`,
         },
       ],
       {
-        model:
-          process.env.OPENAI_RESPONSES_MODEL ||
-          process.env.OPENAI_MODEL_NAME ||
-          process.env.OPENAI_MODEL ||
-          'gpt-4o-mini',
+        workspaceId,
+        purpose: 'document-update',
         temperature: 0,
         max_tokens: 600,
         function_name: 'generateNewFileDefaults',
-        debug: true,
         schemaName: 'new_file_defaults',
         schemaDescription: 'A file name and initial markdown content for a new documentation file',
         schema: {
@@ -82,6 +79,7 @@ Generate a suitable file name and initial markdown content.`,
 export async function createNewSectionFromKnowledge(
   knowledgeContent: string,
   availableFiles: Array<{ fileName: string; githubUrl: string; description?: string }>,
+  workspaceId?: string,
 ): Promise<NewSectionSuggestion> {
   const filesDescription = availableFiles
     .map((file) => `- ${file.fileName}: ${file.description || 'No description'}`)
@@ -115,15 +113,11 @@ Analyze the knowledge and suggest a new section with appropriate title, content,
         },
       ],
       {
-        model:
-          process.env.OPENAI_RESPONSES_MODEL ||
-          process.env.OPENAI_MODEL_NAME ||
-          process.env.OPENAI_MODEL ||
-          'gpt-4o-mini',
+        workspaceId,
+        purpose: 'document-update',
         temperature: 0,
         max_tokens: 800,
         function_name: 'createNewSectionFromKnowledge',
-        debug: false,
         schemaName: 'new_section_suggestion',
         schemaDescription: 'A new documentation section suggestion and the best file to place it in',
         schema: {

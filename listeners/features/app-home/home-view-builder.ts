@@ -1,6 +1,5 @@
 import type { Logger } from '@slack/bolt';
 import type { WebClient } from '@slack/web-api';
-import { VectorStoreService } from 'services/file-registry/main-service';
 import {
   getCHOIRUsers,
   getGithubRepo,
@@ -12,16 +11,23 @@ import {
 } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 
-export const buildHomeView = async (client: WebClient, logger: Logger, workspaceId: string, userId: string) => {
-  const isUserManager = await isManager(workspaceId, userId);
-  const isOwner = await isWorkspaceOwner(userId, client);
-  const managers = await getManagers(workspaceId);
-  const choirUsers = await getCHOIRUsers(workspaceId);
-
+export const buildHomeView = async (
+  client: WebClient,
+  logger: Logger,
+  workspaceId: string,
+  userId: string,
+): Promise<any[]> => {
   const workspaceStore = new WorkspaceStore();
-  const userGithubInfo = await workspaceStore.getUserGithubInfo(workspaceId, userId);
+  const [isUserManager, isOwner, managers, choirUsers, userGithubInfo, organizationNameRaw] = await Promise.all([
+    isManager(workspaceId, userId),
+    isWorkspaceOwner(userId, client),
+    getManagers(workspaceId),
+    getCHOIRUsers(workspaceId),
+    workspaceStore.getUserGithubInfo(workspaceId, userId),
+    getOrganizationName(workspaceId),
+  ]);
 
-  let organizationName = await getOrganizationName(workspaceId);
+  let organizationName = organizationNameRaw;
   if (!organizationName) {
     const workspaceInfo = await client.auth.test();
     const teamInfo = await client.team.info();
@@ -41,8 +47,6 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
   const becomeManagerBlocks = buildBecomeManagerBlocks(isUserManager, isOwner);
 
   const documentConnectionBlocks = await buildDocumentConnectionBlocks(
-    client,
-    logger,
     workspaceId,
     isUserManager,
     isOwner,
@@ -56,9 +60,25 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
   const loggingEnabled = await workspaceStore.getLoggingEnabled(workspaceId);
   const loggingToggleBlocks = buildLoggingToggleBlocks(isUserManager, isOwner, loggingEnabled);
 
-  const readOnlyFilesBlocks = await buildReadOnlyFilesBlocks(client, logger, workspaceId, isUserManager, isOwner);
+  const readOnlyFilesBlocks = await buildReadOnlyFilesBlocks(workspaceId, isUserManager, isOwner);
 
-  const homeBlocks = [
+  const openAISettingsBlocks = await buildOpenAISettingsBlocks(workspaceId, isUserManager, isOwner);
+
+  // Build the deep-link URL for the Messages tab. In OAuth mode SLACK_APP_ID
+  // must be set; the legacy SLACK_APP_TOKEN fallback only works for single
+  // workspace dev / socket mode.
+  const authTest = await client.auth.test();
+  const teamId = authTest.team_id;
+  const botUserId = authTest.user_id;
+  const appId = resolveAppIdFromEnv();
+  if (!appId) {
+    logger.warn('SLACK_APP_ID is not configured; App Home start-chat button will fall back to bot DM deep link.');
+  }
+  const startChatUrl = appId
+    ? `slack://app?team=${teamId}&id=${appId}&tab=messages`
+    : `slack://user?team=${teamId}&id=${botUserId}&tab=messages`;
+
+  const homeBlocks: any[] = [
     {
       type: 'section',
       text: {
@@ -73,31 +93,6 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
         text: 'CHOIR is a tool that automatically updates documents based on Slack conversations.',
       },
     },
-  ];
-
-  // 모든 사용자에게 Messages 탭으로 이동할 수 있는 버튼 제공
-  // Get team and app info for deep link
-  const authTest = await client.auth.test();
-  const teamId = authTest.team_id;
-  const botUserId = authTest.user_id;
-
-  // Extract app ID from SLACK_APP_TOKEN (format: xapp-1-{APP_ID}-...)
-  let appId = process.env.SLACK_APP_ID;
-  if (!appId && process.env.SLACK_APP_TOKEN) {
-    const tokenParts = process.env.SLACK_APP_TOKEN.split('-');
-    if (tokenParts.length >= 3 && tokenParts[0] === 'xapp') {
-      appId = tokenParts[2]; // App ID is the third part
-    }
-  }
-
-  logger.info('[DEBUG] App Home - Deep link info:', {
-    teamId,
-    botUserId,
-    appId: appId || 'NOT_FOUND',
-    hasAppToken: !!process.env.SLACK_APP_TOKEN,
-  });
-
-  homeBlocks.push(
     {
       type: 'section',
       text: {
@@ -117,29 +112,119 @@ export const buildHomeView = async (client: WebClient, logger: Logger, workspace
           },
           style: 'primary',
           action_id: 'start_chat_url',
-          // Use App Home deep link format for apps with App Home
-          url: appId
-            ? `slack://app?team=${teamId}&id=${appId}&tab=messages`
-            : `slack://user?team=${teamId}&id=${botUserId}&tab=messages`,
+          url: startChatUrl,
         },
       ],
-    } as any,
-  );
-
-  homeBlocks.push({
-    type: 'divider',
-  } as any);
+    },
+    { type: 'divider' },
+  ];
 
   return [
     ...homeBlocks,
     ...documentConnectionBlocks,
     ...choirManagementBlocks,
+    ...openAISettingsBlocks,
     ...becomeManagerBlocks,
     ...organizationNameBlocks,
     ...readOnlyFilesBlocks,
     ...loggingToggleBlocks,
+    ...logDownloadBlocks,
   ];
 };
+
+const buildOpenAISettingsBlocks = async (workspaceId: string, isUserManager: boolean, isOwner: boolean) => {
+  if (!isUserManager && !isOwner) {
+    return [];
+  }
+
+  const { WorkspaceStore } = await import('services/workspace/workspace-store');
+  const { CLASSIFICATION_MODEL } = await import('services/llm/llm-config');
+  const settings = await new WorkspaceStore().getOpenAISettings(workspaceId);
+
+  const hasWorkspaceKey = !!settings?.apiKey;
+  const hasEnvKey = !!process.env.OPENAI_API_KEY;
+  let keyStatus: string;
+  if (hasWorkspaceKey) {
+    const key = settings?.apiKey ?? '';
+    const masked = key.length <= 8 ? '••••' : `${key.slice(0, 4)}…${key.slice(-4)}`;
+    keyStatus = `✅ Workspace key set (${masked})`;
+  } else if (hasEnvKey) {
+    keyStatus = '🟡 Using server default key';
+  } else {
+    keyStatus = '❌ Not configured';
+  }
+
+  const qaModelLabel = settings?.qaModel || 'Server default';
+  const documentUpdateModelLabel = settings?.documentUpdateModel || 'Server default';
+
+  const blocks: any[] = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: '🤖 AI Settings', emoji: true },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*OpenAI Key:* ${keyStatus}\n*Q&A Model:* ${qaModelLabel}\n*Document Update Model:* ${documentUpdateModelLabel}\n*Classification Model:* ${CLASSIFICATION_MODEL} _(fixed)_`,
+      },
+    },
+  ];
+
+  const actionElements: any[] = [
+    {
+      type: 'button',
+      text: { type: 'plain_text', text: 'Configure OpenAI', emoji: true },
+      style: 'primary',
+      action_id: 'configure_openai',
+    },
+  ];
+
+  if (hasWorkspaceKey) {
+    actionElements.push({
+      type: 'button',
+      text: { type: 'plain_text', text: 'Clear Settings', emoji: true },
+      style: 'danger',
+      action_id: 'clear_openai_settings',
+      confirm: {
+        title: { type: 'plain_text', text: 'Clear OpenAI Settings?' },
+        text: {
+          type: 'plain_text',
+          text: 'CHOIR will fall back to the server default key. The workspace-specific key and model choices will be removed.',
+        },
+        confirm: { type: 'plain_text', text: 'Clear' },
+        deny: { type: 'plain_text', text: 'Cancel' },
+      },
+    });
+  }
+
+  blocks.push(
+    {
+      type: 'actions',
+      elements: actionElements,
+    },
+    { type: 'divider' },
+  );
+
+  return blocks;
+};
+
+// SLACK_APP_TOKEN encodes the app id as the third dash-separated segment;
+// only useful as a single-workspace fallback when SLACK_APP_ID is missing.
+function resolveAppIdFromEnv(): string | undefined {
+  if (process.env.SLACK_APP_ID) {
+    return process.env.SLACK_APP_ID;
+  }
+  const token = process.env.SLACK_APP_TOKEN;
+  if (!token) {
+    return undefined;
+  }
+  const parts = token.split('-');
+  if (parts.length >= 3 && parts[0] === 'xapp') {
+    return parts[2];
+  }
+  return undefined;
+}
 
 const buildChoirManagementBlocks = async (
   client: WebClient,
@@ -286,16 +371,7 @@ const buildChoirManagementBlocks = async (
             emoji: true,
           },
           action_id: 'select_qa_channel',
-        },
-        {
-          type: 'button',
-          text: {
-            type: 'plain_text',
-            text: 'Set Q&A Channel',
-            emoji: true,
-          },
-          style: 'primary',
-          action_id: 'set_qa_channel',
+          ...(qaChannelId ? { initial_channel: qaChannelId } : {}),
         },
       ],
     },
@@ -344,8 +420,6 @@ const buildBecomeManagerBlocks = (isUserManager: boolean, isOwner: boolean) => {
 };
 
 const buildDocumentConnectionBlocks = async (
-  client: WebClient,
-  logger: Logger,
   workspaceId: string,
   isUserManager: boolean,
   isOwner: boolean,
@@ -479,13 +553,8 @@ const buildDocumentConnectionBlocks = async (
         },
       ],
     });
-  }
 
-  if ((isUserManager || isOwner) && userGithubInfo) {
-    const savedRepoInfo = await getGithubRepo(workspaceId);
     if (savedRepoInfo) {
-      const vectorStore = VectorStoreService.getInstance();
-      const diagnosis = vectorStore.diagnoseVectorStore(workspaceId);
       const managementButtons: Array<Record<string, unknown>> = [
         {
           type: 'button',
@@ -578,7 +647,7 @@ const buildDocumentConnectionBlocks = async (
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `*Vector Store Status:* ${diagnosis.status === 'healthy' ? '✅ Healthy' : diagnosis.status === 'degraded' ? '⚠️ Degraded' : '❌ Error'}\n*Files:* ${diagnosis.details.documentCount}\n*Chunks:* ${diagnosis.details.vectorsCount}`,
+            text: '*Index Management*\nRun these after editing markdown files or when retrieval looks stale.',
           },
         },
         {
@@ -732,13 +801,7 @@ const buildLoggingToggleBlocks = (isUserManager: boolean, isOwner: boolean, logg
   ];
 };
 
-const buildReadOnlyFilesBlocks = async (
-  client: WebClient,
-  logger: Logger,
-  workspaceId: string,
-  isUserManager: boolean,
-  isOwner: boolean,
-) => {
+const buildReadOnlyFilesBlocks = async (workspaceId: string, isUserManager: boolean, isOwner: boolean) => {
   // Only show this section for managers and owners
   if (!isUserManager && !isOwner) {
     return [];

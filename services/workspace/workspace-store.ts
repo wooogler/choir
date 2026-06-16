@@ -41,8 +41,19 @@ export interface WorkspaceConfig {
     };
   };
   botUserId?: string; // <-- 추가
+  openai?: {
+    apiKey?: string;
+    qaModel?: string;
+    documentUpdateModel?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface WorkspaceOpenAISettings {
+  apiKey?: string;
+  qaModel?: string;
+  documentUpdateModel?: string;
 }
 
 export class WorkspaceStore {
@@ -607,6 +618,34 @@ export class WorkspaceStore {
   public async getLoggingEnabled(workspaceId: string): Promise<boolean> {
     const config = await this.getWorkspaceConfig(workspaceId);
     return config?.loggingEnabled ?? true; // Default to enabled if not set
+  }
+
+  public async getOpenAISettings(workspaceId: string): Promise<WorkspaceOpenAISettings | undefined> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.openai;
+  }
+
+  public async setOpenAISettings(workspaceId: string, settings: WorkspaceOpenAISettings): Promise<void> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+
+    const existing = config.openai ?? {};
+    config.openai = {
+      apiKey: settings.apiKey !== undefined ? settings.apiKey : existing.apiKey,
+      qaModel: settings.qaModel !== undefined ? settings.qaModel : existing.qaModel,
+      documentUpdateModel:
+        settings.documentUpdateModel !== undefined ? settings.documentUpdateModel : existing.documentUpdateModel,
+    };
+    await this.saveWorkspaceConfig(config);
+  }
+
+  public async clearOpenAISettings(workspaceId: string): Promise<void> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) return;
+    config.openai = undefined;
+    await this.saveWorkspaceConfig(config);
   }
 
   /**

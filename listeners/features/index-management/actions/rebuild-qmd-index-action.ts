@@ -6,7 +6,7 @@ import { QmdRetrievalProvider } from 'services/retrieval/qmd-provider';
 import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { appHomeOpenedCallback } from '../../../event-handlers/app-home-handler';
+import { refreshAppHomeSoon } from '../../app-home/refresh';
 
 export const rebuildQmdIndexAction = async ({
   ack,
@@ -139,29 +139,7 @@ export const rebuildQmdIndexAction = async ({
       ],
     });
 
-    setTimeout(async () => {
-      try {
-        const mockEvent = {
-          type: 'app_home_opened' as const,
-          user: body.user.id,
-          tab: 'home' as const,
-          event_ts: Date.now().toString(),
-        };
-
-        const handlerArgs = {
-          client,
-          event: mockEvent,
-          logger,
-          context: {},
-          payload: mockEvent,
-        };
-
-        await appHomeOpenedCallback(handlerArgs as any);
-        logger.info(`Home screen refreshed for user ${body.user.id} after QMD rebuild`);
-      } catch (error) {
-        logger.error('Error refreshing home view after QMD rebuild:', error);
-      }
-    }, 3000);
+    refreshAppHomeSoon({ client, logger, userId: body.user.id, reason: 'QMD rebuild' }, 3000);
 
     await logAppHomeButtonClick(
       body.user.id,
