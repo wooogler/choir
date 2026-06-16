@@ -21,6 +21,7 @@ import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 export async function handleQuestionMessage(client: any, event: any, userMessage: string, logger: any) {
   const startTime = Date.now();
   let loadingMessageTs: string | undefined;
+  let longRunningNoticeTimer: ReturnType<typeof setTimeout> | undefined;
   let relevantDocs: any[] = [];
 
   try {
@@ -63,6 +64,32 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
 
     // QuestionProcessor로 질문 처리
     const questionProcessor = new QuestionProcessor();
+    longRunningNoticeTimer = setTimeout(() => {
+      if (!loadingMessageTs) {
+        return;
+      }
+
+      client.chat
+        .update({
+          channel: event.channel,
+          ts: loadingMessageTs,
+          text: 'Building the Q&A index and preparing your answer...',
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: ':hourglass_flowing_sand: The Q&A index is still being built, so this first answer may take a little longer. I’ll update this message when it’s ready.',
+              },
+              block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
+            },
+          ],
+        })
+        .catch((noticeError: unknown) => {
+          logger.warn('Failed to update long-running Q&A notice:', noticeError);
+        });
+    }, 10000);
+
     const processingResult = await questionProcessor.processQuestion(
       userMessage,
       historyResult.messages || [],
@@ -70,6 +97,10 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       logger,
       event.user, // 사용자 ID 전달
     );
+    if (longRunningNoticeTimer) {
+      clearTimeout(longRunningNoticeTimer);
+      longRunningNoticeTimer = undefined;
+    }
 
     const {
       answerResult,
@@ -464,6 +495,11 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     logger.info(`Question answered successfully for user ${event.user} in channel ${event.channel}`);
     return true;
   } catch (error) {
+    if (longRunningNoticeTimer) {
+      clearTimeout(longRunningNoticeTimer);
+      longRunningNoticeTimer = undefined;
+    }
+
     logger.error('Error in handleQuestionMessage:', error);
 
     // 로그: 질문 처리 실패

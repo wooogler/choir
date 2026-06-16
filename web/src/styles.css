@@ -1,8 +1,7 @@
 :root {
   color: #2f2f2f;
   background: #ffffff;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 * {
@@ -28,16 +27,53 @@ a {
   grid-template-columns: 248px minmax(0, 1fr);
   min-height: 100vh;
   background: #ffffff;
+  transition: grid-template-columns 220ms ease;
+}
+
+.docs-shell.sidebar-closed {
+  grid-template-columns: 0 minmax(0, 1fr);
 }
 
 .docs-sidebar {
   position: sticky;
   top: 0;
   height: 100vh;
-  overflow: auto;
   border-right: 1px solid #e8e8e5;
   background: #f8f8f7;
   padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  transition: transform 220ms ease, border-right-color 220ms ease;
+}
+
+.docs-shell.sidebar-closed .docs-sidebar {
+  transform: translateX(-100%);
+  border-right-color: transparent;
+}
+
+.docs-sidebar .sidebar-header {
+  flex-shrink: 0;
+}
+
+.docs-sidebar .file-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+}
+
+.sidebar-backdrop {
+  display: none;
+  border: 0;
+  padding: 0;
+}
+
+.doc-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100vh;
 }
 
 .sidebar-header {
@@ -174,35 +210,96 @@ a {
   white-space: nowrap;
 }
 
-.doc-page {
-  width: min(100%, 900px);
-  min-height: 100vh;
-  margin: 0 auto;
-  padding: 92px 64px 140px;
+.doc-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #ececea;
+  min-height: 48px;
 }
 
-.doc-breadcrumb {
-  margin-bottom: 12px;
-  overflow-wrap: anywhere;
-  color: #8f8f89;
+.doc-topbar.dirty {
+  background: rgba(255, 247, 220, 0.92);
+  border-bottom-color: #f0d370;
+}
+
+.doc-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.doc-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.doc-change-count {
+  color: #6f5b13;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.doc-topbar-breadcrumb {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 13px;
+  color: #6e6e69;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.doc-title {
-  margin: 0 0 28px;
-  color: #242424;
-  font-size: clamp(34px, 5vw, 48px);
-  font-weight: 750;
-  letter-spacing: 0;
-  line-height: 1.08;
+.doc-iconbutton {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #4a4a45;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.doc-iconbutton:hover {
+  background: #ececea;
+}
+
+.doc-iconbutton:focus-visible {
+  outline: 2px solid #2f6feb;
+  outline-offset: 1px;
+}
+
+.doc-page {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  padding: 40px 24px 140px;
+  flex: 1 1 auto;
 }
 
 .doc-loading {
   margin: 20px 0;
   color: #8f8f89;
   font-size: 14px;
+}
+
+.doc-editor-wrap {
+  position: relative;
+  overflow: visible;
 }
 
 .error-page,
@@ -259,10 +356,7 @@ a {
   height: 2px;
   border-radius: 999px;
   background: #d8d8d4;
-  transition:
-    width 140ms ease,
-    background 140ms ease,
-    height 140ms ease;
+  transition: width 140ms ease, background 140ms ease, height 140ms ease;
 }
 
 .toc-marker.level-1 .toc-marker-bar {
@@ -308,16 +402,12 @@ a {
   border: 1px solid #e6e6e2;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.98);
-  box-shadow:
-    0 24px 54px rgba(15, 23, 42, 0.12),
-    0 2px 8px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 24px 54px rgba(15, 23, 42, 0.12), 0 2px 8px rgba(15, 23, 42, 0.06);
   opacity: 0;
   pointer-events: none;
   transform: translateX(8px) scale(0.98);
   transform-origin: top right;
-  transition:
-    opacity 140ms ease,
-    transform 140ms ease;
+  transition: opacity 140ms ease, transform 140ms ease;
   backdrop-filter: blur(16px);
 }
 
@@ -364,50 +454,161 @@ a {
   font-weight: 520;
 }
 
-.bn-container[data-color-scheme] {
-  --bn-colors-editor-background: transparent;
-  --bn-colors-menu-background: #ffffff;
-  --bn-colors-tooltip-background: #2f3437;
-  --bn-colors-tooltip-text: #ffffff;
-  color: #37352f;
+.doc-button {
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 540;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 
-.bn-editor {
-  padding-inline: 0 !important;
-  background: transparent !important;
+.doc-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
-.bn-block-content {
-  color: #37352f;
+.doc-button-primary {
+  background: #2f6feb;
+  color: #ffffff;
+}
+
+.doc-button-primary:not(:disabled):hover {
+  background: #2858c0;
+}
+
+.doc-button-ghost {
+  background: transparent;
+  color: #2f2f2f;
+  border-color: #d6d6d2;
+}
+
+.doc-button-ghost:not(:disabled):hover {
+  background: #f1f1ee;
+}
+
+.doc-notice {
+  margin: 16px 0;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #eef5ff;
+  color: #1a3a8a;
+  font-size: 14px;
+}
+
+.doc-notice-error {
+  background: #fdecea;
+  color: #8a1a1a;
+}
+
+.crepe-host {
+  margin-top: 16px;
+}
+
+.crepe-host .milkdown {
+  padding-inline: 0;
+  background: transparent;
+}
+
+/* Override Crepe's default 60px/120px ProseMirror padding so content can
+   use the full width of .doc-page. Left padding stays large enough to fit
+   the absolutely-positioned block handle (two 32px buttons) in the gutter. */
+.crepe-host .milkdown .ProseMirror {
+  padding: 24px 24px 24px 80px;
   font-size: 16px;
   line-height: 1.65;
+  color: #37352f;
+  outline: none;
 }
 
-.bn-block-content h1,
-.bn-block-content h2,
-.bn-block-content h3 {
+.crepe-host .milkdown .ProseMirror h1,
+.crepe-host .milkdown .ProseMirror h2,
+.crepe-host .milkdown .ProseMirror h3,
+.crepe-host .milkdown .ProseMirror h4,
+.crepe-host .milkdown .ProseMirror h5,
+.crepe-host .milkdown .ProseMirror h6 {
   scroll-margin-top: 36px;
   letter-spacing: 0;
 }
 
-.bn-block-content h1 {
-  margin-top: 1.35em;
-  font-size: 1.95rem;
-}
-
-.bn-block-content h2 {
-  margin-top: 1.25em;
-  font-size: 1.45rem;
-}
-
-.bn-block-content h3 {
-  margin-top: 1.1em;
-  font-size: 1.18rem;
-}
-
-.bn-block-content p,
-.bn-block-content li {
+.crepe-host .milkdown .ProseMirror p,
+.crepe-host .milkdown .ProseMirror li {
   overflow-wrap: anywhere;
+}
+
+.crepe-host .milkdown .ProseMirror .block-changed {
+  position: relative;
+  background: rgba(245, 197, 24, 0.12);
+  border-left: 3px solid #f0c437;
+  border-radius: 4px;
+  padding-left: 10px;
+  margin-left: -13px;
+}
+
+.commit-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 28, 32, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.commit-dialog {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 24px;
+  width: min(520px, 100%);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.commit-dialog-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 620;
+}
+
+.commit-dialog-subtitle {
+  margin: 0;
+  color: #6e6e69;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.commit-dialog-label {
+  font-size: 13px;
+  font-weight: 540;
+  margin-top: 4px;
+}
+
+.commit-dialog-input {
+  width: 100%;
+  resize: vertical;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid #d6d6d2;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.commit-dialog-input:focus {
+  outline: 2px solid #2f6feb;
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.commit-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 @media (max-width: 1080px) {
@@ -415,32 +616,67 @@ a {
     grid-template-columns: 212px minmax(0, 1fr);
   }
 
+  .docs-shell.sidebar-closed {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
   .doc-page {
-    padding-inline: 40px;
+    padding-inline: 16px;
   }
 }
 
 @media (max-width: 820px) {
-  .docs-shell {
+  .docs-shell,
+  .docs-shell.sidebar-closed {
     display: block;
+    grid-template-columns: none;
   }
 
   .docs-sidebar {
-    position: sticky;
-    z-index: 10;
-    height: auto;
-    max-height: 42vh;
-    border-right: 0;
-    border-bottom: 1px solid #e8e8e5;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 86%;
+    max-width: 340px;
+    height: 100vh;
+    height: 100dvh;
+    z-index: 200;
+    border-right: 1px solid #e8e8e5;
+    transform: translateX(-100%);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18);
   }
 
-  .file-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  .docs-shell.sidebar-open .docs-sidebar {
+    transform: translateX(0);
+  }
+
+  .docs-shell.sidebar-closed .docs-sidebar {
+    transform: translateX(-100%);
+    border-right-color: transparent;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 150;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms ease;
+  }
+
+  .sidebar-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .doc-page {
-    padding: 44px 24px 96px;
+    padding: 24px 12px 96px;
+  }
+
+  .crepe-host .milkdown .ProseMirror {
+    padding: 16px 12px 16px 48px;
   }
 
   .toc-rail {

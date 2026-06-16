@@ -16,7 +16,10 @@
     }
   },
   "oauth_config": {
-    "redirect_urls": ["https://your-domain.example/slack/oauth_redirect"],
+    "redirect_urls": [
+      "https://your-domain.example/slack/oauth_redirect",
+      "https://your-domain.example/docs/auth/slack/callback"
+    ],
     "scopes": {
       "bot": [
         "app_mentions:read",
@@ -34,7 +37,8 @@
         "team:read",
         "users:read",
         "files:write"
-      ]
+      ],
+      "user": ["openid", "email", "profile"]
     }
   },
   "settings": {

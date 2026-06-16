@@ -53,27 +53,6 @@ export function formatTitle(filePath: string): string {
   );
 }
 
-export function normalizeMarkdownForBlockNote(markdown: string): string {
-  let inCodeFence = false;
-
-  return markdown
-    .split('\n')
-    .map((line) => {
-      const trimmed = line.trim();
-      if (trimmed === '```' || trimmed === '~~~') {
-        if (!inCodeFence) {
-          inCodeFence = true;
-          return `${trimmed}text`;
-        }
-
-        inCodeFence = false;
-      }
-
-      return line;
-    })
-    .join('\n');
-}
-
 export function buildFolderTree(files: DocFile[]): FolderNode {
   const root: FolderNode = { name: '', path: '', folders: [], files: [] };
   const foldersByPath = new Map<string, FolderNode>([['', root]]);

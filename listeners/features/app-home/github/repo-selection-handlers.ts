@@ -1,8 +1,11 @@
 import type { App } from '@slack/bolt';
+import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
 import { GitHubOAuthDeviceFlow } from 'services/github/oauth-device-flow';
 import { getRepositoryAccessError, normalizeRepositoryPath } from 'services/github/repository-access';
+import { getRetrievalProvider } from 'services/retrieval';
+import { QmdRetrievalProvider } from 'services/retrieval/qmd-provider';
 import { getWorkspaceId, parseGithubUrl, storeGithubRepo } from 'services/slack';
 import { GitHubSyncService } from 'services/sync/github-sync-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
@@ -342,8 +345,57 @@ export const registerRepositorySelectionHandlers = (app: App) => {
           await client.chat.postEphemeral({
             user: userId,
             channel: userId,
-            text: `✅ Successfully connected to ${repoInfo.owner}/${repoInfo.repo} and loaded ${markdownFiles.length} files!`,
+            text: `📚 Loaded ${markdownFiles.length} files from ${repoInfo.owner}/${repoInfo.repo}. Building the Q&A index now; this may take a minute or two on CPU.`,
           });
+
+          let qmdIndexReady = false;
+          let qmdMetadata: Record<string, unknown> = { qmdIndexReady: false };
+          try {
+            const retrievalProvider = getRetrievalProvider();
+            if (!(retrievalProvider instanceof QmdRetrievalProvider)) {
+              throw new Error('Configured retrieval provider is not a QmdRetrievalProvider.');
+            }
+
+            await QmdUpdateAnchorService.getInstance().invalidateWorkspace(workspaceId);
+            logger.info('Building QMD index after repository connection', {
+              workspaceId,
+              repository: `${repoInfo.owner}/${repoInfo.repo}`,
+              filesFound: markdownFiles.length,
+            });
+            const rebuildResult = await retrievalProvider.rebuildWorkspaceIndex(workspaceId);
+            const embeddedChunks = rebuildResult.embedResult?.chunksEmbedded ?? 0;
+            const processedDocs = rebuildResult.embedResult?.docsProcessed ?? 0;
+
+            qmdIndexReady = true;
+            qmdMetadata = {
+              qmdIndexReady: true,
+              qmdIndexed: rebuildResult.updateResult.indexed,
+              qmdUpdated: rebuildResult.updateResult.updated,
+              qmdUnchanged: rebuildResult.updateResult.unchanged,
+              qmdRemoved: rebuildResult.updateResult.removed,
+              qmdDocsEmbedded: processedDocs,
+              qmdChunksEmbedded: embeddedChunks,
+            };
+
+            await client.chat.postEphemeral({
+              user: userId,
+              channel: userId,
+              text: `✅ Successfully connected to ${repoInfo.owner}/${repoInfo.repo}, loaded ${markdownFiles.length} files, and built the Q&A index. CHOIR is ready to answer questions.`,
+            });
+          } catch (qmdError) {
+            logger.error('Repository connected but QMD index build failed:', qmdError);
+            qmdMetadata = {
+              qmdIndexReady: false,
+              qmdIndexError: qmdError instanceof Error ? qmdError.message : 'Unknown QMD index error',
+              qmdIndexErrorStack: qmdError instanceof Error ? qmdError.stack : undefined,
+            };
+
+            await client.chat.postEphemeral({
+              user: userId,
+              channel: userId,
+              text: `⚠️ Repository connected and ${markdownFiles.length} files were loaded, but the Q&A index failed to build. Q&A will not be ready until you rebuild the QMD index from App Home.`,
+            });
+          }
 
           // Log successful connection
           const { logAppHomeModalSubmit } = await import('services/common/interaction-tracker');
@@ -352,8 +404,10 @@ export const registerRepositorySelectionHandlers = (app: App) => {
             workspaceId,
             'select_repository_modal',
             Date.now() - startTime,
-            true,
-            `Successfully connected repository - ${repoInfo.owner}/${repoInfo.repo} at path: "${repositoryPath}" with ${markdownFiles.length} files`,
+            qmdIndexReady,
+            qmdIndexReady
+              ? `Successfully connected repository and built QMD index - ${repoInfo.owner}/${repoInfo.repo} at path: "${repositoryPath}" with ${markdownFiles.length} files`
+              : `Repository connected but QMD index build failed - ${repoInfo.owner}/${repoInfo.repo} at path: "${repositoryPath}" with ${markdownFiles.length} files`,
             {
               selectedRepository: `${repoInfo.owner}/${repoInfo.repo}`,
               repositoryUrl: repoInfo.url,
@@ -362,6 +416,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
               isPrivate: repository.private,
               filesFound: markdownFiles.length,
               vectorStoreInitialized: true,
+              ...qmdMetadata,
               fileNames: markdownFiles.map((file) => file.name),
             },
             client,

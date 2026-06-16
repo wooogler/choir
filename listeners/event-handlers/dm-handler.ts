@@ -1,8 +1,8 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
 import { getManagers, getNonUserResponseMessage, getWorkspaceId, isCHOIRUser } from 'services/slack';
+import { getOrInitBotUserId } from 'services/slack/user-management';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { handleIncomingMessage } from './message-router';
-import { getOrInitBotUserId } from 'services/slack/user-management';
 
 /**
  * DM 메시지 처리 콜백
@@ -49,7 +49,7 @@ const dmMessageCallback = async ({
     // 추가 봇 필터링 - 포괄적 무한 루프 방지
     const userId = 'user' in event ? event.user : '';
     if (!userId) return;
-    
+
     // SLACKBOT 및 기타 시스템 봇 필터링
     if (userId === 'USLACKBOT') {
       logger.info('Skipping SLACKBOT message in DM to prevent infinite loop', {
@@ -58,7 +58,7 @@ const dmMessageCallback = async ({
       });
       return;
     }
-    
+
     // 봇 사용자 ID 패턴 필터링 (대부분 봇은 B로 시작하거나 특별한 패턴)
     // Google Drive bot, 기타 앱 봇들을 포괄적으로 필터링
     if (userId.startsWith('B') || userId.includes('bot') || userId.includes('BOT')) {

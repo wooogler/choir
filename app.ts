@@ -6,8 +6,22 @@ import { SlackUsageMonitor, usageMonitoringMiddleware } from 'services/slack/usa
 import registerListeners from './listeners';
 
 import { AppConfig } from '@/config';
+import {
+  buildClearSessionCookieHeader,
+  buildSessionCookieHeader,
+  buildSlackAuthorizeUrl,
+  exchangeSlackOidcCode,
+  getSlackOidcConfig,
+  issueOAuthState,
+  issueSessionCookieValue,
+  parseSessionCookie,
+  saveEditedDocument,
+  verifyOAuthState,
+  verifySessionCookieValue,
+} from 'services/docs-editor';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
+import { isManager } from 'services/slack';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { getGithubRepo } from 'services/slack';
@@ -119,9 +133,13 @@ function setupPublicSite(): void {
     const express = require('express');
     const standalone = express();
     const port = Number(process.env.PORT || 3000);
-    standalone.listen(port, () => {
-      app.logger.info(`Docs HTTP server listening on port ${port}`);
-    });
+    const listenHost = process.env.LISTEN_HOST;
+    const onListen = () => app.logger.info(`Docs HTTP server listening on ${listenHost || '0.0.0.0'}:${port}`);
+    if (listenHost) {
+      standalone.listen(port, listenHost, onListen);
+    } else {
+      standalone.listen(port, onListen);
+    }
     router = standalone;
   }
 
@@ -161,6 +179,45 @@ function setupPublicSite(): void {
     const serveStatic = require('serve-static');
     router.use('/docs-app', serveStatic(docsAppRoot));
   }
+
+  const cookieSecure = (process.env.NODE_ENV || '').toLowerCase() === 'production';
+
+  // Helper: resolve current session from request cookie
+  const readSession = async (req: any) => {
+    const raw = parseSessionCookie(req.headers?.cookie);
+    if (!raw) return null;
+    const verification = verifySessionCookieValue(raw);
+    if (!verification.ok) return null;
+    return verification.payload;
+  };
+
+  // Read session identity for the frontend to show edit affordances.
+  // IMPORTANT: declared before /api/docs/:workspaceId so the parameterized
+  // route does not shadow this static path.
+  router.get('/api/docs/session', async (req: any, res: any) => {
+    try {
+      const payload = await readSession(req);
+      if (!payload) {
+        return res.json({ authenticated: false });
+      }
+      const manager = await isManager(payload.workspaceId, payload.userId);
+      return res.json({
+        authenticated: true,
+        workspaceId: payload.workspaceId,
+        userId: payload.userId,
+        isManager: manager,
+      });
+    } catch (err) {
+      app.logger.error('GET /api/docs/session failed', err as Error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // Clear session cookie
+  router.post('/api/docs/logout', async (_req: any, res: any) => {
+    res.setHeader('set-cookie', buildClearSessionCookieHeader({ secure: cookieSecure }));
+    return res.json({ ok: true });
+  });
 
   router.get('/api/docs/:workspaceId', async (req: any, res: any) => {
     try {
@@ -243,6 +300,125 @@ function setupPublicSite(): void {
       return res.status(500).json({ error: 'Internal server error' });
     }
   });
+
+  // Begin Slack "Sign in with Slack" OAuth flow
+  router.get('/docs/auth/slack/start', async (req: any, res: any) => {
+    try {
+      const workspaceId = String(req.query?.workspaceId || '').trim();
+      const next = String(req.query?.next || '/').trim();
+      if (!workspaceId) {
+        return res.status(400).send('Missing workspaceId');
+      }
+      const config = getSlackOidcConfig();
+      if (!config) {
+        return res
+          .status(503)
+          .send(
+            'Slack sign-in is not configured. Set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and DOCS_BASE_URL.',
+          );
+      }
+      const safeNext = next.startsWith('/') ? next : '/';
+      const state = issueOAuthState({ workspaceId, next: safeNext });
+      const url = buildSlackAuthorizeUrl({ config, state });
+      return res.redirect(url);
+    } catch (err) {
+      app.logger.error('Slack OAuth start failed', err as Error);
+      return res.status(500).send('Sign-in failed');
+    }
+  });
+
+  // Handle Slack OIDC callback
+  router.get('/docs/auth/slack/callback', async (req: any, res: any) => {
+    try {
+      const code = String(req.query?.code || '').trim();
+      const stateRaw = String(req.query?.state || '').trim();
+      if (!code || !stateRaw) {
+        return res.status(400).send('Missing code or state');
+      }
+      const stateVerification = verifyOAuthState(stateRaw);
+      if (!stateVerification.ok) {
+        return res.status(400).send(`Invalid sign-in state (${stateVerification.reason})`);
+      }
+      const config = getSlackOidcConfig();
+      if (!config) {
+        return res.status(503).send('Slack sign-in is not configured');
+      }
+
+      const result = await exchangeSlackOidcCode({ config, code });
+      const { workspaceId, next } = stateVerification.payload;
+
+      const cookieValue = issueSessionCookieValue({ workspaceId, userId: result.userId });
+      res.setHeader('set-cookie', buildSessionCookieHeader(cookieValue, { secure: cookieSecure }));
+
+      const safeNext = next.startsWith('/') ? next : '/';
+      return res.redirect(safeNext);
+    } catch (err) {
+      app.logger.error('Slack OAuth callback failed', err as Error);
+      return res.status(500).send('Sign-in failed');
+    }
+  });
+
+  // API: save edited markdown back to the workspace mirror and GitHub.
+  // Auth: signed session cookie + manager check.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const expressForBodyParser = require('express');
+  router.put(
+    '/api/docs/:workspaceId/*splat',
+    expressForBodyParser.json({ limit: '5mb' }),
+    async (req: any, res: any) => {
+      try {
+        const workspaceId = String(req.params.workspaceId);
+        const filePath = Array.isArray(req.params.splat)
+          ? req.params.splat.join('/')
+          : String(req.params.splat);
+
+        if (!filePath) {
+          return res.status(400).json({ error: 'filePath is required' });
+        }
+
+        const { content, commitMessage } = req.body || {};
+        if (typeof content !== 'string') {
+          return res.status(400).json({ error: 'content is required' });
+        }
+        if (typeof commitMessage !== 'string' || !commitMessage.trim()) {
+          return res.status(400).json({ error: 'commitMessage is required' });
+        }
+
+        const session = await readSession(req);
+        if (!session) {
+          return res.status(401).json({ error: 'Not signed in' });
+        }
+        if (session.workspaceId !== workspaceId) {
+          return res.status(403).json({ error: 'Session does not match workspace' });
+        }
+
+        const managerCheck = await isManager(workspaceId, session.userId);
+        if (!managerCheck) {
+          return res.status(403).json({ error: 'User is not a workspace manager' });
+        }
+
+        const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
+        const resolved = path.resolve(repoRoot, filePath);
+        if (!resolved.startsWith(path.resolve(repoRoot))) {
+          return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        const result = await saveEditedDocument({
+          workspaceId,
+          userId: session.userId,
+          filePath,
+          content,
+          commitMessage,
+        });
+
+        return res.json({ ok: true, commitSha: result.commitSha });
+      } catch (err) {
+        app.logger.error('PUT /api/docs failed', err as Error);
+        const message = err instanceof Error ? err.message : 'Internal server error';
+        return res.status(500).json({ error: message });
+      }
+    },
+  );
 
   // SPA fallback: /docs/* → serve SPA index.html
   router.get('/docs/*splat', (_req: any, res: any) => {
@@ -459,7 +635,9 @@ process.once('SIGINT', () => {
     const singleWorkspaceStartup =
       slackConfig.mode === 'single' ? await initializeSingleWorkspaceOnStartup() : undefined;
 
-    await app.start(process.env.PORT || 3000);
+    const port = Number(process.env.PORT || 3000);
+    const listenHost = process.env.LISTEN_HOST;
+    await app.start(listenHost ? { port, host: listenHost } : port);
     app.logger.info('⚡️ Bolt app is running! ⚡️');
     app.logger.info(`Slack mode: ${slackConfig.mode}`);
 
