@@ -23,11 +23,12 @@ import {
   verifyOAuthState,
   verifySessionCookieValue,
 } from 'services/docs-editor';
+import { getProvenanceRecord, listProvenanceForDoc } from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
-import { isManager } from 'services/slack';
+import { isCHOIRUser, isManager } from 'services/slack';
 import { getGithubRepo } from 'services/slack';
 import { SqliteSlackInstallationStore } from 'services/slack/sqlite-installation-store';
 import { ensureWorkspaceInitialized } from 'services/slack/workspace-bootstrap';
@@ -204,12 +205,16 @@ function setupPublicSite(): void {
       if (!payload) {
         return res.json({ authenticated: false });
       }
-      const manager = await isManager(payload.workspaceId, payload.userId);
+      const [manager, choirUser] = await Promise.all([
+        isManager(payload.workspaceId, payload.userId),
+        isCHOIRUser(payload.workspaceId, payload.userId),
+      ]);
       return res.json({
         authenticated: true,
         workspaceId: payload.workspaceId,
         userId: payload.userId,
         isManager: manager,
+        isChoirUser: choirUser,
       });
     } catch (err) {
       app.logger.error('GET /api/docs/session failed', err as Error);
@@ -275,6 +280,42 @@ function setupPublicSite(): void {
     }
   });
 
+  // API: provenance (commit-attached context) for a document — MANAGER ONLY,
+  // server-side decryption. Declared before the generic content route below so
+  // the `*splat` route does not shadow it.
+  router.get('/api/docs/:workspaceId/provenance/*splat', async (req: any, res: any) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      const docPath = Array.isArray(req.params.splat) ? req.params.splat.join('/') : String(req.params.splat);
+      if (!docPath) {
+        return res.status(400).json({ error: 'document path is required' });
+      }
+
+      // A valid session for this workspace now proves internal membership (the
+      // sign-in callback verifies team_id === workspaceId), so any workspace member
+      // may see full records. External visitors have no valid session → blocked.
+      const payload = await readSession(req);
+      if (!payload || payload.workspaceId !== workspaceId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const id = typeof req.query.id === 'string' ? req.query.id : undefined;
+      if (id) {
+        const record = await getProvenanceRecord(workspaceId, docPath, id);
+        if (!record) {
+          return res.status(404).json({ error: 'Record not found' });
+        }
+        return res.json({ record });
+      }
+
+      const records = await listProvenanceForDoc(workspaceId, docPath);
+      return res.json({ records });
+    } catch (err) {
+      app.logger.error('GET /api/docs provenance failed', err as Error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // API: return raw markdown for a file in the workspace mirror
   router.get('/api/docs/:workspaceId/*splat', async (req: any, res: any) => {
     try {
@@ -283,6 +324,11 @@ function setupPublicSite(): void {
 
       if (!filePath) {
         return res.status(400).json({ error: 'filePath is required' });
+      }
+
+      // Never serve the hidden provenance store through the generic file route.
+      if (filePath === '.choir' || filePath.startsWith('.choir/')) {
+        return res.status(404).json({ error: 'File not found' });
       }
 
       const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
@@ -356,6 +402,18 @@ function setupPublicSite(): void {
 
       const result = await exchangeSlackOidcCode({ config, code });
       const { workspaceId, next } = stateVerification.payload;
+
+      // workspaceId IS the Slack team_id (getWorkspaceId returns auth.test team_id),
+      // so the id_token's team_id claim must match. This proves the signer is a real
+      // member of THIS workspace — not just any Slack user who has the URL — and is
+      // what makes a valid session a trustworthy "internal member" signal.
+      if (!result.teamId || result.teamId !== workspaceId) {
+        app.logger.warn('Slack sign-in rejected: workspace/team mismatch', {
+          workspaceId,
+          teamId: result.teamId,
+        });
+        return res.status(403).send('You are not a member of this workspace.');
+      }
 
       const cookieValue = issueSessionCookieValue({ workspaceId, userId: result.userId });
       res.setHeader('set-cookie', buildSessionCookieHeader(cookieValue, { secure: cookieSecure }));

@@ -18,6 +18,7 @@ export {
   getCHOIRUsers,
   setCHOIRUsers,
   isCHOIRUser,
+  resolveUserNames,
   getNonUserResponseMessage,
   getOrInitBotUserId,
 } from './user-management';

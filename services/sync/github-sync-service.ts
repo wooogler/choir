@@ -94,6 +94,29 @@ export class GitHubSyncService {
       source: params.source,
     });
 
+    // Mirror encrypted provenance sidecars (`.choir/context/`) so the viewer can
+    // read them locally. Best-effort; the markdown sync above does not cover them.
+    try {
+      const contextFiles = await GithubService.getInstance().fetchContextFiles({
+        owner: repoInfo.owner,
+        repo: repoInfo.repo,
+        ref: repoInfo.branch,
+        workspaceId: params.workspaceId,
+        userId: params.userId,
+      });
+      const mirror = WorkspaceMirrorService.getInstance();
+      for (const file of contextFiles) {
+        await mirror.writeContextFile(params.workspaceId, file.path, file.content);
+      }
+      if (contextFiles.length > 0) {
+        Logger.info(`GitHubSyncService: mirrored ${contextFiles.length} provenance context file(s)`, {
+          workspaceId: params.workspaceId,
+        });
+      }
+    } catch (error) {
+      Logger.warn('GitHubSyncService: failed to mirror provenance context files', error as Error);
+    }
+
     return markdownFiles;
   }
 

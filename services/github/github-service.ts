@@ -177,6 +177,64 @@ class GithubService {
   }
 
   // File management methods
+  /**
+   * Fetch all encrypted provenance sidecars under `.choir/context/` as text blobs.
+   * Used to repopulate the mirror after a cache purge / fresh deploy. Best-effort:
+   * returns [] if the tree cannot be read.
+   */
+  async fetchContextFiles(params: {
+    owner: string;
+    repo: string;
+    ref?: string;
+    workspaceId?: string;
+    userId?: string;
+  }): Promise<Array<{ path: string; content: string }>> {
+    try {
+      const octokit = await this.getOctokit(params.workspaceId, params.userId);
+      const actualRef =
+        params.ref || (await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId));
+
+      const treeResponse = await this.throttledRequest(() =>
+        octokit.rest.git.getTree({ owner: params.owner, repo: params.repo, tree_sha: actualRef, recursive: true }),
+      );
+      const items = ((treeResponse as any).data.tree as any[]).filter(
+        (item) =>
+          item.type === 'blob' &&
+          typeof item.path === 'string' &&
+          item.path.startsWith('.choir/context/') &&
+          item.path.endsWith('.json.enc'),
+      );
+
+      const out: Array<{ path: string; content: string }> = [];
+      const chunks = this.chunkArray(items, this.throttleOptions.maxConcurrent);
+      for (const chunk of chunks) {
+        const results = await Promise.all(
+          chunk.map(async (item) => {
+            try {
+              const blob = await this.throttledRequest(() =>
+                octokit.rest.git.getBlob({ owner: params.owner, repo: params.repo, file_sha: item.sha }),
+              );
+              return {
+                path: item.path as string,
+                content: Buffer.from((blob as any).data.content, 'base64').toString('utf-8'),
+              };
+            } catch (error) {
+              Logger.warn(`Failed to fetch context blob ${item.path}`, error as Error);
+              return null;
+            }
+          }),
+        );
+        for (const result of results) {
+          if (result) out.push(result);
+        }
+      }
+      return out;
+    } catch (error) {
+      Logger.warn('fetchContextFiles failed', error as Error);
+      return [];
+    }
+  }
+
   async getAllMarkdownFiles(params: {
     owner: string;
     repo: string;
@@ -453,6 +511,122 @@ class GithubService {
       throw new GitHubError('Failed to update file', {
         code: ErrorCodes.GITHUB_UPDATE_FAILED,
         metadata: { owner: params.owner, repo: params.repo, path: params.path },
+      });
+    }
+  }
+
+  /**
+   * Commits multiple text files in a SINGLE commit via the Git Data API.
+   *
+   * Used so a document change and its encrypted provenance sidecar
+   * (`.choir/context/…json.enc`) land atomically in one commit — the Contents
+   * API can only write one file per commit. Retries on non-fast-forward (a
+   * concurrent commit moved the branch) by re-reading HEAD.
+   *
+   * See docs/update-provenance.md.
+   */
+  async commitFilesWithContext(params: {
+    owner: string;
+    repo: string;
+    branch?: string;
+    message: string;
+    files: Array<{ path: string; content: string }>;
+    workspaceId?: string;
+    userId?: string;
+  }): Promise<{ commitSha: string }> {
+    const { owner, repo } = params;
+    if (params.files.length === 0) {
+      throw new GitHubError('commitFilesWithContext requires at least one file', {
+        code: ErrorCodes.GITHUB_UPDATE_FAILED,
+        metadata: { owner, repo },
+      });
+    }
+
+    try {
+      const octokit = await this.getOctokit(params.workspaceId, params.userId);
+      const branch = params.branch || (await this.getDefaultBranch(owner, repo, params.workspaceId, params.userId));
+      const ref = `heads/${branch}`;
+      const baseMessage = params.message || 'Update documents';
+      const commitMessage = baseMessage.includes('[choir-auto]') ? baseMessage : `${baseMessage} [choir-auto]`;
+
+      // Blobs are content-addressed, so create them once and reuse across retries.
+      const blobs = await Promise.all(
+        params.files.map(async (file) => {
+          const blob = await this.throttledRequest(() =>
+            octokit.rest.git.createBlob({ owner, repo, content: file.content, encoding: 'utf-8' }),
+          );
+          return { path: file.path, sha: (blob as any).data.sha };
+        }),
+      );
+
+      const maxAttempts = 4;
+      let commitSha = '';
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const refResponse = await this.throttledRequest(() => octokit.rest.git.getRef({ owner, repo, ref }));
+        const headSha = (refResponse as any).data.object.sha;
+
+        const headCommit = await this.throttledRequest(() =>
+          octokit.rest.git.getCommit({ owner, repo, commit_sha: headSha }),
+        );
+        const baseTreeSha = (headCommit as any).data.tree.sha;
+
+        const treeResponse = await this.throttledRequest(() =>
+          octokit.rest.git.createTree({
+            owner,
+            repo,
+            base_tree: baseTreeSha,
+            tree: blobs.map((b) => ({ path: b.path, mode: '100644', type: 'blob', sha: b.sha })),
+          }),
+        );
+        const newTreeSha = (treeResponse as any).data.sha;
+
+        const commitResponse = await this.throttledRequest(() =>
+          octokit.rest.git.createCommit({
+            owner,
+            repo,
+            message: commitMessage,
+            tree: newTreeSha,
+            parents: [headSha],
+          }),
+        );
+        const newCommitSha = (commitResponse as any).data.sha;
+
+        try {
+          await this.throttledRequest(() =>
+            octokit.rest.git.updateRef({ owner, repo, ref, sha: newCommitSha, force: false }),
+          );
+          commitSha = newCommitSha;
+          break;
+        } catch (updateError) {
+          const status = (updateError as { status?: number }).status;
+          const isNonFastForward =
+            status === 422 || /fast.?forward|not a fast forward/i.test((updateError as Error).message);
+          if (isNonFastForward && attempt < maxAttempts) {
+            Logger.warn(`commitFilesWithContext: branch moved, retrying (attempt ${attempt})`, { owner, repo, branch });
+            await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
+            continue;
+          }
+          throw updateError;
+        }
+      }
+
+      // Invalidate content cache for every committed path.
+      for (const file of params.files) {
+        const cacheKeys = Array.from(this.fileContentCache.keys()).filter((key) =>
+          key.startsWith(`${owner}/${repo}/${file.path}:`),
+        );
+        for (const key of cacheKeys) {
+          this.fileContentCache.delete(key);
+        }
+      }
+
+      Logger.info(`Committed ${params.files.length} file(s) in one commit ${commitSha}`, { owner, repo, branch });
+      return { commitSha };
+    } catch (error) {
+      Logger.error('Failed to commit files with context', error as Error, { owner, repo });
+      throw new GitHubError('Failed to commit files with context', {
+        code: ErrorCodes.GITHUB_UPDATE_FAILED,
+        metadata: { owner, repo, files: params.files.map((f) => f.path) },
       });
     }
   }

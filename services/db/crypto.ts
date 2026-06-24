@@ -32,29 +32,38 @@ function getEncryptionKey(): Buffer {
   return Buffer.from(generatedKey, 'hex');
 }
 
-export function encryptString(value: string): string {
+/**
+ * Encrypt with an explicit 32-byte key. Used for per-workspace context
+ * encryption (provenance records) where the key is not the global DB key.
+ * Same envelope format as encryptString: `v1:<iv>:<tag>:<ciphertext>` (base64).
+ */
+export function encryptStringWithKey(value: string, key: Buffer): string {
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv(ALGORITHM, getEncryptionKey().subarray(0, KEY_LENGTH), iv);
+  const cipher = crypto.createCipheriv(ALGORITHM, key.subarray(0, KEY_LENGTH), iv);
   const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
 
   return ['v1', iv.toString('base64'), tag.toString('base64'), encrypted.toString('base64')].join(':');
 }
 
-export function decryptString(value: string): string {
+export function decryptStringWithKey(value: string, key: Buffer): string {
   const [version, ivBase64, tagBase64, encryptedBase64] = value.split(':');
   if (version !== 'v1' || !ivBase64 || !tagBase64 || !encryptedBase64) {
     throw new Error('Unsupported encrypted value format');
   }
 
-  const decipher = crypto.createDecipheriv(
-    ALGORITHM,
-    getEncryptionKey().subarray(0, KEY_LENGTH),
-    Buffer.from(ivBase64, 'base64'),
-  );
+  const decipher = crypto.createDecipheriv(ALGORITHM, key.subarray(0, KEY_LENGTH), Buffer.from(ivBase64, 'base64'));
   decipher.setAuthTag(Buffer.from(tagBase64, 'base64'));
 
   return Buffer.concat([decipher.update(Buffer.from(encryptedBase64, 'base64')), decipher.final()]).toString('utf8');
+}
+
+export function encryptString(value: string): string {
+  return encryptStringWithKey(value, getEncryptionKey());
+}
+
+export function decryptString(value: string): string {
+  return decryptStringWithKey(value, getEncryptionKey());
 }
 
 export function encryptJson(value: unknown): string {

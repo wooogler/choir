@@ -2,9 +2,10 @@ import type { AllMiddlewareArgs, SlackViewMiddlewareArgs, ViewSubmitAction } fro
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/interaction-tracker';
 import { DocumentUpdateService } from 'services/document/document-update-service';
+import { type ProvenanceRecord, buildContextFile, persistContextToMirror } from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
-import { getUserName, getWorkspaceId } from 'services/slack';
+import { getUserName, getWorkspaceId, resolveUserNames } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -30,7 +31,7 @@ export const createFileSubmissionCallback = async ({
       throw new Error('Session data not found or expired');
     }
 
-    const { sessionId, knowledgeSourceChannelId, knowledgeSourceThreadTs } = sessionData;
+    const { sessionId, knowledgeContent, knowledgeSourceChannelId, knowledgeSourceThreadTs } = sessionData;
 
     // Extract form values
     const fileName = body.view.state.values.file_name_input.file_name.value;
@@ -123,39 +124,72 @@ export const createFileSubmissionCallback = async ({
     // Create the file in GitHub
     const filePath = path ? `${path}/${fileName}` : fileName;
 
-    try {
-      await githubService.createFile({
-        owner,
-        repo,
-        path: filePath,
-        content: fileContent,
-        message: `Create ${fileName}`,
-        branch: branchName,
-        workspaceId,
-        userId,
-      });
-
-      logger.info(`Successfully created file ${filePath} in GitHub repository ${owner}/${repo}`);
-    } catch (githubError: any) {
-      // Handle file already exists error
-      if (githubError.status === 422 || githubError.message?.includes('already exists')) {
-        await updateProcessingMessage({
-          text: '❌ File creation failed',
-          blocks: [
-            {
-              type: 'section',
-              block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-              text: {
-                type: 'mrkdwn',
-                text: `❌ *File creation failed*\n\nA file named \`${fileName}\` already exists in the repository. Please choose a different file name.`,
-              },
+    // The Git Data API tree write would silently overwrite an existing path, so
+    // guard explicitly (createFile used to reject duplicates internally).
+    const existingFile = await githubService.getFile({
+      owner,
+      repo,
+      path: filePath,
+      branch: branchName,
+      workspaceId,
+      userId,
+    });
+    if (existingFile) {
+      await updateProcessingMessage({
+        text: '❌ File creation failed',
+        blocks: [
+          {
+            type: 'section',
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+            text: {
+              type: 'mrkdwn',
+              text: `❌ *File creation failed*\n\nA file named \`${fileName}\` already exists in the repository. Please choose a different file name.`,
             },
-          ],
-        });
-        return;
-      }
-      throw githubError;
+          },
+        ],
+      });
+      return;
     }
+
+    // Commit the new file together with its encrypted provenance record.
+    const docUpdateSession = sessionId ? (getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any) : null;
+    const sourceMessages: Array<Record<string, any>> =
+      docUpdateSession?.sourceMessages ?? docUpdateSession?.messages ?? [];
+    const updatedByName = await getUserName(userId, client).catch(() => undefined);
+    const nameById = await resolveUserNames(
+      sourceMessages.map((m) => m.user),
+      client,
+    );
+    const record: ProvenanceRecord = {
+      version: 1,
+      type: 'new-file',
+      file: { path: filePath, name: fileName },
+      createdAt: new Date().toISOString(),
+      updatedBy: { userId, name: updatedByName },
+      source: { channelId: knowledgeSourceChannelId, threadTs: knowledgeSourceThreadTs },
+      knowledge: knowledgeContent ?? '',
+      messages: sourceMessages.map((m) => ({
+        userId: m.user,
+        username: m.user ? nameById.get(m.user) : undefined,
+        text: m.text,
+        ts: m.ts,
+      })),
+      diff: { before: '', after: fileContent },
+    };
+    const contextFile = await buildContextFile({ workspaceId, docPath: filePath, record });
+
+    await githubService.commitFilesWithContext({
+      owner,
+      repo,
+      branch: branchName,
+      message: `Create ${fileName}`,
+      files: [{ path: filePath, content: fileContent }, contextFile],
+      workspaceId,
+      userId,
+    });
+    await persistContextToMirror(workspaceId, contextFile);
+
+    logger.info(`Successfully created file ${filePath} in GitHub repository ${owner}/${repo}`);
 
     // Reload and index the new file with web content enhancement
     const vectorStore = VectorStoreService.getInstance();

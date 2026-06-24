@@ -6,6 +6,7 @@ import { CrepeEditor, type CrepeEditorHandle } from './CrepeEditor';
 import { DocHeader } from './DocHeader';
 import { FilesSidebar } from './FilesSidebar';
 import { FloatingToc } from './FloatingToc';
+import { HistoryPanel } from './HistoryPanel';
 
 type DocViewerProps = {
   workspaceId: string;
@@ -84,6 +85,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [sidebarOpen, setSidebarOpen] = useState(() => !isMobileViewport());
   const [editorKey, setEditorKey] = useState(0);
   const [changedBlockCount, setChangedBlockCount] = useState(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const editorHandleRef = useRef<CrepeEditorHandle | null>(null);
   const editorContainerRef = useRef<HTMLDivElement | null>(null);
@@ -400,6 +402,16 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
 
   const headerRight = (
     <>
+      {sessionLoaded && !isEditing && (
+        <button
+          type="button"
+          className={`doc-button doc-button-ghost${historyOpen ? ' active' : ''}`}
+          onClick={() => setHistoryOpen((v) => !v)}
+          title="Change history"
+        >
+          History
+        </button>
+      )}
       {canEdit && dirty && (
         <span className="doc-change-count">
           {changedBlockCount} changed {changedBlockCount === 1 ? 'block' : 'blocks'}
@@ -453,7 +465,9 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   };
 
   return (
-    <div className={`docs-shell${sidebarOpen ? ' sidebar-open' : ' sidebar-closed'}`}>
+    <div
+      className={`docs-shell${sidebarOpen ? ' sidebar-open' : ' sidebar-closed'}${historyOpen ? ' history-open' : ''}`}
+    >
       <button
         type="button"
         className={`sidebar-backdrop${sidebarOpen ? ' visible' : ''}`}
@@ -499,6 +513,14 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         )}
         <FloatingToc activeSlug={activeSlug} items={toc} />
       </div>
+      <HistoryPanel
+        workspaceId={workspaceId}
+        filePath={filePath}
+        open={historyOpen}
+        authenticated={session?.authenticated === true}
+        onClose={() => setHistoryOpen(false)}
+        onSignIn={handleSignIn}
+      />
       {showCommitDialog && (
         <CommitDialog
           defaultMessage={`Update ${filePath}`}

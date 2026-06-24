@@ -2,6 +2,9 @@
   color: #2f2f2f;
   background: #ffffff;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Notion-like reading column + comment-style history panel width. */
+  --doc-content-width: 860px;
+  --history-panel-width: 360px;
 }
 
 * {
@@ -74,6 +77,13 @@ a {
   flex-direction: column;
   min-width: 0;
   min-height: 100vh;
+  transition: padding-right 220ms ease;
+}
+
+/* When the history panel is open, reserve space on the right so the centered
+   reading column reflows into the remaining area instead of being overlapped. */
+.docs-shell.history-open .doc-main {
+  padding-right: var(--history-panel-width);
 }
 
 .sidebar-header {
@@ -285,7 +295,7 @@ a {
 }
 
 .doc-page {
-  width: min(100%, 1180px);
+  width: min(100%, var(--doc-content-width));
   margin: 0 auto;
   padding: 40px 24px 140px;
   flex: 1 1 auto;
@@ -611,6 +621,339 @@ a {
   margin-top: 8px;
 }
 
+.doc-button-ghost.active {
+  background: #e7e7e3;
+  border-color: #cfcfca;
+}
+
+/* ── Change history — Notion-comment-style right-anchored panel ── */
+.docs-shell.history-open .toc-rail {
+  display: none;
+}
+
+.history-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: var(--history-panel-width);
+  height: 100vh;
+  height: 100dvh;
+  background: #ffffff;
+  border-left: 1px solid #e8e8e5;
+  box-shadow: -8px 0 28px rgba(15, 23, 42, 0.06);
+}
+
+.history-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  min-height: 48px;
+  padding: 10px 12px 10px 18px;
+  border-bottom: 1px solid #ececea;
+}
+
+.history-panel-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: #2f3437;
+}
+
+.history-panel-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 8px 10px 40px;
+}
+
+.history-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 24px 12px;
+  color: #8b8b86;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.history-empty-inline {
+  margin: 0;
+  color: #8b8b86;
+  font-size: 12px;
+}
+
+.history-item {
+  border-radius: 8px;
+  margin-bottom: 2px;
+}
+
+.history-item.expanded {
+  background: #f8f8f7;
+}
+
+.history-item-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.history-item-head:hover {
+  background: #f1f1ef;
+}
+
+.history-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #ececea;
+  color: #5f5f59;
+}
+
+.history-badge.type-update {
+  background: #e3effe;
+  color: #1a4fa0;
+}
+
+.history-badge.type-append {
+  background: #e6f6ec;
+  color: #1f7a44;
+}
+
+.history-badge.type-new-file {
+  background: #f3ebfd;
+  color: #6b34b8;
+}
+
+.history-badge.type-web-edit {
+  background: #f1f1ef;
+  color: #6e6e69;
+}
+
+.history-item-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.history-item-who {
+  font-size: 13px;
+  font-weight: 560;
+  color: #37352f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-time {
+  font-size: 12px;
+  color: #9b9b95;
+}
+
+.history-item-caret {
+  color: #b5b5af;
+  font-size: 11px;
+}
+
+.history-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 2px 10px 14px;
+}
+
+.history-section-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9b9b95;
+}
+
+.history-knowledge {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #37352f;
+  white-space: pre-wrap;
+}
+
+.history-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f4f4f2;
+}
+
+.history-speaker {
+  font-size: 12px;
+  font-weight: 600;
+  color: #5f5f59;
+}
+
+.history-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #37352f;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.history-diff {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f7f7f6;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diff-line {
+  display: block;
+  padding: 0 4px;
+  border-radius: 3px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-add {
+  background: rgba(31, 122, 68, 0.12);
+  color: #1f7a44;
+}
+
+.diff-del {
+  background: rgba(180, 35, 24, 0.1);
+  color: #b42318;
+}
+
+.history-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #ececea;
+}
+
+.history-search {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #e0e0dc;
+  border-radius: 7px;
+  background: #fbfbfa;
+  font: inherit;
+  font-size: 13px;
+}
+
+.history-search:focus {
+  outline: 2px solid #2f6feb;
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.history-select {
+  flex: 1 1 auto;
+  min-width: 96px;
+  padding: 5px 8px;
+  border: 1px solid #e0e0dc;
+  border-radius: 7px;
+  background: #fbfbfa;
+  color: #4f4f49;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.history-item-sub {
+  font-size: 12px;
+  color: #9b9b95;
+}
+
+.history-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.history-section-head .history-section-title {
+  margin: 0;
+}
+
+.history-toggle {
+  display: inline-flex;
+  margin: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: 7px;
+  min-inline-size: 0;
+  background: #ececea;
+}
+
+.history-toggle-btn {
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #6e6e69;
+  font-size: 11px;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.history-toggle-btn.active {
+  background: #ffffff;
+  color: #2f3437;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+.history-plain {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f7f7f6;
+  overflow: auto;
+  color: #37352f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1080px) {
   .docs-shell {
     grid-template-columns: 212px minmax(0, 1fr);
@@ -681,5 +1024,13 @@ a {
 
   .toc-rail {
     display: none;
+  }
+
+  .history-panel {
+    width: 100%;
+  }
+
+  .docs-shell.history-open .doc-main {
+    padding-right: 0;
   }
 }

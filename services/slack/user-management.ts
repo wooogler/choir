@@ -292,6 +292,29 @@ export async function isCHOIRUser(workspaceId: string, userId: string): Promise<
 }
 
 /**
+ * Resolve a set of Slack user IDs to display names in one pass (deduped). Used to
+ * store readable speaker names on provenance records at write time so the viewer
+ * shows names, not IDs. Failed lookups are simply omitted.
+ */
+export async function resolveUserNames(
+  userIds: Array<string | undefined>,
+  client: WebClient,
+): Promise<Map<string, string>> {
+  const unique = [...new Set(userIds.filter((id): id is string => !!id))];
+  const out = new Map<string, string>();
+  await Promise.all(
+    unique.map(async (id) => {
+      try {
+        out.set(id, await getUserName(id, client));
+      } catch {
+        // omit — caller falls back to the id
+      }
+    }),
+  );
+  return out;
+}
+
+/**
  * Get formatted manager text with all manager names
  */
 export async function getManagerText(workspaceId: string, client: WebClient): Promise<string> {

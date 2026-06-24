@@ -2,9 +2,10 @@ import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
 import type { DocumentUpdate } from 'services/document';
 import { DocumentUpdateService } from 'services/document/document-update-service';
+import { type ProvenanceRecord, buildContextFile, persistContextToMirror } from 'services/document/provenance';
 import { applyAnchorReplacement } from 'services/document/update-anchor';
 import { VectorStoreService } from 'services/file-registry/main-service';
-import { parseGithubUrl } from 'services/slack';
+import { getUserName, parseGithubUrl, resolveUserNames } from 'services/slack';
 import GithubService from './github-service';
 
 /**
@@ -43,6 +44,9 @@ export async function applyDocumentUpdatesToGithub({
         throw new Error(`File not found in vector store: ${fileName}`);
       }
 
+      // Capture the pre-update file content for the provenance diff before any
+      // in-place mutation below (anchor path / node replacement).
+      const originalFileContent = currentMarkdownFile.content;
       let updatedMarkdownForGithub = currentMarkdownFile.content;
       const hasAnchorUpdates = fileUpdates.some((update) => !!update.updateAnchor);
 
@@ -151,17 +155,64 @@ export async function applyDocumentUpdatesToGithub({
         });
       }
 
-      // 3. GitHub에 최종 업데이트
-      const updateResult = await githubService.updateMarkdownFile({
-        owner,
-        repo,
-        path: currentMarkdownFile.path,
-        content: updatedMarkdownForGithub,
-        message: commitMessage,
-        branch,
-        workspaceId,
-        userId,
-      });
+      // 3. GitHub에 최종 업데이트 — 문서 변경 + 암호화 provenance를 한 커밋에.
+      let updateResult: { commitSha: string };
+      if (workspaceId) {
+        const updatedByName = await getUserName(userId, client).catch(() => undefined);
+        const nameById = await resolveUserNames(
+          allMessages.map((m) => m.user),
+          client,
+        );
+        const isAppendOnly = fileUpdates.every((u) => u.suggestionType === 'APPEND');
+        const record: ProvenanceRecord = {
+          version: 1,
+          type: isAppendOnly ? 'append' : 'update',
+          file: { path: currentMarkdownFile.path, name: fileName },
+          createdAt: new Date().toISOString(),
+          updatedBy: { userId, name: updatedByName },
+          source: {
+            channelId: fileUpdates[0].originalChannelId,
+            threadTs: fileUpdates[0].originalThreadTs,
+          },
+          knowledge: Array.from(
+            new Set(fileUpdates.map((u) => u.knowledgeContent).filter((k): k is string => !!k)),
+          ).join('\n\n'),
+          messages: allMessages.map((m) => ({
+            userId: m.user,
+            username: m.user ? nameById.get(m.user) : undefined,
+            text: m.text,
+            ts: m.ts,
+          })),
+          diff: {
+            before: originalFileContent,
+            after: updatedMarkdownForGithub,
+            sections: Array.from(new Set(fileUpdates.map((u) => u.headingPath).filter((s): s is string => !!s))),
+            nodeIds: fileUpdates.map((u) => u.nodeId).filter((id): id is string => !!id),
+          },
+        };
+        const contextFile = await buildContextFile({ workspaceId, docPath: currentMarkdownFile.path, record });
+        updateResult = await githubService.commitFilesWithContext({
+          owner,
+          repo,
+          branch,
+          message: commitMessage,
+          files: [{ path: currentMarkdownFile.path, content: updatedMarkdownForGithub }, contextFile],
+          workspaceId,
+          userId,
+        });
+        await persistContextToMirror(workspaceId, contextFile);
+      } else {
+        updateResult = await githubService.updateMarkdownFile({
+          owner,
+          repo,
+          path: currentMarkdownFile.path,
+          content: updatedMarkdownForGithub,
+          message: commitMessage,
+          branch,
+          workspaceId,
+          userId,
+        });
+      }
 
       Logger.info(`Successfully updated ${fileName} on GitHub`);
       if (workspaceId) {

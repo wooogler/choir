@@ -2,6 +2,7 @@ import { Logger } from 'services/common/logger';
 import { parseMarkdownToTree } from 'services/document';
 import { DocumentUpdateService } from 'services/document/document-update-service';
 import { enrichWorkspaceImageCaptions } from 'services/document/image-captions';
+import { type ProvenanceRecord, buildContextFile, persistContextToMirror } from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService, type MarkdownFile } from 'services/github';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
@@ -32,6 +33,11 @@ export async function saveEditedDocument(params: {
   const githubService = GithubService.getInstance();
   const vectorStore = VectorStoreService.getInstance();
 
+  // Capture pre-save content for the provenance diff before the mirror/index is
+  // overwritten below.
+  const editedFileName = params.filePath.split('/').pop() || params.filePath;
+  const beforeContent = vectorStore.getMarkdownFile(editedFileName, params.workspaceId)?.content ?? '';
+
   await documentUpdateService.stageMarkdownUpdate({
     workspaceId: params.workspaceId,
     filePath: params.filePath,
@@ -43,16 +49,33 @@ export async function saveEditedDocument(params: {
 
   const trimmedMessage = params.commitMessage.trim() || `Update ${params.filePath}`;
 
-  const { commitSha } = await githubService.updateMarkdownFile({
+  // Manual web edit: provenance carries the manager + diff (no conversation).
+  const record: ProvenanceRecord = {
+    version: 1,
+    type: 'web-edit',
+    file: { path: params.filePath, name: editedFileName },
+    createdAt: new Date().toISOString(),
+    updatedBy: { userId: params.userId },
+    knowledge: '',
+    messages: [],
+    diff: { before: beforeContent, after: params.content },
+  };
+  const contextFile = await buildContextFile({
+    workspaceId: params.workspaceId,
+    docPath: params.filePath,
+    record,
+  });
+
+  const { commitSha } = await githubService.commitFilesWithContext({
     owner: repoInfo.owner,
     repo: repoInfo.repo,
-    path: params.filePath,
-    content: params.content,
-    message: trimmedMessage,
     branch: repoInfo.branch,
+    message: trimmedMessage,
+    files: [{ path: params.filePath, content: params.content }, contextFile],
     workspaceId: params.workspaceId,
     userId: params.userId,
   });
+  await persistContextToMirror(params.workspaceId, contextFile);
 
   await documentUpdateService.markGithubSyncSuccess({
     workspaceId: params.workspaceId,

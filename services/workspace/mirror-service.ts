@@ -91,6 +91,22 @@ export class WorkspaceMirrorService {
     return targetPath;
   }
 
+  /**
+   * Writes a non-markdown repo file (e.g. an encrypted provenance sidecar under
+   * `.choir/context/`) into the mirror so the viewer can read it locally without a
+   * GitHub round-trip. Skips the markdown-only concerns (section split / path map).
+   */
+  public async writeContextFile(workspaceId: string, relativePath: string, content: string): Promise<string> {
+    this.ensureWorkspaceLayout(workspaceId);
+
+    const targetPath = this.resolveMirrorPath(workspaceId, relativePath);
+    await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.promises.writeFile(targetPath, content, 'utf-8');
+
+    Logger.info(`Workspace mirror wrote context file: ${relativePath}`, { workspaceId });
+    return targetPath;
+  }
+
   public async populateSectionsIfEmpty(workspaceId: string): Promise<void> {
     const sectionsRoot = this.getSectionsRoot(workspaceId);
     const repoRoot = this.getRepoRoot(workspaceId);

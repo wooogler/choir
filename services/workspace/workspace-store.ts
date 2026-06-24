@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { WebClient } from '@slack/web-api';
@@ -46,8 +47,24 @@ export interface WorkspaceConfig {
     qaModel?: string;
     documentUpdateModel?: string;
   };
+  // Per-workspace key used to encrypt provenance/context records committed to
+  // `.choir/context/`. Stored here so it is encrypted-at-rest with the rest of the
+  // config (DB master key). Rotating orphans previously-encrypted records — see
+  // docs/update-provenance.md. Timestamps are ISO strings to avoid date hydration.
+  contextEncryption?: {
+    key: string; // base64-encoded 32-byte key
+    algorithm: 'aes-256-gcm';
+    createdAt: string; // ISO
+    rotatedAt?: string; // ISO, set on rotate/replace
+  };
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface ContextKeyStatus {
+  configured: boolean;
+  createdAt?: string;
+  rotatedAt?: string;
 }
 
 export interface WorkspaceOpenAISettings {
@@ -268,6 +285,88 @@ export class WorkspaceStore {
 
     config.githubRepo = repoInfo;
     await this.saveWorkspaceConfig(config);
+  }
+
+  /**
+   * Returns the per-workspace context encryption key as a Buffer, or null if not
+   * yet configured. Used to decrypt provenance records for the viewer.
+   */
+  public async getContextEncryptionKey(workspaceId: string): Promise<Buffer | null> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    const key = config?.contextEncryption?.key;
+    return key ? Buffer.from(key, 'base64') : null;
+  }
+
+  /**
+   * Returns the per-workspace context key, generating and persisting a fresh
+   * random 32-byte key on first use. No friction by design (first-time setup).
+   */
+  public async getOrCreateContextKey(workspaceId: string): Promise<Buffer> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+
+    if (config.contextEncryption?.key) {
+      return Buffer.from(config.contextEncryption.key, 'base64');
+    }
+
+    const key = crypto.randomBytes(32);
+    config.contextEncryption = {
+      key: key.toString('base64'),
+      algorithm: 'aes-256-gcm',
+      createdAt: new Date().toISOString(),
+    };
+    await this.saveWorkspaceConfig(config);
+    this.logger.info(`Generated context encryption key for workspace: ${workspaceId}`);
+    return key;
+  }
+
+  /**
+   * Rotate (or import) the per-workspace context key. DESTRUCTIVE: every record
+   * encrypted with the previous key becomes permanently unreadable, so callers
+   * MUST gate this behind explicit confirmation (App Home flow). Pass
+   * importKeyBase64 to supply a custom 32-byte key ("bring your own key");
+   * otherwise a fresh random key is generated.
+   */
+  public async rotateContextKey(
+    workspaceId: string,
+    options?: { importKeyBase64?: string },
+  ): Promise<ContextKeyStatus> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+
+    let key: Buffer;
+    if (options?.importKeyBase64) {
+      key = Buffer.from(options.importKeyBase64, 'base64');
+      if (key.length !== 32) {
+        throw new Error('Imported context key must be a base64-encoded 32-byte key');
+      }
+    } else {
+      key = crypto.randomBytes(32);
+    }
+
+    const now = new Date().toISOString();
+    config.contextEncryption = {
+      key: key.toString('base64'),
+      algorithm: 'aes-256-gcm',
+      createdAt: config.contextEncryption?.createdAt ?? now,
+      rotatedAt: now,
+    };
+    await this.saveWorkspaceConfig(config);
+    this.logger.info(`Rotated context encryption key for workspace: ${workspaceId}`);
+    return { configured: true, createdAt: config.contextEncryption.createdAt, rotatedAt: now };
+  }
+
+  /**
+   * Status of the per-workspace context key (never returns the key material).
+   */
+  public async getContextKeyStatus(workspaceId: string): Promise<ContextKeyStatus> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    const ce = config?.contextEncryption;
+    return { configured: !!ce?.key, createdAt: ce?.createdAt, rotatedAt: ce?.rotatedAt };
   }
 
   /**
