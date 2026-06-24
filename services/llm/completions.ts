@@ -70,9 +70,9 @@ function logDebugOutput(params: {
 }) {
   console.log('function: ', params.functionName);
   console.log('messages: \n');
-  params.messages.forEach((message) => {
+  for (const message of params.messages) {
     console.log(`${message.role}: ${normalizeMessageContent(message.content)}`);
-  });
+  }
   console.log('--------------------------------');
   console.log('raw response (before de-anonymization): \n', params.rawResponse);
   console.log('--------------------------------');

@@ -5,9 +5,9 @@ import { extractKnowledgeFromMessages } from 'services/llm/knowledge-extractor';
 import {
   type SlackMessage,
   classifyChannel,
+  gatherExtractionCandidates,
   getCHOIRUsers,
   getChannelName,
-  getFilteredConversationHistory,
   getManagerText,
   getManagers,
   getQAChannel,
@@ -69,14 +69,8 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
 
     let filteredMessages: SlackMessage[];
 
-    // Use conversation history for both button clicks and regular mentions
-    const timeLimit = event.thread_ts ? 1440 : channelClassification.timeLimit; // 24 hours for threads, otherwise use classification
-
-    filteredMessages = await getFilteredConversationHistory(client, event, choirUsers, {
-      timeLimit, // Use classified timeLimit
-      messageLimit: 10, // fetch up to 15 messages
-      maxResults: 5, // return up to 15 messages including bot responses
-    });
+    // Gather extraction candidates: gap-burst + cap, plus pre-parent context for early thread replies.
+    filteredMessages = await gatherExtractionCandidates(client, event, choirUsers);
 
     if (!filteredMessages?.length) {
       await client.chat.update({
@@ -188,6 +182,26 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       // Check if conversation contains Q&A shared content (no longer needed as separate flag)
       // Q&A context is now handled directly in extractKnowledgeFromMessages
 
+      // Resolve the conversation date (from the trigger message) in the requester's timezone so the
+      // extractor can convert relative time expressions ("next Monday") into absolute dates.
+      const triggerMs = event.ts ? Number.parseFloat(event.ts) * 1000 : Date.now();
+      const timeZone = extractorInfo.user?.tz || process.env.DEFAULT_TIMEZONE || 'America/New_York';
+      let conversationDate: string;
+      try {
+        const triggerDate = new Date(triggerMs);
+        const ymd = new Intl.DateTimeFormat('en-CA', {
+          timeZone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(triggerDate);
+        const weekday = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long' }).format(triggerDate);
+        conversationDate = `${ymd} (${weekday}, ${timeZone})`;
+      } catch {
+        // Invalid timezone from Slack — fall back to a UTC date.
+        conversationDate = `${new Date(triggerMs).toISOString().slice(0, 10)} (UTC)`;
+      }
+
       // Build organizational context
       const organizationalContext = {
         organizationName: workspaceConfig?.organizationName,
@@ -196,6 +210,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         managerText,
         channelType,
         extractorName,
+        conversationDate,
       };
 
       // Extract knowledge from messages with organizational context

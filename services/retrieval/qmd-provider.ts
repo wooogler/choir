@@ -7,8 +7,7 @@ import type { DocumentMetadata } from 'services/file-registry/types';
 import { getGithubRepo } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { PathMapService } from 'services/workspace/path-map-service';
-import { expandQueryWithOpenAI } from './openai-query-expansion';
-import { searchQmdLexWithFallback } from './qmd-lex-search';
+import { buildQmdStructuredSearchQueries, searchQmdLexWithFallback } from './qmd-lex-search';
 import type { RetrievalDocument, RetrievalProvider, RetrievalSearchParams, RetrievalWarmupParams } from './types';
 
 type QmdSearchMode = 'lex' | 'hybrid';
@@ -415,11 +414,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       );
 
       if (searchMode === 'hybrid') {
-        const queries = await expandQueryWithOpenAI({
-          query: params.query,
-          purpose: 'qa',
-          workspaceId: params.workspaceId,
-        });
+        const queries = buildQmdStructuredSearchQueries(params.query, 2);
         const results = await storeEntry.store.search({
           queries,
           limit,
@@ -501,11 +496,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       query,
     });
 
-    const queries = await expandQueryWithOpenAI({
-      query,
-      purpose: 'qa',
-      workspaceId: params.workspaceId,
-    });
+    const queries = buildQmdStructuredSearchQueries(query, 2);
     await storeEntry.store.search({
       queries,
       limit: 1,

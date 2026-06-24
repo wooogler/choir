@@ -489,6 +489,8 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
                   ref={editorHandleRef}
                   markdown={loadedMarkdown}
                   editable={canEdit && isEditing}
+                  workspaceId={workspaceId}
+                  filePath={filePath}
                   onMarkdownChange={handleMarkdownChange}
                 />
               )}

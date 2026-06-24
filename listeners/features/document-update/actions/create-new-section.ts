@@ -60,6 +60,24 @@ export const createNewSectionAction = async ({
     // Assign to outer scope variable for error logging
     originalChannelId = originalChannelIdFromSession;
 
+    // 지식이 불충분해 빈 본문이 들어온 경우(프롬프트가 빈 sectionContent를 반환) 모달을 열지 않음
+    if (!sectionContent || !sectionContent.trim()) {
+      await client.chat.postMessage({
+        channel: userId,
+        text: 'ℹ️ There isn’t enough information to draft a new section. Try sharing a bit more detail.',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: 'ℹ️ There isn’t enough information to draft a new section. Try sharing a bit more detail.',
+            },
+          },
+        ],
+      });
+      return;
+    }
+
     // Get available markdown files for file selection dropdown
     const workspaceStore = new WorkspaceStore();
     const config = await workspaceStore.getWorkspaceConfig(workspaceId);
@@ -68,32 +86,7 @@ export const createNewSectionAction = async ({
     }
 
     // Get writable files for file selection dropdown (excludes read-only files)
-    let fileList = await workspaceStore.getWritableFiles(workspaceId);
-
-    if (!fileList || fileList.length === 0) {
-      // If no cached writable files, load from GitHub and cache, then filter
-      const { owner, repo, path } = config.githubRepo;
-      const githubService = GithubService.getInstance();
-      const markdownFiles = await githubService.getAllMarkdownFiles({
-        owner,
-        repo,
-        path,
-        workspaceId: workspaceId,
-        userId: userId,
-      });
-
-      // Cache all files
-      await workspaceStore.setMarkdownFilesCache(
-        workspaceId,
-        markdownFiles.map((file) => ({
-          name: file.name,
-          path: file.path,
-        })),
-      );
-
-      // Get writable files after caching
-      fileList = await workspaceStore.getWritableFiles(workspaceId);
-    }
+    const fileList = await workspaceStore.getWritableFilesOrFetch(workspaceId, userId);
 
     // If no writable files available, show error
     if (!fileList || fileList.length === 0) {
@@ -127,22 +120,18 @@ export const createNewSectionAction = async ({
     // 추천 파일의 편집 URL
     const recommendedFileEditUrl = createEditUrl(recommendedFile);
 
-    // 복사할 텍스트 생성 - 첫 번째 항목을 리스트 아이템으로 변환
-    const contentLines = sectionContent.split('\n');
-    const firstLine = contentLines[0];
-    const restOfContent = contentLines.slice(1).join('\n');
+    // 본문을 불릿 위주로 정규화: 비어있지 않고 아직 리스트 마커가 없는 모든 줄을 '- '로 변환.
+    // (기존엔 첫 줄만 불릿 처리해 '불릿 1개 + 문단' 형태가 섞이는 문제가 있었음)
+    const bulletizeLine = (line: string): string => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+      if (trimmed.startsWith('-') || trimmed.startsWith('*') || /^\d+\./.test(trimmed)) return line;
+      return `- ${line}`;
+    };
+    const sectionBodyForEdit = sectionContent.split('\n').map(bulletizeLine).join('\n');
 
-    // 첫 번째 줄이 이미 리스트 형태가 아니라면 리스트 아이템으로 변환
-    const formattedFirstLine =
-      firstLine.trim().startsWith('-') || firstLine.trim().startsWith('*') || /^\d+\./.test(firstLine.trim())
-        ? firstLine
-        : `- ${firstLine}`;
-
-    const copyText = `# ${sectionTitle}\n${formattedFirstLine}${restOfContent ? '\n' + restOfContent : ''}`;
-
-    // 제목과 본문 분리
+    const copyText = `# ${sectionTitle}\n${sectionBodyForEdit}`;
     const sectionTitleForEdit = sectionTitle;
-    const sectionBodyForEdit = `${formattedFirstLine}${restOfContent ? '\n' + restOfContent : ''}`;
 
     // Store large data in session to avoid private_metadata size limit (3001 chars)
     const modalSessionId = generateSessionId('new_section_modal');

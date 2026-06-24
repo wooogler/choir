@@ -141,19 +141,9 @@ export async function handleIncomingMessage(client: any, event: any, message: st
     const orgName = (await getOrganizationName(workspaceId)) || '';
     const orgDescription = (await getOrganizationDescription(workspaceId)) || '';
 
-    // Skip getting CHOIR users since we're not using conversation history
-    // const choirUsers = await getCHOIRUsers(workspaceId);
-
-    // Skip conversation history for classify intent to avoid API rate limits
-    // const isDM = event.channel_type === 'im';
-    // const conversationCache = ConversationCache.getInstance();
-    // const messages = await conversationCache.getOrFetchHistory(client, event, choirUsers, {
-    //   timeLimit: isDM ? 30 : 1440, // 30 minutes for DMs, 1 day for channels
-    //   messageLimit: 10, // fetch up to 10 messages
-    //   maxResults: 5, // return up to 5 messages
-    // });
-
-    // 메시지 의도 분류 (질문 또는 업데이트 요청 또는 일반 대화) - without conversation history
+    // Classify intent WITHOUT conversation history: fetching it here is heavily rate-limited
+    // (conversations.* is ~1 req/min for non-Marketplace apps), so we rely on the message text alone
+    // plus an improved classification prompt. Conversation gathering happens only in the suggest-update flow.
     messageIntent = await classifyMessageIntent(message, orgName, orgDescription, [], client, workspaceId);
     logger.info(`Message intent classified as: ${messageIntent}`);
 

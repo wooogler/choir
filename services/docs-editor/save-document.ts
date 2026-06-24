@@ -1,6 +1,7 @@
 import { Logger } from 'services/common/logger';
 import { parseMarkdownToTree } from 'services/document';
 import { DocumentUpdateService } from 'services/document/document-update-service';
+import { enrichWorkspaceImageCaptions } from 'services/document/image-captions';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService, type MarkdownFile } from 'services/github';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
@@ -93,6 +94,13 @@ export async function saveEditedDocument(params: {
   scheduleQmdWarmup({
     workspaceId: params.workspaceId,
     reason: 'docs-editor-save',
+  });
+
+  // Caption any images in the saved document so they become searchable and get
+  // a visible caption written back. Fire-and-forget — vision calls and the
+  // follow-up commit must never block the save.
+  void enrichWorkspaceImageCaptions(params.workspaceId, { userId: params.userId }).catch((error) => {
+    Logger.warn('saveEditedDocument: image caption enrichment failed', error as Error);
   });
 
   Logger.info('saveEditedDocument: committed and indexed', {

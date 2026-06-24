@@ -108,13 +108,24 @@ export async function isWorkspaceOwner(userId: string, client: WebClient): Promi
   }
 }
 
+// Bot status is effectively immutable per user, so cache it to avoid a users.info
+// call per mention (this runs N+1 over every message in the conversation history).
+const botUserStatusCache = new Map<string, boolean>();
+
 /**
  * 사용자가 봇인지 확인합니다.
  */
 export async function isBotUser(userId: string, client: WebClient): Promise<boolean> {
+  const cached = botUserStatusCache.get(userId);
+  if (cached !== undefined) {
+    return cached;
+  }
+
   try {
     const userInfo = await client.users.info({ user: userId });
-    return !!userInfo.user?.is_bot;
+    const isBot = !!userInfo.user?.is_bot;
+    botUserStatusCache.set(userId, isBot);
+    return isBot;
   } catch (error) {
     Logger.error('Error checking bot user status', error as Error, { userId });
     return false;

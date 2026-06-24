@@ -79,6 +79,7 @@ export {
 
 // Conversation History
 export {
+  gatherExtractionCandidates,
   getFilteredConversationHistory,
   isUserInCHOIRList,
 } from './conversation-history';

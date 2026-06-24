@@ -752,6 +752,38 @@ export class WorkspaceStore {
   }
 
   /**
+   * 쓰기 가능한 파일 목록을 가져오되, 캐시가 비어 있으면 GitHub에서 한 번 받아와 캐시 후 반환.
+   * 여러 호출 지점에 흩어져 있던 "getWritableFiles → 비면 fetch+cache → 다시 getWritableFiles" 패턴을 통합.
+   */
+  public async getWritableFilesOrFetch(
+    workspaceId: string,
+    userId?: string,
+  ): Promise<Array<{ name: string; path: string }>> {
+    const cached = await this.getWritableFiles(workspaceId);
+    if (cached.length > 0) return cached;
+
+    const config = await this.getWorkspaceConfig(workspaceId);
+    if (!config?.githubRepo) return cached;
+
+    const { owner, repo, path } = config.githubRepo;
+    const GithubServiceModule = await import('services/github/github-service');
+    const markdownFiles = await GithubServiceModule.default.getInstance().getAllMarkdownFiles({
+      owner,
+      repo,
+      path,
+      workspaceId,
+      userId,
+    });
+
+    await this.setMarkdownFilesCache(
+      workspaceId,
+      markdownFiles.map((file: { name: string; path: string }) => ({ name: file.name, path: file.path })),
+    );
+
+    return this.getWritableFiles(workspaceId);
+  }
+
+  /**
    * 워크스페이스의 botUserId를 반환 (없으면 undefined)
    */
   public async getBotUserId(workspaceId: string): Promise<string | undefined> {

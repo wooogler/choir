@@ -1,5 +1,6 @@
 import { SessionType, generateSessionId, getSessionData, storeSessionData } from 'services/common';
 import { logQuestionProcessing } from 'services/common/interaction-tracker';
+import { collectReplyImages } from 'services/document/image-captions/resolve-images';
 import { convertMarkdownToSlackText } from 'services/document/markdown';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { QuestionProcessor } from 'services/qa/question-processor';
@@ -49,17 +50,8 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
 
     // Get workspace info - skip conversation history to avoid API rate limits
     const workspaceId = await getWorkspaceId(client);
-    // const choirUsers = await getCHOIRUsers(workspaceId);
 
-    // Skip conversation history for question answering to avoid API rate limits
-    // const conversationCache = ConversationCache.getInstance();
-    // const messages = await conversationCache.getOrFetchHistory(client, event, choirUsers, {
-    //   timeLimit: 5, // 5 minutes
-    //   messageLimit: 10, // fetch up to 10 messages
-    //   maxResults: 5, // return up to 5 messages
-    // });
-
-    // Create historyResult object for compatibility with existing code - empty messages
+    // Conversation history is intentionally not fetched here (conversations.* is heavily rate-limited).
     const historyResult = { messages: [] };
 
     // QuestionProcessor로 질문 처리
@@ -122,11 +114,11 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     historyUsers.add(event.user); // 현재 메시지를 보낸 사용자 추가
 
     // 대화 히스토리의 다른 사용자 추가
-    (historyResult.messages || []).forEach((msg: any) => {
+    for (const msg of (historyResult.messages || []) as any[]) {
       if (msg.user && typeof msg.user === 'string') {
         historyUsers.add(msg.user);
       }
-    });
+    }
 
     // 히스토리 메시지를 validMessages 형식으로 변환
     const validMessages = (historyResult.messages || []).map((msg: any) => ({
@@ -152,7 +144,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       userId: 'bot',
       username: 'CHOIR',
       text: cleanResponseForSharing,
-      ts: Math.floor(Date.now() / 1000) + '.' + (Date.now() % 1000),
+      ts: `${Math.floor(Date.now() / 1000)}.${Date.now() % 1000}`,
     });
 
     // 타임스탬프별로 메시지 정렬 (내림차순)
@@ -204,8 +196,25 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     // Get user name for context (without mention to avoid thread notifications)
     const questionerName = await getUserName(event.user, client);
 
+    // 답변에 사용된 참조 이미지를 인라인 image 블록으로 (외부 URL 또는 공개 에셋 URL)
+    let replyImageBlocks: any[] = [];
+    if (answerResult.canAnswer && relevantDocs.length > 0) {
+      try {
+        replyImageBlocks = collectReplyImages(
+          workspaceId,
+          relevantDocs.map((doc: any) => ({ pageContent: doc.pageContent, fileName: doc.metadata?.fileName })),
+        ).map((image) => ({
+          type: 'image',
+          image_url: image.imageUrl,
+          alt_text: image.altText,
+        }));
+      } catch (imageError) {
+        logger.warn('Failed to resolve reference images:', imageError);
+      }
+    }
+
     // 응답 메시지 블록 구성 (질문자 정보 컨텍스트 포함)
-    const responseBlocks = [
+    const responseBlocks: any[] = [
       {
         type: 'section',
         text: {
@@ -214,6 +223,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.ANSWER),
       },
+      ...replyImageBlocks,
       {
         type: 'context',
         elements: [
@@ -244,7 +254,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     }
 
     // 로딩 메시지를 답변으로 업데이트 (chat.delete 대신 chat.update 사용)
-    let messageResult;
+    let messageResult: any;
     if (loadingMessageTs) {
       try {
         messageResult = await client.chat.update({

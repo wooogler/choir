@@ -1,6 +1,7 @@
 import { Crepe } from '@milkdown/crepe';
 import { replaceAll } from '@milkdown/kit/utils';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { resolveAssetDisplayUrl, toDocRelativeAssetPath, uploadAsset } from '../utils/assets';
 
 export interface CrepeEditorHandle {
   setReadonly: (value: boolean) => void;
@@ -12,19 +13,27 @@ export interface CrepeEditorHandle {
 type CrepeEditorProps = {
   markdown: string;
   editable: boolean;
+  workspaceId: string;
+  filePath: string;
   onMarkdownChange?: (markdown: string) => void;
 };
 
 export const CrepeEditor = forwardRef<CrepeEditorHandle, CrepeEditorProps>(function CrepeEditor(
-  { markdown, editable, onMarkdownChange },
+  { markdown, editable, workspaceId, filePath, onMarkdownChange },
   handleRef,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const crepeRef = useRef<Crepe | null>(null);
   const editableRef = useRef(editable);
   const onChangeRef = useRef(onMarkdownChange);
+  // Kept in refs so the upload/display callbacks always read the current
+  // document context without forcing the editor to remount.
+  const workspaceIdRef = useRef(workspaceId);
+  const filePathRef = useRef(filePath);
   onChangeRef.current = onMarkdownChange;
   editableRef.current = editable;
+  workspaceIdRef.current = workspaceId;
+  filePathRef.current = filePath;
 
   useImperativeHandle(
     handleRef,
@@ -52,6 +61,15 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, CrepeEditorProps>(funct
     const crepe = new Crepe({
       root: containerRef.current,
       defaultValue: markdown,
+      featureConfigs: {
+        [Crepe.Feature.ImageBlock]: {
+          onUpload: async (file: File) => {
+            const repoRelative = await uploadAsset(workspaceIdRef.current, file);
+            return toDocRelativeAssetPath(filePathRef.current, repoRelative);
+          },
+          proxyDomURL: (url: string) => resolveAssetDisplayUrl(workspaceIdRef.current, filePathRef.current, url),
+        },
+      },
     });
 
     crepe.on((api) => {

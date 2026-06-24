@@ -2,6 +2,7 @@ import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
 // Removed anonymization imports - now handled in LLM services
 import { getUserName, isBotUser } from 'services/slack';
+import { safeSlackCall } from './rate-limit-handler';
 import {
   type CHOIRMessageMetadata,
   CHOIRMessageType,
@@ -28,21 +29,26 @@ export interface SlackMessage {
 }
 
 // Process message text to handle user and bot mentions
-export async function processMessageText(text: string, client: WebClient): Promise<string> {
+export async function processMessageText(text: string, client: WebClient, botUserId?: string): Promise<string> {
   // Regular expression to find all user/bot mentions like <@U089Q1VAB3J>
   const mentionRegex = /<@([A-Z0-9]+)>/g;
   let matches;
   let processedText = text;
-
-  // Get current bot user ID
-  const authResult = await client.auth.test();
-  const currentBotId = authResult.user_id;
 
   // Collect all unique user IDs mentioned in the text
   const mentionedIds = new Set<string>();
   while ((matches = mentionRegex.exec(text)) !== null) {
     mentionedIds.add(matches[1]);
   }
+
+  // No mentions: nothing to resolve, so skip all API lookups (auth.test / users.info).
+  if (mentionedIds.size === 0) {
+    return processedText.trim();
+  }
+
+  // Bot user ID is constant per workspace. Prefer the value passed by the caller so we
+  // don't issue an auth.test() call for every message; fall back to a lookup if absent.
+  const currentBotId = botUserId ?? (await client.auth.test()).user_id;
 
   // Process each unique user ID
   for (const userId of mentionedIds) {
@@ -257,12 +263,14 @@ function getMessagesAfterSessionBoundary(messages: SlackMessage[]): SlackMessage
 // Input: Pre-filtered messages from getFilteredConversationHistory
 // Output: LLM-ready conversation format
 export const processMessageHistory = async (messages: SlackMessage[], client?: WebClient) => {
-  // Process mentions if client is provided
+  // Process mentions if client is provided. Resolve the bot user ID once and reuse it
+  // across messages to avoid an auth.test() call per message.
+  const botUserId = client ? (await client.auth.test()).user_id : undefined;
   const processedMessages = client
     ? await Promise.all(
         messages.map(async (msg) => ({
           ...msg,
-          text: await processMessageText(msg.text || '', client),
+          text: await processMessageText(msg.text || '', client, botUserId),
         })),
       )
     : messages;
@@ -345,11 +353,13 @@ export async function getFilteredConversationHistory(
     // Debug: Show final messages being used
     debugLogMessages(finalMessages, 'Final messages being returned');
 
-    // Step 5: Process mentions in message text to replace user IDs with names
+    // Step 5: Process mentions in message text to replace user IDs with names.
+    // Resolve the bot user ID once and reuse it across messages (avoids an auth.test per message).
+    const botUserId = (await client.auth.test()).user_id;
     const processedMessages = await Promise.all(
       finalMessages.map(async (msg) => {
         if (msg.text) {
-          const processedText = await processMessageText(msg.text, client);
+          const processedText = await processMessageText(msg.text, client, botUserId);
           return { ...msg, text: processedText };
         }
         return msg;
@@ -371,4 +381,166 @@ export async function getFilteredConversationHistory(
 
 export function isUserInCHOIRList(userId: string, choirUsers: string[]): boolean {
   return choirUsers.includes(userId);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: extraction candidate gathering (gap-burst + cap + pre-parent context)
+//
+// Replaces the old fixed-window logic (maxResults=5, 10-min/3-day timeLimit) for the
+// knowledge-extraction flow. Gathers a generous-but-bounded candidate set; the user's
+// selection (Phase 3 checkbox UI) will further narrow it before extraction.
+//
+// Slack 2025 limits (non-Marketplace): conversations.history/replies = 1 req/min, 15
+// objects per request. So: never request >15, never paginate, at most 2 conversations.*
+// calls per trigger, and degrade gracefully (safeSlackCall) instead of blocking.
+// ---------------------------------------------------------------------------
+
+function envInt(name: string, fallback: number, allowZero = false): number {
+  const value = Number.parseInt(process.env[name] || '', 10);
+  if (Number.isFinite(value) && (allowZero ? value >= 0 : value > 0)) {
+    return value;
+  }
+  return fallback;
+}
+
+const getGapSeconds = () => envInt('EXTRACTION_TIME_GAP_MINUTES', 30) * 60;
+const getMaxLookbackSeconds = () => envInt('EXTRACTION_MAX_LOOKBACK_MINUTES', 90) * 60;
+const getMaxCandidates = () => Math.min(envInt('EXTRACTION_MAX_CANDIDATE_MESSAGES', 15), 15); // Slack page cap
+const getEarlyReplyThreshold = () => envInt('EXTRACTION_EARLY_REPLY_MAX', 2, true);
+
+const tsToSeconds = (msg: SlackMessage): number => Number.parseFloat(msg.ts || '0');
+
+/**
+ * Keep only the latest contiguous "burst": walking backward from the newest message, cut at
+ * the first silence gap larger than the threshold. Channel proximity is an implicit relatedness
+ * signal, so this trims unrelated earlier topics. (Thread messages are NOT passed here — threading
+ * is an explicit signal, so the whole thread is kept regardless of gaps.)
+ */
+function keepLatestBurst(messages: SlackMessage[], gapSeconds: number): SlackMessage[] {
+  if (messages.length <= 1) {
+    return messages;
+  }
+
+  let startIndex = 0;
+  for (let i = messages.length - 1; i > 0; i--) {
+    if (tsToSeconds(messages[i]) - tsToSeconds(messages[i - 1]) > gapSeconds) {
+      startIndex = i;
+      break;
+    }
+  }
+
+  return messages.slice(startIndex);
+}
+
+/**
+ * Bound a chronological channel slice backward by lookback window, session marker, and time gap.
+ * When `anchorTs` is given (e.g. the thread parent), the burst must be contiguous up TO the anchor:
+ * the anchor participates in the gap check and is then dropped, so a cluster that is itself far
+ * (> gap) before the anchor is treated as a different topic and excluded.
+ */
+function boundChannelBurst(
+  messages: SlackMessage[],
+  oldestAllowedSeconds: number,
+  gapSeconds: number,
+  anchorTs?: string,
+): SlackMessage[] {
+  let bounded = messages.filter((msg) => tsToSeconds(msg) >= oldestAllowedSeconds);
+  bounded = getMessagesAfterSessionBoundary(bounded); // do not cross a prior session boundary
+
+  if (anchorTs) {
+    return keepLatestBurst([...bounded, { ts: anchorTs }], gapSeconds).filter((msg) => msg.ts !== anchorTs);
+  }
+  return keepLatestBurst(bounded, gapSeconds);
+}
+
+/**
+ * Gather candidate messages for knowledge extraction.
+ *
+ * - Thread mention: the whole thread (explicit relatedness) + (only when the mention is "early",
+ *   i.e. <= EXTRACTION_EARLY_REPLY_MAX human replies before it) a gap-bounded burst of channel
+ *   messages from before the parent. Late mentions skip the pre-parent fetch in this interim
+ *   (Phase 3 will fetch-and-default-uncheck instead).
+ * - Non-thread mention: a gap-bounded burst of recent channel messages ending at the trigger.
+ *
+ * Non-CHOIR users are excluded (consent). Returns chronological, mention-resolved messages,
+ * capped at EXTRACTION_MAX_CANDIDATE_MESSAGES.
+ */
+export async function gatherExtractionCandidates(
+  client: WebClient,
+  event: any,
+  choirUsers: string[],
+): Promise<SlackMessage[]> {
+  const channel = event.channel;
+  const gapSeconds = getGapSeconds();
+  const lookbackSeconds = getMaxLookbackSeconds();
+  const maxCandidates = getMaxCandidates();
+  const referenceSeconds = event.ts ? Number.parseFloat(event.ts) : Date.now() / 1000;
+
+  let candidates: SlackMessage[] = [];
+
+  try {
+    if (event.thread_ts) {
+      // 1) Thread: include the whole thread (parent + replies), single page.
+      const threadResult = await safeSlackCall(
+        () => client.conversations.replies({ channel, ts: event.thread_ts, limit: maxCandidates, inclusive: true }),
+        'gatherExtractionCandidates: thread replies',
+      );
+      const threadMessages = filterMessagesByType(
+        filterMessagesByUsers((threadResult?.messages as SlackMessage[]) || [], choirUsers),
+      );
+
+      // 2) Mention position = number of human replies before the mention (bots/parent excluded).
+      const humanRepliesBeforeMention = threadMessages.filter(
+        (msg) => !msg.bot_id && msg.ts !== event.thread_ts && tsToSeconds(msg) < referenceSeconds,
+      ).length;
+      const isEarlyMention = humanRepliesBeforeMention <= getEarlyReplyThreshold();
+
+      // 3) Early mention → prepend a gap-bounded burst of channel messages before the parent.
+      if (isEarlyMention) {
+        const parentSeconds = Number.parseFloat(event.thread_ts);
+        const historyResult = await safeSlackCall(
+          () => client.conversations.history({ channel, latest: event.thread_ts, inclusive: false, limit: maxCandidates }),
+          'gatherExtractionCandidates: pre-parent history',
+        );
+        const preParent = boundChannelBurst(
+          filterMessagesByType(filterMessagesByUsers(((historyResult?.messages as SlackMessage[]) || []).reverse(), choirUsers)),
+          parentSeconds - lookbackSeconds,
+          gapSeconds,
+          event.thread_ts, // anchor: the pre-parent burst must be contiguous up to the parent
+        );
+        candidates = [...preParent, ...threadMessages];
+      } else {
+        candidates = threadMessages;
+      }
+    } else {
+      // Non-thread: unified gap-burst back from the trigger, single page.
+      const historyResult = await safeSlackCall(
+        () => client.conversations.history({ channel, latest: event.ts, inclusive: true, limit: maxCandidates }),
+        'gatherExtractionCandidates: channel history',
+      );
+      candidates = boundChannelBurst(
+        filterMessagesByType(filterMessagesByUsers(((historyResult?.messages as SlackMessage[]) || []).reverse(), choirUsers)),
+        referenceSeconds - lookbackSeconds,
+        gapSeconds,
+      );
+    }
+  } catch (error) {
+    Logger.error('gatherExtractionCandidates failed', error as Error, { channel, threadTs: event.thread_ts });
+    return [];
+  }
+
+  // De-duplicate by timestamp (the parent can surface in both fetches), sort chronologically, cap.
+  const seen = new Set<string>();
+  candidates = candidates
+    .filter((msg) => msg.ts && !seen.has(msg.ts) && seen.add(msg.ts))
+    .sort((a, b) => tsToSeconds(a) - tsToSeconds(b))
+    .slice(-maxCandidates);
+
+  // Resolve mentions to names. Bot id is constant, so fetch it once for the whole batch.
+  const botUserId = (await client.auth.test()).user_id;
+  return await Promise.all(
+    candidates.map(async (msg) =>
+      msg.text ? { ...msg, text: await processMessageText(msg.text, client, botUserId) } : msg,
+    ),
+  );
 }

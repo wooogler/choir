@@ -169,6 +169,11 @@ const modalCloseCallback = async ({ ack, body, view, client, logger }: AllMiddle
     );
 
     logger.info(`Modal cancelled: ${callbackId}`, { userId, sessionId });
+
+    // For the new-file / new-section modals, backing out used to dead-end the
+    // review (the New File button had replaced the suggestion message). Offer an
+    // easy way back: post a recovery message with a "🔄 Start Over" button.
+    await postRestartRecovery({ callbackId, privateMetadata, userId, client, logger });
   } catch (error) {
     logger.error('Error processing modal close:', error);
 
@@ -194,6 +199,82 @@ const modalCloseCallback = async ({ ack, body, view, client, logger }: AllMiddle
     }
   }
 };
+
+/**
+ * After cancelling the new-file or new-section modal, post a recovery message
+ * with a "🔄 Start Over" button so the manager can restart the review (from the
+ * first suggestion) using the knowledge still held in the DOCUMENT_UPDATE session.
+ */
+async function postRestartRecovery(params: {
+  callbackId: string;
+  privateMetadata: string | undefined;
+  userId: string;
+  client: any;
+  logger: any;
+}): Promise<void> {
+  const { callbackId, privateMetadata, userId, client, logger } = params;
+  if (callbackId !== 'create_file_modal' && callbackId !== 'new_section_modal') return;
+
+  try {
+    const { getSessionData, SessionType } = await import('services/common');
+
+    let docSessionId: string | undefined;
+    let originalChannelId: string | undefined;
+    let originalThreadTs: string | undefined;
+
+    if (callbackId === 'create_file_modal') {
+      // private_metadata = { createFileSessionId, userId, channelId }; the
+      // CREATE_FILE_MODAL session holds the real DOCUMENT_UPDATE sessionId.
+      let createFileSessionId: string | undefined;
+      try {
+        createFileSessionId = JSON.parse(privateMetadata || '{}').createFileSessionId;
+      } catch {
+        createFileSessionId = privateMetadata || undefined;
+      }
+      if (createFileSessionId) {
+        const s = getSessionData(createFileSessionId, SessionType.CREATE_FILE_MODAL) as any;
+        docSessionId = s?.sessionId;
+        originalChannelId = s?.knowledgeSourceChannelId;
+        originalThreadTs = s?.knowledgeSourceThreadTs;
+      }
+    } else {
+      // new_section_modal: private_metadata is the NEW_SECTION modal session id.
+      if (privateMetadata) {
+        const s = getSessionData(privateMetadata, SessionType.NEW_SECTION) as any;
+        docSessionId = s?.sessionId;
+        originalChannelId = s?.originalChannelId;
+        originalThreadTs = s?.originalThreadTs;
+      }
+    }
+
+    if (!docSessionId) {
+      logger.info(`Restart recovery skipped (${callbackId}): could not resolve DOCUMENT_UPDATE sessionId`);
+      return;
+    }
+
+    const { buildStartOverButton } = await import('../features/document-update/suggestions/shared');
+    const what = callbackId === 'create_file_modal' ? 'creating a new file' : 'creating a new section';
+
+    await client.chat.postMessage({
+      channel: userId,
+      text: 'Canceled — want to start over?',
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `↩️ You canceled ${what}. Want to pick the review back up from the top?` },
+        },
+        {
+          type: 'actions',
+          elements: [buildStartOverButton(docSessionId, originalChannelId, originalThreadTs)],
+        },
+      ],
+      unfurl_links: false,
+      unfurl_media: false,
+    });
+  } catch (error) {
+    logger.warn(`Failed to post restart recovery for ${callbackId}:`, error);
+  }
+}
 
 const register = (app: App) => {
   // Handle view_closed for Q&A modals

@@ -2,7 +2,7 @@ import type { App } from '@slack/bolt';
 
 import { createFileSubmissionCallback } from './actions/create-file-submission';
 import { createNewSectionAction } from './actions/create-new-section';
-import { fileSelectionForUpdateAction, startFileBasedReviewAction } from './actions/file-selection';
+import { switchFileForReviewAction } from './actions/file-selection';
 import { getEditLinkAction } from './actions/get-edit-link';
 import { showCreateFileModalCallback } from './actions/show-create-file-modal';
 import { viewAnalyzedMessagesAction } from './actions/view-analyzed-messages';
@@ -31,6 +31,7 @@ export const registerDocumentUpdateFeature = (app: App) => {
   app.action('cancel_document_updates', cancelDocumentUpdatesCallback); // mention-handler.ts 에서도 사용했었음. 여기서 중앙 관리.
   app.action('suggest_updates', suggestUpdatesCallback);
   app.action('skip_suggestion', suggestUpdatesCallback);
+  app.action('restart_update_review', suggestUpdatesCallback); // 🔄 Start Over — restart from the first suggestion
   app.action('reject_update', rejectUpdateCallback);
   app.action('apply_to_document', applySelectedToGithubAction);
   app.action('apply_extracted_knowledge', applyExtractedKnowledgeCallback);
@@ -41,8 +42,7 @@ export const registerDocumentUpdateFeature = (app: App) => {
   app.action('open_knowledge_edit_manager_modal', openKnowledgeEditManagerModalCallback);
   app.action('create_new_section', createNewSectionAction);
   app.action('view_analyzed_messages', viewAnalyzedMessagesAction);
-  app.action('file_selection_for_update', fileSelectionForUpdateAction);
-  app.action('start_file_based_review', startFileBasedReviewAction);
+  app.action('switch_file_for_review', switchFileForReviewAction);
   app.action('show_create_file_modal', showCreateFileModalCallback);
   app.action('get_edit_link_for_selected_file', getEditLinkAction);
 

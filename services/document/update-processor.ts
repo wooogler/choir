@@ -6,6 +6,8 @@ import { type NewSectionSuggestion, createNewSectionFromKnowledge } from 'servic
 import { editMarkdownWithKnowledge } from 'services/llm/document-editor';
 import { createDiffBlock } from 'services/slack';
 import type { SlackMessage } from 'services/slack';
+import { WorkspaceStore } from 'services/workspace/workspace-store';
+import { getCachedNewSectionSuggestion, setCachedNewSectionSuggestion } from './document-store';
 import { convertMarkdownToSlackText } from './markdown';
 import type { UpdateAnchor } from './update-anchor';
 
@@ -101,6 +103,7 @@ export async function processDocument(
   client: WebClient,
   vectorStore: VectorStoreService,
   workspaceId?: string,
+  userId?: string,
 ): Promise<ProcessedDocument | null> {
   try {
     if (!doc.metadata?.fileName || !doc.metadata?.githubUrl || !doc.metadata?.nodeId) {
@@ -165,15 +168,34 @@ export async function processDocument(
         },
         workspaceId,
       ),
-      (async () => {
-        // 새 섹션 제안 생성을 위해 모든 마크다운 파일 목록 가져오기
-        const allMarkdownFiles = vectorStore.getAllMarkdownFiles(workspaceId);
-        const availableFiles = allMarkdownFiles.map((file) => ({
-          fileName: file.name,
-          githubUrl: file.githubUrl,
-          description: `${file.name} - Documentation file`,
-        }));
-        return await createNewSectionFromKnowledge(knowledgeContent, availableFiles, workspaceId);
+      (async (): Promise<NewSectionSuggestion | undefined> => {
+        // 새 섹션 제안은 현재 문서가 아니라 knowledgeContent + 파일 목록에만 의존하므로
+        // 같은 리뷰 세션에서는 캐시를 재사용해 제안마다 LLM을 다시 호출하지 않는다.
+        let suggestion = userId ? getCachedNewSectionSuggestion(userId, knowledgeContent, workspaceId) : null;
+
+        if (!suggestion) {
+          // 읽기 가능한(writable) 파일만 후보로 넘겨, 추천 파일이 항상 선택 가능하도록 한다.
+          const readOnlyFiles = workspaceId ? await new WorkspaceStore().getReadOnlyFiles(workspaceId) : [];
+          const availableFiles = vectorStore
+            .getAllMarkdownFiles(workspaceId)
+            .filter((file) => !readOnlyFiles.includes(file.name))
+            .map((file) => ({
+              fileName: file.name,
+              githubUrl: file.githubUrl,
+              description: `${file.name} - Documentation file`,
+            }));
+
+          // writable 대상이 없으면 새 섹션 제안을 만들지 않는다.
+          if (availableFiles.length === 0) return undefined;
+
+          suggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles, workspaceId);
+          if (userId) {
+            setCachedNewSectionSuggestion(userId, knowledgeContent, suggestion, workspaceId);
+          }
+        }
+
+        // 본문이 비어 있으면(지식 불충분) 새 섹션 affordance를 노출하지 않는다.
+        return suggestion.sectionContent?.trim() ? suggestion : undefined;
       })(),
     ]);
 

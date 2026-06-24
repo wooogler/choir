@@ -5,8 +5,7 @@ import { Logger } from 'services/common/logger';
 import { sectionPathToOriginalPath, stripItemHeadingPrefix } from 'services/document/markdown-section-splitter';
 import type { DocumentMetadata } from 'services/file-registry/types';
 import type { RetrievalDocument } from 'services/retrieval';
-import { expandQueryWithOpenAI } from 'services/retrieval/openai-query-expansion';
-import { searchQmdLexWithFallback } from 'services/retrieval/qmd-lex-search';
+import { buildQmdStructuredSearchQueries, searchQmdLexWithFallback } from 'services/retrieval/qmd-lex-search';
 import { getGithubRepo } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { PathMapService } from 'services/workspace/path-map-service';
@@ -87,18 +86,17 @@ interface StoreCacheEntry {
   branch?: string;
 }
 
-function matchesSelectedFile(relativePath: string, selectedFile?: string): boolean {
-  if (!selectedFile) {
-    return true;
-  }
+// Exact or path-suffix match (in either direction, to tolerate differing roots).
+function matchesSelectedFileStrict(relativePath: string, selectedFile: string): boolean {
+  const r = relativePath.replace(/^\/+/, '');
+  const s = selectedFile.replace(/^\/+/, '');
+  return r === s || r.endsWith(`/${s}`) || s.endsWith(`/${r}`);
+}
 
-  const normalizedRelativePath = relativePath.replace(/^\/+/, '');
-  const normalizedSelectedFile = selectedFile.replace(/^\/+/, '');
-
+// Loose match on file name only — used as a last resort when no stricter match exists.
+function matchesSelectedFileByBasename(relativePath: string, selectedFile: string): boolean {
   return (
-    normalizedRelativePath === normalizedSelectedFile ||
-    normalizedRelativePath.endsWith(`/${normalizedSelectedFile}`) ||
-    path.posix.basename(normalizedRelativePath) === path.posix.basename(normalizedSelectedFile)
+    path.posix.basename(relativePath.replace(/^\/+/, '')) === path.posix.basename(selectedFile.replace(/^\/+/, ''))
   );
 }
 
@@ -255,11 +253,7 @@ export class QmdUpdateAnchorService {
     }
 
     const limit = params.limit ?? 5;
-    const queries = await expandQueryWithOpenAI({
-      query: params.query,
-      purpose: 'update',
-      workspaceId: params.workspaceId,
-    });
+    const queries = buildQmdStructuredSearchQueries(params.query, 2);
     const hybridResults = await storeEntry.store.search({
       queries,
       limit: Math.max(limit * 3, limit),
@@ -279,17 +273,30 @@ export class QmdUpdateAnchorService {
             })
           ).results;
 
-    const filteredResults = searchResults
-      .map((result) => ({
-        result,
-        relativePath: this.getRelativePath(
-          storeEntry.sectionsRoot,
-          'file' in result ? result.file : result.filepath,
-          result.displayPath,
-        ),
-      }))
-      .filter(({ relativePath }) => matchesSelectedFile(relativePath, params.selectedFile))
-      .slice(0, limit);
+    const mappedResults = searchResults.map((result) => ({
+      result,
+      relativePath: this.getRelativePath(
+        storeEntry.sectionsRoot,
+        'file' in result ? result.file : result.filepath,
+        result.displayPath,
+      ),
+    }));
+
+    let filteredResults: typeof mappedResults;
+    if (params.selectedFile) {
+      // Prefer exact / path-suffix matches; only fall back to basename when none
+      // match, so a selected file never pulls sections from a same-named file
+      // in another folder.
+      const selectedFile = params.selectedFile;
+      const strict = mappedResults.filter(({ relativePath }) => matchesSelectedFileStrict(relativePath, selectedFile));
+      filteredResults = (
+        strict.length > 0
+          ? strict
+          : mappedResults.filter(({ relativePath }) => matchesSelectedFileByBasename(relativePath, selectedFile))
+      ).slice(0, limit);
+    } else {
+      filteredResults = mappedResults.slice(0, limit);
+    }
 
     const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(params.workspaceId);
 
@@ -378,11 +385,7 @@ export class QmdUpdateAnchorService {
       query,
     });
 
-    const queries = await expandQueryWithOpenAI({
-      query,
-      purpose: 'update',
-      workspaceId: params.workspaceId,
-    });
+    const queries = buildQmdStructuredSearchQueries(query, 2);
     await storeEntry.store.search({
       queries,
       limit: 1,

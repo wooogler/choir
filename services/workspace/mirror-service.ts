@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getDataPath } from 'services/common/data-path';
 import { Logger } from 'services/common/logger';
-import type { MarkdownFile } from 'services/github';
+import { injectCachedCaptions } from 'services/document/image-captions/inject';
 import { splitMarkdownToItems } from 'services/document/markdown-section-splitter';
+import type { MarkdownFile } from 'services/github';
 import { PathMapService } from './path-map-service';
 
 export type WorkspaceSyncSource = 'startup' | 'webhook' | 'manual-refresh' | 'document-update' | 'create-file';
@@ -105,11 +106,12 @@ export class WorkspaceMirrorService {
 
     if (sectionsHasFiles) return;
 
-    Logger.info(`QmdRetrievalProvider: sections/ is empty, rebuilding from repo/`, { workspaceId });
+    Logger.info('QmdRetrievalProvider: sections/ is empty, rebuilding from repo/', { workspaceId });
 
     const stack = [repoRoot];
     while (stack.length > 0) {
-      const current = stack.pop()!;
+      const current = stack.pop();
+      if (!current) continue;
       const entries = await fs.promises.readdir(current, { withFileTypes: true });
       for (const entry of entries) {
         const fullPath = path.join(current, entry.name);
@@ -135,13 +137,26 @@ export class WorkspaceMirrorService {
     await fs.promises.mkdir(sectionDir, { recursive: true });
 
     const fileBaseName = path.posix.basename(relativePath, '.md');
-    const items = splitMarkdownToItems(content, fileBaseName);
+    const items = injectCachedCaptions(splitMarkdownToItems(content, fileBaseName), workspaceId, relativePath);
     for (const item of items) {
       const itemFilePath = path.join(sectionDir, `${item.index}.md`);
       await fs.promises.writeFile(itemFilePath, item.content, 'utf-8');
     }
 
     Logger.info(`Workspace mirror wrote ${items.length} item file(s) for: ${relativePath}`, { workspaceId });
+  }
+
+  /**
+   * Rebuilds the section files for a single document from its current mirror
+   * content. Used after image captions are generated so the captions get
+   * injected into the section index.
+   */
+  public async rebuildSectionsForFile(workspaceId: string, relativePath: string): Promise<void> {
+    const repoRoot = this.getRepoRoot(workspaceId);
+    const absolutePath = path.join(repoRoot, relativePath);
+    if (!fs.existsSync(absolutePath)) return;
+    const content = await fs.promises.readFile(absolutePath, 'utf-8');
+    await this.writeSectionFiles(workspaceId, relativePath, content);
   }
 
   public async writeMarkdownFiles(workspaceId: string, markdownFiles: MarkdownFile[]): Promise<void> {
@@ -154,7 +169,10 @@ export class WorkspaceMirrorService {
     const expectedPaths = new Set(markdownFiles.map((file) => path.posix.normalize(file.path).replace(/^\/+/, '')));
     await this.removeOrphanedMarkdownFiles(workspaceId, expectedPaths);
     await this.removeOrphanedSectionDirs(workspaceId, expectedPaths);
-    await PathMapService.getInstance().save(workspaceId, markdownFiles.map((f) => f.path));
+    await PathMapService.getInstance().save(
+      workspaceId,
+      markdownFiles.map((f) => f.path),
+    );
   }
 
   private async removeOrphanedSectionDirs(workspaceId: string, expectedPaths: Set<string>): Promise<void> {
@@ -164,9 +182,7 @@ export class WorkspaceMirrorService {
     }
 
     // Expected section dirs: one per expected file (strip .md, preserve subdirs)
-    const expectedSectionDirs = new Set(
-      Array.from(expectedPaths).map((p) => p.replace(/\.md$/i, '')),
-    );
+    const expectedSectionDirs = new Set(Array.from(expectedPaths).map((p) => p.replace(/\.md$/i, '')));
 
     const topLevelEntries = await fs.promises.readdir(sectionsRoot, { withFileTypes: true });
     for (const entry of topLevelEntries) {
@@ -308,7 +324,7 @@ export class WorkspaceMirrorService {
     };
 
     const dirtyFiles = new Set(currentState.dirtyFiles);
-    params.filePaths.forEach((filePath) => dirtyFiles.add(filePath));
+    for (const filePath of params.filePaths) dirtyFiles.add(filePath);
 
     await this.saveSyncState(params.workspaceId, {
       ...currentState,
@@ -337,7 +353,7 @@ export class WorkspaceMirrorService {
     };
 
     const dirtyFiles = new Set(currentState.dirtyFiles);
-    params.filePaths.forEach((filePath) => dirtyFiles.delete(filePath));
+    for (const filePath of params.filePaths) dirtyFiles.delete(filePath);
 
     await this.saveSyncState(params.workspaceId, {
       ...currentState,

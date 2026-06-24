@@ -219,21 +219,29 @@ export function createCHOIRBlockId(messageType: CHOIRMessageType, suffix?: strin
  * block_id에서 CHOIR 메시지 타입을 추출하는 헬퍼 함수
  */
 export function extractCHOIRMessageType(blockId: string): CHOIRMessageType | null {
-  const match = blockId.match(/^choir_([a-z_]+)(?:_.*)?_\d+$/);
-  if (!match) {
+  if (!blockId.startsWith('choir_')) {
     console.log(`⚠️ [DEBUG] Invalid block_id format: ${blockId}`);
     return null;
   }
 
-  const typeString = match[1];
-  const isValidType = Object.values(CHOIRMessageType).includes(typeString as CHOIRMessageType);
+  // block_id format: choir_<messageType>[_<suffix>]_<timestamp>
+  // Strip the trailing _<timestamp>, leaving <messageType> or <messageType>_<suffix>.
+  const body = blockId.slice('choir_'.length).replace(/_\d+$/, '');
 
-  if (!isValidType) {
-    console.log(`⚠️ [DEBUG] Invalid message type extracted: ${typeString} from ${blockId}`);
+  const validTypes = Object.values(CHOIRMessageType) as string[];
+
+  // Exact match first; otherwise match the longest valid type that is a prefix (handles suffixes).
+  // Greedy-regex extraction used to grab `<type>_<suffix>` and fail, so match against the enum instead.
+  const matched =
+    (validTypes.includes(body) ? body : undefined) ??
+    validTypes.filter((type) => body === type || body.startsWith(`${type}_`)).sort((a, b) => b.length - a.length)[0];
+
+  if (!matched) {
+    console.log(`⚠️ [DEBUG] Invalid message type extracted: ${body} from ${blockId}`);
     return null;
   }
 
-  return typeString as CHOIRMessageType;
+  return matched as CHOIRMessageType;
 }
 
 /**

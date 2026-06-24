@@ -1,5 +1,6 @@
 import type { Document } from '@langchain/core/documents';
 import { getDatabase } from 'services/db/connection';
+import type { NewSectionSuggestion } from 'services/llm/content-generator';
 import type { DocumentMetadata } from '../file-registry/types';
 import type { SlackMessage } from '../slack';
 import type { UpdateAnchor } from './update-anchor';
@@ -211,6 +212,33 @@ export const removeDocumentUpdate = (userId: string, index: number, workspaceId?
   return true;
 };
 
+// ===== 새 섹션 제안 캐시 =====
+// createNewSectionFromKnowledge 는 현재 문서가 아니라 knowledgeContent + 파일 목록에만
+// 의존하므로, 같은 리뷰 세션(동일 knowledgeContent)에서는 한 번만 계산해 재사용한다.
+
+interface CachedNewSection {
+  knowledgeContent: string;
+  suggestion: NewSectionSuggestion;
+}
+
+export function getCachedNewSectionSuggestion(
+  userId: string,
+  knowledgeContent: string,
+  workspaceId?: string,
+): NewSectionSuggestion | null {
+  const cached = getAppState<CachedNewSection>('new_section_cache', userId, workspaceId);
+  return cached && cached.knowledgeContent === knowledgeContent ? cached.suggestion : null;
+}
+
+export function setCachedNewSectionSuggestion(
+  userId: string,
+  knowledgeContent: string,
+  suggestion: NewSectionSuggestion,
+  workspaceId?: string,
+): void {
+  setAppState('new_section_cache', userId, { knowledgeContent, suggestion }, workspaceId);
+}
+
 // ===== 새로운 파일 선택 상태 관리 함수들 =====
 
 /**
@@ -383,5 +411,6 @@ export function getNextSuggestion(userId: string, workspaceId?: string): Documen
  */
 export function clearFileSelectionState(userId: string, workspaceId?: string): void {
   deleteAppState('file_selection_state', userId, workspaceId);
+  deleteAppState('new_section_cache', userId, workspaceId);
   console.info(`Cleared file selection state for user ${userId}`);
 }

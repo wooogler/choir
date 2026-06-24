@@ -1,4 +1,5 @@
 import { Logger } from 'services/common/logger';
+import { enrichWorkspaceImageCaptions } from 'services/document/image-captions';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService, type MarkdownFile } from 'services/github';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
@@ -56,6 +57,11 @@ export class GitHubSyncService {
       scheduleQmdWarmup({
         workspaceId: params.workspaceId,
         reason: `github-sync:${params.source}`,
+      });
+
+      // Caption images surfaced by this sync (best-effort, non-blocking).
+      void enrichWorkspaceImageCaptions(params.workspaceId).catch((error) => {
+        Logger.warn('GitHubSyncService: image caption enrichment failed', error as Error);
       });
     }
   }

@@ -17,6 +17,7 @@ interface OrganizationalContext {
   managerText?: string;
   channelType?: string;
   extractorName?: string;
+  conversationDate?: string; // e.g. "2026-06-24 (Wednesday, America/New_York)" — used to resolve relative time
 }
 
 /**
@@ -119,24 +120,10 @@ export async function extractKnowledgeFromMessages(
     const qaContent: Array<{ question: string; answer: string | null; canAnswer: boolean }> = [];
     const conversationMessages: Array<{ role: string; content: string }> = [];
 
-    // Extract the most recent CHOIR answer for context
+    // Extract the most recent CHOIR answer to inject as "current documentation state" context.
+    // Note: we no longer slice the conversation around it — the collection layer and the user's
+    // selection control the window. The answer is only used as qaContext below (see D9).
     const latestCHOIRAnswer = extractLatestCHOIRAnswer(messages, processedMessages);
-
-    // Find the index of the latest CHOIR answer message to exclude it and preceding messages
-    let conversationStartIndex = 0;
-    if (latestCHOIRAnswer) {
-      // Find the index of the CHOIR answer message
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const originalMsg = messages[i];
-        const messageType =
-          getCHOIRMessageTypeFromBlocks(originalMsg.blocks || []) || originalMsg.metadata?.messageType;
-
-        if (messageType === CHOIRMessageType.ANSWER && processedMessages[i].role === 'CHOIR') {
-          conversationStartIndex = i + 1; // Start after the CHOIR answer
-          break;
-        }
-      }
-    }
 
     for (let i = 0; i < processedMessages.length; i++) {
       const msg = processedMessages[i];
@@ -191,10 +178,8 @@ export async function extractKnowledgeFromMessages(
         continue;
       }
 
-      // Only include messages after the latest CHOIR answer in conversation
-      if (i >= conversationStartIndex) {
-        conversationMessages.push(msg);
-      }
+      // Include all selected messages — the collection layer + user selection control the window.
+      conversationMessages.push(msg);
     }
 
     // Format conversation messages with numbered references for source tracking
@@ -214,6 +199,9 @@ export async function extractKnowledgeFromMessages(
       }
       if (context.isUserManager !== undefined) {
         contextSection += `- Extraction requested by: ${context.isUserManager ? 'Manager' : 'Team Member'}\n`;
+      }
+      if (context.conversationDate) {
+        contextSection += `- Conversation date: ${context.conversationDate}\n`;
       }
       contextSection += '\n';
     }
@@ -245,17 +233,28 @@ What information is shared in the conversation that should be documented?`;
       [
         {
           role: 'system',
-          content: `You are CHOIR, a documentation specialist. Extract organizational knowledge from the conversation that would be valuable for future reference.
+          content: `You are CHOIR, a documentation specialist. Extract organizational knowledge from the conversation that should be saved for future reference.
 
-Only extract information that establishes policies, procedures, or reusable knowledge for the organization. Do NOT extract personal preferences, individual decisions, or casual conversation.
+WHAT TO EXTRACT
+- Only settled, factual organizational knowledge: established policies, procedures, decisions that have actually been made, or reusable reference facts.
+- Do NOT extract casual conversation, personal preferences, or proposals/opinions that are still being debated or not yet decided.
+- If people are still discussing or disagreeing and no decision has been reached, respond with exactly: No organizational knowledge found
 
-Start with a descriptive markdown section title (# [Topic Name]), then write the information in natural paragraph format. Only include facts that are directly stated in the conversation or in the provided current-documentation context. Do not add explanations, interpretations, or implications.
+GROUNDING (prefer holding back over guessing)
+- Use only facts directly stated in the conversation messages or in the provided current-documentation context. Never invent or infer details that are not present.
+- If the conversation only refers to content that is not actually contained in the messages (for example "save what I described above" but that description is not present), do NOT fabricate a summary. Respond with exactly: No organizational knowledge found
 
-When CHOIR's recent answer is provided, treat it as the current documentation state. If a manager or authorized requester says to change, replace, update, increase, decrease, or correct a specific value from that recent answer, document the resulting updated fact using the subject from the recent answer.
+CORRECTIONS
+- When CHOIR's recent answer is provided, treat it as the current documentation state. If the conversation asks to change, replace, update, increase, decrease, set, or correct a value from it — even when phrased as a wish or request (e.g. "I'd like to change it to 20", "20일로 변경하고 싶어", "make it 20") — document the RESULTING fact (the new state), using the subject from that answer.
+- Write the resulting fact itself (e.g. "Vacation is 20 days per year" / "연차 휴가는 연간 20일이다"). Do NOT write a meta-statement about the request being made (never output things like "there was a request to change X to Y" / "X를 Y로 변경 요청이 있었습니다"), and do not use a request-style title.
 
-Do not attribute information to specific people in your output. Always preserve any URLs mentioned.
+TIME
+- The conversation date is given in the Organizational Context. Convert every relative time expression (for example "next Monday", "next week", "next month", "tomorrow") into an absolute date in YYYY-MM-DD form based on that date. Keep genuinely recurring expressions (for example "the 5th of each month") as recurring. Do not leave relative time expressions in the output.
 
-If no documentable knowledge is found, respond with exactly: No organizational knowledge found`,
+OUTPUT
+- Write in the SAME language as the conversation. If the conversation is in Korean, write the output in Korean.
+- Start with a descriptive markdown title (# [Topic]), then write the information as natural short paragraphs. Do not use bullet or numbered lists.
+- Do not add explanations, interpretations, or implications. Do not attribute information to specific people. Always preserve any URLs.`,
         },
         {
           role: 'user',

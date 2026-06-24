@@ -371,39 +371,63 @@ class GithubService {
       const octokit = await this.getOctokit(params.workspaceId, params.userId);
       const actualBranch =
         params.branch || (await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId));
-      const currentFileResponse = await this.throttledRequest(() =>
-        octokit.rest.repos.getContent({
-          owner: params.owner,
-          repo: params.repo,
-          path: params.path,
-          ref: actualBranch,
-        }),
-      );
-      const currentFile = (currentFileResponse as any).data;
-
-      if (Array.isArray(currentFile) || !('sha' in currentFile)) {
-        throw new GitHubError('Invalid file data', {
-          code: ErrorCodes.GITHUB_FILE_NOT_FOUND,
-        });
-      }
 
       // CHOIR에서 호출하는 모든 업데이트에 [choir-auto] 태그 추가
       const baseMessage = params.message || 'Update markdown content';
       const commitMessage = baseMessage.includes('[choir-auto]') ? baseMessage : `${baseMessage} [choir-auto]`;
 
-      const updateResponse = await this.throttledRequest(() =>
-        octokit.rest.repos.createOrUpdateFileContents({
-          owner: params.owner,
-          repo: params.repo,
-          path: params.path,
-          message: commitMessage,
-          content: Buffer.from(params.content).toString('base64'),
-          sha: currentFile.sha,
-          branch: actualBranch,
-        }),
-      );
+      // GitHub's Contents API can briefly return a stale SHA right after a
+      // commit (e.g. a caption write-back that follows a save), causing a
+      // "does not match" conflict. Re-read the SHA and retry on 409/422.
+      const maxAttempts = 4;
+      let commitSha = '';
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const currentFileResponse = await this.throttledRequest(() =>
+          octokit.rest.repos.getContent({
+            owner: params.owner,
+            repo: params.repo,
+            path: params.path,
+            ref: actualBranch,
+          }),
+        );
+        const currentFile = (currentFileResponse as any).data;
 
-      const commitSha = (updateResponse as any).data.commit.sha;
+        if (Array.isArray(currentFile) || !('sha' in currentFile)) {
+          throw new GitHubError('Invalid file data', {
+            code: ErrorCodes.GITHUB_FILE_NOT_FOUND,
+          });
+        }
+
+        try {
+          const updateResponse = await this.throttledRequest(() =>
+            octokit.rest.repos.createOrUpdateFileContents({
+              owner: params.owner,
+              repo: params.repo,
+              path: params.path,
+              message: commitMessage,
+              content: Buffer.from(params.content).toString('base64'),
+              sha: currentFile.sha,
+              branch: actualBranch,
+            }),
+          );
+          commitSha = (updateResponse as any).data.commit.sha;
+          break;
+        } catch (updateError) {
+          const status = (updateError as { status?: number }).status;
+          const isShaConflict =
+            status === 409 || status === 422 || /does not match/i.test((updateError as Error).message);
+          if (isShaConflict && attempt < maxAttempts) {
+            Logger.warn(`updateMarkdownFile: stale SHA for ${params.path}, retrying (attempt ${attempt})`, {
+              owner: params.owner,
+              repo: params.repo,
+              branch: actualBranch,
+            });
+            await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
+            continue;
+          }
+          throw updateError;
+        }
+      }
 
       // Invalidate cache for this file
       const cacheKeys = Array.from(this.fileContentCache.keys()).filter((key) =>
@@ -427,6 +451,91 @@ class GithubService {
         branch: params.branch,
       });
       throw new GitHubError('Failed to update file', {
+        code: ErrorCodes.GITHUB_UPDATE_FAILED,
+        metadata: { owner: params.owner, repo: params.repo, path: params.path },
+      });
+    }
+  }
+
+  /**
+   * Commits a binary file (e.g. an image asset) to the repository.
+   *
+   * Asset paths are expected to be content-addressed (the file name encodes a
+   * hash of the bytes), so they are immutable: if the path already exists the
+   * bytes are identical and the commit is skipped. Returns `created: false`
+   * when the asset was already present.
+   */
+  async uploadBinaryFile(params: {
+    owner: string;
+    repo: string;
+    path: string;
+    content: Buffer;
+    message?: string;
+    branch?: string;
+    workspaceId?: string;
+    userId?: string;
+  }): Promise<{ commitSha: string | null; created: boolean }> {
+    try {
+      const octokit = await this.getOctokit(params.workspaceId, params.userId);
+      const actualBranch =
+        params.branch || (await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId));
+
+      let exists = false;
+      try {
+        await this.throttledRequest(() =>
+          octokit.rest.repos.getContent({
+            owner: params.owner,
+            repo: params.repo,
+            path: params.path,
+            ref: actualBranch,
+          }),
+        );
+        exists = true;
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) {
+          throw error;
+        }
+      }
+
+      if (exists) {
+        Logger.info(`Asset already present, skipping commit: ${params.path}`, {
+          owner: params.owner,
+          repo: params.repo,
+          branch: actualBranch,
+        });
+        return { commitSha: null, created: false };
+      }
+
+      const baseMessage = params.message || `Add asset ${params.path}`;
+      const commitMessage = baseMessage.includes('[choir-auto]') ? baseMessage : `${baseMessage} [choir-auto]`;
+
+      const createResponse = await this.throttledRequest(() =>
+        octokit.rest.repos.createOrUpdateFileContents({
+          owner: params.owner,
+          repo: params.repo,
+          path: params.path,
+          message: commitMessage,
+          content: params.content.toString('base64'),
+          branch: actualBranch,
+        }),
+      );
+
+      const commitSha = (createResponse as any).data.commit.sha;
+      Logger.info(`Successfully uploaded asset: ${params.path}`, {
+        owner: params.owner,
+        repo: params.repo,
+        branch: actualBranch,
+      });
+      return { commitSha, created: true };
+    } catch (error) {
+      Logger.error('Failed to upload asset', error as Error, {
+        owner: params.owner,
+        repo: params.repo,
+        path: params.path,
+        branch: params.branch,
+      });
+      throw new GitHubError('Failed to upload asset', {
         code: ErrorCodes.GITHUB_UPDATE_FAILED,
         metadata: { owner: params.owner, repo: params.repo, path: params.path },
       });

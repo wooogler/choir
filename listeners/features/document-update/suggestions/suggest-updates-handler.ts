@@ -257,7 +257,10 @@ export const suggestUpdatesCallback = async ({
     }
 
     if (currentIndex === 0 && !isFileBasedReview && (!searchResults || searchResults.length === 0)) {
-      await runInitialSearch({
+      // Item I: instead of showing a file-selection gate, runInitialSearch opens
+      // the review directly on the best-matching file and returns its suggestions.
+      // We fall through to render the first one into this same progress message.
+      const init = await runInitialSearch({
         userId,
         currentWorkspaceId,
         currentDmChannelId: dmChannelId,
@@ -266,11 +269,12 @@ export const suggestUpdatesCallback = async ({
         knowledgeSourceChannelId,
         knowledgeSourceThreadTs,
         vectorStore,
-        progressMessage,
         client,
         logger,
       });
-      return;
+      if (init.shouldReturn) return;
+      searchResults = init.searchResults;
+      isFileBasedReview = true;
     }
 
     logger.info(`Debug: currentIndex=${currentIndex}, searchResults.length=${searchResults.length}`);
@@ -323,6 +327,7 @@ export const suggestUpdatesCallback = async ({
       client,
       vectorStore,
       currentWorkspaceId,
+      userId,
     );
 
     // processedDoc이 null이거나 변경사항이 없어도 사용자에게 표시 (자동 스킵 방지)
@@ -378,6 +383,7 @@ export const suggestUpdatesCallback = async ({
       processedDoc,
       currentIndex,
       sessionId,
+      knowledgeContent,
       knowledgeSourceChannelId,
       knowledgeSourceThreadTs,
       userId,

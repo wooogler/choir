@@ -148,11 +148,12 @@ export async function classifyMessageIntent(
     }
   }
 
-  const systemPrompt = `Classify the user message for an organizational knowledge management system.
-- 'question': seeking information that could be in the organization's documentation — policies, procedures, schedules, rules, tools, resources, or any factual knowledge about the organization
-- 'update_request': providing new information to be documented, or requesting to save/update content
-- 'general_conversation': greetings, chit-chat, meta-questions about this system, or browsing requests
+  const systemPrompt = `Classify the user message for an organizational knowledge management system (a bot that documents team knowledge from conversations).
+- 'update_request': providing new information/facts/decisions to document, OR asking to save, update, record, capture, write down, or summarize/organize THE CURRENT conversation or discussion. The goal is to write something into the documentation.
+- 'question': seeking information that may already be in the documentation — asking about an existing policy, procedure, schedule, rule, tool, or fact (including "summarize/explain our X" where X is an existing topic, not the current chat).
+- 'general_conversation': greetings, thanks, chit-chat, or meta-questions about the bot itself.
 
+Key distinction: summarizing/organizing the CURRENT conversation or discussion = 'update_request'; summarizing/explaining an EXISTING topic = 'question'.
 When in doubt between 'question' and 'general_conversation', prefer 'question'.
 ${organizationName ? `\nOrganization: ${organizationName}` : ''}${descOrg ? `\nAbout: ${descOrg}` : ''}${contextSection}`;
 

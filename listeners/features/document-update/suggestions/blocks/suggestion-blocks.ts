@@ -1,5 +1,5 @@
 import type { Block, KnownBlock } from '@slack/web-api';
-import { SessionType, storeSessionData } from 'services/common';
+import { SessionType, generateSessionId, getSessionData, storeSessionData } from 'services/common';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import type { ProcessedDocument } from 'services/document/update-processor';
 import type { DocumentMetadata } from 'services/file-registry/types';
@@ -7,11 +7,13 @@ import { GithubService } from 'services/github';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { CREATE_FILE_SESSION_EXPIRY, buildStartOverButton } from '../shared';
 
 export async function buildSuggestionBlocks(params: {
   processedDoc: ProcessedDocument;
   currentIndex: number;
   sessionId: string;
+  knowledgeContent: string;
   knowledgeSourceChannelId: string | undefined;
   knowledgeSourceThreadTs: string | undefined;
   userId: string;
@@ -23,6 +25,7 @@ export async function buildSuggestionBlocks(params: {
     processedDoc,
     currentIndex,
     sessionId,
+    knowledgeContent,
     knowledgeSourceChannelId,
     knowledgeSourceThreadTs,
     userId,
@@ -150,14 +153,69 @@ export async function buildSuggestionBlocks(params: {
   }
 
   const workspaceStore = new WorkspaceStore();
-  const config = await workspaceStore.getWorkspaceConfig(await getWorkspaceId(client));
+  const workspaceId = await getWorkspaceId(client);
+  const config = await workspaceStore.getWorkspaceConfig(workspaceId);
   let directEditUrl = '';
   if (config?.githubRepo) {
     const { owner, repo, branch } = config.githubRepo;
-    const branchName =
-      branch || (await GithubService.getInstance().getDefaultBranch(owner, repo, await getWorkspaceId(client), userId));
+    const branchName = branch || (await GithubService.getInstance().getDefaultBranch(owner, repo, workspaceId, userId));
     directEditUrl = `https://github.com/${owner}/${repo}/edit/${branchName}/${processedDoc.fileName}`;
   }
+
+  // Item I: inline file switcher — retarget the review to another writable file
+  // without a separate selection gate. Carries the review sessionId in block_id
+  // so the handler can rebuild context; the option value is the file path.
+  const writableFiles = (await workspaceStore.getWritableFilesOrFetch(workspaceId, userId)).slice(0, 100);
+  const fileOptions = writableFiles.map((f) => ({
+    text: { type: 'plain_text' as const, text: f.name, emoji: false },
+    value: f.path,
+  }));
+  const currentFileOption = fileOptions.find(
+    (o) => o.value === processedDoc.fileName || o.text.text === processedDoc.fileName,
+  );
+  const fileSwitcherBlock =
+    fileOptions.length > 0
+      ? {
+          type: 'section' as const,
+          block_id: `file_switcher::${sessionId}`,
+          text: { type: 'mrkdwn' as const, text: '📁 *Updating this file* — pick another to switch:' },
+          accessory: {
+            type: 'static_select' as const,
+            action_id: 'switch_file_for_review',
+            placeholder: { type: 'plain_text' as const, text: 'Choose a file...' },
+            options: fileOptions,
+            ...(currentFileOption && { initial_option: currentFileOption }),
+          },
+        }
+      : null;
+
+  // Item I: "Create New File" moved from the (removed) selection gate onto the
+  // suggestion itself. Defaults were prefilled by runInitialSearch into the session.
+  const newFileDefaults = (getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any)?.newFileDefaults as
+    | { fileName: string; initialContent: string }
+    | undefined;
+  const createFileSessionId = generateSessionId('create_file');
+  storeSessionData(
+    createFileSessionId,
+    {
+      sessionId,
+      knowledgeContent,
+      knowledgeSourceChannelId,
+      knowledgeSourceThreadTs,
+      ...(newFileDefaults && {
+        defaultFileName: newFileDefaults.fileName,
+        defaultInitialContent: newFileDefaults.initialContent,
+      }),
+    },
+    SessionType.CREATE_FILE_MODAL,
+    CREATE_FILE_SESSION_EXPIRY,
+  );
+  const createFileButton = {
+    type: 'button' as const,
+    text: { type: 'plain_text' as const, text: '📄 Create New File', emoji: true },
+    action_id: 'show_create_file_modal',
+    value: createFileSessionId,
+  };
 
   let bonusIdeaText = '';
   if (processedDoc.newSectionSuggestion) {
@@ -183,12 +241,23 @@ export async function buildSuggestionBlocks(params: {
     { type: 'actions', elements: mainActionButtons },
   ];
 
-  if (bonusIdeaText && newSectionButton) {
-    blocks.push(
-      { type: 'section', text: { type: 'mrkdwn', text: bonusIdeaText } },
-      { type: 'actions', elements: [newSectionButton] },
-    );
+  if (fileSwitcherBlock) {
+    blocks.push(fileSwitcherBlock);
   }
+
+  if (bonusIdeaText) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: bonusIdeaText } });
+  }
+
+  // "Other options" actions: Create New Section (when offered) + Create New File +
+  // Start Over (always) — so the manager can restart the review at any point,
+  // including after backing out of a new file/section.
+  const extraButtons = [
+    ...(newSectionButton ? [newSectionButton] : []),
+    createFileButton,
+    buildStartOverButton(sessionId, knowledgeSourceChannelId, knowledgeSourceThreadTs),
+  ];
+  blocks.push({ type: 'actions', elements: extraButtons });
 
   blocks.push({ type: 'divider' });
 

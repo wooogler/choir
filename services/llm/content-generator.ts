@@ -24,12 +24,14 @@ export async function generateNewFileDefaults(
       [
         {
           role: 'system',
-          content: `You are a documentation assistant. Suggest a file name and initial markdown content for new documentation.
+          content: `You are a documentation assistant. Suggest a file name and initial markdown content for a new documentation file.
 
 Rules:
-- File name: descriptive, concise, kebab-case, ending with .md
-- Avoid conflicts with existing files
-- Initial content: start with a markdown header, then include the knowledge in a well-structured format`,
+- File name: descriptive, concise, kebab-case, ending with .md (the file name stays in English). Avoid conflicts with existing files.
+- Initial content: start with a markdown title (#), then present the knowledge as a markdown bullet list (one "-" item per fact).
+- Use ONLY information from the provided knowledge. Do NOT invent overviews, summaries, examples, checklists, extra sections, or any detail not explicitly stated in the knowledge.
+- Write the initial content in the same language as the knowledge.
+- Keep it concise and do not pad. If the knowledge is short, the document is short.`,
         },
         {
           role: 'user',
@@ -94,8 +96,9 @@ export async function createNewSectionFromKnowledge(
 
 Rules:
 - Use ONLY information from the provided knowledge — no external details or assumptions
+- Write the section title and content in the same language as the knowledge
 - Section title: clear, general (e.g., "Online Meeting Platform" not "Using Microsoft Teams for Online Meetings"), without # symbol
-- Section content: paragraphs or list items only (no headings or nested structure)
+- Section content: a markdown bullet list — one "-" item per fact (no headings or nested structure)
 - Never include user names or identifiers
 - Preserve any URLs from the knowledge
 - Select the most appropriate file and provide reasoning for the choice

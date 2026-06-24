@@ -7,6 +7,9 @@ import registerListeners from './listeners';
 
 import { AppConfig } from '@/config';
 import {
+  ALLOWED_IMAGE_TYPES,
+  IMAGE_EXTENSIONS,
+  MAX_ASSET_BYTES,
   buildClearSessionCookieHeader,
   buildSessionCookieHeader,
   buildSlackAuthorizeUrl,
@@ -16,14 +19,15 @@ import {
   issueSessionCookieValue,
   parseSessionCookie,
   saveEditedDocument,
+  saveUploadedAsset,
   verifyOAuthState,
   verifySessionCookieValue,
 } from 'services/docs-editor';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
-import { isManager } from 'services/slack';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
+import { isManager } from 'services/slack';
 import { getGithubRepo } from 'services/slack';
 import { SqliteSlackInstallationStore } from 'services/slack/sqlite-installation-store';
 import { ensureWorkspaceInitialized } from 'services/slack/workspace-bootstrap';
@@ -275,9 +279,7 @@ function setupPublicSite(): void {
   router.get('/api/docs/:workspaceId/*splat', async (req: any, res: any) => {
     try {
       const workspaceId = String(req.params.workspaceId);
-      const filePath = Array.isArray(req.params.splat)
-        ? req.params.splat.join('/')
-        : String(req.params.splat);
+      const filePath = Array.isArray(req.params.splat) ? req.params.splat.join('/') : String(req.params.splat);
 
       if (!filePath) {
         return res.status(400).json({ error: 'filePath is required' });
@@ -292,6 +294,16 @@ function setupPublicSite(): void {
 
       if (!fs.existsSync(resolved)) {
         return res.status(404).json({ error: 'File not found' });
+      }
+
+      // Image assets are served as raw binary so the docs viewer/editor can
+      // render them directly; everything else (markdown) is returned as JSON.
+      const ext = path.posix.extname(filePath).slice(1).toLowerCase();
+      const imageMime = IMAGE_EXTENSIONS[ext];
+      if (imageMime) {
+        res.setHeader('content-type', imageMime);
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+        return res.sendFile(resolved);
       }
 
       const content = await fs.promises.readFile(resolved, 'utf-8');
@@ -313,9 +325,7 @@ function setupPublicSite(): void {
       if (!config) {
         return res
           .status(503)
-          .send(
-            'Slack sign-in is not configured. Set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and DOCS_BASE_URL.',
-          );
+          .send('Slack sign-in is not configured. Set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and DOCS_BASE_URL.');
       }
       const safeNext = next.startsWith('/') ? next : '/';
       const state = issueOAuthState({ workspaceId, next: safeNext });
@@ -368,9 +378,7 @@ function setupPublicSite(): void {
     async (req: any, res: any) => {
       try {
         const workspaceId = String(req.params.workspaceId);
-        const filePath = Array.isArray(req.params.splat)
-          ? req.params.splat.join('/')
-          : String(req.params.splat);
+        const filePath = Array.isArray(req.params.splat) ? req.params.splat.join('/') : String(req.params.splat);
 
         if (!filePath) {
           return res.status(400).json({ error: 'filePath is required' });
@@ -416,6 +424,49 @@ function setupPublicSite(): void {
         app.logger.error('PUT /api/docs failed', err as Error);
         const message = err instanceof Error ? err.message : 'Internal server error';
         return res.status(500).json({ error: message });
+      }
+    },
+  );
+
+  // API: upload an image asset for the editor. Stores it in the workspace
+  // mirror and commits it to GitHub. Auth: signed session cookie + manager.
+  router.post(
+    '/api/docs/:workspaceId/assets',
+    expressForBodyParser.raw({ type: Object.keys(ALLOWED_IMAGE_TYPES), limit: MAX_ASSET_BYTES }),
+    async (req: any, res: any) => {
+      try {
+        const workspaceId = String(req.params.workspaceId);
+
+        const session = await readSession(req);
+        if (!session) {
+          return res.status(401).json({ error: 'Not signed in' });
+        }
+        if (session.workspaceId !== workspaceId) {
+          return res.status(403).json({ error: 'Session does not match workspace' });
+        }
+
+        const managerCheck = await isManager(workspaceId, session.userId);
+        if (!managerCheck) {
+          return res.status(403).json({ error: 'User is not a workspace manager' });
+        }
+
+        const body = req.body;
+        if (!Buffer.isBuffer(body) || body.length === 0) {
+          return res.status(400).json({ error: 'Expected a binary image body' });
+        }
+
+        const result = await saveUploadedAsset({
+          workspaceId,
+          userId: session.userId,
+          content: body,
+          contentType: String(req.headers['content-type'] || ''),
+        });
+
+        return res.json({ ok: true, path: result.path });
+      } catch (err) {
+        app.logger.error('POST /api/docs assets failed', err as Error);
+        const message = err instanceof Error ? err.message : 'Internal server error';
+        return res.status(400).json({ error: message });
       }
     },
   );
