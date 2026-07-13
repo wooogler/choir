@@ -220,6 +220,12 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   }, []);
 
   useEffect(() => {
+    // Guard against a fetch race: when the user switches files, an earlier
+    // request could resolve AFTER the current one and replace the visible doc
+    // with the wrong file's content — which would then be committed to the new
+    // path. Ignore any response once this effect run is superseded.
+    let cancelled = false;
+
     setLoadedMarkdown(null);
     setCurrentMarkdown('');
     setError('');
@@ -238,14 +244,20 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         return r.json() as Promise<{ content: string; filePath: string }>;
       })
       .then(({ content }) => {
+        if (cancelled) return;
         setToc(extractToc(content));
         setLoadedMarkdown(content);
         setCurrentMarkdown(content);
         setEditorKey((k) => k + 1);
       })
       .catch((e: unknown) => {
+        if (cancelled) return;
         setError(e instanceof Error ? e.message : 'Failed to load document');
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [workspaceId, filePath, clearChangedBlockMarks, clearEditSession]);
 
   // Line-level provenance (git blame → record) for the gutter markers. Members only.
