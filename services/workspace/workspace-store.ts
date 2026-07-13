@@ -244,12 +244,18 @@ export class WorkspaceStore {
   /**
    * 관리자 추가
    */
-  public async addManager(workspaceId: string, userId: string, grantedBy: string): Promise<boolean> {
+  public async addManager(
+    workspaceId: string,
+    userId: string,
+    grantedBy: string,
+    options?: { actorIsOwner?: boolean },
+  ): Promise<boolean> {
     const config = await this.getWorkspaceConfig(workspaceId);
     if (!config) return false;
 
-    // 'self-promotion'인 경우 권한 확인 건너뛰기
-    if (grantedBy !== 'self-promotion' && !config.managers.includes(grantedBy)) {
+    // The workspace owner may manage managers even if not themselves listed as a
+    // manager; 'self-promotion' likewise bypasses the grantor-is-manager check.
+    if (grantedBy !== 'self-promotion' && !options?.actorIsOwner && !config.managers.includes(grantedBy)) {
       return false; // 권한 부여자가 관리자가 아님
     }
 
@@ -270,11 +276,17 @@ export class WorkspaceStore {
   /**
    * 관리자 제거
    */
-  public async removeManager(workspaceId: string, userId: string, removedBy: string): Promise<boolean> {
+  public async removeManager(
+    workspaceId: string,
+    userId: string,
+    removedBy: string,
+    options?: { actorIsOwner?: boolean },
+  ): Promise<boolean> {
     const config = await this.getWorkspaceConfig(workspaceId);
     if (!config) return false;
 
-    if (!config.managers.includes(removedBy)) {
+    // The workspace owner may manage managers even if not listed as one.
+    if (!options?.actorIsOwner && !config.managers.includes(removedBy)) {
       return false; // 권한 제거자가 관리자가 아님
     }
 

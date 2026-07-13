@@ -1,6 +1,6 @@
 import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
-import { addManager, getManagers, getWorkspaceId, removeManager } from 'services/slack';
+import { addManager, getManagers, getWorkspaceId, isManager, isWorkspaceOwner, removeManager } from 'services/slack';
 import { logManagementButtonError, logManagementModalError, refreshAppHomeSoon } from './shared';
 
 export const registerManagersHandlers = (app: App) => {
@@ -171,8 +171,24 @@ export const registerManagersHandlers = (app: App) => {
       }
 
       const workspaceId = await getWorkspaceId(client);
-      const currentManagers = await getManagers(workspaceId);
       const currentUser = body.user.id;
+
+      // Only a manager or the workspace owner may change the manager roster.
+      const [actorIsManager, actorIsOwner] = await Promise.all([
+        isManager(workspaceId, currentUser),
+        isWorkspaceOwner(currentUser, client),
+      ]);
+      if (!actorIsManager && !actorIsOwner) {
+        await ack();
+        await client.chat.postEphemeral({
+          user: currentUser,
+          channel: currentUser,
+          text: "❌ You don't have permission to manage managers.",
+        });
+        return;
+      }
+
+      const currentManagers = await getManagers(workspaceId);
       const managersToAdd = selectedUsers.filter((userId) => !currentManagers.includes(userId));
       const managersToRemove = currentManagers.filter((userId) => !selectedUsers.includes(userId));
 
@@ -181,7 +197,8 @@ export const registerManagersHandlers = (app: App) => {
 
       for (const userId of managersToAdd) {
         try {
-          const addResult = await addManager(workspaceId, userId, currentUser);
+          // Pass actorIsOwner so an owner not listed as a manager can still grant.
+          const addResult = await addManager(workspaceId, userId, currentUser, { actorIsOwner });
           if (addResult) {
             results.push(`✅ Added manager permission for <@${userId}>`);
           } else {
@@ -197,7 +214,7 @@ export const registerManagersHandlers = (app: App) => {
 
       for (const userId of managersToRemove) {
         try {
-          const removeResult = await removeManager(workspaceId, userId, currentUser);
+          const removeResult = await removeManager(workspaceId, userId, currentUser, { actorIsOwner });
           if (removeResult) {
             results.push(`✅ Removed manager permission from <@${userId}>`);
           } else {

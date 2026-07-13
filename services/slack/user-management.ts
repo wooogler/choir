@@ -36,9 +36,14 @@ export async function getManagers(workspaceId: string): Promise<string[]> {
 /**
  * 사용자에게 관리자 권한을 부여합니다.
  */
-export async function addManager(workspaceId: string, userId: string, grantedBy: string): Promise<boolean> {
+export async function addManager(
+  workspaceId: string,
+  userId: string,
+  grantedBy: string,
+  options?: { actorIsOwner?: boolean },
+): Promise<boolean> {
   try {
-    const result = await workspaceStore.addManager(workspaceId, userId, grantedBy);
+    const result = await workspaceStore.addManager(workspaceId, userId, grantedBy, options);
     Logger.info('Manager added successfully', { workspaceId, userId, grantedBy });
     return result;
   } catch (error) {
@@ -50,9 +55,14 @@ export async function addManager(workspaceId: string, userId: string, grantedBy:
 /**
  * 사용자의 관리자 권한을 제거합니다.
  */
-export async function removeManager(workspaceId: string, userId: string, removedBy: string): Promise<boolean> {
+export async function removeManager(
+  workspaceId: string,
+  userId: string,
+  removedBy: string,
+  options?: { actorIsOwner?: boolean },
+): Promise<boolean> {
   try {
-    const result = await workspaceStore.removeManager(workspaceId, userId, removedBy);
+    const result = await workspaceStore.removeManager(workspaceId, userId, removedBy, options);
     Logger.info('Manager removed successfully', { workspaceId, userId, removedBy });
     return result;
   } catch (error) {

@@ -77,10 +77,12 @@ export const getEditLinkAction = async ({
       });
     }
 
-    // Send the edit link via ephemeral message
-    await client.chat.postEphemeral({
+    // Send the edit link as a real DM. (postEphemeral needs a channel the user is
+    // in — a bare user id is not one, so the link never arrived even though the
+    // modal said it was "sent via Direct Messages". postMessage to a user id opens
+    // the IM and delivers a persistent message.)
+    await client.chat.postMessage({
       channel: body.user.id,
-      user: body.user.id,
       text: `🔗 *GitHub Edit Link for ${selectedFileName}*`,
       blocks: [
         {
