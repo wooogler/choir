@@ -13,6 +13,7 @@ import {
   getWorkspaceId,
 } from 'services/slack';
 import type { SlackMessage } from 'services/slack';
+import { buildSectionBlocks } from 'services/slack/block-text';
 import { createEnhancedMessage } from 'services/slack/message-text-utils';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -24,6 +25,9 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
   let loadingMessageTs: string | undefined;
   let longRunningNoticeTimer: ReturnType<typeof setTimeout> | undefined;
   let relevantDocs: any[] = [];
+  // Once the answer is on screen, a failure in a later step (share buttons,
+  // logging, …) must NOT overwrite it with a generic error message.
+  let answerDelivered = false;
 
   try {
     // 로딩 메시지 게시
@@ -213,16 +217,10 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       }
     }
 
-    // 응답 메시지 블록 구성 (질문자 정보 컨텍스트 포함)
+    // 응답 메시지 블록 구성 (질문자 정보 컨텍스트 포함). A section block's text is
+    // capped at 3000 chars, so split a long answer across multiple blocks.
     const responseBlocks: any[] = [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: response,
-        },
-        block_id: createCHOIRBlockId(CHOIRMessageType.ANSWER),
-      },
+      ...buildSectionBlocks(response, createCHOIRBlockId(CHOIRMessageType.ANSWER)),
       ...replyImageBlocks,
       {
         type: 'context',
@@ -292,6 +290,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         unfurl_media: false,
       });
     }
+    answerDelivered = true;
 
     // 응답 메시지가 완전히 전송된 후 약간의 지연을 두고 공유 버튼을 전송
     await new Promise((resolve) => setTimeout(resolve, 1000)); // 1초 지연
@@ -546,6 +545,12 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       },
       client,
     );
+
+    // The answer is already on screen; a later-step failure must not replace it.
+    if (answerDelivered) {
+      logger.warn('Post-answer step failed after the answer was delivered; leaving the answer intact', error);
+      return false;
+    }
 
     // 로딩 메시지를 에러 메시지로 업데이트 (chat.delete 대신 chat.update 사용)
     const errorBlocks = [
