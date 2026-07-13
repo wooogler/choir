@@ -1,6 +1,21 @@
 export type DiffLine = { type: 'add' | 'del'; text: string };
 
 /**
+ * Cheap O(n) estimate of how many lines changed between two texts, via a line
+ * multiset difference. Used for the record list's "N lines changed" badge and
+ * size sort — computing the full O(m·n) lineDiff for every record up front hangs
+ * the tab on large docs. Not an exact LCS edit count, but a good proxy for size.
+ */
+export function changedLineCount(before: string, after: string): number {
+  const counts = new Map<string, number>();
+  for (const line of before.split('\n')) counts.set(line, (counts.get(line) ?? 0) + 1);
+  for (const line of after.split('\n')) counts.set(line, (counts.get(line) ?? 0) - 1);
+  let changed = 0;
+  for (const delta of counts.values()) changed += Math.abs(delta);
+  return changed;
+}
+
+/**
  * Compact line diff (LCS) returning only the changed lines — no unchanged
  * context — so it stays readable inside the narrow history panel.
  */

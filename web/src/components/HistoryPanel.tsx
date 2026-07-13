@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ProvenanceListItem, ProvenanceRecord, ProvenanceType } from '../types';
-import { lineDiff } from '../utils/diff';
+import { changedLineCount, lineDiff } from '../utils/diff';
 import { encodePath } from '../utils/docs';
 
 type HistoryPanelProps = {
@@ -167,7 +167,8 @@ export function HistoryPanel({
 
   const sizes = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const r of records ?? []) m[r.id] = lineDiff(r.diff.before, r.diff.after).length;
+    // Cheap O(n) estimate; the full lineDiff is computed lazily per expanded record.
+    for (const r of records ?? []) m[r.id] = changedLineCount(r.diff.before, r.diff.after);
     return m;
   }, [records]);
 
