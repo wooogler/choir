@@ -55,7 +55,7 @@ export async function handleGeneralConversationMessage(
       lowerMessage.includes('what') &&
       (lowerMessage.includes('can') || lowerMessage.includes('feature') || lowerMessage.includes('do'));
 
-    let replyText;
+    let replyText: string;
 
     if (isUsageQuestion || isFeatureQuestion) {
       // Provide specific CHOIR usage instructions
@@ -112,9 +112,11 @@ What would you like to try first?`;
       24 * 60 * 60 * 1000, // 24시간 후 만료
     );
 
-    // Send the main response to everyone
+    // Send the main response, staying in the thread the user asked in (otherwise
+    // the reply lands at the channel root, detached from the question).
     await client.chat.postMessage({
       channel: event.channel,
+      ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
       text: fullReplyText,
       blocks: [
         {

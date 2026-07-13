@@ -175,7 +175,7 @@ export const askToOthersSubmitCallback = async ({
         throw new Error('Failed to create conversation');
       }
     } catch (error) {
-      logger.error(`Failed to send private Q&A to group DM:`, error);
+      logger.error('Failed to send private Q&A to group DM:', error);
       successCount = 0;
       failCount = 1;
     }
@@ -192,22 +192,36 @@ export const askToOthersSubmitCallback = async ({
         participantsList,
       });
 
-      // 공통 성공 메시지 (원본 스레드에 공개)
-      await client.chat.postMessage({
-        channel: sessionData.originalChannelId,
-        ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
-        text: `✅ Private DM created with: ${participantsList}`,
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `✅ *Private DM created*\n📋 Participants: ${participantsList}`,
-            },
-            block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+      // 공통 성공 메시지. For an anonymous question a PUBLIC post in the original
+      // thread ties the hidden questioner to this action, so notify them privately
+      // (ephemeral) instead; non-anonymous keeps the public confirmation.
+      const confirmationText = `✅ Private DM created with: ${participantsList}`;
+      const confirmationBlocks = [
+        {
+          type: 'section' as const,
+          text: {
+            type: 'mrkdwn' as const,
+            text: `✅ *Private DM created*\n📋 Participants: ${participantsList}`,
           },
-        ],
-      });
+          block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
+        },
+      ];
+      if (isAnonymous) {
+        await client.chat.postEphemeral({
+          channel: sessionData.originalChannelId,
+          user: userId,
+          ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
+          text: confirmationText,
+          blocks: confirmationBlocks,
+        });
+      } else {
+        await client.chat.postMessage({
+          channel: sessionData.originalChannelId,
+          ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
+          text: confirmationText,
+          blocks: confirmationBlocks,
+        });
+      }
 
       // Anonymous가 아닌 경우에만 질문자에게 Open DM 버튼 제공 (ephemeral)
       if (!isAnonymous) {
@@ -257,9 +271,33 @@ export const askToOthersSubmitCallback = async ({
       }
     }
 
-    logger.info(`Private Q&A sent to ${selectedUsers.length} users by user ${userId}`);
+    // Creating the DM failed — tell the questioner privately instead of failing
+    // silently (they otherwise see nothing and assume it worked).
+    if (failCount > 0 && sessionData.originalChannelId) {
+      await client.chat.postEphemeral({
+        channel: sessionData.originalChannelId,
+        user: userId,
+        ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
+        text: "⚠️ I couldn't create the private DM. Please try again.",
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: "⚠️ *I couldn't create the private DM.* Please try again in a moment.",
+            },
+            block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
+          },
+        ],
+      });
+    }
 
-    // 로그: 성공
+    logger.info(`Private Q&A send attempted for ${selectedUsers.length} users by user ${userId}`, {
+      successCount,
+      failCount,
+    });
+
+    // 로그: 결과
     const workspaceId = await getWorkspaceId(client);
     // originalChannelId에서 채널 정보 추출
     const actualChannelId = sessionData.originalChannelId || 'modal';
@@ -283,7 +321,7 @@ export const askToOthersSubmitCallback = async ({
       workspaceId,
       'ask_to_others_submit',
       Date.now() - startTime,
-      true,
+      failCount === 0,
       {
         sessionId,
         selectedUsersCount: selectedUsers.length,
