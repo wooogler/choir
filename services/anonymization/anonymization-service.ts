@@ -218,6 +218,20 @@ export class AnonymizationService {
     return new RegExp(`(?<![\\p{L}\\p{N}])${this.escapeRegex(name)}(?![\\p{L}\\p{N}])`, 'gu');
   }
 
+  /** Removes all anonymization mappings for a workspace (used on uninstall). */
+  purgeWorkspace(workspaceId: string): number {
+    const prefix = `${workspaceId}:`;
+    let removed = 0;
+    for (const key of Object.keys(this.anonymizationData.anonymization)) {
+      if (key.startsWith(prefix)) {
+        delete this.anonymizationData.anonymization[key];
+        removed += 1;
+      }
+    }
+    if (removed > 0) this.saveData();
+    return removed;
+  }
+
   /**
    * Get all anonymization mappings
    */

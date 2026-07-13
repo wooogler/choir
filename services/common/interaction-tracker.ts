@@ -1036,6 +1036,36 @@ class InteractionTracker {
     const totalTime = allLogs.reduce((sum, log) => sum + log.processingTime, 0);
     return totalTime / allLogs.length;
   }
+
+  /**
+   * Removes a workspace's interaction-log lines from every daily log file (used on
+   * uninstall). Logs from all workspaces share one file per day, each line tagged
+   * with its workspaceId; keep the other workspaces' lines and drop this one's.
+   */
+  public purgeWorkspace(workspaceId: string): number {
+    if (!fs.existsSync(this.logDir)) return 0;
+
+    let removed = 0;
+    for (const file of fs.readdirSync(this.logDir)) {
+      if (!file.endsWith('.jsonl')) continue;
+      const filePath = path.join(this.logDir, file);
+      const kept: string[] = [];
+      for (const line of fs.readFileSync(filePath, 'utf-8').split('\n')) {
+        if (!line.trim()) continue;
+        try {
+          if (JSON.parse(line).workspaceId === workspaceId) {
+            removed += 1;
+            continue;
+          }
+        } catch {
+          // Keep unparseable lines rather than risk dropping other data.
+        }
+        kept.push(line);
+      }
+      fs.writeFileSync(filePath, kept.length > 0 ? `${kept.join('\n')}\n` : '');
+    }
+    return removed;
+  }
 }
 
 // 싱글톤 인스턴스 생성
@@ -1049,6 +1079,7 @@ export const logButtonClick = interactionTracker.logButtonClick.bind(interaction
 export const logModalSubmit = interactionTracker.logModalSubmit.bind(interactionTracker);
 export const logError = interactionTracker.logError.bind(interactionTracker);
 export const logKnowledgeExtraction = interactionTracker.logKnowledgeExtraction.bind(interactionTracker);
+export const purgeWorkspaceInteractionLogs = interactionTracker.purgeWorkspace.bind(interactionTracker);
 export const logManagerNotification = interactionTracker.logManagerNotification.bind(interactionTracker);
 export const logDocumentUpdate = interactionTracker.logDocumentUpdate.bind(interactionTracker);
 

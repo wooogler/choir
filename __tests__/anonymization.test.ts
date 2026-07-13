@@ -123,4 +123,17 @@ describe('workspace scoping', () => {
     expect(a.realName).toBe('Alice Anderson');
     expect(b.realName).toBe('Alice Anderson');
   });
+
+  it('purgeWorkspace removes only the target workspace mappings (uninstall)', () => {
+    const svc = new AnonymizationService();
+    (svc as unknown as { anonymizationData: AnonymizationData }).anonymizationData = { anonymization: {} };
+    svc.getAnonymizationMapping('U1', 'Alice Anderson', undefined, 'TWS_A');
+    svc.getAnonymizationMapping('U2', 'Bob Brown', undefined, 'TWS_B');
+
+    const removed = svc.purgeWorkspace('TWS_A');
+    expect(removed).toBe(1);
+    // TWS_A's name no longer de-anonymizes; TWS_B is intact.
+    expect(svc.anonymizeText('met Alice Anderson', 'TWS_A')).toContain('Alice Anderson');
+    expect(svc.anonymizeText('met Bob Brown', 'TWS_B')).not.toContain('Bob Brown');
+  });
 });

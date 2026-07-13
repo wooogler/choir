@@ -356,6 +356,21 @@ class NameCacheService {
       cacheFile: this.cacheFile,
     };
   }
+
+  /**
+   * Removes a workspace's cached names on uninstall. The workspace entry and its
+   * channels are keyed by workspace and dropped; user-name entries are keyed by
+   * userId only (not workspace-attributable) and are left as-is.
+   */
+  purgeWorkspace(workspaceId: string): void {
+    delete this.cache.workspaces[workspaceId];
+    for (const channelId of Object.keys(this.cache.channels)) {
+      if (this.cache.channels[channelId].workspaceId === workspaceId) {
+        delete this.cache.channels[channelId];
+      }
+    }
+    this.saveCache();
+  }
 }
 
 // Singleton instance
@@ -367,7 +382,10 @@ export const getCachedWorkspaceName = nameCacheService.getWorkspaceName.bind(nam
 export const getCachedChannelName = nameCacheService.getChannelName.bind(nameCacheService);
 export const getAllCachedNames = nameCacheService.getAllNames.bind(nameCacheService);
 
+export const purgeWorkspaceNames = nameCacheService.purgeWorkspace.bind(nameCacheService);
+
 // Anonymization functions (delegated to anonymization service)
 export const getAnonymizationMapping = anonymizationService.getAnonymizationMapping.bind(anonymizationService);
 export const anonymizeText = anonymizationService.anonymizeText.bind(anonymizationService);
 export const deAnonymizeText = anonymizationService.deAnonymizeText.bind(anonymizationService);
+export const purgeWorkspaceAnonymization = anonymizationService.purgeWorkspace.bind(anonymizationService);

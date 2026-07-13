@@ -1,4 +1,6 @@
+import { purgeWorkspaceInteractionLogs } from 'services/common/interaction-tracker';
 import { Logger } from 'services/common/logger';
+import { purgeWorkspaceAnonymization, purgeWorkspaceNames } from 'services/common/name-cache';
 import { purgeWorkspaceSessions } from 'services/common/session-store';
 import { purgeWorkspaceAppState } from 'services/document/document-store';
 import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
@@ -15,6 +17,8 @@ export interface WorkspaceCleanupResult {
   removedInstallation: boolean;
   removedWorkspaceConfig: boolean;
   purgedCache: boolean;
+  removedInteractionLogLines: number;
+  removedAnonymizationMappings: number;
 }
 
 export class WorkspaceCleanupService {
@@ -44,10 +48,25 @@ export class WorkspaceCleanupService {
       removedInstallation: false,
       removedWorkspaceConfig: false,
       purgedCache: false,
+      removedInteractionLogLines: 0,
+      removedAnonymizationMappings: 0,
     };
 
     result.removedSessions = purgeWorkspaceSessions(workspaceId);
     result.removedAppState = purgeWorkspaceAppState(workspaceId);
+
+    // Purge user PII this workspace left behind: interaction logs, cached names,
+    // and anonymization mappings.
+    try {
+      result.removedInteractionLogLines = purgeWorkspaceInteractionLogs(workspaceId);
+      result.removedAnonymizationMappings = purgeWorkspaceAnonymization(workspaceId);
+      purgeWorkspaceNames(workspaceId);
+    } catch (error) {
+      Logger.warn('WorkspaceCleanupService: failed to purge some PII on uninstall', {
+        workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     await this.purgeWorkspaceCache(workspaceId);
     result.purgedCache = true;
