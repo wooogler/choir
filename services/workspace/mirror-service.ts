@@ -60,12 +60,25 @@ export class WorkspaceMirrorService {
     return path.join(this.getWorkspaceRoot(workspaceId), 'gitrepo');
   }
 
+  // Serialize clone/fetch per workspace so concurrent callers (blame HTTP
+  // requests, sync) don't run `git fetch`/`reset --hard` on the same working
+  // tree at once and corrupt each other.
+  private static readonly gitCloneInFlight = new Map<string, Promise<boolean>>();
+
   public async ensureGitClone(params: { workspaceId: string; remoteUrl: string; branch?: string }): Promise<boolean> {
-    return ensureRepo({
-      dir: this.getGitRepoRoot(params.workspaceId),
+    const { workspaceId } = params;
+    const existing = WorkspaceMirrorService.gitCloneInFlight.get(workspaceId);
+    if (existing) return existing;
+
+    const promise = ensureRepo({
+      dir: this.getGitRepoRoot(workspaceId),
       remoteUrl: params.remoteUrl,
       branch: params.branch,
+    }).finally(() => {
+      WorkspaceMirrorService.gitCloneInFlight.delete(workspaceId);
     });
+    WorkspaceMirrorService.gitCloneInFlight.set(workspaceId, promise);
+    return promise;
   }
 
   private getStateRoot(workspaceId: string): string {

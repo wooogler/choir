@@ -5,6 +5,12 @@ import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 
 const CONTEXT_DIR = '.choir/context';
 
+// Blame is requested per line-gutter render, so avoid a synchronous network
+// `git fetch` on every request: refresh the clone at most once per TTL per
+// workspace (the first request still clones/fetches).
+const cloneRefreshedAt = new Map<string, number>();
+const BLAME_CLONE_TTL_MS = 30_000;
+
 /**
  * Line-level provenance for a document: maps each current line number to the
  * id of the provenance record whose commit last changed that line.
@@ -23,14 +29,20 @@ export async function getLineProvenance(params: {
   if (!repo) return { lines: {} };
 
   const mirror = WorkspaceMirrorService.getInstance();
-  // Refresh the clone so blame reflects the latest commits (incl. CHOIR's own).
-  const remoteUrl = await GithubService.getInstance().getAuthenticatedRemoteUrl({
-    owner: repo.owner,
-    repo: repo.repo,
-    workspaceId,
-    userId,
-  });
-  await mirror.ensureGitClone({ workspaceId, remoteUrl, branch: repo.branch });
+  // Refresh the clone so blame reflects the latest commits (incl. CHOIR's own),
+  // but throttle the network fetch so a burst of gutter renders doesn't fetch
+  // every time.
+  const lastRefresh = cloneRefreshedAt.get(workspaceId);
+  if (!lastRefresh || Date.now() - lastRefresh > BLAME_CLONE_TTL_MS) {
+    const remoteUrl = await GithubService.getInstance().getAuthenticatedRemoteUrl({
+      owner: repo.owner,
+      repo: repo.repo,
+      workspaceId,
+      userId,
+    });
+    const ok = await mirror.ensureGitClone({ workspaceId, remoteUrl, branch: repo.branch });
+    if (ok) cloneRefreshedAt.set(workspaceId, Date.now());
+  }
 
   const gitRoot = mirror.getGitRepoRoot(workspaceId);
   const normalized = docPath.replace(/^\/+/, '');
