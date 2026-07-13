@@ -13,7 +13,11 @@ export const appHomeOpenedCallback = async ({
   if (event.tab !== 'home') return;
 
   try {
-    const bootstrap = await ensureWorkspaceInitialized(client, event.user);
+    // Do NOT pass the opener as a fallback manager: initial manager rights must
+    // go to the verified workspace owner only, never to whoever happens to open
+    // the App Home first. If the owner can't be resolved the workspace stays
+    // uninitialized and the password-promotion flow is the escape hatch.
+    const bootstrap = await ensureWorkspaceInitialized(client);
     const workspaceId = bootstrap.workspaceId || (await getWorkspaceId(client));
     const blocks = await buildHomeView(client, logger, workspaceId, event.user);
 

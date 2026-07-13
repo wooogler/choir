@@ -14,7 +14,9 @@ interface RefreshParams {
 export async function refreshAppHome(params: RefreshParams): Promise<void> {
   const { client, logger, userId, reason } = params;
   try {
-    const bootstrap = await ensureWorkspaceInitialized(client, userId);
+    // No opener fallback: initial manager rights go to the verified workspace
+    // owner only (see home-event-handler).
+    const bootstrap = await ensureWorkspaceInitialized(client);
     const workspaceId = bootstrap.workspaceId || (await getWorkspaceId(client));
     const blocks = await buildHomeView(client, logger, workspaceId, userId);
     await client.views.publish({
