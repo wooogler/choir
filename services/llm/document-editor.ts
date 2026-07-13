@@ -166,7 +166,12 @@ ${organizationName ? `\nOrganization: ${organizationName}` : ''}${descOrg ? `\nA
         workspaceId,
         purpose: 'classification',
         temperature: 0,
-        max_tokens: 16,
+        // The classification model is a reasoning (nano) model, whose reasoning
+        // tokens count against max_output_tokens. 16 was consumed entirely by
+        // reasoning, leaving no room for the JSON — so parsing failed and every
+        // message silently fell back to 'general_conversation'. Give enough room
+        // for reasoning plus the tiny structured output.
+        max_tokens: 2000,
         function_name: 'classifyMessageIntent',
         schemaName: 'message_intent',
         schemaDescription: 'Classification of user message intent',

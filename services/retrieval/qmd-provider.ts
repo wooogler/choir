@@ -249,7 +249,24 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     }
   }
 
-  private async getOrCreateStore(workspaceId: string): Promise<StoreCacheEntry | null> {
+  // Serialize store creation/refresh per workspace: concurrent callers (search,
+  // warmup, save) would otherwise each build/refresh the index, racing on the
+  // sections dir and leaking duplicate stores. Later callers await the same
+  // in-flight promise (and then hit the cache fast-path).
+  private readonly getOrCreateInFlight = new Map<string, Promise<StoreCacheEntry | null>>();
+
+  private getOrCreateStore(workspaceId: string): Promise<StoreCacheEntry | null> {
+    const existing = this.getOrCreateInFlight.get(workspaceId);
+    if (existing) return existing;
+
+    const promise = this.getOrCreateStoreUnlocked(workspaceId).finally(() => {
+      this.getOrCreateInFlight.delete(workspaceId);
+    });
+    this.getOrCreateInFlight.set(workspaceId, promise);
+    return promise;
+  }
+
+  private async getOrCreateStoreUnlocked(workspaceId: string): Promise<StoreCacheEntry | null> {
     const repoInfo = await getGithubRepo(workspaceId);
     if (!repoInfo) {
       Logger.warn(`QmdRetrievalProvider: no GitHub repo configured for workspace ${workspaceId}`);
