@@ -9,7 +9,33 @@ import {
   requireManagerForAction,
 } from './shared';
 
+// Slack caps plain_text option labels at 75 chars.
+const OPTION_TEXT_LIMIT = 75;
+const truncateOptionText = (text: string): string =>
+  text.length > OPTION_TEXT_LIMIT ? `${text.slice(0, OPTION_TEXT_LIMIT - 1)}…` : text;
+
 export const registerReadonlyFilesHandlers = (app: App) => {
+  // Typeahead options for the read-only file picker. Using an external select (vs
+  // a static one) avoids Slack's 100-option cap, which broke the modal — and the
+  // whole App Home — for repos with more than 100 markdown files.
+  app.options('readonly_files_select', async ({ options, ack, client }) => {
+    try {
+      const workspaceId = await getWorkspaceId(client);
+      const files = (await new WorkspaceStore().getCachedMarkdownFiles(workspaceId)) || [];
+      const query = (options.value || '').toLowerCase();
+      const matched = files
+        .filter((file) => !query || file.name.toLowerCase().includes(query) || file.path.toLowerCase().includes(query))
+        .slice(0, 100)
+        .map((file) => ({
+          text: { type: 'plain_text' as const, text: truncateOptionText(file.name) },
+          value: file.name,
+        }));
+      await ack({ options: matched });
+    } catch {
+      await ack({ options: [] });
+    }
+  });
+
   app.action('manage_readonly_files', async ({ ack, body, client, logger }) => {
     const startTime = Date.now();
     await ack();
@@ -70,29 +96,25 @@ export const registerReadonlyFilesHandlers = (app: App) => {
               type: 'input',
               block_id: 'readonly_files_select_block',
               element: {
-                type: 'multi_static_select',
+                // External (typeahead) select so repos with >100 files don't
+                // exceed the static-select option cap and break the modal.
+                type: 'multi_external_select',
                 action_id: 'readonly_files_select',
+                min_query_length: 0,
                 ...(readOnlyFiles.length > 0 && {
                   initial_options: readOnlyFiles
                     .filter((fileName) => markdownFiles.some((file) => file.name === fileName))
                     .map((fileName) => ({
                       text: {
                         type: 'plain_text',
-                        text: fileName,
+                        text: truncateOptionText(fileName),
                       },
                       value: fileName,
                     })),
                 }),
-                options: markdownFiles.map((file) => ({
-                  text: {
-                    type: 'plain_text',
-                    text: file.name,
-                  },
-                  value: file.name,
-                })),
                 placeholder: {
                   type: 'plain_text',
-                  text: 'Select files to mark as read-only...',
+                  text: 'Search files to mark as read-only...',
                 },
               },
               label: {
