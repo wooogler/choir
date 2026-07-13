@@ -2,6 +2,7 @@ import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bo
 import { getManagers, getNonUserResponseMessage, getWorkspaceId, isCHOIRUser } from 'services/slack';
 import { getOrInitBotUserId } from 'services/slack/user-management';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { mpimMessageMentionsBot } from './mention-detection';
 import { handleIncomingMessage } from './message-router';
 
 /**
@@ -39,6 +40,18 @@ const dmMessageCallback = async ({
         logger.info('Skipping own message in DM to prevent infinite loop', {
           channel: event.channel,
           userId: 'user' in event ? event.user : undefined,
+        });
+        return;
+      }
+
+      // A group-DM message that mentions the bot also fires app_mention, which
+      // owns it (and strips the mention for cleaner routing). Skip it here so the
+      // same message is not processed twice — and, in an anonymous thread, not
+      // both answered AND relayed to the questioner.
+      const dmText = 'text' in event && typeof event.text === 'string' ? event.text : '';
+      if (event.channel_type === 'mpim' && mpimMessageMentionsBot(dmText, botUserId)) {
+        logger.info('Skipping mpim message that mentions the bot (handled by app_mention)', {
+          channel: event.channel,
         });
         return;
       }

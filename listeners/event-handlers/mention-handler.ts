@@ -104,8 +104,9 @@ const appMentionCallback = async ({
       'text' in event && typeof event.text === 'string' ? event.text.replace(/<@[A-Z0-9]+>/, '').trim() : '';
     if (!userMessage) return;
 
-    // 공유 메시지 핸들러를 사용하여 메시지 처리
-    await handleIncomingMessage(client, event, userMessage, logger);
+    // 공유 메시지 핸들러를 사용하여 메시지 처리 (mention markup already stripped
+    // above, so signal wasMention explicitly).
+    await handleIncomingMessage(client, event, userMessage, logger, { wasMention: true });
   } catch (error) {
     logger.error('Error processing app mention:', error);
     await client.chat.postMessage({

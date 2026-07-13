@@ -13,12 +13,23 @@ import { handleGeneralConversationMessage } from '../features/conversation/gener
 import { handleDMClearCommand } from '../features/dm/clear-handler';
 import { handleUpdateRequestMessage } from '../features/document-update/extract-knowledge/update-request-handler';
 import { handleQuestionMessage } from '../features/qa/question-handler';
+import { isBotMentioned } from './mention-detection';
 
 /**
  * 메시지 처리를 위한 공통 함수
  * 공통으로 사용할 수 있도록 mentions와 dms에서 모두 호출 가능
+ *
+ * `options.wasMention` is set by the app_mention handler, which strips the
+ * `<@bot>` markup from `message` before routing — without it, a mentioned reply
+ * in an anonymous thread would look un-mentioned and be misrouted to the asker.
  */
-export async function handleIncomingMessage(client: any, event: any, message: string, logger: any) {
+export async function handleIncomingMessage(
+  client: any,
+  event: any,
+  message: string,
+  logger: any,
+  options: { wasMention?: boolean } = {},
+) {
   const startTime = Date.now();
   let messageIntent = 'unknown';
   let routingResult: boolean;
@@ -54,7 +65,7 @@ export async function handleIncomingMessage(client: any, event: any, message: st
       let isMentioned = false;
       try {
         const botUserId = await getOrInitBotUserId(client);
-        isMentioned = message.includes(`<@${botUserId}>`) || message.includes('@choir');
+        isMentioned = isBotMentioned(message, botUserId, options.wasMention);
 
         // mention된 경우에는 익명 thread 체크를 우회하고 정상 처리
         if (isMentioned) {
