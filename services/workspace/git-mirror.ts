@@ -68,9 +68,14 @@ export async function ensureRepo(params: { dir: string; remoteUrl: string; branc
       const git = simpleGit(dir);
       // Persist only the token-free URL; auth travels per-invocation via authArgs.
       await git.raw(['remote', 'set-url', 'origin', cleanUrl]);
+      // Use an explicit refspec so `origin/<branch>` is created even when the
+      // clone was made with --single-branch for a DIFFERENT branch — otherwise a
+      // configured-branch change left the mirror permanently unable to reset.
       await git.raw([
         ...authArgs,
-        ...(branch ? ['fetch', '--prune', 'origin', branch] : ['fetch', '--prune', 'origin']),
+        ...(branch
+          ? ['fetch', '--prune', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`]
+          : ['fetch', '--prune', 'origin']),
       ]);
       const target = branch ? `origin/${branch}` : 'origin/HEAD';
       await git.raw(['reset', '--hard', target]);
