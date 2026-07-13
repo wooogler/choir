@@ -5,6 +5,13 @@ import { WorkspaceStore } from '../workspace/workspace-store';
 
 const workspaceStore = new WorkspaceStore();
 
+// When no Q&A channel is configured and no #qna exists, getQAChannel would scan
+// conversations.list on EVERY question (a Tier-2, ~20/min rate-limited call).
+// Throttle that negative scan per workspace.
+const qaChannelScanAt = new Map<string, number>();
+const QA_CHANNEL_SCAN_THROTTLE_MS = 10 * 60 * 1000;
+const QA_CHANNEL_SCAN_MAX_PAGES = 20;
+
 /**
  * Q&A 채널을 설정합니다.
  */
@@ -27,18 +34,34 @@ export async function getQAChannel(workspaceId: string, client?: WebClient): Pro
     let qaChannelId = config?.qaChannel;
 
     if (!qaChannelId && client) {
+      const lastScan = qaChannelScanAt.get(workspaceId);
+      if (lastScan && Date.now() - lastScan < QA_CHANNEL_SCAN_THROTTLE_MS) {
+        // Scanned recently and found nothing; don't hammer conversations.list.
+        return undefined;
+      }
+      qaChannelScanAt.set(workspaceId, Date.now());
+
       try {
-        const channelsList = await client.conversations.list({
-          types: 'public_channel',
-          exclude_archived: true,
-        });
+        let cursor: string | undefined;
+        for (let page = 0; page < QA_CHANNEL_SCAN_MAX_PAGES; page += 1) {
+          const channelsList = await client.conversations.list({
+            types: 'public_channel',
+            exclude_archived: true,
+            limit: 200,
+            ...(cursor ? { cursor } : {}),
+          });
 
-        const qnaChannel = channelsList.channels?.find((channel) => channel.name === 'qna' && !channel.is_archived);
+          const qnaChannel = channelsList.channels?.find((channel) => channel.name === 'qna' && !channel.is_archived);
+          if (qnaChannel?.id) {
+            await setQAChannel(workspaceId, qnaChannel.id);
+            qaChannelId = qnaChannel.id;
+            qaChannelScanAt.delete(workspaceId); // found & persisted; no need to throttle
+            Logger.info('Default Q&A channel found and set', { workspaceId, channelId: qnaChannel.id });
+            break;
+          }
 
-        if (qnaChannel?.id) {
-          await setQAChannel(workspaceId, qnaChannel.id);
-          qaChannelId = qnaChannel.id;
-          Logger.info('Default Q&A channel found and set', { workspaceId, channelId: qnaChannel.id });
+          cursor = channelsList.response_metadata?.next_cursor || undefined;
+          if (!cursor) break;
         }
       } catch (error) {
         Logger.error('Error finding default qna channel', error as Error, { workspaceId });

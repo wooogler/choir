@@ -52,9 +52,20 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
     // Thread reply도 포함하여 CHOIR 메시지 수집
     const allChoirMessages = [...choirMessages];
 
-    // 각 메시지에 대해 thread reply 확인
-    for (const message of historyResponse.messages) {
-      if (message.thread_ts && message.reply_count && message.reply_count > 0) {
+    // We only ever clear the 5 most recent CHOIR messages. conversations.replies
+    // is heavily rate-limited (~1 req/min), so only dig into threads if the
+    // top-level messages don't already provide enough, and cap the number of
+    // reply fetches — scanning the most recent threads first.
+    const NEEDED_CHOIR_MESSAGES = 5;
+    const MAX_REPLY_FETCHES = 5;
+    if (allChoirMessages.length < NEEDED_CHOIR_MESSAGES) {
+      const threadParents = historyResponse.messages
+        .filter((msg: any) => msg.thread_ts && msg.reply_count && msg.reply_count > 0)
+        .sort((a: any, b: any) => Number.parseFloat(b.ts) - Number.parseFloat(a.ts))
+        .slice(0, MAX_REPLY_FETCHES);
+
+      for (const message of threadParents) {
+        if (allChoirMessages.length >= NEEDED_CHOIR_MESSAGES) break;
         try {
           const repliesResponse = await client.conversations.replies({
             channel: event.channel,
