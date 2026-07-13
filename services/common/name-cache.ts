@@ -1,5 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { WebClient } from '@slack/web-api';
 import { anonymizationService } from 'services/anonymization/anonymization-service';
 import { getDataPath } from 'services/common/data-path';
@@ -106,20 +106,29 @@ class NameCacheService {
   /**
    * Get bot user ID for current workspace
    */
-  private botUserIdCache = new Map<string, string>(); // teamId -> botUserId
+  private botUserIdCache = new Map<string, string>(); // bot token -> botUserId
 
   async getBotUserId(client: WebClient): Promise<string | null> {
+    // Cache by the client's bot token: the bot user id is stable per workspace,
+    // so reading the cache first avoids an auth.test network round-trip on every
+    // call (previously the cache was written but never read). getUserName calls
+    // this per lookup, so this is on a very hot path.
+    const token = (client as unknown as { token?: string }).token;
+    if (token) {
+      const cached = this.botUserIdCache.get(token);
+      if (cached) return cached;
+    }
+
     try {
       const authInfo = await client.auth.test();
-      const teamId = authInfo.team_id;
       const botUserId = authInfo.user_id;
 
-      if (teamId && botUserId) {
-        this.botUserIdCache.set(teamId, botUserId);
+      if (botUserId) {
+        if (token) this.botUserIdCache.set(token, botUserId);
         return botUserId;
       }
       return null;
-    } catch (error) {
+    } catch {
       return null;
     }
   }

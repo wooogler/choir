@@ -1,5 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { WebClient } from '@slack/web-api';
-import { AsyncLocalStorage } from 'async_hooks';
 import { Logger } from 'services/common/logger';
 import { getUserName, getWorkspaceId } from 'services/slack/user-management';
 
@@ -21,14 +21,13 @@ export class SlackUsageMonitor {
 
   private readonly usageCounters: Map<string, number> = new Map();
   private readonly notifiedWindows: Set<string> = new Set();
+  private lastPrunedWindow = 0;
   private readonly windowMs = 60_000;
   private readonly threshold = Number(process.env.CHOIR_USAGE_ALERT_THRESHOLD ?? '30');
-  private readonly usernameKeywords = process.env.CHOIR_USAGE_ALERT_KEYWORDS?.split(',').map(k => k.trim()) ?? ['(CHOIR)'];
-  private readonly targetMethods = new Set([
-    'chat.postMessage',
-    'chat.update',
-    'chat.delete',
-  ]);
+  private readonly usernameKeywords = process.env.CHOIR_USAGE_ALERT_KEYWORDS?.split(',').map((k) => k.trim()) ?? [
+    '(CHOIR)',
+  ];
+  private readonly targetMethods = new Set(['chat.postMessage', 'chat.update', 'chat.delete']);
 
   // 요청 컨텍스트(행위자 ID) 저장
   private static readonly als = new AsyncLocalStorage<ActorContext>();
@@ -36,16 +35,16 @@ export class SlackUsageMonitor {
   private static apiCallPatched = false;
 
   public static getInstance(): SlackUsageMonitor {
-    if (!this.instance) this.instance = new SlackUsageMonitor();
-    return this.instance;
+    if (!SlackUsageMonitor.instance) SlackUsageMonitor.instance = new SlackUsageMonitor();
+    return SlackUsageMonitor.instance;
   }
 
   public static runWithActor<T>(userId: string | undefined, fn: () => Promise<T> | T): Promise<T> | T {
-    return this.als.run({ userId }, fn);
+    return SlackUsageMonitor.als.run({ userId }, fn);
   }
 
   public static getCurrentActor(): string | undefined {
-    return this.als.getStore()?.userId;
+    return SlackUsageMonitor.als.getStore()?.userId;
   }
 
   /** 전역 apiCall 패치 (1회) */
@@ -59,10 +58,7 @@ export class SlackUsageMonitor {
     }
 
     const monitor = this;
-    (WebClient.prototype as any).apiCall = async function patchedApiCall(
-      method: string,
-      options?: any,
-    ): Promise<any> {
+    (WebClient.prototype as any).apiCall = async function patchedApiCall(method: string, options?: any): Promise<any> {
       try {
         if (monitor.targetMethods.has(method)) {
           await monitor.recordApiCall(this as WebClient, method, options);
@@ -80,6 +76,17 @@ export class SlackUsageMonitor {
 
   private getWindowStart(timestampMs: number): number {
     return Math.floor(timestampMs / this.windowMs) * this.windowMs;
+  }
+
+  /** Drops counter/notified entries for windows earlier than currentWindowStart. */
+  private pruneWindowsBefore(currentWindowStart: number): void {
+    const windowOf = (key: string): number => Number(key.slice(key.lastIndexOf(':') + 1));
+    for (const key of this.usageCounters.keys()) {
+      if (windowOf(key) < currentWindowStart) this.usageCounters.delete(key);
+    }
+    for (const key of this.notifiedWindows) {
+      if (windowOf(key) < currentWindowStart) this.notifiedWindows.delete(key);
+    }
   }
 
   private counterKey(workspaceId: string, actorId: string, windowStartMs: number): string {
@@ -103,6 +110,14 @@ export class SlackUsageMonitor {
     const windowStart = this.getWindowStart(now);
     const actorId = inferredActor ?? 'unknown';
 
+    // Counters/notified entries are per time-window and only the current window is
+    // ever consulted; drop past-window entries when the window rolls over so the
+    // maps don't grow without bound. Runs at most once per window, not per call.
+    if (windowStart !== this.lastPrunedWindow) {
+      this.lastPrunedWindow = windowStart;
+      this.pruneWindowsBefore(windowStart);
+    }
+
     const key = this.counterKey(workspaceId, actorId, windowStart);
     const current = this.usageCounters.get(key) ?? 0;
     const next = current + 1;
@@ -122,13 +137,13 @@ export class SlackUsageMonitor {
       const result = await client.users.list({});
       if (!result.members) return [];
 
-      const matchingUsers = result.members.filter(user => {
+      const matchingUsers = result.members.filter((user) => {
         if (!user.real_name && !user.profile?.display_name) return false;
         const name = (user.real_name || user.profile?.display_name || '').toLowerCase();
-        return this.usernameKeywords.some(keyword => name.includes(keyword.toLowerCase()));
+        return this.usernameKeywords.some((keyword) => name.includes(keyword.toLowerCase()));
       });
 
-      return matchingUsers.map(user => user.id).filter(Boolean) as string[];
+      return matchingUsers.map((user) => user.id).filter(Boolean) as string[];
     } catch (error) {
       Logger.error('Error getting users with keywords', error as Error);
       return [];
@@ -194,4 +209,3 @@ function extractUserIdFromPayload(body: any, event: any): string | undefined {
 
   return undefined;
 }
-

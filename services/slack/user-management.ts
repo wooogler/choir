@@ -135,7 +135,19 @@ export async function isBotUser(userId: string, client: WebClient): Promise<bool
 /**
  * 워크스페이스 ID를 가져옵니다.
  */
+// team_id keyed by the client's bot token. A single OAuth process serves many
+// workspaces, so a global cache would be wrong — but token→team_id is 1:1 and
+// stable, so this is safe and removes an auth.test round-trip from every caller
+// (getWorkspaceId is on very hot paths, e.g. the usage monitor on each API call).
+const workspaceIdByToken = new Map<string, string>();
+
 export async function getWorkspaceId(client: WebClient): Promise<string> {
+  const token = (client as unknown as { token?: string }).token;
+  if (token) {
+    const cached = workspaceIdByToken.get(token);
+    if (cached) return cached;
+  }
+
   try {
     const authInfo = await client.auth.test();
     if (!authInfo.team_id) {
@@ -143,6 +155,7 @@ export async function getWorkspaceId(client: WebClient): Promise<string> {
       throw new Error('No team_id in auth response');
     }
 
+    if (token) workspaceIdByToken.set(token, authInfo.team_id);
     return authInfo.team_id;
   } catch (error) {
     Logger.error('Error getting workspace info', error as Error);
@@ -171,8 +184,9 @@ export async function getOrInitBotUserId(client: WebClient): Promise<string> {
  * 캐시된 워크스페이스 ID를 클리어합니다. (테스트용)
  */
 export function clearWorkspaceIdCache(): void {
-  // Kept for tests and older call sites. Workspace IDs are no longer globally cached
-  // because a single OAuth process can serve many Slack workspaces.
+  // Clears the per-token team_id cache (used by tests). Not a global cache — each
+  // entry is keyed by a workspace's own bot token.
+  workspaceIdByToken.clear();
 }
 
 /**
