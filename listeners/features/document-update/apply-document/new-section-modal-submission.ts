@@ -274,6 +274,37 @@ Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''
       userId,
     });
 
+    // 6b. Keep the in-memory vector-store copy, the workspace mirror, and the
+    // sync-state consistent with what we just committed. addNewSection only
+    // mutated file.tree; without also refreshing file.content and the mirror, a
+    // later anchor-based apply would use the pre-section content as its full-file
+    // base and silently delete this new section from GitHub.
+    markdownFile.content = updatedMarkdown;
+    try {
+      const { DocumentUpdateService } = await import('services/document/document-update-service');
+      const documentUpdateService = DocumentUpdateService.getInstance();
+      await documentUpdateService.stageMarkdownUpdate({
+        workspaceId: currentWorkspaceId,
+        filePath: markdownFile.path,
+        content: updatedMarkdown,
+        owner,
+        repo,
+        branch: branchName,
+      });
+      await documentUpdateService.markGithubSyncSuccess({
+        workspaceId: currentWorkspaceId,
+        filePath: markdownFile.path,
+        owner,
+        repo,
+        branch: branchName,
+        commitSha: updateResult.commitSha,
+      });
+    } catch (syncError) {
+      // Non-fatal: the GitHub commit already landed. The mirror will re-sync on
+      // the next full reload; don't fail the action over a local staging error.
+      console.error('Failed to sync new section to workspace mirror:', syncError);
+    }
+
     // 7. Skip DM success message - will be shown in updated message instead
 
     // 8. Update the original message to show completion
