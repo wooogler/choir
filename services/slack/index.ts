@@ -21,6 +21,7 @@ export {
   resolveUserNames,
   getNonUserResponseMessage,
   getOrInitBotUserId,
+  ensureWorkspaceAnonymizationMigrated,
 } from './user-management';
 
 // Message Utils

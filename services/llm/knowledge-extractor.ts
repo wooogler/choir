@@ -194,7 +194,7 @@ export async function extractKnowledgeFromMessages(
       }
       if (context.managerText) {
         // Anonymize manager names and format properly
-        const anonymizedManagerText = anonymizeText(context.managerText);
+        const anonymizedManagerText = anonymizeText(context.managerText, workspaceId);
         contextSection += `- Managers: ${anonymizedManagerText}\n`;
       }
       if (context.isUserManager !== undefined) {

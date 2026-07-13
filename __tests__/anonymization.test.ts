@@ -1,10 +1,18 @@
+import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
 // Isolate the on-disk cache the service writes to before importing it.
-process.env.CHOIR_DATA_DIR = path.join(os.tmpdir(), 'choir-anon-test');
+const DATA_DIR = path.join(os.tmpdir(), `choir-anon-test-${process.pid}`);
+process.env.CHOIR_DATA_DIR = DATA_DIR;
 
 import { type AnonymizationData, AnonymizationService } from '../services/anonymization/anonymization-service';
+
+// getAnonymizationMapping persists to disk; wipe the cache before each test so
+// one test's writes never bleed into another via the shared cache file.
+beforeEach(() => {
+  fs.rmSync(path.join(DATA_DIR, 'cache'), { recursive: true, force: true });
+});
 
 function serviceWith(data: AnonymizationData['anonymization']): AnonymizationService {
   const svc = new AnonymizationService();
@@ -72,5 +80,47 @@ describe('deAnonymizeText', () => {
     const out = svc.deAnonymizeText('Alex Kim reviewed the doc. Alex approved.');
     expect(out).toContain('김철수');
     expect(out).toContain('철수');
+  });
+});
+
+describe('workspace scoping', () => {
+  it('does not leak a workspace-A name into workspace-B text (cross-tenant)', () => {
+    const svc = new AnonymizationService();
+    (svc as unknown as { anonymizationData: AnonymizationData }).anonymizationData = { anonymization: {} };
+
+    const a = svc.getAnonymizationMapping('U1', 'Alice Anderson', undefined, 'TWS_A');
+    const b = svc.getAnonymizationMapping('U2', 'Bob Brown', undefined, 'TWS_B');
+
+    // Workspace B de-anonymizing text that happens to contain workspace A's fake
+    // name must NOT reveal workspace A's real name.
+    expect(svc.deAnonymizeText(`ping ${a.fakeName}`, 'TWS_B')).not.toContain('Alice Anderson');
+    expect(svc.deAnonymizeText(`ping ${a.fakeName}`, 'TWS_B')).toContain(a.fakeName);
+
+    // Within its own workspace it de-anonymizes correctly.
+    expect(svc.deAnonymizeText(`ping ${a.fakeName}`, 'TWS_A')).toContain('Alice Anderson');
+    // And workspace B's own mapping still works.
+    expect(svc.deAnonymizeText(`hi ${b.fakeName}`, 'TWS_B')).toContain('Bob Brown');
+  });
+
+  it('anonymizes only the current workspace real names', () => {
+    const svc = new AnonymizationService();
+    (svc as unknown as { anonymizationData: AnonymizationData }).anonymizationData = { anonymization: {} };
+    svc.getAnonymizationMapping('U1', 'Alice Anderson', undefined, 'TWS_A');
+
+    // Workspace B has no mapping for "Alice Anderson", so it is left as-is there
+    // (workspace A would mask it).
+    expect(svc.anonymizeText('met Alice Anderson today', 'TWS_B')).toContain('Alice Anderson');
+    expect(svc.anonymizeText('met Alice Anderson today', 'TWS_A')).not.toContain('Alice Anderson');
+  });
+
+  it('mints independent fake names per workspace without cross-workspace collision checks', () => {
+    const svc = new AnonymizationService();
+    (svc as unknown as { anonymizationData: AnonymizationData }).anonymizationData = { anonymization: {} };
+    const a = svc.getAnonymizationMapping('U1', 'Alice Anderson', undefined, 'TWS_A');
+    const b = svc.getAnonymizationMapping('U1', 'Alice Anderson', undefined, 'TWS_B');
+    // Same userId in two workspaces are stored as distinct, independently-keyed
+    // mappings (both valid; fakes may or may not coincide across workspaces).
+    expect(a.realName).toBe('Alice Anderson');
+    expect(b.realName).toBe('Alice Anderson');
   });
 });

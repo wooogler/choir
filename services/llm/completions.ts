@@ -104,7 +104,7 @@ async function createResponseText(
 
   const processedMessages: ChatCompletionMessageParam[] = messages.map((message) => ({
     ...message,
-    content: anonymizeText(normalizeMessageContent(message.content)),
+    content: anonymizeText(normalizeMessageContent(message.content), workspaceId),
   })) as ChatCompletionMessageParam[];
 
   const response = await client.responses.create({
@@ -120,7 +120,7 @@ async function createResponseText(
   });
 
   const rawResponse = response.output_text;
-  const finalResponse = deAnonymizeText(rawResponse || '');
+  const finalResponse = deAnonymizeText(rawResponse || '', workspaceId);
 
   if (debug) {
     logDebugOutput({
@@ -157,7 +157,7 @@ export async function createStructuredResponse<T>(
 
   const processedMessages: ChatCompletionMessageParam[] = messages.map((message) => ({
     ...message,
-    content: anonymizeText(normalizeMessageContent(message.content)),
+    content: anonymizeText(normalizeMessageContent(message.content), workspaceId),
   })) as ChatCompletionMessageParam[];
 
   const response = await client.responses.create({
@@ -177,7 +177,7 @@ export async function createStructuredResponse<T>(
   });
 
   const rawResponse = response.output_text;
-  const finalResponse = deAnonymizeText(rawResponse || '');
+  const finalResponse = deAnonymizeText(rawResponse || '', workspaceId);
 
   if (debug) {
     logDebugOutput({

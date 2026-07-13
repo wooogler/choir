@@ -9,15 +9,14 @@ export async function editMarkdownWithKnowledge(
   context?: { fileName?: string; sectionName?: string; headingPath?: string },
   workspaceId?: string,
 ) {
-  const anonymizedKnowledge = anonymizeText(knowledgeContent);
+  const anonymizedKnowledge = anonymizeText(knowledgeContent, workspaceId);
   const isEmpty = !markdown.trim();
 
   // 빈 섹션과 기존 내용에 대해 다른 프롬프트 사용
   if (isEmpty) {
     return await createContentForEmptySection(anonymizedKnowledge, context, workspaceId);
-  } else {
-    return await enhanceExistingContent(markdown, anonymizedKnowledge, context, workspaceId);
   }
+  return await enhanceExistingContent(markdown, anonymizedKnowledge, context, workspaceId);
 }
 
 /**
@@ -135,7 +134,7 @@ export async function classifyMessageIntent(
   workspaceId?: string,
 ): Promise<'question' | 'update_request' | 'general_conversation'> {
   // Anonymize the input message
-  const anonymizedMessage = anonymizeText(message);
+  const anonymizedMessage = anonymizeText(message, workspaceId);
 
   // Build context from message history if available using centralized processMessageHistory
   let contextSection = '';

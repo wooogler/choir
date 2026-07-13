@@ -1,5 +1,6 @@
 import { classifyMessageIntent } from 'services/llm/document-editor';
 import {
+  ensureWorkspaceAnonymizationMigrated,
   getOrInitBotUserId,
   getOrganizationDescription,
   getOrganizationName,
@@ -149,6 +150,11 @@ export async function handleIncomingMessage(
 
     // Get organization information
     const workspaceId = await getWorkspaceId(client);
+
+    // One-time-per-workspace: ensure existing CHOIR users have workspace-scoped
+    // anonymization mappings before any text is anonymized below.
+    await ensureWorkspaceAnonymizationMigrated(workspaceId, client);
+
     const orgName = (await getOrganizationName(workspaceId)) || '';
     const orgDescription = (await getOrganizationDescription(workspaceId)) || '';
 

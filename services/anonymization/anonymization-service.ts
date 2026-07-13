@@ -63,19 +63,46 @@ export class AnonymizationService {
   }
 
   /**
-   * Get or create anonymization mapping for a user
+   * Mappings are keyed by `${workspaceId}:${userId}` so that fake↔real names are
+   * scoped to a single workspace: without this, a fake nickname minted in one
+   * workspace would de-anonymize to that workspace's real user inside another
+   * workspace's LLM answers (cross-tenant PII leak). A missing workspaceId falls
+   * back to the bare userId (legacy/global) for callers that can't supply one.
+   */
+  private mappingKey(userId: string, workspaceId?: string): string {
+    return workspaceId ? `${workspaceId}:${userId}` : userId;
+  }
+
+  /** Recover the userId from a mapping key (handles both composite and legacy). */
+  private userIdFromKey(key: string): string {
+    const separatorIndex = key.indexOf(':');
+    return separatorIndex >= 0 ? key.slice(separatorIndex + 1) : key;
+  }
+
+  /** Mapping entries scoped to a workspace (all entries when no workspace given). */
+  private scopedEntries(workspaceId?: string): Array<[string, AnonymizationMapping[string]]> {
+    const all = Object.entries(this.anonymizationData.anonymization);
+    if (!workspaceId) return all;
+    const prefix = `${workspaceId}:`;
+    return all.filter(([key]) => key.startsWith(prefix));
+  }
+
+  /**
+   * Get or create anonymization mapping for a user (scoped to a workspace).
    */
   getAnonymizationMapping(
     userId: string,
     realName: string,
     nickname?: string,
+    workspaceId?: string,
   ): {
     realName: string;
     fakeName: string;
     nickname?: string;
     fakeNickname: string;
   } {
-    let mapping = this.anonymizationData.anonymization[userId];
+    const key = this.mappingKey(userId, workspaceId);
+    let mapping = this.anonymizationData.anonymization[key];
 
     if (!mapping) {
       // Special case: Keep CHOIR as CHOIR (don't anonymize the bot)
@@ -88,7 +115,8 @@ export class AnonymizationService {
           lastUsed: new Date().toISOString(),
         };
       } else {
-        const usedNames = new Set(Object.values(this.anonymizationData.anonymization).map((entry) => entry.fakeName));
+        // Only avoid fake-name collisions WITHIN the same workspace.
+        const usedNames = new Set(this.scopedEntries(workspaceId).map(([, entry]) => entry.fakeName));
         const { fakeName, fakeNickname } = generateFakeName(usedNames);
 
         mapping = {
@@ -99,7 +127,7 @@ export class AnonymizationService {
           lastUsed: new Date().toISOString(),
         };
       }
-      this.anonymizationData.anonymization[userId] = mapping;
+      this.anonymizationData.anonymization[key] = mapping;
       this.saveData();
     } else {
       // Update last used timestamp
@@ -113,15 +141,16 @@ export class AnonymizationService {
   /**
    * Anonymize text by replacing real names with fake names
    */
-  anonymizeText(text: string): string {
+  anonymizeText(text: string, workspaceId?: string): string {
     let anonymizedText = text;
 
     // Sort mappings by lastUsed (most recent first) to handle duplicate names
-    const sortedMappings = Object.entries(this.anonymizationData.anonymization).sort(
+    const sortedMappings = this.scopedEntries(workspaceId).sort(
       ([, a], [, b]) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime(),
     );
 
-    for (const [userId, mapping] of sortedMappings) {
+    for (const [key, mapping] of sortedMappings) {
+      const userId = this.userIdFromKey(key);
       // Replace user ID mentions first
       const userMentionRegex = new RegExp(`<@${userId}>`, 'g');
       anonymizedText = anonymizedText.replace(userMentionRegex, mapping.fakeNickname);
@@ -147,7 +176,7 @@ export class AnonymizationService {
   /**
    * De-anonymize text by replacing fake names with real names
    */
-  deAnonymizeText(text: string): string {
+  deAnonymizeText(text: string, workspaceId?: string): string {
     if (!text || typeof text !== 'string') {
       return text || '';
     }
@@ -155,7 +184,7 @@ export class AnonymizationService {
     let deAnonymizedText = text;
 
     // Sort mappings by lastUsed (most recent first) to handle duplicate names
-    const sortedMappings = Object.entries(this.anonymizationData.anonymization).sort(
+    const sortedMappings = this.scopedEntries(workspaceId).sort(
       ([, a], [, b]) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime(),
     );
 

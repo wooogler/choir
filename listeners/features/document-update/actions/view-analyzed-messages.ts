@@ -22,6 +22,9 @@ export const viewAnalyzedMessagesAction = async ({
     const parsedValue = JSON.parse(value);
     const { sessionId, messageCount } = parsedValue;
 
+    // Resolve the workspace up front so de-anonymization is scoped to it.
+    const workspaceId = await getWorkspaceId(client);
+
     // Get messages from session data
     const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
@@ -87,8 +90,8 @@ export const viewAnalyzedMessagesAction = async ({
             text = msg.text || 'No text';
           }
 
-          const deAnonymizedUsername = deAnonymizeText(username);
-          const deAnonymizedText = deAnonymizeText(text);
+          const deAnonymizedUsername = deAnonymizeText(username, workspaceId);
+          const deAnonymizedText = deAnonymizeText(text, workspaceId);
 
           return {
             type: 'section' as const,
@@ -110,8 +113,7 @@ export const viewAnalyzedMessagesAction = async ({
       view: modal,
     });
 
-    // Log successful button click
-    const workspaceId = await getWorkspaceId(client);
+    // Log successful button click (workspaceId resolved above)
     await logButtonClick(
       body.user.id,
       workspaceId,

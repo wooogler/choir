@@ -250,6 +250,38 @@ export async function getCHOIRUsers(workspaceId: string): Promise<string[]> {
   }
 }
 
+// Workspaces whose CHOIR users have been re-registered into the workspace-scoped
+// anonymization map (a one-time lazy migration from the legacy global map).
+// In-memory only — a restart re-runs it, which is idempotent (get-or-create).
+const anonymizationMigratedWorkspaces = new Set<string>();
+
+/**
+ * Lazily re-registers every CHOIR user of a workspace into the workspace-scoped
+ * anonymization map. Needed after moving mappings from a single global map to
+ * per-workspace scoping: without it, a user's name (including someone merely
+ * mentioned in a message, not just the sender) would stop being masked until the
+ * manager re-saved the CHOIR user list. Runs at most once per workspace per
+ * process; best-effort and cheap to call on every message.
+ */
+export async function ensureWorkspaceAnonymizationMigrated(workspaceId: string, client: WebClient): Promise<void> {
+  if (anonymizationMigratedWorkspaces.has(workspaceId)) return;
+  try {
+    const userIds = await getCHOIRUsers(workspaceId);
+    for (const userId of userIds) {
+      try {
+        const userName = await getUserName(userId, client);
+        getAnonymizationMapping(userId, userName, undefined, workspaceId);
+      } catch (error) {
+        Logger.warn('Failed to migrate user into scoped anonymization map', { workspaceId, userId, error });
+      }
+    }
+    anonymizationMigratedWorkspaces.add(workspaceId);
+  } catch (error) {
+    // Leave the workspace unflagged so a later message retries the migration.
+    Logger.warn('Failed to migrate workspace anonymization mappings', { workspaceId, error });
+  }
+}
+
 /**
  * CHOIR 사용자 목록을 설정합니다.
  */
@@ -262,7 +294,7 @@ export async function setCHOIRUsers(workspaceId: string, userIds: string[], clie
       for (const userId of userIds) {
         try {
           const userName = await getUserName(userId, client);
-          getAnonymizationMapping(userId, userName);
+          getAnonymizationMapping(userId, userName, undefined, workspaceId);
           Logger.info('User registered in anonymization mapping', { userId, userName });
         } catch (error) {
           Logger.warn('Failed to register user in anonymization mapping', { userId, error });
