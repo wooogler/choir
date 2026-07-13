@@ -77,6 +77,11 @@ export class WorkspaceStore {
   private dataPath: string;
   private logger: Console;
 
+  // Static so it dedupes across the many WorkspaceStore instances in the process:
+  // concurrent cache reads would otherwise each fire a background GitHub refresh
+  // for the same workspace.
+  private static readonly refreshingWorkspaces = new Set<string>();
+
   constructor(logger: Console = console) {
     this.dataPath = getDataPath();
     this.logger = logger;
@@ -488,13 +493,19 @@ export class WorkspaceStore {
       const cacheAge = Date.now() - config.markdownFilesCachedAt.getTime();
       const twentyFourHours = 24 * 60 * 60 * 1000;
 
-      // 만료되었지만 기존 데이터는 반환하고, 백그라운드에서 새로고침
-      if (cacheAge > twentyFourHours) {
+      // 만료되었지만 기존 데이터는 반환하고, 백그라운드에서 새로고침.
+      // Skip if a refresh for this workspace is already in flight (in-flight dedup).
+      if (cacheAge > twentyFourHours && !WorkspaceStore.refreshingWorkspaces.has(workspaceId)) {
         Logger.info(`Markdown files cache expired for workspace ${workspaceId}, triggering background refresh`);
+        WorkspaceStore.refreshingWorkspaces.add(workspaceId);
         // 백그라운드 새로고침 (await 하지 않음)
-        this.refreshMarkdownFilesCache(workspaceId).catch((error) => {
-          Logger.warn('Background markdown files refresh failed:', error);
-        });
+        this.refreshMarkdownFilesCache(workspaceId)
+          .catch((error) => {
+            Logger.warn('Background markdown files refresh failed:', error);
+          })
+          .finally(() => {
+            WorkspaceStore.refreshingWorkspaces.delete(workspaceId);
+          });
       }
     }
 
@@ -520,12 +531,18 @@ export class WorkspaceStore {
         `Refreshing markdown files cache for workspace ${workspaceId} from GitHub repo ${config.githubRepo.owner}/${config.githubRepo.repo}`,
       );
 
+      // Authenticate the background fetch with a connected user's token; otherwise
+      // it runs unauthenticated (60 req/hr, no private-repo access). Any connected
+      // user with repo access works for a read.
+      const connectedUserId = config.githubTokens ? Object.keys(config.githubTokens)[0] : undefined;
+
       const markdownFiles = await githubService.getAllMarkdownFiles({
         owner: config.githubRepo.owner,
         repo: config.githubRepo.repo,
         path: config.githubRepo.path || '',
         ref: config.githubRepo.branch,
         workspaceId,
+        userId: connectedUserId,
       });
 
       const fileList = markdownFiles.map((file: any) => ({
