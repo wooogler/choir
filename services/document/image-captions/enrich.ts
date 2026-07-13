@@ -131,7 +131,14 @@ async function captionDocumentImages(params: {
 
   for (const ref of refs) {
     const key = imageRefKey(docRelPath, ref.src);
-    if (!key || cache.hasRef(key)) continue;
+    if (!key) continue;
+
+    // For remote images, honor the cache unconditionally to avoid re-fetching
+    // every run. For local images, acquiring bytes is cheap, so re-hash and only
+    // skip when the content is unchanged — otherwise an edited image at the same
+    // path would keep its stale caption forever.
+    const isRemote = classifyImageSrc(ref.src) === 'remote';
+    if (isRemote && cache.hasRef(key)) continue;
 
     const acquired = await acquireImageBytes({ repoRoot, docRelPath, ref });
     if (!acquired) {
@@ -147,6 +154,9 @@ async function captionDocumentImages(params: {
     }
 
     const hash = hashBytes(acquired.bytes);
+    // Local image unchanged since last run (ref already points at this hash).
+    if (cache.getRefHash(key) === hash) continue;
+
     const existing = cache.getByHash(hash);
     if (existing) {
       cache.put(key, hash, existing); // same image already described elsewhere

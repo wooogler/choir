@@ -82,6 +82,12 @@ export class ImageCaptionCache {
     return refKey in this.data.refToHash;
   }
 
+  /** The content hash a reference key currently points at, or null. */
+  getRefHash(refKey: string): string | null {
+    this.ensureLoaded();
+    return this.data.refToHash[refKey] ?? null;
+  }
+
   /** Store a caption under its content hash and point the reference key at it. */
   put(refKey: string | null, hash: string, entry: CaptionEntry): void {
     this.ensureLoaded();
