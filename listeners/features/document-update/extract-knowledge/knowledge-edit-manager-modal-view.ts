@@ -94,6 +94,9 @@ export async function handleKnowledgeEditManagerModal({
     logger.info(`Knowledge for session ${sessionId} edited by manager ${userId}`);
 
     const managerMessageInfo = sessionData.managerMessageInfo?.[userId];
+    // Set if the delete-then-repost path fails, so the fallback below reposts the
+    // card instead of leaving the manager with a deleted (permanently lost) card.
+    let repostFailed = false;
 
     if (managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel) {
       const blocks: any[] = [
@@ -322,12 +325,12 @@ export async function handleKnowledgeEditManagerModal({
         logger.warn(
           `Failed to update original message for manager ${userId} in session ${sessionId}: ${updateError instanceof Error ? updateError.message : 'Unknown error'}. Using fallback approach.`,
         );
-        // Use the fallback logic that's already implemented below
-        // Fall through to the else block by setting managerMessageInfo to null
+        // The delete may have already removed the card; trigger the fallback repost.
+        repostFailed = true;
       }
     }
 
-    if (!managerMessageInfo || !managerMessageInfo.ts || !managerMessageInfo.channel) {
+    if (repostFailed || !managerMessageInfo || !managerMessageInfo.ts || !managerMessageInfo.channel) {
       logger.warn(
         `Original message info not found for manager ${userId} in session ${sessionId}. Cannot update the message. Posting a new one as fallback.`,
       );
