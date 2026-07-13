@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
+import { SessionType, getSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/interaction-tracker';
 import { convertMarkdownToSlackText, updateDocumentContent } from 'services/document';
 import { createAppendSuggestionBlock } from 'services/document/update-processor';
@@ -20,13 +21,20 @@ export const handleSuggestionEditorSubmission = async ({
     await ack();
 
     // 메타데이터에서 정보 가져오기
-    const { messageTs, channelId, nodeContent, editableContent, suggestionType, index, fileName, nodeId } = JSON.parse(
+    const { editorSessionId, messageTs, channelId, suggestionType, index, fileName, nodeId } = JSON.parse(
       view.private_metadata,
     );
 
     if (!messageTs || !channelId) {
       throw new Error('Required metadata is missing');
     }
+
+    // The original content was stashed in the session store (private_metadata is
+    // capped at 3000 chars); fall back to empty if the session has expired.
+    const editorSession = editorSessionId
+      ? (getSessionData(editorSessionId, SessionType.DOCUMENT_UPDATE) as { nodeContent?: string } | null)
+      : null;
+    const nodeContent: string = editorSession?.nodeContent ?? '';
 
     // 입력된 업데이트 내용 가져오기
     const updatedContent = view.state.values.updated_content_block.updated_content_input.value as string;

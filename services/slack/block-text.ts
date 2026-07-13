@@ -33,17 +33,23 @@ export function chunkTextForBlocks(text: string, maxLen: number = SLACK_SECTION_
   return chunks;
 }
 
+export interface MrkdwnSectionBlock {
+  type: 'section';
+  text: { type: 'mrkdwn'; text: string };
+  block_id?: string;
+}
+
 /**
  * Renders mrkdwn text as one or more Slack section blocks, each within the
  * character cap. The first block carries `blockId` (if given); the rest omit it,
  * since Slack requires block_ids to be unique within a message.
  */
-export function buildSectionBlocks(text: string, blockId?: string): Array<Record<string, unknown>> {
+export function buildSectionBlocks(text: string, blockId?: string): MrkdwnSectionBlock[] {
   const chunks = chunkTextForBlocks(text);
   if (chunks.length === 0) return [];
   return chunks.map((chunk, index) => ({
-    type: 'section',
-    text: { type: 'mrkdwn', text: chunk },
+    type: 'section' as const,
+    text: { type: 'mrkdwn' as const, text: chunk },
     ...(index === 0 && blockId ? { block_id: blockId } : {}),
   }));
 }

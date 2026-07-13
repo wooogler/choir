@@ -1,7 +1,9 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
+import { SessionType, generateSessionId, storeSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
 import { getStoredDocumentUpdates } from 'services/document/document-store';
 import { getWorkspaceId } from 'services/slack';
+import { buildSectionBlocks } from 'services/slack/block-text';
 
 /**
  * 문서 업데이트 제안 편집 모달을 표시합니다.
@@ -55,6 +57,13 @@ export const showSuggestionEditorModal = async ({
       throw new Error('Required content values are missing');
     }
 
+    // Slack caps private_metadata at 3000 chars, so stash the (potentially large)
+    // original content in the session store and reference it by id — a big section
+    // otherwise makes views.open fail. (editableContent is not carried at all: the
+    // submission reads the user's edit from the input block.)
+    const editorSessionId = generateSessionId('suggestion_editor');
+    storeSessionData(editorSessionId, { nodeContent }, SessionType.DOCUMENT_UPDATE, 60 * 60 * 1000);
+
     // 모달 화면 생성
     await client.views.open({
       trigger_id: body.trigger_id,
@@ -63,10 +72,9 @@ export const showSuggestionEditorModal = async ({
         callback_id: 'update_editor_submission',
         notify_on_close: true,
         private_metadata: JSON.stringify({
+          editorSessionId,
           messageTs: body.message?.ts,
           channelId: body.channel?.id,
-          nodeContent,
-          editableContent,
           suggestionType,
           index: actionValue.index,
           fileName: actionValue.fileName,
@@ -84,13 +92,11 @@ export const showSuggestionEditorModal = async ({
               text: originalLabel,
             },
           },
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: nodeContent && nodeContent.trim() ? nodeContent : '*Empty section - content will be generated*',
-            },
-          },
+          // Split the original content across blocks (a section's text is capped
+          // at 3000 chars) so a large section still renders.
+          ...buildSectionBlocks(
+            nodeContent && nodeContent.trim() ? nodeContent : '*Empty section - content will be generated*',
+          ),
           {
             type: 'input',
             block_id: 'updated_content_block',
