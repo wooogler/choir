@@ -34,9 +34,10 @@ export async function saveEditedDocument(params: {
   const vectorStore = VectorStoreService.getInstance();
 
   // Capture pre-save content for the provenance diff before the mirror/index is
-  // overwritten below.
+  // overwritten below. Look up by full path so nested docs (and siblings sharing
+  // a basename) resolve to the correct entry.
   const editedFileName = params.filePath.split('/').pop() || params.filePath;
-  const beforeContent = vectorStore.getMarkdownFile(editedFileName, params.workspaceId)?.content ?? '';
+  const beforeContent = vectorStore.getMarkdownFile(params.filePath, params.workspaceId)?.content ?? '';
 
   await documentUpdateService.stageMarkdownUpdate({
     workspaceId: params.workspaceId,
@@ -89,7 +90,7 @@ export async function saveEditedDocument(params: {
   try {
     const fileName = params.filePath.split('/').pop() || params.filePath;
     const tree = parseMarkdownToTree(params.content, fileName);
-    const existing = vectorStore.getMarkdownFile(fileName, params.workspaceId);
+    const existing = vectorStore.getMarkdownFile(params.filePath, params.workspaceId);
     const branchSegment = repoInfo.branch || 'main';
     const encodedPath = params.filePath
       .split('/')
@@ -107,7 +108,10 @@ export async function saveEditedDocument(params: {
       githubUrl,
       tree,
     };
-    const next = allFiles.filter((file) => file.name !== fileName);
+    // De-dupe by full path so a sibling doc that merely shares this basename
+    // (e.g. another README.md in a different folder) is not dropped from the
+    // in-memory store.
+    const next = allFiles.filter((file) => file.path !== params.filePath);
     next.push(updatedFile);
     vectorStore.setLoadedMarkdownFiles(next, params.workspaceId);
   } catch (error) {

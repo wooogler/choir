@@ -51,7 +51,12 @@ export class VectorStoreService {
   }
 
   public getMarkdownFile(fileName: string, workspaceId?: string): MarkdownFile | undefined {
-    return this.getState(workspaceId).markdownFiles.find((f) => f.name === fileName);
+    const files = this.getState(workspaceId).markdownFiles;
+    // Prefer an exact full-repo-path match: this resolves files in subdirectories
+    // (whose identity is a path like "docs/guide.md") and disambiguates duplicate
+    // basenames (e.g. two README.md). Fall back to a basename match for legacy
+    // callers that still pass only a file name.
+    return files.find((f) => f.path === fileName) ?? files.find((f) => f.name === fileName);
   }
 
   public getAllMarkdownFiles(workspaceId?: string): MarkdownFile[] {
