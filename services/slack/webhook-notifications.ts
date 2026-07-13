@@ -1,4 +1,5 @@
 import type { WebClient } from '@slack/web-api';
+import { Logger } from 'services/common/logger';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
 async function postManagerNotification(
@@ -8,22 +9,34 @@ async function postManagerNotification(
   blockText: string,
   messageType: CHOIRMessageType,
 ): Promise<void> {
-  for (const managerId of managerIds) {
-    await client.chat.postMessage({
-      channel: managerId,
-      text,
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: blockText,
-          },
-          block_id: createCHOIRBlockId(messageType),
-        },
-      ],
-    });
-  }
+  // Deliver to each manager independently: a single deactivated or DM-blocked
+  // manager must not abort the remaining notifications — nor the webhook
+  // auto-reload flow that awaits these calls.
+  await Promise.all(
+    managerIds.map(async (managerId) => {
+      try {
+        await client.chat.postMessage({
+          channel: managerId,
+          text,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: blockText,
+              },
+              block_id: createCHOIRBlockId(messageType),
+            },
+          ],
+        });
+      } catch (error) {
+        Logger.warn('Failed to notify a manager (continuing with the rest)', {
+          managerId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }),
+  );
 }
 
 export async function notifyDocumentAutoReloadStarted(client: WebClient, managerIds: string[]): Promise<void> {

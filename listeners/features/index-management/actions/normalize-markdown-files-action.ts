@@ -98,30 +98,26 @@ export const normalizeMarkdownFilesAction = async ({
       return;
     }
 
-    // GitHub에서 현재 기본 브랜치 확인 및 업데이트
-    const currentDefaultBranch = await githubService.getDefaultBranch(
-      repoInfo.owner,
-      repoInfo.repo,
-      workspaceId,
-      body.user.id,
-    );
-
-    // 기존 브랜치와 다르면 워크스페이스 설정 업데이트
-    if (repoInfo.branch !== currentDefaultBranch) {
+    // Respect a deliberately configured branch; only resolve the repo default when
+    // none is set. getDefaultBranch falls back to 'main' on error, so running it
+    // unconditionally could overwrite the configured branch on a transient failure.
+    let branchToUse = repoInfo.branch;
+    if (!branchToUse) {
+      branchToUse = await githubService.getDefaultBranch(repoInfo.owner, repoInfo.repo, workspaceId, body.user.id);
       const { storeGithubRepo } = await import('services/slack');
       await storeGithubRepo(workspaceId, {
         ...repoInfo,
-        branch: currentDefaultBranch,
+        branch: branchToUse,
       });
-      logger.info(`Updated repository branch from ${repoInfo.branch || 'undefined'} to ${currentDefaultBranch}`);
+      logger.info(`No branch configured; set repository branch to default: ${branchToUse}`);
     }
 
-    // 모든 마크다운 파일 가져오기 (업데이트된 브랜치 사용)
+    // 모든 마크다운 파일 가져오기 (설정된 브랜치 사용)
     const markdownFiles = await githubService.getAllMarkdownFiles({
       owner: repoInfo.owner,
       repo: repoInfo.repo,
       path: repoInfo.path || '',
-      ref: currentDefaultBranch,
+      ref: branchToUse,
       workspaceId: workspaceId,
       userId: body.user.id,
     });
@@ -181,7 +177,7 @@ export const normalizeMarkdownFilesAction = async ({
             path: file.path,
             content: normalizedMarkdown,
             message: `Normalize markdown formatting for ${file.name}`,
-            branch: currentDefaultBranch,
+            branch: branchToUse,
             workspaceId: workspaceId,
             userId: body.user.id,
           });
