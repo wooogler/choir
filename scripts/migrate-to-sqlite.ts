@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Installation } from '@slack/oauth';
 import * as dotenv from 'dotenv';
+import { getDataPath } from 'services/common/data-path';
 import { closeDatabase } from 'services/db/connection';
 import { SqliteSlackInstallationStore } from 'services/slack/sqlite-installation-store';
 import { WorkspaceStore, type WorkspaceConfig } from 'services/workspace/workspace-store';
@@ -18,6 +19,15 @@ async function migrateWorkspaceConfigs(dataPath: string): Promise<number> {
     const configPath = path.join(dataPath, file);
     const raw = await fs.promises.readFile(configPath, 'utf-8');
     const config = JSON.parse(raw) as WorkspaceConfig;
+
+    // Idempotent: skip workspaces already in SQLite so re-running the migration
+    // never clobbers a newer (already-migrated-then-edited) config with stale JSON.
+    const existing = await workspaceStore.getWorkspaceConfig(config.workspaceId);
+    if (existing) {
+      console.log(`Skipping ${config.workspaceId}: already present in SQLite.`);
+      continue;
+    }
+
     await workspaceStore.saveWorkspaceConfig(config);
     migrated++;
   }
@@ -43,7 +53,9 @@ async function migrateSlackInstallations(dataPath: string): Promise<number> {
 }
 
 async function main(): Promise<void> {
-  const dataPath = path.join(process.cwd(), 'data');
+  // Respect CHOIR_DATA_DIR instead of assuming ./data, or the migration reads the
+  // wrong directory (and finds nothing) on deployments that relocate the data dir.
+  const dataPath = getDataPath();
   const workspaceCount = await migrateWorkspaceConfigs(dataPath);
   const installationCount = await migrateSlackInstallations(dataPath);
 
