@@ -6,6 +6,7 @@ import { SlackUsageMonitor, usageMonitoringMiddleware } from 'services/slack/usa
 import registerListeners from './listeners';
 
 import { AppConfig } from '@/config';
+import { sweepExpiredSessions } from 'services/common';
 import {
   ALLOWED_IMAGE_TYPES,
   IMAGE_EXTENSIONS,
@@ -782,6 +783,25 @@ process.once('SIGINT', () => {
     await app.start(listenHost ? { port, host: listenHost } : port);
     app.logger.info('⚡️ Bolt app is running! ⚡️');
     app.logger.info(`Slack mode: ${slackConfig.mode}`);
+
+    // Clean up expired session rows now and hourly (they hold message content /
+    // PII). unref so the timer never keeps the process alive on its own.
+    try {
+      sweepExpiredSessions();
+    } catch (sweepError) {
+      app.logger.warn('Initial expired-session sweep failed', sweepError as Error);
+    }
+    const sessionSweepInterval = setInterval(
+      () => {
+        try {
+          sweepExpiredSessions();
+        } catch (sweepError) {
+          app.logger.warn('Expired-session sweep failed', sweepError as Error);
+        }
+      },
+      60 * 60 * 1000,
+    );
+    sessionSweepInterval.unref?.();
 
     if (slackConfig.mode === 'oauth') {
       app.logger.info('Slack OAuth install path: /slack/install');

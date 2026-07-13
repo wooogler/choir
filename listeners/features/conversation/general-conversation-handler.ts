@@ -101,6 +101,8 @@ What would you like to try first?`;
     storeSessionData(
       sessionId,
       {
+        // workspaceId lets purgeWorkspaceSessions clean this up on uninstall.
+        workspaceId,
         originalMessage: message,
         userId: event.user,
         channelId: event.channel,

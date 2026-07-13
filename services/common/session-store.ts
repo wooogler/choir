@@ -142,6 +142,20 @@ export function removeSessionData(sessionId: string, sessionType: SessionType = 
   return deleteSession(sessionId, sessionType);
 }
 
+/**
+ * Deletes every session row whose TTL has elapsed. Sessions are expired lazily on
+ * read, but a session that is never read again would otherwise linger in the DB
+ * forever (holding message content / PII). Call on startup and periodically.
+ */
+export function sweepExpiredSessions(): number {
+  const result = getDatabase().prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now());
+  const removed = result.changes ?? 0;
+  if (removed > 0) {
+    console.log(`세션 정리: 만료된 세션 ${removed}개 삭제`);
+  }
+  return removed;
+}
+
 export function purgeWorkspaceSessions(workspaceId: string): number {
   const rows = getDatabase()
     .prepare('SELECT session_type AS sessionType, session_id AS sessionId, data_json AS dataJson FROM sessions')
