@@ -110,6 +110,22 @@ class GithubService {
   }
 
   /**
+   * Build an authenticated HTTPS clone URL for the local git mirror, reusing the
+   * same token resolution as the API client (falls back to an unauthenticated URL
+   * for public repos). The returned URL embeds a token — never log it.
+   */
+  async getAuthenticatedRemoteUrl(params: {
+    owner: string;
+    repo: string;
+    workspaceId?: string;
+    userId?: string;
+  }): Promise<string> {
+    const token = await this.getGitHubToken(params.workspaceId, params.userId);
+    const base = `github.com/${params.owner}/${params.repo}.git`;
+    return token ? `https://x-access-token:${token}@${base}` : `https://${base}`;
+  }
+
+  /**
    * 토큰에 따라 적절한 Octokit 인스턴스를 가져옴 (캐시됨)
    */
   private async getOctokit(workspaceId?: string, userId?: string): Promise<Octokit> {

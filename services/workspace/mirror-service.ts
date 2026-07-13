@@ -5,6 +5,7 @@ import { Logger } from 'services/common/logger';
 import { injectCachedCaptions } from 'services/document/image-captions/inject';
 import { splitMarkdownToItems } from 'services/document/markdown-section-splitter';
 import type { MarkdownFile } from 'services/github';
+import { ensureRepo } from './git-mirror';
 import { PathMapService } from './path-map-service';
 
 export type WorkspaceSyncSource = 'startup' | 'webhook' | 'manual-refresh' | 'document-update' | 'create-file';
@@ -39,6 +40,23 @@ export class WorkspaceMirrorService {
 
   public getRepoRoot(workspaceId: string): string {
     return path.join(this.getWorkspaceRoot(workspaceId), 'repo');
+  }
+
+  /**
+   * Local git clone kept ALONGSIDE the API-materialized markdown mirror (`repo/`),
+   * used only for blame/line-history queries. The caller resolves the
+   * token-bearing remote URL (via GithubService) to avoid a dependency cycle.
+   */
+  public getGitRepoRoot(workspaceId: string): string {
+    return path.join(this.getWorkspaceRoot(workspaceId), 'gitrepo');
+  }
+
+  public async ensureGitClone(params: { workspaceId: string; remoteUrl: string; branch?: string }): Promise<boolean> {
+    return ensureRepo({
+      dir: this.getGitRepoRoot(params.workspaceId),
+      remoteUrl: params.remoteUrl,
+      branch: params.branch,
+    });
   }
 
   private getStateRoot(workspaceId: string): string {

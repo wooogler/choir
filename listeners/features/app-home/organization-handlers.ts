@@ -1,6 +1,7 @@
 import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
 import { getOrganizationName, getWorkspaceId, setOrganizationName } from 'services/slack';
+import { requireManagerForAction } from './management/shared';
 import { refreshAppHomeSoon } from './refresh';
 
 export const registerOrganizationHandlers = (app: App) => {
@@ -9,6 +10,10 @@ export const registerOrganizationHandlers = (app: App) => {
     await ack();
 
     try {
+      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+        return;
+      }
+
       const workspaceId = await getWorkspaceId(client);
       const organizationName = (await getOrganizationName(workspaceId)) || 'Our Organization';
 
@@ -99,6 +104,11 @@ export const registerOrganizationHandlers = (app: App) => {
     const startTime = Date.now();
 
     try {
+      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+        await ack();
+        return;
+      }
+
       const newName = view.state.values.organization_name_input_block.organization_name_input.value;
 
       if (!newName || newName.trim().length === 0) {

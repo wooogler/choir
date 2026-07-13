@@ -2,7 +2,12 @@ import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
-import { logManagementButtonError, logManagementModalError, refreshAppHomeSoon } from './shared';
+import {
+  logManagementButtonError,
+  logManagementModalError,
+  refreshAppHomeSoon,
+  requireManagerForAction,
+} from './shared';
 
 export const registerReadonlyFilesHandlers = (app: App) => {
   app.action('manage_readonly_files', async ({ ack, body, client, logger }) => {
@@ -10,6 +15,10 @@ export const registerReadonlyFilesHandlers = (app: App) => {
     await ack();
 
     try {
+      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+        return;
+      }
+
       const workspaceId = await getWorkspaceId(client);
       const workspaceStore = new WorkspaceStore();
       const readOnlyFiles = await workspaceStore.getReadOnlyFiles(workspaceId);
@@ -145,6 +154,11 @@ export const registerReadonlyFilesHandlers = (app: App) => {
     const startTime = Date.now();
 
     try {
+      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+        await ack();
+        return;
+      }
+
       const selectedFiles =
         view.state.values.readonly_files_select_block.readonly_files_select.selected_options?.map(
           (option) => option.value,

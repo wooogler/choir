@@ -7,6 +7,7 @@ import type { ProvenanceRecord } from './types';
 
 export * from './types';
 export * from './read';
+export * from './blame';
 
 const CONTEXT_DIR = '.choir/context';
 

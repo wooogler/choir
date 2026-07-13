@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { signImageToken } from 'services/docs-editor';
 import { classifyImageSrc, extractImageRefs, resolveLocalImageRepoPath } from 'services/document/image-refs';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 
@@ -55,8 +56,12 @@ export function collectReplyImages(
       if (!absolute.startsWith(path.resolve(repoRoot)) || !fs.existsSync(absolute)) continue;
 
       const encoded = repoPath.split('/').map(encodeURIComponent).join('/');
+      // The docs content route is authenticated; Slack fetches the image without
+      // a session cookie, so authorize this exact (workspace, path) with a signed
+      // token instead of leaving the route open to enumeration.
+      const token = signImageToken(workspaceId, repoPath);
       out.push({
-        imageUrl: `${baseUrl}/api/docs/${encodeURIComponent(workspaceId)}/${encoded}`,
+        imageUrl: `${baseUrl}/api/docs/${encodeURIComponent(workspaceId)}/${encoded}?token=${encodeURIComponent(token)}`,
         altText: ref.alt || path.posix.basename(repoPath),
       });
     }

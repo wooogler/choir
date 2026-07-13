@@ -1,5 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { getDataPath } from 'services/common/data-path';
 import { generateFakeName } from './name-dictionary';
 
@@ -128,19 +128,16 @@ export class AnonymizationService {
 
       // Replace nickname first (highest priority)
       if (mapping.nickname) {
-        const nicknameRegex = new RegExp(`\\b${this.escapeRegex(mapping.nickname)}\\b`, 'g');
-        anonymizedText = anonymizedText.replace(nicknameRegex, mapping.fakeNickname);
+        anonymizedText = anonymizedText.replace(this.buildNameRegex(mapping.nickname), mapping.fakeNickname);
       }
 
       // Replace full name with nickname only
-      const fullNameRegex = new RegExp(`\\b${this.escapeRegex(mapping.realName)}\\b`, 'g');
-      anonymizedText = anonymizedText.replace(fullNameRegex, mapping.fakeNickname);
+      anonymizedText = anonymizedText.replace(this.buildNameRegex(mapping.realName), mapping.fakeNickname);
 
       // Replace first name (extracted from real name) with nickname only
       const firstName = mapping.realName.split(' ')[0];
       if (firstName && firstName !== mapping.nickname) {
-        const firstNameRegex = new RegExp(`\\b${this.escapeRegex(firstName)}\\b`, 'g');
-        anonymizedText = anonymizedText.replace(firstNameRegex, mapping.fakeNickname);
+        anonymizedText = anonymizedText.replace(this.buildNameRegex(firstName), mapping.fakeNickname);
       }
     }
 
@@ -164,13 +161,11 @@ export class AnonymizationService {
 
     for (const [, mapping] of sortedMappings) {
       // Replace fake full name with real name
-      const fakeFullNameRegex = new RegExp(`\\b${this.escapeRegex(mapping.fakeName)}\\b`, 'g');
-      deAnonymizedText = deAnonymizedText.replace(fakeFullNameRegex, mapping.realName);
+      deAnonymizedText = deAnonymizedText.replace(this.buildNameRegex(mapping.fakeName), mapping.realName);
 
       // Replace fake nickname with real nickname (if exists) or first name
       const realNickname = mapping.nickname || mapping.realName.split(' ')[0];
-      const fakeNicknameRegex = new RegExp(`\\b${this.escapeRegex(mapping.fakeNickname)}\\b`, 'g');
-      deAnonymizedText = deAnonymizedText.replace(fakeNicknameRegex, realNickname);
+      deAnonymizedText = deAnonymizedText.replace(this.buildNameRegex(mapping.fakeNickname), realNickname);
     }
 
     return deAnonymizedText;
@@ -181,6 +176,17 @@ export class AnonymizationService {
    */
   private escapeRegex(text: string): string {
     return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * Builds a "whole name" matcher that works in any script. JavaScript's `\b`
+   * is ASCII-only, so `\b김철수\b` never matches and Korean/CJK names would be
+   * sent to the LLM unmasked. Unicode letter/number lookarounds bound the name
+   * correctly regardless of script. (Names directly fused with a suffix — e.g. a
+   * Korean particle — are still not split; that needs morphological analysis.)
+   */
+  private buildNameRegex(name: string): RegExp {
+    return new RegExp(`(?<![\\p{L}\\p{N}])${this.escapeRegex(name)}(?![\\p{L}\\p{N}])`, 'gu');
   }
 
   /**

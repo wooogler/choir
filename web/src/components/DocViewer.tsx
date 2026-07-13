@@ -24,6 +24,18 @@ function isMobileViewport(): boolean {
   return typeof window !== 'undefined' && window.innerWidth <= MOBILE_BREAKPOINT;
 }
 
+/**
+ * The docs APIs require a workspace session; when a request returns 401 the
+ * visitor is not signed in, so send them through the Slack OIDC flow and back
+ * to the current page. (Sign-in sets the cookie, so this never loops.)
+ */
+function redirectToSignIn(workspaceId: string): void {
+  const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  window.location.href = `/docs/auth/slack/start?workspaceId=${encodeURIComponent(
+    workspaceId,
+  )}&next=${encodeURIComponent(next)}`;
+}
+
 function normalizeBlockText(el: HTMLElement): string {
   const clone = el.cloneNode(true);
   if (clone instanceof HTMLElement && clone.tagName === 'LI') {
@@ -67,6 +79,17 @@ function findChangedBlockIndexes(previousTexts: string[], currentTexts: string[]
   return changedIndexes;
 }
 
+// Normalize a rendered block or a markdown source line to compare them: strip
+// markdown syntax, collapse whitespace, lowercase. Used to map a rendered block
+// back to its source line so the git-blame line→record map can place a marker.
+function normalizeForLineMatch(text: string): string {
+  return text
+    .replace(/[#>*_`~[\]()!-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [error, setError] = useState('');
   const [filePath, setFilePath] = useState(initialFilePath);
@@ -86,9 +109,12 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [editorKey, setEditorKey] = useState(0);
   const [changedBlockCount, setChangedBlockCount] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [lineProvenance, setLineProvenance] = useState<Record<number, string> | null>(null);
+  const [historyFocus, setHistoryFocus] = useState<{ id: string; key: number } | null>(null);
 
   const editorHandleRef = useRef<CrepeEditorHandle | null>(null);
   const editorContainerRef = useRef<HTMLDivElement | null>(null);
+  const gutterRef = useRef<HTMLDivElement | null>(null);
   const editStartMarkdownRef = useRef<string | null>(null);
   const documentEditStartBlockTextsRef = useRef<string[]>([]);
   const changedBlockElsRef = useRef<Set<HTMLElement>>(new Set());
@@ -125,8 +151,12 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   }, []);
 
   useEffect(() => {
-    fetch(`/api/docs/${encodeURIComponent(workspaceId)}`)
+    fetch(`/api/docs/${encodeURIComponent(workspaceId)}`, { credentials: 'same-origin' })
       .then((r) => {
+        if (r.status === 401) {
+          redirectToSignIn(workspaceId);
+          throw new Error('Sign in required');
+        }
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json() as Promise<{ files: DocFile[]; repo: RepoInfo | null }>;
       })
@@ -198,8 +228,12 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     clearChangedBlockMarks();
     clearEditSession();
 
-    fetch(`/api/docs/${encodeURIComponent(workspaceId)}/${encodePath(filePath)}`)
+    fetch(`/api/docs/${encodeURIComponent(workspaceId)}/${encodePath(filePath)}`, { credentials: 'same-origin' })
       .then((r) => {
+        if (r.status === 401) {
+          redirectToSignIn(workspaceId);
+          throw new Error('Sign in required');
+        }
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json() as Promise<{ content: string; filePath: string }>;
       })
@@ -213,6 +247,28 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         setError(e instanceof Error ? e.message : 'Failed to load document');
       });
   }, [workspaceId, filePath, clearChangedBlockMarks, clearEditSession]);
+
+  // Line-level provenance (git blame → record) for the gutter markers. Members only.
+  useEffect(() => {
+    if (loadedMarkdown === null || session?.authenticated !== true) {
+      setLineProvenance(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/docs/${encodeURIComponent(workspaceId)}/provenance/${encodePath(filePath)}?lines=1`, {
+      credentials: 'same-origin',
+    })
+      .then((r) => (r.ok ? (r.json() as Promise<{ lines: Record<number, string> }>) : Promise.reject(new Error())))
+      .then((d) => {
+        if (!cancelled) setLineProvenance(d.lines);
+      })
+      .catch(() => {
+        if (!cancelled) setLineProvenance(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, filePath, loadedMarkdown, session]);
 
   useEffect(() => {
     if (loadedMarkdown === null) return;
@@ -272,6 +328,73 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       return true;
     });
   }, []);
+
+  const openHistoryAt = useCallback((recordId: string) => {
+    setHistoryOpen(true);
+    setHistoryFocus((prev) => ({ id: recordId, key: (prev?.key ?? 0) + 1 }));
+  }, []);
+
+  // Render gutter markers next to blocks whose source line has a provenance
+  // record (per git blame). Clicking a marker opens the panel anchored to it.
+  // historyOpen is an intentional layout-shift re-trigger: opening the panel
+  // reflows content width, moving block (and marker) positions.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: historyOpen is a layout-shift re-trigger
+  useEffect(() => {
+    const gutter = gutterRef.current;
+    const container = editorContainerRef.current;
+    if (!gutter) return;
+
+    const clear = () => gutter.replaceChildren();
+
+    if (!editorReady || isEditing || !lineProvenance || loadedMarkdown === null || !container) {
+      clear();
+      return;
+    }
+
+    const render = () => {
+      clear();
+      const srcLines = loadedMarkdown.split('\n').map((text, i) => ({ no: i + 1, norm: normalizeForLineMatch(text) }));
+      const blocks = getHighlightBlocks();
+      const containerTop = container.getBoundingClientRect().top;
+
+      let cursor = 0;
+      for (const block of blocks) {
+        const bnorm = normalizeForLineMatch(block.textContent ?? '');
+        if (!bnorm) continue;
+        for (let i = cursor; i < srcLines.length; i += 1) {
+          const ln = srcLines[i];
+          if (ln.norm && (ln.norm === bnorm || ln.norm.includes(bnorm) || bnorm.includes(ln.norm))) {
+            const recordId = lineProvenance[ln.no];
+            if (recordId) {
+              const top = block.getBoundingClientRect().top - containerTop;
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'doc-history-marker';
+              btn.title = 'View change history';
+              btn.textContent = '🕘';
+              btn.style.top = `${top}px`;
+              btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openHistoryAt(recordId);
+              });
+              gutter.appendChild(btn);
+            }
+            cursor = i + 1;
+            break;
+          }
+        }
+      }
+    };
+
+    const timer = window.setTimeout(render, 120);
+    window.addEventListener('resize', render);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', render);
+      clear();
+    };
+  }, [editorReady, isEditing, lineProvenance, loadedMarkdown, historyOpen, getHighlightBlocks, openHistoryAt]);
 
   const markDocumentChangedBlocks = useCallback(
     (forceFallback: boolean) => {
@@ -347,9 +470,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   }, [clearChangedBlockMarks, clearEditSession, dirty, loadedMarkdown]);
 
   const handleSignIn = useCallback(() => {
-    const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    const url = `/docs/auth/slack/start?workspaceId=${encodeURIComponent(workspaceId)}&next=${encodeURIComponent(next)}`;
-    window.location.href = url;
+    redirectToSignIn(workspaceId);
   }, [workspaceId]);
 
   const handleSignOut = useCallback(async () => {
@@ -497,6 +618,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
             )}
             {!editorReady && <div className="doc-loading">Loading document…</div>}
             <div className="doc-editor-wrap" ref={editorContainerRef}>
+              <div className="doc-history-gutter" ref={gutterRef} aria-hidden="true" />
               {editorReady && (
                 <CrepeEditor
                   key={editorKey}
@@ -518,6 +640,8 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         filePath={filePath}
         open={historyOpen}
         authenticated={session?.authenticated === true}
+        focusId={historyFocus?.id}
+        focusKey={historyFocus?.key ?? 0}
         onClose={() => setHistoryOpen(false)}
         onSignIn={handleSignIn}
       />

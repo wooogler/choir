@@ -18,12 +18,14 @@ import {
   issueOAuthState,
   issueSessionCookieValue,
   parseSessionCookie,
+  sanitizeNextPath,
   saveEditedDocument,
   saveUploadedAsset,
+  verifyImageToken,
   verifyOAuthState,
   verifySessionCookieValue,
 } from 'services/docs-editor';
-import { getProvenanceRecord, listProvenanceForDoc } from 'services/document/provenance';
+import { getLineProvenance, getProvenanceRecord, listProvenanceForDoc } from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
@@ -231,6 +233,14 @@ function setupPublicSite(): void {
   router.get('/api/docs/:workspaceId', async (req: any, res: any) => {
     try {
       const workspaceId = String(req.params.workspaceId);
+
+      // The file listing enumerates a private repo's structure, so require a
+      // valid session for this workspace (mirrors the content/provenance routes).
+      const session = await readSession(req);
+      if (!session || session.workspaceId !== workspaceId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
       const syncState = await WorkspaceMirrorService.getInstance().getSyncState(workspaceId);
       const repo =
         syncState?.owner && syncState?.repo
@@ -299,6 +309,12 @@ function setupPublicSite(): void {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
+      // Line-level provenance (blame): current line number → record id.
+      if (req.query.lines !== undefined) {
+        const data = await getLineProvenance({ workspaceId, docPath, userId: payload.userId });
+        return res.json(data);
+      }
+
       const id = typeof req.query.id === 'string' ? req.query.id : undefined;
       if (id) {
         const record = await getProvenanceRecord(workspaceId, docPath, id);
@@ -347,9 +363,25 @@ function setupPublicSite(): void {
       const ext = path.posix.extname(filePath).slice(1).toLowerCase();
       const imageMime = IMAGE_EXTENSIONS[ext];
       if (imageMime) {
+        // Images are read by both the web viewer (same-origin session cookie)
+        // and Slack (no cookie, but a path-scoped signed token). Require one.
+        const session = await readSession(req);
+        const sessionOk = !!session && session.workspaceId === workspaceId;
+        const token = typeof req.query.token === 'string' ? req.query.token : '';
+        const tokenOk = !!token && verifyImageToken(token, workspaceId, filePath);
+        if (!sessionOk && !tokenOk) {
+          return res.status(401).json({ error: 'Unauthorized' });
+        }
         res.setHeader('content-type', imageMime);
-        res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+        res.setHeader('cache-control', 'private, max-age=31536000, immutable');
         return res.sendFile(resolved);
+      }
+
+      // Raw markdown reveals private-repo content, so require a valid session
+      // for this workspace (mirrors the provenance route above).
+      const session = await readSession(req);
+      if (!session || session.workspaceId !== workspaceId) {
+        return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const content = await fs.promises.readFile(resolved, 'utf-8');
@@ -373,7 +405,7 @@ function setupPublicSite(): void {
           .status(503)
           .send('Slack sign-in is not configured. Set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and DOCS_BASE_URL.');
       }
-      const safeNext = next.startsWith('/') ? next : '/';
+      const safeNext = sanitizeNextPath(next);
       const state = issueOAuthState({ workspaceId, next: safeNext });
       const url = buildSlackAuthorizeUrl({ config, state });
       return res.redirect(url);
@@ -418,7 +450,7 @@ function setupPublicSite(): void {
       const cookieValue = issueSessionCookieValue({ workspaceId, userId: result.userId });
       res.setHeader('set-cookie', buildSessionCookieHeader(cookieValue, { secure: cookieSecure }));
 
-      const safeNext = next.startsWith('/') ? next : '/';
+      const safeNext = sanitizeNextPath(next);
       return res.redirect(safeNext);
     } catch (err) {
       app.logger.error('Slack OAuth callback failed', err as Error);
@@ -610,11 +642,12 @@ const setupGitHubWebhook = () => {
         const body = req.rawBody || JSON.stringify(req.body);
         const signature = req.get('X-Hub-Signature-256') || '';
 
-        // Verify webhook signature if secret is configured
-        if (githubWebhookSecret && signature) {
-          const isValid = verifyGitHubSignature(body, signature, githubWebhookSecret);
-          if (!isValid) {
-            app.logger.warn('Invalid GitHub webhook signature');
+        // Verify webhook signature if a secret is configured. When a secret is
+        // set, a missing OR invalid signature must be rejected — otherwise an
+        // attacker can bypass verification simply by omitting the header.
+        if (githubWebhookSecret) {
+          if (!signature || !verifyGitHubSignature(body, signature, githubWebhookSecret)) {
+            app.logger.warn('Invalid or missing GitHub webhook signature');
             return res.status(401).send('Unauthorized');
           }
         }

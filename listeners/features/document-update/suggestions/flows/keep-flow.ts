@@ -22,9 +22,6 @@ export async function handleKeep(params: {
 }): Promise<void> {
   const { parsedValue, userId, currentWorkspaceId, currentDmChannelId, sessionId, body, client, logger } = params;
 
-  markSuggestionAsApplied(userId, parsedValue.currentNodeId, currentWorkspaceId);
-  logger.info(`Marked suggestion ${parsedValue.currentNodeId} as applied for user ${userId}`);
-
   const storedUpdates = getStoredDocumentUpdates(userId, currentWorkspaceId);
   const currentUpdate = storedUpdates.find((update) => update.nodeId === parsedValue.currentNodeId);
 
@@ -59,7 +56,7 @@ export async function handleKeep(params: {
   };
 
   try {
-    await applySelectedToGithubAction({
+    const applyResult = await applySelectedToGithubAction({
       ack: async () => {},
       body: {
         ...body,
@@ -68,6 +65,18 @@ export async function handleKeep(params: {
       client,
       logger,
     } as any);
+
+    // Only announce success and mark the suggestion applied if the GitHub commit
+    // actually landed. applySelectedToGithubAction handles its own failure DM, so
+    // a failed apply here must not broadcast "Document Updated" to the channel or
+    // remove the suggestion from the manager's review queue.
+    if (!applyResult?.success) {
+      logger.warn(`GitHub apply did not succeed for node ${currentUpdate.nodeId}; skipping success broadcast`);
+      return;
+    }
+
+    markSuggestionAsApplied(userId, parsedValue.currentNodeId, currentWorkspaceId);
+    logger.info(`Marked suggestion ${parsedValue.currentNodeId} as applied for user ${userId}`);
 
     const originalChannelId = currentUpdate.originalChannelId;
     if (originalChannelId && currentUpdate.nodeId) {

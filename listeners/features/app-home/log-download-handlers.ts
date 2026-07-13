@@ -3,12 +3,39 @@ import * as path from 'node:path';
 import type { App } from '@slack/bolt';
 import archiver from 'archiver';
 import { getWorkspaceId } from 'services/slack';
+import { requireManagerForAction } from './management/shared';
+
+/**
+ * Interaction logs from every workspace are written into shared daily files, so
+ * a raw copy would hand one workspace's manager every other workspace's Q&A
+ * content and user names. Return only the JSONL lines whose `workspaceId`
+ * matches the requester; malformed lines are dropped.
+ */
+function filterLogLinesForWorkspace(filePath: string, workspaceId: string): string {
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  const kept: string[] = [];
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      if (JSON.parse(line).workspaceId === workspaceId) {
+        kept.push(line);
+      }
+    } catch {
+      // Skip unparseable lines rather than leak them.
+    }
+  }
+  return kept.length > 0 ? `${kept.join('\n')}\n` : '';
+}
 
 export const registerLogDownloadHandlers = (app: App) => {
   app.action('download_today_logs', async ({ ack, body, client, logger }) => {
     await ack();
 
     try {
+      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+        return;
+      }
+
       const workspaceId = await getWorkspaceId(client);
       const today = new Date().toISOString().split('T')[0];
 
@@ -71,7 +98,10 @@ export const registerLogDownloadHandlers = (app: App) => {
       for (const logFile of logFiles) {
         const filePath = path.join(logsDir, logFile);
         if (fs.existsSync(filePath)) {
-          archive.file(filePath, { name: logFile });
+          const filtered = filterLogLinesForWorkspace(filePath, workspaceId);
+          if (filtered) {
+            archive.append(filtered, { name: logFile });
+          }
         }
       }
 
@@ -134,6 +164,10 @@ export const registerLogDownloadHandlers = (app: App) => {
     await ack();
 
     try {
+      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+        return;
+      }
+
       const workspaceId = await getWorkspaceId(client);
 
       const logsDir = path.join(process.cwd(), 'data', 'logs');
@@ -194,7 +228,10 @@ export const registerLogDownloadHandlers = (app: App) => {
       for (const logFile of logFiles) {
         const filePath = path.join(logsDir, logFile);
         if (fs.existsSync(filePath)) {
-          archive.file(filePath, { name: logFile });
+          const filtered = filterLogLinesForWorkspace(filePath, workspaceId);
+          if (filtered) {
+            archive.append(filtered, { name: logFile });
+          }
         }
       }
 

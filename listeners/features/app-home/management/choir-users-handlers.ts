@@ -1,7 +1,7 @@
 import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
 import { getCHOIRUsers, getWorkspaceId, setCHOIRUsers } from 'services/slack';
-import { logManagementButtonError, refreshAppHomeSoon } from './shared';
+import { logManagementButtonError, refreshAppHomeSoon, requireManagerForAction } from './shared';
 
 export const registerChoirUsersHandlers = (app: App) => {
   app.action('manage_choir_users', async ({ ack, body, client, logger }) => {
@@ -9,6 +9,10 @@ export const registerChoirUsersHandlers = (app: App) => {
     await ack();
 
     try {
+      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+        return;
+      }
+
       const workspaceId = await getWorkspaceId(client);
       const choirUsers = await getCHOIRUsers(workspaceId);
 
@@ -118,6 +122,11 @@ export const registerChoirUsersHandlers = (app: App) => {
     const startTime = Date.now();
 
     try {
+      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+        await ack();
+        return;
+      }
+
       const selectedUsers = view.state.values.choir_users_select_block.choir_users_select.selected_users || [];
 
       if (selectedUsers.length === 0) {

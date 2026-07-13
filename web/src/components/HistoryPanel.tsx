@@ -8,6 +8,8 @@ type HistoryPanelProps = {
   filePath: string;
   open: boolean;
   authenticated: boolean;
+  focusId?: string;
+  focusKey?: number;
   onClose: () => void;
   onSignIn: () => void;
 };
@@ -113,7 +115,16 @@ function HistoryDetail({ record }: { record: ProvenanceRecord }) {
   );
 }
 
-export function HistoryPanel({ workspaceId, filePath, open, authenticated, onClose, onSignIn }: HistoryPanelProps) {
+export function HistoryPanel({
+  workspaceId,
+  filePath,
+  open,
+  authenticated,
+  focusId,
+  focusKey,
+  onClose,
+  onSignIn,
+}: HistoryPanelProps) {
   const [records, setRecords] = useState<ProvenanceListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -206,6 +217,17 @@ export function HistoryPanel({ workspaceId, filePath, open, authenticated, onClo
     setExpandedId((prev) => (prev === id ? null : id));
   }, []);
 
+  // When a gutter marker is clicked, expand and scroll to its record. focusKey is
+  // an intentional re-trigger nonce so clicking the same marker re-focuses.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focusKey is a re-trigger nonce
+  useEffect(() => {
+    if (!focusId || !records) return;
+    setExpandedId(focusId);
+    document
+      .querySelector<HTMLElement>(`[data-record-id="${focusId}"]`)
+      ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [focusKey, focusId, records]);
+
   if (!open) return null;
 
   const showToolbar = authenticated && !error && records !== null && records.length > 0;
@@ -291,7 +313,11 @@ export function HistoryPanel({ workspaceId, filePath, open, authenticated, onClo
           <p className="history-empty">No history matches your filters.</p>
         ) : (
           filtered.map((rec) => (
-            <article key={rec.id} className={`history-item${expandedId === rec.id ? ' expanded' : ''}`}>
+            <article
+              key={rec.id}
+              data-record-id={rec.id}
+              className={`history-item${expandedId === rec.id ? ' expanded' : ''}`}
+            >
               <button type="button" className="history-item-head" onClick={() => toggle(rec.id)}>
                 <span className={`history-badge type-${rec.type}`}>{TYPE_LABEL[rec.type] ?? rec.type}</span>
                 <span className="history-item-meta">

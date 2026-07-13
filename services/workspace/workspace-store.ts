@@ -167,24 +167,43 @@ export class WorkspaceStore {
    * 워크스페이스 설정 가져오기
    */
   public async getWorkspaceConfig(workspaceId: string): Promise<WorkspaceConfig | null> {
+    let row: { configJson: string } | undefined;
     try {
-      const row = getDatabase()
+      row = getDatabase()
         .prepare('SELECT config_json AS configJson FROM workspace_configs WHERE workspace_id = ?')
         .get(workspaceId) as { configJson: string } | undefined;
+    } catch (error) {
+      // A DB read failure is not "no config" — surface it so callers don't
+      // treat the workspace as new and overwrite it.
+      this.logger.error(`Failed to query workspace config for ${workspaceId}: ${error}`);
+      throw error;
+    }
 
-      if (row) {
+    if (row) {
+      try {
         return this.hydrateDates(decryptJson<WorkspaceConfig>(row.configJson));
+      } catch (error) {
+        // The row EXISTS but won't decrypt (typically a wrong/rotated encryption
+        // key). Returning null here would make initializeWorkspace believe the
+        // workspace is new and overwrite this still-recoverable row, destroying
+        // managers, GitHub/OpenAI tokens, and the provenance context key. Fail
+        // closed instead so the misconfiguration can be corrected.
+        this.logger.error(`Failed to decrypt workspace config for ${workspaceId}: ${error}`);
+        throw new Error(
+          `Workspace config for ${workspaceId} exists but could not be decrypted (encryption key mismatch?). Refusing to proceed so the existing config is not overwritten.`,
+        );
       }
+    }
 
+    try {
       const legacyConfig = await this.readLegacyWorkspaceConfig(workspaceId);
       if (legacyConfig) {
         await this.saveWorkspaceConfig(legacyConfig);
         this.logger.info(`Migrated legacy workspace config into SQLite for: ${workspaceId}`);
       }
-
       return legacyConfig;
     } catch (error) {
-      this.logger.error(`Failed to load workspace config: ${error}`);
+      this.logger.error(`Failed to load legacy workspace config for ${workspaceId}: ${error}`);
       return null;
     }
   }

@@ -6,6 +6,35 @@ import { assertPublicUrl } from './fetch-remote-image';
 const FETCH_TIMEOUT_MS = 10000;
 const MAX_HTML_BYTES = 5 * 1024 * 1024;
 const MAX_TEXT_CHARS = 12000;
+const MAX_REDIRECTS = 5;
+
+/**
+ * Follows redirects manually, re-running the SSRF guard on every hop's target.
+ * `redirect: 'follow'` would let an attacker-controlled public page 302 to an
+ * internal host (cloud metadata, intranet) that the initial guard never saw.
+ */
+async function fetchFollowingPublicRedirects(startUrl: URL, signal: AbortSignal): Promise<Response | null> {
+  let currentUrl = startUrl;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    const response = await fetch(currentUrl, {
+      signal,
+      redirect: 'manual',
+      headers: { accept: 'text/html,application/xhtml+xml', 'user-agent': 'CHOIR-docs-bot/1.0' },
+    });
+
+    if (response.status < 300 || response.status >= 400) {
+      return response;
+    }
+
+    const location = response.headers.get('location');
+    if (!location) return response;
+
+    const nextUrl = await assertPublicUrl(new URL(location, currentUrl).href);
+    if (!nextUrl) return null; // redirect points at a non-public host → refuse
+    currentUrl = nextUrl;
+  }
+  return null; // too many redirects
+}
 
 export interface UrlContent {
   title: string;
@@ -25,12 +54,8 @@ export async function fetchUrlText(rawUrl: string): Promise<UrlContent | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: { accept: 'text/html,application/xhtml+xml', 'user-agent': 'CHOIR-docs-bot/1.0' },
-    });
-    if (!response.ok) return null;
+    const response = await fetchFollowingPublicRedirects(url, controller.signal);
+    if (!response || !response.ok) return null;
 
     const contentType = (response.headers.get('content-type') || '').toLowerCase();
     if (!contentType.includes('text/html') && !contentType.includes('xhtml')) return null;
@@ -42,7 +67,10 @@ export async function fetchUrlText(rawUrl: string): Promise<UrlContent | null> {
     if (buffer.length === 0 || buffer.length > MAX_HTML_BYTES) return null;
 
     // A bare VirtualConsole (no listeners) silences jsdom's parse warnings.
-    const dom = new JSDOM(buffer.toString('utf-8'), { url: url.href, virtualConsole: new VirtualConsole() });
+    const dom = new JSDOM(buffer.toString('utf-8'), {
+      url: response.url || url.href,
+      virtualConsole: new VirtualConsole(),
+    });
     const article = new Readability(dom.window.document).parse();
     const title = (article?.title || dom.window.document.title || '').trim();
 

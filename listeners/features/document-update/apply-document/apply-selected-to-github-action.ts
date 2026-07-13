@@ -7,12 +7,18 @@ import { getUserName, getWorkspaceId } from 'services/slack';
 import { createDocumentUpdateText } from 'services/slack/message-text-utils';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
+export interface ApplyToGithubResult {
+  success: boolean;
+  successfulFileNames: string[];
+  failedFileNames: string[];
+}
+
 // Apply changes to GitHub
 export const applySelectedToGithubAction = async ({
   ack,
   body,
   client,
-}: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
+}: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>): Promise<ApplyToGithubResult> => {
   const startTime = Date.now();
   await ack();
 
@@ -45,7 +51,7 @@ export const applySelectedToGithubAction = async ({
         user: userId,
         text: 'No document updates found. Please try suggesting updates first.',
       });
-      return;
+      return { success: false, successfulFileNames: [], failedFileNames: [] };
     }
 
     console.log(`Found ${documentUpdates.length} document updates for user ${userId}`);
@@ -267,6 +273,12 @@ export const applySelectedToGithubAction = async ({
     console.log(
       `Document updates applied to GitHub for user ${userId}: ${successfulUpdates.length} successful, ${failedUpdates.length} failed`,
     );
+
+    return {
+      success: failedUpdates.length === 0 && successfulUpdates.length > 0,
+      successfulFileNames: successfulUpdates.map((u) => u.fileName),
+      failedFileNames: failedUpdates,
+    };
   } catch (error) {
     console.error('Error applying updates to GitHub:', error);
 
@@ -365,5 +377,7 @@ export const applySelectedToGithubAction = async ({
     } catch (dmError) {
       console.error('Failed to send error message to DM:', dmError);
     }
+
+    return { success: false, successfulFileNames: [], failedFileNames: [] };
   }
 };

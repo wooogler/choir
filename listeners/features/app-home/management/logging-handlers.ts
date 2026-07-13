@@ -2,7 +2,7 @@ import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick } from 'services/common/interaction-tracker';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
-import { logManagementButtonError, refreshAppHomeSoon } from './shared';
+import { logManagementButtonError, refreshAppHomeSoon, requireManagerForAction } from './shared';
 
 export const registerLoggingHandlers = (app: App) => {
   app.action('toggle_logging', async ({ ack, body, client, logger }) => {
@@ -10,6 +10,10 @@ export const registerLoggingHandlers = (app: App) => {
     await ack();
 
     try {
+      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+        return;
+      }
+
       const workspaceId = await getWorkspaceId(client);
       const workspaceStore = new WorkspaceStore();
       const currentLogging = await workspaceStore.getLoggingEnabled(workspaceId);

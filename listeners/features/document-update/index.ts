@@ -33,7 +33,11 @@ export const registerDocumentUpdateFeature = (app: App) => {
   app.action('skip_suggestion', suggestUpdatesCallback);
   app.action('restart_update_review', suggestUpdatesCallback); // 🔄 Start Over — restart from the first suggestion
   app.action('reject_update', rejectUpdateCallback);
-  app.action('apply_to_document', applySelectedToGithubAction);
+  app.action('apply_to_document', async (args) => {
+    // Handler returns an ApplyToGithubResult (consumed by keep-flow); Bolt's
+    // action registration expects Promise<void>, so discard it here.
+    await applySelectedToGithubAction(args as Parameters<typeof applySelectedToGithubAction>[0]);
+  });
   app.action('apply_extracted_knowledge', applyExtractedKnowledgeCallback);
   app.action('cancel_knowledge_extraction', cancelKnowledgeExtractionCallback);
   app.action('send_update_suggestion_to_manager', sendUpdateSuggestionToManagerCallback);

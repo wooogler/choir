@@ -117,6 +117,24 @@ export class GitHubSyncService {
       Logger.warn('GitHubSyncService: failed to mirror provenance context files', error as Error);
     }
 
+    // Keep the parallel git clone (blame / line-history source) warm on the same
+    // triggers. Best-effort — blame degrades gracefully if it isn't available.
+    try {
+      const remoteUrl = await GithubService.getInstance().getAuthenticatedRemoteUrl({
+        owner: repoInfo.owner,
+        repo: repoInfo.repo,
+        workspaceId: params.workspaceId,
+        userId: params.userId,
+      });
+      await WorkspaceMirrorService.getInstance().ensureGitClone({
+        workspaceId: params.workspaceId,
+        remoteUrl,
+        branch: repoInfo.branch,
+      });
+    } catch (error) {
+      Logger.warn('GitHubSyncService: git clone refresh failed', error as Error);
+    }
+
     return markdownFiles;
   }
 

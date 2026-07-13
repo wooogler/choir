@@ -1,4 +1,3 @@
-import * as crypto from 'node:crypto';
 import type { WebClient } from '@slack/web-api';
 import { getGithubRepo, getWorkspaceId } from 'services/slack';
 import {
@@ -11,21 +10,9 @@ import {
 import { GitHubSyncService } from 'services/sync/github-sync-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 
-/**
- * GitHub webhook 서명을 검증하는 함수
- */
-export function verifyGitHubSignature(payload: string, signature: string, secret: string): boolean {
-  if (!signature || !secret) {
-    return false;
-  }
-
-  const expectedSignature = crypto.createHmac('sha256', secret).update(payload, 'utf8').digest('hex');
-
-  const expectedSignatureWithPrefix = `sha256=${expectedSignature}`;
-
-  // timing attack을 방지하기 위해 crypto.timingSafeEqual 사용
-  return crypto.timingSafeEqual(Buffer.from(signature, 'utf8'), Buffer.from(expectedSignatureWithPrefix, 'utf8'));
-}
+// Signature verification lives in a dependency-free module so it can be unit
+// tested without loading the Octokit/Slack graph. Re-exported here for callers.
+export { verifyGitHubSignature } from './verify-signature';
 
 /**
  * 현재 워크스페이스가 해당 저장소와 매칭되는지 확인

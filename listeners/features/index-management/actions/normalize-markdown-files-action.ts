@@ -181,6 +181,9 @@ export const normalizeMarkdownFilesAction = async ({
             path: file.path,
             content: normalizedMarkdown,
             message: `Normalize markdown formatting for ${file.name}`,
+            branch: currentDefaultBranch,
+            workspaceId: workspaceId,
+            userId: body.user.id,
           });
 
           logger.info(`Successfully normalized: ${file.name}`);

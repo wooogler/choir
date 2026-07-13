@@ -145,7 +145,7 @@ export const registerManagerPromotionHandlers = (app: App) => {
           'manager_promotion_modal',
           Date.now() - startTime,
           true,
-          `Manager promotion with password: ${password}`,
+          'Manager promotion succeeded',
           {
             promoted: true,
           },
@@ -165,7 +165,7 @@ export const registerManagerPromotionHandlers = (app: App) => {
           'manager_promotion_modal',
           Date.now() - startTime,
           false,
-          `Manager promotion with invalid password: ${password}`,
+          'Manager promotion failed: invalid password',
           {
             error: 'Invalid password',
           },

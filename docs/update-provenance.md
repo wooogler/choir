@@ -193,6 +193,32 @@ public; only this panel requires sign-in. Timeline → expand an entry to show:
 3. Legacy `CommitInfo` / `getHistoryOfMarkdownUpdate` JSON-in-message path: **retire**
    (check callers in `services/github/commit-manager.ts` consumers first).
 
+## Line-anchored history (git blame)
+
+Gutter markers next to changed blocks in the doc; clicking one opens the panel
+anchored to the record that changed that line. Mapping uses **git blame**, not
+text-matching of records to blocks:
+
+```
+current line → (git blame) → commit SHA → (git log --diff-filter=A on
+  .choir/context/<doc>/) → record   (record is committed in the SAME commit
+  as its doc change, so commit→record is exact)
+```
+
+- **Parallel git clone** kept alongside the API mirror (`data/workspaces/<ws>/gitrepo/`,
+  blame-only) — chosen over swapping the mirror to a clone because the mirror has
+  coupled machinery (orphan removal / sections / path-map / sync-state). Clone auth
+  reuses `getAuthenticatedRemoteUrl` (token in URL, never logged); refreshed on the
+  same sync triggers and before each blame. Needs the `git` binary (`simple-git`).
+- `getLineProvenance` → `GET /api/docs/:ws/provenance/*splat?lines=1` →
+  `{ lines: { [lineNo]: recordId } }`, member-gated.
+- Frontend: match each rendered ProseMirror block's text to a source line
+  (current-render vs current-source, so high fidelity), look up `lines[lineNo]`,
+  render an absolutely-positioned gutter marker; click → expand+scroll the panel to
+  that record. Markers hidden while editing / on mobile; recomputed on layout shift.
+- Lines changed outside CHOIR (no record) simply get no marker — blame degrades
+  gracefully.
+
 ## Build order
 
 1. **Foundation** — `encrypt/decryptStringWithKey` in `services/db/crypto.ts`;

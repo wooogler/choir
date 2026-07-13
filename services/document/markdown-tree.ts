@@ -50,6 +50,31 @@ function nodeToMarkdown(node: any): string {
     return `\`${node.value || ''}\``;
   }
 
+  // Images MUST be preserved: without this case an image node (no value, no
+  // children) flattens to '' and is silently deleted from the committed file.
+  if (node.type === 'image') {
+    const title = node.title ? ` "${node.title}"` : '';
+    return `![${node.alt || ''}](${node.url || ''}${title})`;
+  }
+
+  if (node.type === 'imageReference') {
+    return `![${node.alt || ''}][${node.label || node.identifier || ''}]`;
+  }
+
+  if (node.type === 'linkReference') {
+    const text = node.children ? node.children.map((child: any) => nodeToMarkdown(child)).join('') : '';
+    return `[${text}][${node.label || node.identifier || ''}]`;
+  }
+
+  if (node.type === 'delete') {
+    const text = node.children ? node.children.map((child: any) => nodeToMarkdown(child)).join('') : '';
+    return `~~${text}~~`;
+  }
+
+  if (node.type === 'break') {
+    return '\n';
+  }
+
   // 기본적으로 자식 노드들을 재귀적으로 처리
   if (node.children && Array.isArray(node.children)) {
     return node.children.map((child: any) => nodeToMarkdown(child)).join('');
@@ -333,6 +358,32 @@ export function treeToMarkdown(docTree: DocumentTree): string {
         const linkUrl = node.url || '';
         return `[${linkText}](${linkUrl})`;
       }
+
+      case 'image': {
+        const imageTitle = node.title ? ` "${node.title}"` : '';
+        return `![${node.alt || ''}](${node.url || ''}${imageTitle})`;
+      }
+
+      case 'imageReference':
+        return `![${node.alt || ''}][${node.label || node.identifier || ''}]`;
+
+      case 'linkReference': {
+        const refText = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('') : '';
+        return `[${refText}][${node.label || node.identifier || ''}]`;
+      }
+
+      case 'definition': {
+        const defTitle = node.title ? ` "${node.title}"` : '';
+        return `[${node.label || node.identifier || ''}]: ${node.url || ''}${defTitle}`;
+      }
+
+      case 'delete': {
+        const deleteText = node.children ? node.children.map((child: any) => astToMarkdown(child, depth)).join('') : '';
+        return `~~${deleteText}~~`;
+      }
+
+      case 'break':
+        return '\n';
 
       case 'thematicBreak':
         return '---';

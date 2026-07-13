@@ -28,7 +28,15 @@
   },
   "author": "CHOIR contributors",
   "license": "MIT",
-  "keywords": ["slack", "bolt", "typescript", "github", "openai", "knowledge-base", "rag"],
+  "keywords": [
+    "slack",
+    "bolt",
+    "typescript",
+    "github",
+    "openai",
+    "knowledge-base",
+    "rag"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/wooogler/choir.git"
@@ -54,6 +62,7 @@
     "openai": "^4.80.0",
     "remark-parse": "^11.0.0",
     "serve-static": "^2.2.1",
+    "simple-git": "^3.36.0",
     "unified": "^11.0.5",
     "unist-util-is": "^6.0.0",
     "unist-util-visit": "^5.0.0",
