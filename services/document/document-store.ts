@@ -351,9 +351,11 @@ export function calculateDynamicOrder(userId: string, workspaceId?: string): Doc
     return [];
   }
 
-  // 파일이 선택되지 않은 경우: initial search 결과만 사용
+  // 파일이 선택되지 않은 경우: initial search 결과 사용 (단, 이미 적용된 제안은 제외).
+  // Without this filter, applied suggestions were re-served after an Apply when no
+  // file was selected.
   if (!state.isFileSelected) {
-    return state.initialSearchResults;
+    return state.initialSearchResults.filter((doc) => !state.appliedSuggestions.has(doc.metadata?.nodeId || ''));
   }
 
   // 파일이 선택된 경우: 동적 순서 계산

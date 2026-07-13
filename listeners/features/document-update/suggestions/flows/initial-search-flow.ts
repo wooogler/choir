@@ -61,7 +61,7 @@ export async function runInitialSearch(params: {
     return undefined;
   };
 
-  const [searchResults, newFileDefaults] = await Promise.all([
+  const [rawSearchResults, newFileDefaults] = await Promise.all([
     QmdUpdateAnchorService.getInstance().search({
       workspaceId,
       query: knowledgeContent,
@@ -69,6 +69,18 @@ export async function runInitialSearch(params: {
     }) as Promise<Document<DocumentMetadata>[]>,
     computeNewFileDefaults(),
   ]);
+
+  // Read-only files are protected from updates, so exclude them from the review
+  // suggestions AND the auto-selected review target below (they used to slip
+  // through because only the no-results fallback filtered them). Read-only files
+  // are keyed by basename; search metadata carries the full path.
+  const readOnlyFiles = await new WorkspaceStore().getReadOnlyFiles(currentWorkspaceId);
+  const isReadOnlyFile = (fileName: string | undefined): boolean => {
+    const name = fileName || '';
+    const base = name.split('/').pop() || name;
+    return readOnlyFiles.includes(base) || readOnlyFiles.includes(name);
+  };
+  const searchResults = rawSearchResults.filter((doc) => !isReadOnlyFile(doc.metadata?.fileName));
 
   storeSearchResults(userId, searchResults, currentWorkspaceId);
   initializeFileSelectionState(userId, false, undefined, searchResults, [], currentWorkspaceId);
@@ -109,8 +121,8 @@ export async function runInitialSearch(params: {
       return { shouldReturn: true, searchResults: [] };
     }
 
-    // Only offer writable files so the recommended target is always selectable.
-    const readOnlyFiles = await new WorkspaceStore().getReadOnlyFiles(currentWorkspaceId);
+    // Only offer writable files so the recommended target is always selectable
+    // (readOnlyFiles fetched above).
     const availableFiles = allMarkdownFiles
       .filter((file: any) => !readOnlyFiles.includes(file.name))
       .map((file: any) => ({
