@@ -10,6 +10,15 @@ import { PathMapService } from './path-map-service';
 
 export type WorkspaceSyncSource = 'startup' | 'webhook' | 'manual-refresh' | 'document-update' | 'create-file';
 
+// Section files are stored at `sections/<original-repo-path>/<index>.md`, keeping
+// the doc's `.md` extension in the directory name so a file `x.md` and a
+// directory `x/` never collide (previously both mapped to `sections/x`, letting a
+// write of x.md `rm -rf` the sections of every doc under x/). Bump this when the
+// on-disk section layout changes so existing workspaces rebuild sections — and,
+// via the versioned QMD db path, their search index — on next access.
+const SECTIONS_FORMAT_VERSION = '2';
+const SECTIONS_FORMAT_MARKER = '.format';
+
 export interface WorkspaceSyncState {
   workspaceId: string;
   owner?: string;
@@ -125,11 +134,51 @@ export class WorkspaceMirrorService {
     return targetPath;
   }
 
+  /**
+   * One-time, self-healing migration: if the on-disk section layout predates the
+   * current SECTIONS_FORMAT_VERSION (or is unstamped), wipe the existing section
+   * directories so the caller rebuilds them in the current layout, then stamp the
+   * version. Only the full-rebuild paths (populateSectionsIfEmpty / writeMarkdownFiles)
+   * call this — single-file writes must not wipe the whole index.
+   */
+  private ensureSectionsFormat(workspaceId: string): void {
+    const sectionsRoot = this.getSectionsRoot(workspaceId);
+    const markerPath = path.join(sectionsRoot, SECTIONS_FORMAT_MARKER);
+
+    let current: string | null = null;
+    try {
+      current = fs.existsSync(markerPath) ? fs.readFileSync(markerPath, 'utf-8').trim() : null;
+    } catch {
+      current = null;
+    }
+    if (current === SECTIONS_FORMAT_VERSION) return;
+
+    if (fs.existsSync(sectionsRoot)) {
+      for (const entry of fs.readdirSync(sectionsRoot)) {
+        if (entry === SECTIONS_FORMAT_MARKER) continue;
+        fs.rmSync(path.join(sectionsRoot, entry), { recursive: true, force: true });
+      }
+    } else {
+      fs.mkdirSync(sectionsRoot, { recursive: true });
+    }
+    fs.writeFileSync(markerPath, SECTIONS_FORMAT_VERSION, 'utf-8');
+    if (current !== null) {
+      Logger.info('Workspace mirror migrated sections/ to a new layout format', {
+        workspaceId,
+        from: current,
+        to: SECTIONS_FORMAT_VERSION,
+      });
+    }
+  }
+
   public async populateSectionsIfEmpty(workspaceId: string): Promise<void> {
     const sectionsRoot = this.getSectionsRoot(workspaceId);
     const repoRoot = this.getRepoRoot(workspaceId);
 
     if (!fs.existsSync(repoRoot)) return;
+
+    // Rebuild from scratch if the on-disk layout is stale (wipes old-format dirs).
+    this.ensureSectionsFormat(workspaceId);
 
     const sectionsHasFiles =
       fs.existsSync(sectionsRoot) &&
@@ -162,8 +211,9 @@ export class WorkspaceMirrorService {
 
   private async writeSectionFiles(workspaceId: string, relativePath: string, content: string): Promise<void> {
     const sectionsRoot = this.getSectionsRoot(workspaceId);
-    const withoutExt = relativePath.replace(/\.md$/i, '');
-    const sectionDir = path.join(sectionsRoot, withoutExt);
+    // Keep the `.md` in the directory name so the file `x.md` (→ sections/x.md/)
+    // and a directory `x/` (→ sections/x/foo.md/) occupy disjoint namespaces.
+    const sectionDir = path.join(sectionsRoot, relativePath);
 
     if (fs.existsSync(sectionDir)) {
       await fs.promises.rm(sectionDir, { recursive: true, force: true });
@@ -195,6 +245,9 @@ export class WorkspaceMirrorService {
 
   public async writeMarkdownFiles(workspaceId: string, markdownFiles: MarkdownFile[]): Promise<void> {
     this.ensureWorkspaceLayout(workspaceId);
+    // Full rewrite: migrate a stale on-disk layout before writing so old-format
+    // section dirs don't linger alongside the new ones.
+    this.ensureSectionsFormat(workspaceId);
 
     for (const markdownFile of markdownFiles) {
       await this.writeMarkdownFile(workspaceId, markdownFile.path, markdownFile.content);
@@ -215,8 +268,9 @@ export class WorkspaceMirrorService {
       return;
     }
 
-    // Expected section dirs: one per expected file (strip .md, preserve subdirs)
-    const expectedSectionDirs = new Set(Array.from(expectedPaths).map((p) => p.replace(/\.md$/i, '')));
+    // Expected section dirs: one per expected file, keyed by the full repo path
+    // WITH its .md extension (matching writeSectionFiles' layout).
+    const expectedSectionDirs = new Set(expectedPaths);
 
     const topLevelEntries = await fs.promises.readdir(sectionsRoot, { withFileTypes: true });
     for (const entry of topLevelEntries) {

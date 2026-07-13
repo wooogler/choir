@@ -104,7 +104,11 @@ export class QmdRetrievalProvider implements RetrievalProvider {
 
   private getDbPath(workspaceId: string): string {
     const workspaceRoot = WorkspaceMirrorService.getInstance().getWorkspaceRoot(workspaceId);
-    return path.join(workspaceRoot, 'state', 'qmd-index.sqlite');
+    // The `-v2` suffix is tied to the section-file on-disk layout (see
+    // SECTIONS_FORMAT_VERSION in mirror-service): when that layout changes the
+    // index must be rebuilt from the new section paths, so a new db file is used
+    // and the stale one is simply abandoned.
+    return path.join(workspaceRoot, 'state', 'qmd-index-v2.sqlite');
   }
 
   private getSectionsRoot(workspaceId: string): string {
@@ -394,6 +398,9 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       Logger.warn('QmdRetrievalProvider: workspaceId missing, returning empty results');
       return [];
     }
+    // Capture the narrowed value so the nested map closures below don't need a
+    // non-null assertion (control-flow narrowing is lost inside closures).
+    const workspaceId = params.workspaceId;
 
     try {
       const storeEntry = await this.getOrCreateStore(params.workspaceId);
@@ -430,7 +437,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
               owner: storeEntry.owner,
               repo: storeEntry.repo,
               branch: storeEntry.branch,
-              workspaceId: params.workspaceId!,
+              workspaceId,
             }),
           );
         }
@@ -469,7 +476,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
           owner: storeEntry.owner,
           repo: storeEntry.repo,
           branch: storeEntry.branch,
-          workspaceId: params.workspaceId!,
+          workspaceId,
         }),
       );
     } catch (error) {

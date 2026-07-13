@@ -115,12 +115,18 @@ export function stripItemHeadingPrefix(sectionBody: string): string {
 
 /**
  * Converts a section-relative path back to the original file's relative path.
- * e.g. "policies/0.md"                → "policies.md"
- *      "docs/guide/3.md"              → "docs/guide.md"
+ * Section files live under `<original-path>/<index>.md` where <original-path>
+ * KEEPS its `.md` extension (so the file `x.md` and a directory `x/` never share
+ * a section directory). Recovering the original path is therefore just dropping
+ * the trailing `/<index>.md` segment — no `.md` re-append.
+ * e.g. "policies.md/0.md"      → "policies.md"
+ *      "docs/guide.md/3.md"    → "docs/guide.md"
+ *      "x/foo.md/0.md"         → "x/foo.md"   (doc under directory x/)
+ *      "x.md/0.md"             → "x.md"       (the file x.md — no collision)
  */
 export function sectionPathToOriginalPath(sectionRelativePath: string): string {
   const normalized = sectionRelativePath.replace(/\\/g, '/');
   const parts = normalized.split('/');
   if (parts.length <= 1) return normalized;
-  return parts.slice(0, -1).join('/') + '.md';
+  return parts.slice(0, -1).join('/');
 }
