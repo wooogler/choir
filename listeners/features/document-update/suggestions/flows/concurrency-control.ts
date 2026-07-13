@@ -114,12 +114,18 @@ export async function runConcurrencyControl(params: {
       return true;
     }
 
-    // Claim processing
-    const managerName = await getUserName(userId, client);
+    // Claim processing ATOMICALLY: write the claim before any await, so a second
+    // manager's handler (which only runs when this one yields) sees the claim and
+    // hits the conflict path above. Previously an `await getUserName` sat between
+    // the status check and the store, letting two managers both claim.
     sessionData.status = 'processing';
     sessionData.processingBy = userId;
-    sessionData.processingManagerName = managerName;
     sessionData.processingAt = new Date().toISOString();
+    storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE, MANAGER_SESSION_EXPIRY);
+
+    // Now safe to do async work: resolve the display name and persist it.
+    const managerName = await getUserName(userId, client);
+    sessionData.processingManagerName = managerName;
     storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE, MANAGER_SESSION_EXPIRY);
 
     logger.info(`Manager ${managerName} (${userId}) claimed processing for session ${sessionId}`);
