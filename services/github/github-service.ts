@@ -5,6 +5,7 @@ import { Logger } from 'services/common/logger';
 import { type DocumentTree, parseMarkdownToTree } from 'services/document';
 import type { SlackMessage } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
+import { findConcurrentlyChangedPath } from './commit-concurrency';
 
 export interface MarkdownFile {
   name: string;
@@ -541,6 +542,35 @@ class GithubService {
    *
    * See docs/update-provenance.md.
    */
+  /**
+   * Resolves each path's blob SHA at a given ref (commit/branch), or null when
+   * the path does not exist there. Used to detect concurrent modifications to the
+   * files we are about to commit. 404s map to null; other errors propagate.
+   */
+  private async getTargetBlobShas(
+    octokit: Octokit,
+    owner: string,
+    repo: string,
+    paths: string[],
+    ref: string,
+  ): Promise<Map<string, string | null>> {
+    const shas = new Map<string, string | null>();
+    for (const path of paths) {
+      try {
+        const res = await this.throttledRequest(() => octokit.rest.repos.getContent({ owner, repo, path, ref }));
+        const data = (res as any).data;
+        shas.set(path, !Array.isArray(data) && data && 'sha' in data ? data.sha : null);
+      } catch (error) {
+        if ((error as { status?: number }).status === 404) {
+          shas.set(path, null);
+        } else {
+          throw error;
+        }
+      }
+    }
+    return shas;
+  }
+
   async commitFilesWithContext(params: {
     owner: string;
     repo: string;
@@ -575,11 +605,33 @@ class GithubService {
         }),
       );
 
+      const targetPaths = params.files.map((f) => f.path);
       const maxAttempts = 4;
       let commitSha = '';
+      let firstHeadSha: string | undefined;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         const refResponse = await this.throttledRequest(() => octokit.rest.git.getRef({ owner, repo, ref }));
         const headSha = (refResponse as any).data.object.sha;
+
+        if (attempt === 1) {
+          firstHeadSha = headSha;
+        } else if (firstHeadSha && firstHeadSha !== headSha) {
+          // The branch moved since our first attempt. Re-committing our pre-built
+          // blobs on the new head would silently overwrite a concurrent commit if
+          // it touched one of our files, so compare each target's blob SHA at the
+          // original base vs the new head and abort on a real clash.
+          const [baseShas, headShas] = await Promise.all([
+            this.getTargetBlobShas(octokit, owner, repo, targetPaths, firstHeadSha),
+            this.getTargetBlobShas(octokit, owner, repo, targetPaths, headSha),
+          ]);
+          const clashedPath = findConcurrentlyChangedPath(targetPaths, baseShas, headShas);
+          if (clashedPath) {
+            throw new GitHubError(
+              `Concurrent modification of ${clashedPath} while committing; aborting to avoid overwriting it`,
+              { code: ErrorCodes.GITHUB_UPDATE_FAILED, metadata: { owner, repo, path: clashedPath } },
+            );
+          }
+        }
 
         const headCommit = await this.throttledRequest(() =>
           octokit.rest.git.getCommit({ owner, repo, commit_sha: headSha }),
