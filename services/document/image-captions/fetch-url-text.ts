@@ -1,7 +1,7 @@
 import { Readability } from '@mozilla/readability';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { Logger } from 'services/common/logger';
-import { assertPublicUrl } from './fetch-remote-image';
+import { assertPublicUrl, readBodyCapped } from './fetch-remote-image';
 
 const FETCH_TIMEOUT_MS = 10000;
 const MAX_HTML_BYTES = 5 * 1024 * 1024;
@@ -63,8 +63,10 @@ export async function fetchUrlText(rawUrl: string): Promise<UrlContent | null> {
     const declaredLength = Number(response.headers.get('content-length') || '0');
     if (declaredLength && declaredLength > MAX_HTML_BYTES) return null;
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length === 0 || buffer.length > MAX_HTML_BYTES) return null;
+    // Enforce the cap while streaming so a missing/lying content-length can't
+    // make us buffer more than MAX_HTML_BYTES.
+    const buffer = await readBodyCapped(response, MAX_HTML_BYTES);
+    if (!buffer) return null;
 
     // A bare VirtualConsole (no listeners) silences jsdom's parse warnings.
     const dom = new JSDOM(buffer.toString('utf-8'), {

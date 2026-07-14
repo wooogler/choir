@@ -137,6 +137,21 @@ export class WorkspaceStore {
   }
 
   /**
+   * Deletes the on-disk legacy config file after it has been migrated into the
+   * encrypted SQLite store. The legacy JSON holds GitHub OAuth tokens and the
+   * provenance context key in plaintext, so leaving it in place would keep those
+   * secrets readable on disk. Best-effort: a failure is logged, not thrown.
+   */
+  private async deleteLegacyWorkspaceConfigFile(workspaceId: string): Promise<void> {
+    const configPath = this.getWorkspaceConfigPath(workspaceId);
+    try {
+      await fs.promises.rm(configPath, { force: true });
+    } catch (error) {
+      this.logger.warn(`Failed to remove migrated legacy config file for ${workspaceId}: ${error}`);
+    }
+  }
+
+  /**
    * 워크스페이스 설정 저장
    */
   public async saveWorkspaceConfig(config: WorkspaceConfig): Promise<void> {
@@ -246,6 +261,10 @@ export class WorkspaceStore {
       const legacyConfig = await this.readLegacyWorkspaceConfig(workspaceId);
       if (legacyConfig) {
         await this.saveWorkspaceConfig(legacyConfig);
+        // The legacy file holds GitHub tokens / the context key in PLAINTEXT.
+        // Now that it's encrypted in SQLite, delete it so the plaintext copy
+        // doesn't linger on disk indefinitely.
+        await this.deleteLegacyWorkspaceConfigFile(workspaceId);
         this.logger.info(`Migrated legacy workspace config into SQLite for: ${workspaceId}`);
       }
       return legacyConfig;
@@ -856,6 +875,8 @@ export class WorkspaceStore {
         const config = await this.readLegacyWorkspaceConfig(workspaceId);
         if (config) {
           await this.saveWorkspaceConfig(config);
+          // Remove the plaintext (token-bearing) legacy file post-migration.
+          await this.deleteLegacyWorkspaceConfigFile(workspaceId);
           configs.push(config);
         }
       }

@@ -71,6 +71,43 @@ export async function assertPublicUrl(rawUrl: string): Promise<URL | null> {
   return url;
 }
 
+/**
+ * Reads a response body into a Buffer, aborting as soon as the running total
+ * exceeds `maxBytes`. Enforcing the cap while streaming (rather than buffering the
+ * whole body first) stops a server that omits or lies about content-length from
+ * forcing an unbounded allocation. Returns null if the cap is hit or the body is
+ * empty.
+ */
+export async function readBodyCapped(response: Response, maxBytes: number): Promise<Buffer | null> {
+  const body = response.body;
+  if (!body) {
+    // No readable stream (rare) — buffer, but still enforce the cap afterward.
+    const buf = Buffer.from(await response.arrayBuffer());
+    return buf.length === 0 || buf.length > maxBytes ? null : buf;
+  }
+
+  const reader = body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+
+  return total === 0 ? null : Buffer.concat(chunks, total);
+}
+
 export async function fetchRemoteImage(rawUrl: string): Promise<RemoteImage | null> {
   const url = await assertPublicUrl(rawUrl);
   if (!url) return null;
@@ -91,8 +128,10 @@ export async function fetchRemoteImage(rawUrl: string): Promise<RemoteImage | nu
     const declaredLength = Number(response.headers.get('content-length') || '0');
     if (declaredLength && declaredLength > MAX_REMOTE_BYTES) return null;
 
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length === 0 || bytes.length > MAX_REMOTE_BYTES) return null;
+    // Enforce the cap while streaming so a missing/lying content-length can't
+    // make us allocate more than MAX_REMOTE_BYTES.
+    const bytes = await readBodyCapped(response, MAX_REMOTE_BYTES);
+    if (!bytes) return null;
 
     return { bytes, contentType };
   } catch (error) {
