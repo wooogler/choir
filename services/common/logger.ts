@@ -9,9 +9,18 @@ interface LogMetadata {
 }
 
 export class Logger {
+  // Error objects have no enumerable own properties, so plain JSON.stringify turns
+  // them into '{}', silently dropping the message/stack. Serialize them explicitly.
+  private static jsonReplacer(_key: string, value: unknown): unknown {
+    if (value instanceof Error) {
+      return { name: value.name, message: value.message, stack: value.stack };
+    }
+    return value;
+  }
+
   private static formatMessage(level: string, message: string, metadata?: LogMetadata): string {
     const timestamp = new Date().toISOString();
-    const metaStr = metadata ? ` | ${JSON.stringify(metadata)}` : '';
+    const metaStr = metadata ? ` | ${JSON.stringify(metadata, Logger.jsonReplacer)}` : '';
     return `[${timestamp}] [${level.toUpperCase()}] ${message}${metaStr}`;
   }
 

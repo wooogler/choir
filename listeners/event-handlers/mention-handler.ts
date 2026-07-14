@@ -56,7 +56,10 @@ const appMentionCallback = async ({
 
     // 봇 사용자 ID 패턴 필터링 (대부분 봇은 B로 시작하거나 특별한 패턴)
     // Google Drive bot, 기타 앱 봇들을 포괄적으로 필터링
-    if (userId.startsWith('B') || userId.includes('bot') || userId.includes('BOT')) {
+    if (userId.startsWith('B')) {
+      // Bot USERS have ids starting with 'B'; app-bot messages are already filtered
+      // by event.bot_id/subtype above. (Dropped the includes('bot'/'BOT') substring
+      // checks, which also matched legitimate user ids containing those letters.)
       logger.info('Skipping bot user message in mention to prevent infinite loop', {
         channel: event.channel,
         userId: userId,

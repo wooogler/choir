@@ -2,13 +2,22 @@ import { Logger } from 'services/common/logger';
 
 export interface RateLimitError extends Error {
   code?: string;
+  // @slack/web-api's WebAPIRateLimitedError puts the delay here (seconds).
+  retryAfter?: number;
   data?: {
+    error?: string;
     retryAfter?: number;
   };
 }
 
 export function isRateLimitError(error: any): error is RateLimitError {
-  return error?.code === 'slack_webapi_platform_error' && error?.data?.error === 'rate_limited';
+  // A 429 throws a RateLimitedError (code 'slack_webapi_rate_limited_error') with a
+  // top-level retryAfter — NOT a platform_error. The old platform_error check never
+  // matched, so the retry path never ran. Accept both forms to be safe.
+  return (
+    error?.code === 'slack_webapi_rate_limited_error' ||
+    (error?.code === 'slack_webapi_platform_error' && error?.data?.error === 'rate_limited')
+  );
 }
 
 export async function withRateLimit<T>(operation: () => Promise<T>, description: string, maxRetries = 3): Promise<T> {
@@ -21,7 +30,7 @@ export async function withRateLimit<T>(operation: () => Promise<T>, description:
       lastError = error as Error;
 
       if (isRateLimitError(error)) {
-        const retryAfter = error.data?.retryAfter || 60; // Default to 60 seconds
+        const retryAfter = error.retryAfter ?? error.data?.retryAfter ?? 60; // Default to 60 seconds
         Logger.warn(
           `Rate limit hit for ${description}. Attempt ${attempt}/${maxRetries}. Retrying in ${retryAfter} seconds...`,
         );

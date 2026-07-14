@@ -138,9 +138,9 @@ export async function handleIncomingMessage(
     // DM에서 Clear 명령어 체크 (로딩 메시지 전에)
     if (event.channel_type === 'im') {
       const clearCommands = ['clear', 'reset', '/clear', '/reset', 'clear chat', 'reset chat'];
-      const isClearCommand = clearCommands.some(
-        (cmd) => message.trim().toLowerCase() === cmd || message.trim().toLowerCase().startsWith(`${cmd} `),
-      );
+      // Exact match only: a prefix match hijacked legitimate questions like
+      // "clear my calendar?" or "reset my password" as a clear-chat command.
+      const isClearCommand = clearCommands.includes(message.trim().toLowerCase());
 
       if (isClearCommand) {
         logger.info('MessageRouter: DM Clear command detected');
