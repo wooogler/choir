@@ -162,27 +162,36 @@ export class WorkspaceMirrorService {
    * version. Only the full-rebuild paths (populateSectionsIfEmpty / writeMarkdownFiles)
    * call this — single-file writes must not wipe the whole index.
    */
-  private ensureSectionsFormat(workspaceId: string): void {
+  private async ensureSectionsFormat(workspaceId: string): Promise<void> {
     const sectionsRoot = this.getSectionsRoot(workspaceId);
     const markerPath = path.join(sectionsRoot, SECTIONS_FORMAT_MARKER);
 
     let current: string | null = null;
     try {
-      current = fs.existsSync(markerPath) ? fs.readFileSync(markerPath, 'utf-8').trim() : null;
+      current = (await fs.promises.readFile(markerPath, 'utf-8')).trim();
     } catch {
       current = null;
     }
     if (current === SECTIONS_FORMAT_VERSION) return;
 
-    if (fs.existsSync(sectionsRoot)) {
-      for (const entry of fs.readdirSync(sectionsRoot)) {
-        if (entry === SECTIONS_FORMAT_MARKER) continue;
-        fs.rmSync(path.join(sectionsRoot, entry), { recursive: true, force: true });
-      }
-    } else {
-      fs.mkdirSync(sectionsRoot, { recursive: true });
+    // Async I/O throughout: a large stale sections/ tree would otherwise block the
+    // event loop for the whole recursive delete during this one-time migration.
+    let entries: string[] | null = null;
+    try {
+      entries = await fs.promises.readdir(sectionsRoot);
+    } catch {
+      entries = null; // sections/ doesn't exist yet
     }
-    fs.writeFileSync(markerPath, SECTIONS_FORMAT_VERSION, 'utf-8');
+    if (entries) {
+      await Promise.all(
+        entries
+          .filter((entry) => entry !== SECTIONS_FORMAT_MARKER)
+          .map((entry) => fs.promises.rm(path.join(sectionsRoot, entry), { recursive: true, force: true })),
+      );
+    } else {
+      await fs.promises.mkdir(sectionsRoot, { recursive: true });
+    }
+    await fs.promises.writeFile(markerPath, SECTIONS_FORMAT_VERSION, 'utf-8');
     if (current !== null) {
       Logger.info('Workspace mirror migrated sections/ to a new layout format', {
         workspaceId,
@@ -199,7 +208,7 @@ export class WorkspaceMirrorService {
     if (!fs.existsSync(repoRoot)) return;
 
     // Rebuild from scratch if the on-disk layout is stale (wipes old-format dirs).
-    this.ensureSectionsFormat(workspaceId);
+    await this.ensureSectionsFormat(workspaceId);
 
     const sectionsHasFiles =
       fs.existsSync(sectionsRoot) &&
@@ -268,7 +277,7 @@ export class WorkspaceMirrorService {
     this.ensureWorkspaceLayout(workspaceId);
     // Full rewrite: migrate a stale on-disk layout before writing so old-format
     // section dirs don't linger alongside the new ones.
-    this.ensureSectionsFormat(workspaceId);
+    await this.ensureSectionsFormat(workspaceId);
 
     for (const markdownFile of markdownFiles) {
       await this.writeMarkdownFile(workspaceId, markdownFile.path, markdownFile.content);

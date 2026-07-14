@@ -47,4 +47,18 @@ describe('section files: the file x.md and the directory x/ do not collide', () 
     expect(fs.existsSync(path.join(sectionsRoot(), '.format'))).toBe(true);
     expect(fs.readFileSync(path.join(sectionsRoot(), '.format'), 'utf-8').trim()).toBe('2');
   });
+
+  it('wipes stale-format section dirs and restamps on a full rebuild', async () => {
+    // Simulate an old on-disk layout: downgrade the marker and drop a leftover
+    // directory that the current format would never produce.
+    fs.writeFileSync(path.join(sectionsRoot(), '.format'), '1');
+    fs.mkdirSync(path.join(sectionsRoot(), 'stale-old-layout'), { recursive: true });
+    fs.writeFileSync(path.join(sectionsRoot(), 'stale-old-layout', '0.md'), 'stale');
+
+    await mirror.writeMarkdownFiles(ws, [{ path: 'x.md', content: '# X file\n\nRebuilt content.\n' }]);
+
+    expect(fs.existsSync(path.join(sectionsRoot(), 'stale-old-layout'))).toBe(false);
+    expect(fs.readFileSync(path.join(sectionsRoot(), '.format'), 'utf-8').trim()).toBe('2');
+    expect(fs.existsSync(path.join(sectionsRoot(), 'x.md'))).toBe(true);
+  });
 });
