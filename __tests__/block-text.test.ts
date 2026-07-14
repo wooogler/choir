@@ -58,4 +58,26 @@ describe('buildSectionBlocks', () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0]).toMatchObject({ type: 'section', block_id: 'id1' });
   });
+
+  it('caps the block count and appends a truncation notice for a huge section', () => {
+    // ~150k chars → ~50 chunks without a cap; that plus a modal's other blocks
+    // would exceed Slack's 100-block limit.
+    const huge = 'word '.repeat(30_000);
+    const uncapped = buildSectionBlocks(huge);
+    expect(uncapped.length).toBeGreaterThan(20);
+
+    const blocks = buildSectionBlocks(huge, undefined, { maxBlocks: 20 });
+    expect(blocks).toHaveLength(20);
+    const last = (blocks[blocks.length - 1].text as { text: string }).text;
+    expect(last).toContain('truncated');
+    for (const b of blocks) {
+      expect((b.text as { text: string }).text.length).toBeLessThanOrEqual(SLACK_SECTION_TEXT_LIMIT);
+    }
+  });
+
+  it('does not truncate when the block count is within the cap', () => {
+    const blocks = buildSectionBlocks('short enough', undefined, { maxBlocks: 20 });
+    expect(blocks).toHaveLength(1);
+    expect((blocks[0].text as { text: string }).text).toBe('short enough');
+  });
 });

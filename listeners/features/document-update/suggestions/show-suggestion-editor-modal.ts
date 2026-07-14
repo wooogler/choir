@@ -93,9 +93,13 @@ export const showSuggestionEditorModal = async ({
             },
           },
           // Split the original content across blocks (a section's text is capped
-          // at 3000 chars) so a large section still renders.
+          // at 3000 chars) so a large section still renders. Bound the count so a
+          // huge section's preview can't blow past Slack's 100-block modal limit
+          // (the editable copy is still fully available in the input below).
           ...buildSectionBlocks(
-            nodeContent && nodeContent.trim() ? nodeContent : '*Empty section - content will be generated*',
+            nodeContent?.trim() ? nodeContent : '*Empty section - content will be generated*',
+            undefined,
+            { maxBlocks: 20 },
           ),
           {
             type: 'input',
