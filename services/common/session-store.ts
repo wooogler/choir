@@ -78,12 +78,18 @@ export function storeSessionData(
   const now = Date.now();
   const expiresAt = now + expirationMs;
 
-  // 만료 타이머 설정
+  // 만료 타이머 설정. unref so a long-lived timer never keeps the process alive
+  // (graceful shutdown / test runners), and guard the callback so a fire after
+  // the DB is closed can't crash.
   const timerId = setTimeout(() => {
-    console.log(`세션 만료: ${sessionId} (${sessionType})`);
-    deleteSession(sessionId, sessionType);
+    try {
+      deleteSession(sessionId, sessionType);
+    } catch {
+      // DB may be closed (shutdown/test teardown); expiry is best-effort.
+    }
     sessionTimers.delete(sessionKey);
   }, expirationMs);
+  timerId.unref?.();
   sessionTimers.set(sessionKey, timerId);
 
   getDatabase()
@@ -154,6 +160,18 @@ export function sweepExpiredSessions(): number {
     console.log(`세션 정리: 만료된 세션 ${removed}개 삭제`);
   }
   return removed;
+}
+
+/**
+ * Cancels all pending in-memory expiry timers. Mainly for tests: a leftover timer
+ * would otherwise fire against a later test's (reopened) database. No-op in normal
+ * operation beyond dropping scheduled expirations.
+ */
+export function clearAllSessionTimers(): void {
+  for (const timer of sessionTimers.values()) {
+    clearTimeout(timer);
+  }
+  sessionTimers.clear();
 }
 
 export function purgeWorkspaceSessions(workspaceId: string): number {

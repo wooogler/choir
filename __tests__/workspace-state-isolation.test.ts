@@ -1,7 +1,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { SessionType, getSessionData, purgeWorkspaceSessions, storeSessionData } from 'services/common/session-store';
+import {
+  SessionType,
+  clearAllSessionTimers,
+  getSessionData,
+  purgeWorkspaceSessions,
+  storeSessionData,
+} from 'services/common/session-store';
 import { closeDatabase } from 'services/db/connection';
 import {
   type DocumentUpdate,
@@ -56,6 +62,9 @@ describe('workspace state isolation', () => {
   });
 
   afterEach(() => {
+    // Cancel pending expiry timers before closing the DB so a leftover timer
+    // can't fire against another test's reopened database (flaky failures).
+    clearAllSessionTimers();
     closeDatabase();
     fs.rmSync(tempDir, { recursive: true, force: true });
     Reflect.deleteProperty(process.env, 'DATABASE_URL');

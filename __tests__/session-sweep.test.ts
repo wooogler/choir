@@ -1,7 +1,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { SessionType, getSessionData, storeSessionData, sweepExpiredSessions } from 'services/common/session-store';
+import {
+  SessionType,
+  clearAllSessionTimers,
+  getSessionData,
+  storeSessionData,
+  sweepExpiredSessions,
+} from 'services/common/session-store';
 import { closeDatabase, getDatabase } from 'services/db/connection';
 
 describe('sweepExpiredSessions', () => {
@@ -15,6 +21,9 @@ describe('sweepExpiredSessions', () => {
   });
 
   afterEach(() => {
+    // Cancel pending expiry timers before closing the DB so a leftover timer
+    // can't fire against another test's reopened database (flaky failures).
+    clearAllSessionTimers();
     closeDatabase();
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
