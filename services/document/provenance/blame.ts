@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { GithubService } from 'services/github';
 import { getGithubRepo } from 'services/slack';
 import { addCommitsForDir, blameLineCommits } from 'services/workspace/git-mirror';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
+import { resolveContainedDocPath } from './doc-path';
 
 const CONTEXT_DIR = '.choir/context';
 
@@ -47,7 +47,11 @@ export async function getLineProvenance(params: {
   }
 
   const gitRoot = mirror.getGitRepoRoot(workspaceId);
-  const normalized = docPath.replace(/^\/+/, '');
+  const contained = resolveContainedDocPath(gitRoot, docPath);
+  // A docPath that escapes the clone (e.g. `../../etc/passwd`) yields no provenance
+  // rather than reading an arbitrary server file.
+  if (!contained) return { lines: {} };
+  const { normalized, targetPath } = contained;
 
   // Read the document from the SAME clone snapshot blame runs against, so the
   // returned content and the line→record map line up exactly. The API-materialized
@@ -55,7 +59,7 @@ export async function getLineProvenance(params: {
   // made markers attach to the wrong lines.
   let content: string | undefined;
   try {
-    content = await fs.promises.readFile(path.join(gitRoot, normalized), 'utf-8');
+    content = await fs.promises.readFile(targetPath, 'utf-8');
   } catch {
     content = undefined;
   }
