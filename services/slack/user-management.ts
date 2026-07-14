@@ -1,5 +1,6 @@
 import { AppConfig } from '@/config';
 import type { WebClient } from '@slack/web-api';
+import { mapWithConcurrency } from 'services/common/concurrency';
 import { ErrorCodes, SlackError } from 'services/common/error-handler';
 import { Logger } from 'services/common/logger';
 import { getAnonymizationMapping } from 'services/common/name-cache';
@@ -291,14 +292,18 @@ export async function ensureWorkspaceAnonymizationMigrated(workspaceId: string, 
   if (anonymizationMigratedWorkspaces.has(workspaceId)) return;
   try {
     const userIds = await getCHOIRUsers(workspaceId);
-    for (const userId of userIds) {
+    // Resolve names with bounded concurrency instead of one-at-a-time: on a cold
+    // name cache this ran O(users) sequential users.info calls and stalled the
+    // first message of a large workspace. The cap keeps the fan-out from bursting
+    // into Slack rate limits.
+    await mapWithConcurrency(userIds, 8, async (userId) => {
       try {
         const userName = await getUserName(userId, client);
         getAnonymizationMapping(userId, userName, undefined, workspaceId);
       } catch (error) {
         Logger.warn('Failed to migrate user into scoped anonymization map', { workspaceId, userId, error });
       }
-    }
+    });
     anonymizationMigratedWorkspaces.add(workspaceId);
   } catch (error) {
     // Leave the workspace unflagged so a later message retries the migration.
