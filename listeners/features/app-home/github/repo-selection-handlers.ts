@@ -6,7 +6,7 @@ import { GitHubOAuthDeviceFlow } from 'services/github/oauth-device-flow';
 import { getRepositoryAccessError, normalizeRepositoryPath } from 'services/github/repository-access';
 import { getRetrievalProvider } from 'services/retrieval';
 import { QmdRetrievalProvider } from 'services/retrieval/qmd-provider';
-import { getWorkspaceId, parseGithubUrl, storeGithubRepo } from 'services/slack';
+import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from 'services/slack';
 import { GitHubSyncService } from 'services/sync/github-sync-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import {
@@ -163,6 +163,22 @@ export const registerRepositorySelectionHandlers = (app: App) => {
     };
 
     try {
+      // Connecting a repository is a manager/owner-only action (server-side check;
+      // hiding the button in the home view is not enforcement).
+      const [connectorIsManager, connectorIsOwner] = await Promise.all([
+        isManager(workspaceId, userId),
+        isWorkspaceOwner(userId, client),
+      ]);
+      if (!connectorIsManager && !connectorIsOwner) {
+        await acknowledge();
+        await client.chat.postEphemeral({
+          user: userId,
+          channel: userId,
+          text: "❌ You don't have permission to connect a repository.",
+        });
+        return;
+      }
+
       if (!selectedRepo && !repositoryUrl) {
         await acknowledge({
           response_action: 'errors',

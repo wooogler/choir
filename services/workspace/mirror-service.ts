@@ -44,6 +44,12 @@ export class WorkspaceMirrorService {
   }
 
   public getWorkspaceRoot(workspaceId: string): string {
+    // Guard against path traversal: workspaceId becomes a directory segment, and a
+    // value like '..' or an absolute path would let callers (e.g. purgeWorkspaceCache
+    // → recursive rm) escape the data dir. Slack team ids are safe tokens.
+    if (!/^[A-Za-z0-9_-]+$/.test(workspaceId)) {
+      throw new Error(`Invalid workspaceId: ${JSON.stringify(workspaceId)}`);
+    }
     return getDataPath('workspaces', workspaceId);
   }
 
@@ -107,10 +113,12 @@ export class WorkspaceMirrorService {
 
   private resolveMirrorPath(workspaceId: string, relativePath: string): string {
     const repoRoot = this.getRepoRoot(workspaceId);
+    const repoRootResolved = path.resolve(repoRoot);
     const normalized = path.posix.normalize(relativePath).replace(/^\/+/, '');
-    const targetPath = path.resolve(repoRoot, normalized);
+    const targetPath = path.resolve(repoRootResolved, normalized);
 
-    if (!targetPath.startsWith(path.resolve(repoRoot))) {
+    // Trailing separator so a sibling like "<repoRoot>-evil" can't pass startsWith.
+    if (targetPath !== repoRootResolved && !targetPath.startsWith(repoRootResolved + path.sep)) {
       throw new Error(`Refusing to write outside workspace mirror: ${relativePath}`);
     }
 

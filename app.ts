@@ -16,6 +16,7 @@ import {
   buildSlackAuthorizeUrl,
   exchangeSlackOidcCode,
   getSlackOidcConfig,
+  OAUTH_NONCE_COOKIE,
   issueOAuthState,
   issueSessionCookieValue,
   parseSessionCookie,
@@ -343,16 +344,21 @@ function setupPublicSite(): void {
         return res.status(400).json({ error: 'filePath is required' });
       }
 
-      // Never serve the hidden provenance store through the generic file route.
-      if (filePath === '.choir' || filePath.startsWith('.choir/')) {
-        return res.status(404).json({ error: 'File not found' });
+      const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
+      const repoRootResolved = path.resolve(repoRoot);
+      const resolved = path.resolve(repoRootResolved, filePath);
+
+      // Containment: must be inside repoRoot. Compare with a trailing separator so
+      // a sibling directory like "<repoRoot>-evil" can't pass a bare startsWith.
+      if (resolved !== repoRootResolved && !resolved.startsWith(repoRootResolved + path.sep)) {
+        return res.status(403).json({ error: 'Forbidden' });
       }
 
-      const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
-      const resolved = path.resolve(repoRoot, filePath);
-
-      if (!resolved.startsWith(path.resolve(repoRoot))) {
-        return res.status(403).json({ error: 'Forbidden' });
+      // Never serve the hidden provenance store — checked on the NORMALIZED
+      // relative path so "foo/../.choir/…" can't slip past a raw startsWith.
+      const relToRepo = path.relative(repoRootResolved, resolved).split(path.sep).join('/');
+      if (relToRepo === '.choir' || relToRepo.startsWith('.choir/')) {
+        return res.status(404).json({ error: 'File not found' });
       }
 
       if (!fs.existsSync(resolved)) {
@@ -407,7 +413,16 @@ function setupPublicSite(): void {
           .send('Slack sign-in is not configured. Set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and DOCS_BASE_URL.');
       }
       const safeNext = sanitizeNextPath(next);
-      const state = issueOAuthState({ workspaceId, next: safeNext });
+      const { state, nonce } = issueOAuthState({ workspaceId, next: safeNext });
+      // Bind the state to THIS browser: the nonce is stored here and re-checked at
+      // the callback, so an attacker's pre-made state can't complete the flow in a
+      // victim's browser (login CSRF / session fixation).
+      res.setHeader(
+        'set-cookie',
+        `${OAUTH_NONCE_COOKIE}=${nonce}; HttpOnly; SameSite=Lax; Path=/docs/auth/slack; Max-Age=600${
+          cookieSecure ? '; Secure' : ''
+        }`,
+      );
       const url = buildSlackAuthorizeUrl({ config, state });
       return res.redirect(url);
     } catch (err) {
@@ -428,6 +443,14 @@ function setupPublicSite(): void {
       if (!stateVerification.ok) {
         return res.status(400).send(`Invalid sign-in state (${stateVerification.reason})`);
       }
+
+      // The state's nonce must match the cookie set at /start — i.e. this callback
+      // runs in the same browser that began the flow (anti-CSRF / session fixation).
+      const nonceCookie = /(?:^|;\s*)choir_oauth_nonce=([^;]+)/.exec(req.headers?.cookie || '')?.[1];
+      if (!nonceCookie || nonceCookie !== stateVerification.payload.nonce) {
+        return res.status(400).send('Invalid sign-in state (nonce mismatch)');
+      }
+
       const config = getSlackOidcConfig();
       if (!config) {
         return res.status(503).send('Slack sign-in is not configured');
@@ -449,7 +472,13 @@ function setupPublicSite(): void {
       }
 
       const cookieValue = issueSessionCookieValue({ workspaceId, userId: result.userId });
-      res.setHeader('set-cookie', buildSessionCookieHeader(cookieValue, { secure: cookieSecure }));
+      res.setHeader('set-cookie', [
+        buildSessionCookieHeader(cookieValue, { secure: cookieSecure }),
+        // Clear the one-time nonce cookie.
+        `${OAUTH_NONCE_COOKIE}=; HttpOnly; SameSite=Lax; Path=/docs/auth/slack; Max-Age=0${
+          cookieSecure ? '; Secure' : ''
+        }`,
+      ]);
 
       const safeNext = sanitizeNextPath(next);
       return res.redirect(safeNext);

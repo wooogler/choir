@@ -14,6 +14,6 @@ export {
 export type { DocsSessionPayload } from './session-cookie';
 export { signImageToken, verifyImageToken } from './image-token';
 export { sanitizeNextPath } from './safe-redirect';
-export { issueOAuthState, verifyOAuthState } from './oauth-state';
+export { OAUTH_NONCE_COOKIE, issueOAuthState, verifyOAuthState } from './oauth-state';
 export { buildSlackAuthorizeUrl, exchangeSlackOidcCode, getSlackOidcConfig } from './slack-oidc';
 export type { SlackOidcConfig, SlackOidcResult } from './slack-oidc';
