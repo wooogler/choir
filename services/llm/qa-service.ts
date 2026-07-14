@@ -3,12 +3,19 @@ import { getUserName } from 'services/slack';
 import { processMessageHistory } from 'services/slack/conversation-history';
 import { createStructuredResponse } from './completions';
 
-// Format context from references
-const formatContext = (docs: any[]) => {
+// Format context from references. The retrieval metadata carries the source's
+// identity in sectionName/headingPath/fileName (not `title`/`source`), so read
+// those — otherwise every reference degraded to a generic "Reference N" and the
+// model lost all source attribution. `title`/`source` stay as fallbacks for any
+// other provider that sets them.
+export const formatContext = (docs: any[]): string => {
   return docs
     .map((doc, index) => {
-      const title = doc.metadata?.title || doc.metadata?.source || `Reference ${index + 1}`;
-      return `--- ${title} ---\n${doc.pageContent}`;
+      const meta = doc.metadata ?? {};
+      const name = meta.title || meta.sectionName || meta.headingPath || meta.source;
+      const filePath = meta.fileName;
+      const label = name && filePath && name !== filePath ? `${name} (${filePath})` : name || filePath;
+      return `--- ${label || `Reference ${index + 1}`} ---\n${doc.pageContent}`;
     })
     .join('\n\n');
 };
