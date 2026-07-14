@@ -176,9 +176,10 @@ export async function processDocument(
         if (!suggestion) {
           // 읽기 가능한(writable) 파일만 후보로 넘겨, 추천 파일이 항상 선택 가능하도록 한다.
           const readOnlyFiles = workspaceId ? await new WorkspaceStore().getReadOnlyFiles(workspaceId) : [];
+          const { isReadOnlyFile } = await import('services/workspace/read-only');
           const availableFiles = vectorStore
             .getAllMarkdownFiles(workspaceId)
-            .filter((file) => !readOnlyFiles.includes(file.name))
+            .filter((file) => !isReadOnlyFile(readOnlyFiles, file))
             .map((file) => ({
               fileName: file.name,
               githubUrl: file.githubUrl,

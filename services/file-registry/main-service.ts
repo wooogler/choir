@@ -129,9 +129,12 @@ export class VectorStoreService {
     k = 5,
   ): Promise<Document<DocumentMetadata>[]> {
     const { WorkspaceStore } = await import('services/workspace/workspace-store');
+    const { isReadOnlyFile } = await import('services/workspace/read-only');
     const readOnlyFiles = await new WorkspaceStore().getReadOnlyFiles(workspaceId);
     const results = await getRetrievalProvider().search({ query, limit: k * 3, workspaceId });
-    return results.filter((doc) => !readOnlyFiles.includes(doc.metadata.fileName || '')).slice(0, k);
+    // metadata.fileName carries the full repo path; match read-only entries
+    // path-first (with a legacy basename fallback).
+    return results.filter((doc) => !isReadOnlyFile(readOnlyFiles, { path: doc.metadata.fileName })).slice(0, k);
   }
 
   public async addNewSection(

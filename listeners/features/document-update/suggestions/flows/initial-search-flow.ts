@@ -4,6 +4,7 @@ import { initializeFileSelectionState, storeSearchResults } from 'services/docum
 import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
 import type { DocumentMetadata } from 'services/file-registry/types';
 import { getWorkspaceId } from 'services/slack';
+import { isReadOnlyFile } from 'services/workspace/read-only';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { MANAGER_SESSION_EXPIRY } from '../shared';
@@ -72,15 +73,13 @@ export async function runInitialSearch(params: {
 
   // Read-only files are protected from updates, so exclude them from the review
   // suggestions AND the auto-selected review target below (they used to slip
-  // through because only the no-results fallback filtered them). Read-only files
-  // are keyed by basename; search metadata carries the full path.
+  // through because only the no-results fallback filtered them). Read-only entries
+  // are keyed by path (with a legacy basename fallback); search metadata carries
+  // the full path in fileName.
   const readOnlyFiles = await new WorkspaceStore().getReadOnlyFiles(currentWorkspaceId);
-  const isReadOnlyFile = (fileName: string | undefined): boolean => {
-    const name = fileName || '';
-    const base = name.split('/').pop() || name;
-    return readOnlyFiles.includes(base) || readOnlyFiles.includes(name);
-  };
-  const searchResults = rawSearchResults.filter((doc) => !isReadOnlyFile(doc.metadata?.fileName));
+  const searchResults = rawSearchResults.filter(
+    (doc) => !isReadOnlyFile(readOnlyFiles, { path: doc.metadata?.fileName }),
+  );
 
   storeSearchResults(userId, searchResults, currentWorkspaceId);
   initializeFileSelectionState(userId, false, undefined, searchResults, [], currentWorkspaceId);
@@ -124,7 +123,7 @@ export async function runInitialSearch(params: {
     // Only offer writable files so the recommended target is always selectable
     // (readOnlyFiles fetched above).
     const availableFiles = allMarkdownFiles
-      .filter((file: any) => !readOnlyFiles.includes(file.name))
+      .filter((file: any) => !isReadOnlyFile(readOnlyFiles, file))
       .map((file: any) => ({
         fileName: file.name,
         githubUrl: file.githubUrl,

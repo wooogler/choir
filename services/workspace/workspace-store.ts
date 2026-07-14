@@ -7,6 +7,7 @@ import { Logger } from 'services/common/logger';
 import { getDatabase } from 'services/db/connection';
 import { decryptJson, encryptJson } from 'services/db/crypto';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
+import { isReadOnlyFile } from './read-only';
 
 export interface WorkspaceConfig {
   workspaceId: string;
@@ -917,9 +918,10 @@ export class WorkspaceStore {
   /**
    * 파일이 읽기 전용인지 확인
    */
-  public async isReadOnlyFile(workspaceId: string, fileName: string): Promise<boolean> {
+  public async isReadOnlyFile(workspaceId: string, fileNameOrPath: string): Promise<boolean> {
     const config = await this.getWorkspaceConfig(workspaceId);
-    return config?.readOnlyFiles?.includes(fileName) || false;
+    // Accept either a path or a name; match path-first with a legacy name fallback.
+    return isReadOnlyFile(config?.readOnlyFiles || [], { path: fileNameOrPath, name: fileNameOrPath });
   }
 
   /**
@@ -930,7 +932,7 @@ export class WorkspaceStore {
     if (!config?.markdownFiles) return [];
 
     const readOnlyFiles = config.readOnlyFiles || [];
-    return config.markdownFiles.filter((file) => !readOnlyFiles.includes(file.name));
+    return config.markdownFiles.filter((file) => !isReadOnlyFile(readOnlyFiles, file));
   }
 
   /**

@@ -27,8 +27,9 @@ export const registerReadonlyFilesHandlers = (app: App) => {
         .filter((file) => !query || file.name.toLowerCase().includes(query) || file.path.toLowerCase().includes(query))
         .slice(0, 100)
         .map((file) => ({
-          text: { type: 'plain_text' as const, text: truncateOptionText(file.name) },
-          value: file.name,
+          // Key by full path so two files with the same basename are distinct.
+          text: { type: 'plain_text' as const, text: truncateOptionText(file.path) },
+          value: file.path,
         }));
       await ack({ options: matched });
     } catch {
@@ -102,15 +103,24 @@ export const registerReadonlyFilesHandlers = (app: App) => {
                 action_id: 'readonly_files_select',
                 min_query_length: 0,
                 ...(readOnlyFiles.length > 0 && {
-                  initial_options: readOnlyFiles
-                    .filter((fileName) => markdownFiles.some((file) => file.name === fileName))
-                    .map((fileName) => ({
-                      text: {
-                        type: 'plain_text',
-                        text: truncateOptionText(fileName),
-                      },
-                      value: fileName,
-                    })),
+                  // Reflect currently-marked files. Entries are paths going
+                  // forward but may be legacy basenames; resolve each to the
+                  // matching file so the picker shows (and re-saves) its path.
+                  // Dedup by path — a legacy basename can resolve to the same file
+                  // as an explicit path entry, and Slack rejects duplicate options.
+                  initial_options: [
+                    ...new Set(
+                      readOnlyFiles
+                        .map((entry) => markdownFiles.find((file) => file.path === entry || file.name === entry)?.path)
+                        .filter((filePath): filePath is string => !!filePath),
+                    ),
+                  ].map((filePath) => ({
+                    text: {
+                      type: 'plain_text',
+                      text: truncateOptionText(filePath),
+                    },
+                    value: filePath,
+                  })),
                 }),
                 placeholder: {
                   type: 'plain_text',
