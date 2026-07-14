@@ -64,6 +64,8 @@ export const buildHomeView = async (
 
   const openAISettingsBlocks = await buildOpenAISettingsBlocks(workspaceId, isUserManager, isOwner);
 
+  const contextKeyBlocks = await buildContextKeyBlocks(workspaceId, isUserManager, isOwner);
+
   // Build the deep-link URL for the Messages tab. In OAuth mode SLACK_APP_ID
   // must be set; the legacy SLACK_APP_TOKEN fallback only works for single
   // workspace dev / socket mode.
@@ -124,6 +126,7 @@ export const buildHomeView = async (
     ...documentConnectionBlocks,
     ...choirManagementBlocks,
     ...openAISettingsBlocks,
+    ...contextKeyBlocks,
     ...becomeManagerBlocks,
     ...organizationNameBlocks,
     ...readOnlyFilesBlocks,
@@ -202,6 +205,89 @@ const buildOpenAISettingsBlocks = async (workspaceId: string, isUserManager: boo
     {
       type: 'actions',
       elements: actionElements,
+    },
+    { type: 'divider' },
+  );
+
+  return blocks;
+};
+
+const buildContextKeyBlocks = async (workspaceId: string, isUserManager: boolean, isOwner: boolean) => {
+  if (!isUserManager && !isOwner) {
+    return [];
+  }
+
+  const { WorkspaceStore } = await import('services/workspace/workspace-store');
+  const status = await new WorkspaceStore().getContextKeyStatus(workspaceId);
+
+  const asDate = (iso?: string) => (iso ? iso.slice(0, 10) : null);
+  let statusText: string;
+  if (status.configured) {
+    const created = asDate(status.createdAt);
+    const rotated = asDate(status.rotatedAt);
+    statusText = [
+      '🔐 *Provenance key:* ✅ Configured',
+      created ? `Created ${created}` : null,
+      rotated ? `Last rotated ${rotated}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  } else {
+    statusText =
+      '🔐 *Provenance key:* 🟡 Not yet generated\nA per-workspace key is created automatically the first time a document change records its history.';
+  }
+
+  const blocks: any[] = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: '🔐 Change History Encryption', emoji: true },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `${statusText}\n\nChange history (the conversation, extracted knowledge, and diff behind each document update) is encrypted with this key. It lives only in CHOIR's database — GitHub only ever holds ciphertext.`,
+      },
+    },
+  ];
+
+  const actionElements: any[] = [
+    {
+      type: 'button',
+      text: { type: 'plain_text', text: 'Import Key', emoji: true },
+      action_id: 'import_context_key',
+    },
+  ];
+
+  if (status.configured) {
+    actionElements.unshift(
+      {
+        type: 'button',
+        text: { type: 'plain_text', text: 'Back Up Key', emoji: true },
+        action_id: 'backup_context_key',
+      },
+      {
+        type: 'button',
+        text: { type: 'plain_text', text: 'Rotate Key', emoji: true },
+        style: 'danger',
+        action_id: 'rotate_context_key',
+      },
+    );
+  }
+
+  blocks.push(
+    {
+      type: 'actions',
+      elements: actionElements,
+    },
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: '⚠️ Rotating or importing a new key makes *all previously recorded change history permanently unreadable*. Back up the current key first if you may need the old history.',
+        },
+      ],
     },
     { type: 'divider' },
   );
