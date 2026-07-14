@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { App } from '@slack/bolt';
 import archiver from 'archiver';
+import { getDataPath } from 'services/common/data-path';
 import { getWorkspaceId } from 'services/slack';
 import { requireManagerForAction } from './management/shared';
 
@@ -39,7 +40,7 @@ export const registerLogDownloadHandlers = (app: App) => {
       const workspaceId = await getWorkspaceId(client);
       const today = new Date().toISOString().split('T')[0];
 
-      const logsDir = path.join(process.cwd(), 'data', 'logs');
+      const logsDir = getDataPath('logs');
 
       if (!fs.existsSync(logsDir)) {
         await client.chat.postEphemeral({
@@ -69,7 +70,7 @@ export const registerLogDownloadHandlers = (app: App) => {
         text: "📊 Preparing today's interaction logs for download...",
       });
 
-      const zipPath = path.join(process.cwd(), 'data', `today-logs-${workspaceId}-${Date.now()}.zip`);
+      const zipPath = getDataPath(`today-logs-${workspaceId}-${Date.now()}.zip`);
       const output = fs.createWriteStream(zipPath);
       const archive = archiver('zip', { zlib: { level: 9 } });
 
@@ -170,7 +171,7 @@ export const registerLogDownloadHandlers = (app: App) => {
 
       const workspaceId = await getWorkspaceId(client);
 
-      const logsDir = path.join(process.cwd(), 'data', 'logs');
+      const logsDir = getDataPath('logs');
 
       if (!fs.existsSync(logsDir)) {
         await client.chat.postEphemeral({
@@ -199,7 +200,7 @@ export const registerLogDownloadHandlers = (app: App) => {
       });
 
       const timestamp = new Date().toISOString().split('T')[0];
-      const zipPath = path.join(process.cwd(), 'data', `all-logs-${workspaceId}-${Date.now()}.zip`);
+      const zipPath = getDataPath(`all-logs-${workspaceId}-${Date.now()}.zip`);
       const output = fs.createWriteStream(zipPath);
       const archive = archiver('zip', { zlib: { level: 9 } });
 

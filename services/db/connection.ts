@@ -6,13 +6,27 @@ import { Logger } from 'services/common/logger';
 let database: Database.Database | null = null;
 let databasePath: string | null = null;
 
+function toSqlitePath(value: string): string {
+  return path.resolve(process.cwd(), value.startsWith('file:') ? value.slice('file:'.length) : value);
+}
+
 function resolveDatabasePath(): string {
-  const configured = process.env.DATABASE_URL || process.env.SQLITE_DATABASE_PATH || 'file:data/choir.db';
-  if (configured.startsWith('file:')) {
-    return path.resolve(process.cwd(), configured.slice('file:'.length));
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (databaseUrl) {
+    // A non-file URL scheme (e.g. a PaaS-injected postgres://) is NOT a SQLite
+    // path — resolving it as a filename silently created a bogus db file. Ignore
+    // it and fall back to the SQLite-specific setting / default.
+    if (!databaseUrl.startsWith('file:') && /^[a-z][a-z0-9+.-]*:\/\//i.test(databaseUrl)) {
+      Logger.warn('Ignoring non-file DATABASE_URL for SQLite; using SQLITE_DATABASE_PATH/default', {
+        scheme: databaseUrl.split('://')[0],
+      });
+    } else {
+      return toSqlitePath(databaseUrl);
+    }
   }
 
-  return path.resolve(process.cwd(), configured);
+  return toSqlitePath(process.env.SQLITE_DATABASE_PATH || 'file:data/choir.db');
 }
 
 function initializeSchema(db: Database.Database): void {

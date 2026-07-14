@@ -187,7 +187,7 @@ export const applySelectedToGithubAction = async ({
             githubUrl: actualGithubUrl,
           } as any);
 
-          const channelUpdateText = `🎉 Good news, everyone! *${userName}* just helped me update a document!\\n\\n*File:* <${actualGithubUrl}|${updatedFileName}>\\n*Section:* ${sectionInfo}\\n\\nI've incorporated the latest insights. Teamwork makes the dream work! ✨`;
+          const channelUpdateText = `🎉 Good news, everyone! *${userName}* just helped me update a document!\n\n*File:* <${actualGithubUrl}|${updatedFileName}>\n*Section:* ${sectionInfo}\n\nI've incorporated the latest insights. Teamwork makes the dream work! ✨`;
 
           const updateBlocks = [
             {
@@ -312,7 +312,7 @@ export const applySelectedToGithubAction = async ({
 
     // 에러 메시지를 DM으로 전송 - 기존 채널 사용
     try {
-      const errorMessage = `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \\nError: ${error instanceof Error ? error.message : 'Unknown error'}\\n\\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`;
+      const errorMessage = `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`;
 
       // 이미 연 DM 채널이 있으면 재사용, 없으면 새로 열기
       if (dmResult?.ok && dmResult.channel?.id) {
