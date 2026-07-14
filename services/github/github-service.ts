@@ -73,6 +73,20 @@ class GithubService {
     baseDelay: 1000,
   };
   private fileContentCache = new Map<string, FileContentCache>();
+  private static readonly MAX_OCTOKIT_INSTANCES = 200;
+  private static readonly MAX_FILE_CONTENT_CACHE = 500;
+
+  // Insert into a Map with a size cap, evicting the oldest entries (Maps preserve
+  // insertion order) so these in-memory caches don't grow without bound.
+  private static setBounded<K, V>(map: Map<K, V>, key: K, value: V, maxSize: number): void {
+    map.delete(key);
+    map.set(key, value);
+    while (map.size > maxSize) {
+      const oldest = map.keys().next().value;
+      if (oldest === undefined) break;
+      map.delete(oldest);
+    }
+  }
 
   private constructor() {
     this.workspaceStore = new WorkspaceStore();
@@ -141,7 +155,7 @@ class GithubService {
     const octokit = new Octokit({
       auth: token,
     });
-    this.octokitInstances.set(tokenKey, octokit);
+    GithubService.setBounded(this.octokitInstances, tokenKey, octokit, GithubService.MAX_OCTOKIT_INSTANCES);
     Logger.info(`Created new Octokit instance for token: ${tokenKey.substring(0, 10)}...`);
     return octokit;
   }
@@ -265,12 +279,13 @@ class GithubService {
 
             const content = Buffer.from(blobData.content, 'base64').toString('utf-8');
 
-            // Cache the content
-            this.fileContentCache.set(cacheKey, {
-              sha: item.sha,
-              content,
-              lastModified: new Date(),
-            });
+            // Cache the content (bounded so it doesn't grow without limit).
+            GithubService.setBounded(
+              this.fileContentCache,
+              cacheKey,
+              { sha: item.sha, content, lastModified: new Date() },
+              GithubService.MAX_FILE_CONTENT_CACHE,
+            );
 
             return {
               item,
