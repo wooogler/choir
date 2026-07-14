@@ -9,7 +9,6 @@ import { viewAnalyzedMessagesAction } from './actions/view-analyzed-messages';
 import { applySelectedToGithubAction } from './apply-document/apply-selected-to-github-action';
 import { cancelDocumentUpdatesCallback } from './apply-document/cancel-document-updates-action';
 import { handleNewSectionModalSubmission } from './apply-document/new-section-modal-submission';
-import { rejectUpdateCallback } from './apply-document/reject-update';
 import { applyExtractedKnowledgeCallback } from './extract-knowledge/apply-extracted-knowledge-action';
 import { cancelKnowledgeExtractionCallback } from './extract-knowledge/cancel-knowledge-extraction-action';
 import { cancelUpdateSuggestionReviewCallback } from './extract-knowledge/cancel-update-suggestion-review-action';
@@ -32,7 +31,6 @@ export const registerDocumentUpdateFeature = (app: App) => {
   app.action('suggest_updates', suggestUpdatesCallback);
   app.action('skip_suggestion', suggestUpdatesCallback);
   app.action('restart_update_review', suggestUpdatesCallback); // 🔄 Start Over — restart from the first suggestion
-  app.action('reject_update', rejectUpdateCallback);
   app.action('apply_to_document', async (args) => {
     // Handler returns an ApplyToGithubResult (consumed by keep-flow); Bolt's
     // action registration expects Promise<void>, so discard it here.

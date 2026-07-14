@@ -3,6 +3,23 @@ import { getUserName } from 'services/slack';
 import { notifyOriginalChannel, updateOtherManagerMessages } from '../manager-notifications';
 import { MANAGER_SESSION_EXPIRY } from '../shared';
 
+/**
+ * Releases a manager's processing claim on a suggestion session so another
+ * manager can pick it up. Without this, cancelling/stopping a review left the
+ * session marked 'processing' for its full 14-day TTL, blocking everyone else.
+ * Only the claim holder may release it.
+ */
+export function releaseSessionClaim(sessionId: string | undefined, userId: string): void {
+  if (!sessionId) return;
+  const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
+  if (!sessionData || sessionData.processingBy !== userId) return;
+  sessionData.status = undefined;
+  sessionData.processingBy = undefined;
+  sessionData.processingManagerName = undefined;
+  sessionData.processingAt = undefined;
+  storeSessionData(sessionId, sessionData, SessionType.DOCUMENT_UPDATE, MANAGER_SESSION_EXPIRY);
+}
+
 export async function runConcurrencyControl(params: {
   userId: string;
   currentDmChannelId: string | undefined;

@@ -30,6 +30,11 @@ export const cancelDocumentUpdatesCallback = async ({
     const { originalChannelId, originalThreadTs, index, isFirstSuggestion } = parsedValue;
     const workspaceId = await getWorkspaceId(client);
 
+    // Release this manager's processing claim so cancelling/stopping doesn't block
+    // other managers from the suggestion for the rest of the session's 14-day TTL.
+    const { releaseSessionClaim } = await import('../suggestions/flows/concurrency-control');
+    releaseSessionClaim(parsedValue.sessionId, userId);
+
     // Apply된 suggestion 수를 확인해서 cancel vs stop 결정
     const fileSelectionState = getFileSelectionState(userId, workspaceId);
     const appliedCount = fileSelectionState?.appliedSuggestions.size || 0;
