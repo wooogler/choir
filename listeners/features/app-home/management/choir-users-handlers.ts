@@ -120,10 +120,17 @@ export const registerChoirUsersHandlers = (app: App) => {
 
   app.view('choir_users_modal', async ({ ack, body, client, logger, view }) => {
     const startTime = Date.now();
+    const userId = body.user.id;
+    let acked = false;
 
+    // Only cheap checks run before ack. setCHOIRUsers below resolves each selected
+    // user's name (a users.info call per user on a cold cache), which for a large
+    // roster can exceed Slack's ~3s ack deadline — so ack first and do that work
+    // after, reporting the outcome via an ephemeral message instead of the modal.
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+      if (!(await requireManagerForAction({ client, userId }))) {
         await ack();
+        acked = true;
         return;
       }
 
@@ -136,31 +143,33 @@ export const registerChoirUsersHandlers = (app: App) => {
             choir_users_select_block: 'Please select at least one user or cancel to keep current settings.',
           },
         });
+        acked = true;
         return;
       }
+
+      await ack();
+      acked = true;
 
       const workspaceId = await getWorkspaceId(client);
       const success = await setCHOIRUsers(workspaceId, selectedUsers, client);
 
       if (success) {
-        await ack();
-
         await client.chat.postEphemeral({
-          user: body.user.id,
-          channel: body.user.id,
+          user: userId,
+          channel: userId,
           text: `✅ CHOIR users updated successfully! ${selectedUsers.length} users are now registered. Please refresh your app home to see the changes.`,
         });
 
-        refreshAppHomeSoon({ client, logger, userId: body.user.id, reason: 'CHOIR users update' });
+        refreshAppHomeSoon({ client, logger, userId, reason: 'CHOIR users update' });
 
         logger.info('CHOIR users updated via modal', {
           workspaceId,
-          userId: body.user.id,
+          userId,
           userCount: selectedUsers.length,
         });
 
         await logAppHomeModalSubmit(
-          body.user.id,
+          userId,
           workspaceId,
           'choir_users_modal',
           Date.now() - startTime,
@@ -173,15 +182,14 @@ export const registerChoirUsersHandlers = (app: App) => {
           client,
         );
       } else {
-        await ack({
-          response_action: 'errors',
-          errors: {
-            choir_users_select_block: 'Failed to update CHOIR users. Please try again.',
-          },
+        await client.chat.postEphemeral({
+          user: userId,
+          channel: userId,
+          text: '❌ Failed to update CHOIR users. Please try again.',
         });
 
         await logAppHomeModalSubmit(
-          body.user.id,
+          userId,
           workspaceId,
           'choir_users_modal',
           Date.now() - startTime,
@@ -197,13 +205,24 @@ export const registerChoirUsersHandlers = (app: App) => {
       }
     } catch (error) {
       logger.error('Error processing CHOIR users modal:', error);
-
-      await ack({
-        response_action: 'errors',
-        errors: {
-          choir_users_select_block: 'An error occurred while updating users. Please try again.',
-        },
-      });
+      if (!acked) {
+        // Pre-ack failure: the modal is still open, so surface it there.
+        await ack({
+          response_action: 'errors',
+          errors: {
+            choir_users_select_block: 'An error occurred while updating users. Please try again.',
+          },
+        }).catch((ackError) => logger.error('Failed to ack CHOIR users modal error:', ackError));
+      } else {
+        // Modal already closed; notify via ephemeral so the error isn't swallowed.
+        await client.chat
+          .postEphemeral({
+            user: userId,
+            channel: userId,
+            text: '❌ An error occurred while updating CHOIR users. Please try again.',
+          })
+          .catch((dmError) => logger.error('Failed to notify CHOIR users update error:', dmError));
+      }
     }
   });
 };

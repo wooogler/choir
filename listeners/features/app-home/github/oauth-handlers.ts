@@ -16,7 +16,7 @@ export const registerGitHubOAuthHandlers = (app: App) => {
 
       const deviceCode = await githubOAuth.requestDeviceCode();
 
-      await client.views.open({
+      const openResult = await client.views.open({
         trigger_id: (body as any).trigger_id,
         view: {
           type: 'modal',
@@ -57,7 +57,7 @@ export const registerGitHubOAuthHandlers = (app: App) => {
               elements: [
                 {
                   type: 'mrkdwn',
-                  text: '💡 This window will automatically close once you complete the authorization on GitHub.',
+                  text: '💡 This window will update once you complete the authorization on GitHub — you can then close it.',
                 },
               ],
             },
@@ -69,34 +69,68 @@ export const registerGitHubOAuthHandlers = (app: App) => {
           }),
         },
       });
+      const openedViewId = openResult.view?.id;
 
-      setTimeout(async () => {
-        try {
-          const tokenResponse = await githubOAuth.pollForAccessToken(deviceCode.device_code, deviceCode.interval);
-          const user = await githubOAuth.getUserInfo(tokenResponse.access_token);
+      // Update the still-open device-code modal to a terminal state. The Slack API
+      // can't force-close a modal, so we replace its contents instead.
+      const setModalResult = async (text: string) => {
+        if (!openedViewId) return;
+        await client.views
+          .update({
+            view_id: openedViewId,
+            view: {
+              type: 'modal',
+              callback_id: 'github_device_code_modal',
+              title: { type: 'plain_text', text: 'Connect GitHub' },
+              close: { type: 'plain_text', text: 'Close' },
+              blocks: [{ type: 'section', text: { type: 'mrkdwn', text } }],
+            },
+          })
+          .catch((updateError) => logger.warn('Failed to update GitHub device-code modal:', updateError));
+      };
 
-          const workspaceStore = new WorkspaceStore();
-          await workspaceStore.setUserGithubToken(workspaceId, userId, {
-            accessToken: tokenResponse.access_token,
-            user,
-          });
+      // The poll blocks for up to the device code's lifetime; run it detached but
+      // guard every branch so a notification failure can't reject unhandled and
+      // crash the process.
+      setTimeout(() => {
+        void (async () => {
+          try {
+            const tokenResponse = await githubOAuth.pollForAccessToken(deviceCode.device_code, deviceCode.interval);
+            const user = await githubOAuth.getUserInfo(tokenResponse.access_token);
 
-          await client.chat.postEphemeral({
-            user: userId,
-            channel: userId,
-            text: `✅ GitHub account connected successfully! Welcome, ${user.name || user.login}!`,
-          });
+            const workspaceStore = new WorkspaceStore();
+            await workspaceStore.setUserGithubToken(workspaceId, userId, {
+              accessToken: tokenResponse.access_token,
+              user,
+            });
 
-          await refreshAppHome({ client, logger, userId, reason: 'GitHub connection' });
-          logger.info(`GitHub connected for user ${userId} in workspace ${workspaceId}`);
-        } catch (error) {
-          logger.error('Error during GitHub OAuth flow:', error);
-          await client.chat.postEphemeral({
-            user: userId,
-            channel: userId,
-            text: '❌ GitHub connection failed. Please try again.',
-          });
-        }
+            await setModalResult(
+              `✅ *GitHub account connected!*\nWelcome, ${user.name || user.login}. You can close this window.`,
+            );
+            await client.chat
+              .postEphemeral({
+                user: userId,
+                channel: userId,
+                text: `✅ GitHub account connected successfully! Welcome, ${user.name || user.login}!`,
+              })
+              .catch((notifyError) => logger.warn('Failed to send GitHub connection confirmation:', notifyError));
+
+            await refreshAppHome({ client, logger, userId, reason: 'GitHub connection' }).catch((refreshError) =>
+              logger.warn('Failed to refresh App Home after GitHub connection:', refreshError),
+            );
+            logger.info(`GitHub connected for user ${userId} in workspace ${workspaceId}`);
+          } catch (error) {
+            logger.error('Error during GitHub OAuth flow:', error);
+            await setModalResult('❌ *GitHub connection failed.*\nPlease close this window and try again.');
+            await client.chat
+              .postEphemeral({
+                user: userId,
+                channel: userId,
+                text: '❌ GitHub connection failed. Please try again.',
+              })
+              .catch((notifyError) => logger.warn('Failed to send GitHub connection failure notice:', notifyError));
+          }
+        })();
       }, 2000);
     } catch (error) {
       logger.error('Error initiating GitHub connection:', error);

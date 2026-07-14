@@ -162,6 +162,10 @@ export const registerOpenAISettingsHandlers = (app: App) => {
     const userId = body.user.id;
     const metadata = JSON.parse(view.private_metadata || '{}') as { workspaceId?: string; hadKey?: boolean };
     const workspaceId = metadata.workspaceId || (await getWorkspaceId(client));
+    // Track whether the modal has been acknowledged: once we ack (which closes the
+    // modal), a later failure can no longer be surfaced as a modal error, so the
+    // catch must fall back to a DM instead of a second, silently-ignored ack.
+    let acked = false;
 
     try {
       const rawApiKey = view.state.values.api_key_block?.api_key_input?.value?.trim() || '';
@@ -183,6 +187,7 @@ export const registerOpenAISettingsHandlers = (app: App) => {
               api_key_block: `Key validation failed: ${validation.error || 'unknown error'}`,
             },
           });
+          acked = true;
           await logAppHomeModalSubmit(
             userId,
             workspaceId,
@@ -197,8 +202,8 @@ export const registerOpenAISettingsHandlers = (app: App) => {
         }
       }
 
-      await ack();
-
+      // Persist BEFORE acking so a save failure still shows an in-modal error
+      // rather than closing the modal on a change that never took effect.
       if (newKey && existing?.apiKey && existing.apiKey !== newKey) {
         invalidateClientCache(existing.apiKey);
         invalidateModelCatalog(existing.apiKey);
@@ -209,6 +214,9 @@ export const registerOpenAISettingsHandlers = (app: App) => {
         qaModel,
         documentUpdateModel,
       });
+
+      await ack();
+      acked = true;
 
       await client.chat.postMessage({
         channel: userId,
@@ -233,12 +241,22 @@ export const registerOpenAISettingsHandlers = (app: App) => {
       );
     } catch (error) {
       logger.error('Error saving OpenAI settings:', error);
-      await ack({
-        response_action: 'errors',
-        errors: {
-          api_key_block: 'An error occurred while saving. Please try again.',
-        },
-      });
+      if (acked) {
+        // Modal already closed; the only way left to tell the user is a DM.
+        await client.chat
+          .postMessage({
+            channel: userId,
+            text: '⚠️ Your OpenAI settings may not have been fully saved. Please reopen the settings and try again.',
+          })
+          .catch((dmError) => logger.error('Failed to notify OpenAI settings post-ack failure:', dmError));
+      } else {
+        await ack({
+          response_action: 'errors',
+          errors: {
+            api_key_block: 'An error occurred while saving. Please try again.',
+          },
+        });
+      }
       await logManagementModalError({
         userId,
         callbackId: 'openai_settings_modal',

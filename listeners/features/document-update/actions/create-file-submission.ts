@@ -19,6 +19,10 @@ export const createFileSubmissionCallback = async ({
   logger,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs<ViewSubmitAction>) => {
   const startTime = Date.now();
+  // Several steps below (metadata parse, session lookup) can throw before the
+  // success ack. Without this guard the catch would notify the user but never
+  // acknowledge the submission, leaving the modal hung on a Slack error.
+  let acked = false;
 
   try {
     // Parse private metadata
@@ -28,7 +32,15 @@ export const createFileSubmissionCallback = async ({
     // Get data from session store
     const sessionData = getSessionData(createFileSessionId, SessionType.CREATE_FILE_MODAL);
     if (!sessionData) {
-      throw new Error('Session data not found or expired');
+      await ack();
+      acked = true;
+      await client.chat
+        .postMessage({
+          channel: channelId || userId,
+          text: '⏳ This create-file form has expired. Please start again from the document update flow.',
+        })
+        .catch((dmError) => logger.error('Failed to notify expired create-file session:', dmError));
+      return;
     }
 
     const { sessionId, knowledgeContent, knowledgeSourceChannelId, knowledgeSourceThreadTs } = sessionData;
@@ -46,6 +58,7 @@ export const createFileSubmissionCallback = async ({
           ...(fileContent ? {} : { file_content_input: 'File content is required' }),
         },
       });
+      acked = true;
       return;
     }
 
@@ -57,6 +70,7 @@ export const createFileSubmissionCallback = async ({
           file_name_input: 'File name must end with .md extension',
         },
       });
+      acked = true;
       return;
     }
 
@@ -70,10 +84,12 @@ export const createFileSubmissionCallback = async ({
             'File name contains invalid characters. Use only letters, numbers, dots, hyphens, and underscores.',
         },
       });
+      acked = true;
       return;
     }
 
     await ack();
+    acked = true;
 
     // Show processing message
     const processingMessage = await client.chat.postMessage({
@@ -381,6 +397,13 @@ export const createFileSubmissionCallback = async ({
     logger.info(`Successfully created and indexed file ${fileName} for user ${userId}`);
   } catch (error) {
     logger.error('Error creating file:', error);
+
+    // Always acknowledge the submission, even on a failure before the success ack,
+    // so Slack doesn't leave the modal hanging on a generic connection error.
+    if (!acked) {
+      await ack().catch((ackError) => logger.error('Failed to ack create-file submission:', ackError));
+      acked = true;
+    }
 
     // Parse metadata for error logging
     let metadata: any = {};
