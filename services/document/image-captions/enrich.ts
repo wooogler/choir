@@ -309,6 +309,13 @@ async function writeVisibleCaptions(params: {
   }
 }
 
+// One enrichment at a time per workspace. This pass is fired after both a save
+// and a sync; two overlapping runs would duplicate every vision/summary LLM call
+// for the same images and race each other writing the shared caption cache file.
+// Concurrent callers coalesce onto the in-flight run (a genuinely new image added
+// mid-run is simply picked up by the next enrichment).
+const inflightEnrichments = new Map<string, Promise<EnrichResult>>();
+
 /**
  * Scans every markdown document in the workspace mirror for image references,
  * generates a caption for each not-yet-cached image (local bytes or a
@@ -319,10 +326,18 @@ async function writeVisibleCaptions(params: {
  *
  * Best-effort and non-blocking by design — fired after a save or sync.
  */
-export async function enrichWorkspaceImageCaptions(
-  workspaceId: string,
-  opts: EnrichOptions = {},
-): Promise<EnrichResult> {
+export function enrichWorkspaceImageCaptions(workspaceId: string, opts: EnrichOptions = {}): Promise<EnrichResult> {
+  const inflight = inflightEnrichments.get(workspaceId);
+  if (inflight) return inflight;
+
+  const run = enrichWorkspaceImageCaptionsImpl(workspaceId, opts).finally(() =>
+    inflightEnrichments.delete(workspaceId),
+  );
+  inflightEnrichments.set(workspaceId, run);
+  return run;
+}
+
+async function enrichWorkspaceImageCaptionsImpl(workspaceId: string, opts: EnrichOptions = {}): Promise<EnrichResult> {
   const mirror = WorkspaceMirrorService.getInstance();
   const repoRoot = mirror.getRepoRoot(workspaceId);
   const result: EnrichResult = {

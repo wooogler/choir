@@ -169,6 +169,47 @@ export class WorkspaceStore {
   }
 
   /**
+   * Atomically read-modify-writes a workspace config. The whole read → mutate →
+   * write runs inside one synchronous SQLite transaction with no await, so no
+   * other operation can interleave — this closes the lost-update race that the
+   * plain getWorkspaceConfig()→saveWorkspaceConfig() sequence has across its await
+   * points (two concurrent mutators each read the same config and the second save
+   * clobbers the first's field). The mutator runs against the freshest persisted
+   * config, mutating it in place; return `false` to abort without writing.
+   *
+   * Returns `true` if written, `false` if the mutator aborted, or `null` if there
+   * is no config row for the workspace (callers decide whether that's an error).
+   * Only operates on the SQLite row — callers needing legacy-file migration should
+   * `await getWorkspaceConfig()` first (it migrates into SQLite).
+   */
+  protected mutateConfigSync(
+    workspaceId: string,
+    // Return `false` to abort without writing; return nothing to proceed.
+    // biome-ignore lint/suspicious/noConfusingVoidType: void here means "no explicit signal, proceed"
+    mutator: (config: WorkspaceConfig) => boolean | void,
+  ): boolean | null {
+    const db = getDatabase();
+    const run = db.transaction((): boolean | null => {
+      const row = db
+        .prepare('SELECT config_json AS configJson FROM workspace_configs WHERE workspace_id = ?')
+        .get(workspaceId) as { configJson: string } | undefined;
+      if (!row) return null;
+
+      const config = this.hydrateDates(decryptJson<WorkspaceConfig>(row.configJson));
+      if (mutator(config) === false) return false;
+
+      const now = new Date();
+      config.updatedAt = now;
+      if (!config.createdAt) config.createdAt = now;
+      db.prepare(
+        'UPDATE workspace_configs SET config_json = @configJson, updated_at = @updatedAt WHERE workspace_id = @workspaceId',
+      ).run({ workspaceId, configJson: encryptJson(config), updatedAt: now.toISOString() });
+      return true;
+    });
+    return run();
+  }
+
+  /**
    * 워크스페이스 설정 가져오기
    */
   public async getWorkspaceConfig(workspaceId: string): Promise<WorkspaceConfig | null> {
@@ -255,27 +296,27 @@ export class WorkspaceStore {
     grantedBy: string,
     options?: { actorIsOwner?: boolean },
   ): Promise<boolean> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) return false;
+    if (!(await this.getWorkspaceConfig(workspaceId))) return false;
 
-    // The workspace owner may manage managers even if not themselves listed as a
-    // manager; 'self-promotion' likewise bypasses the grantor-is-manager check.
-    if (grantedBy !== 'self-promotion' && !options?.actorIsOwner && !config.managers.includes(grantedBy)) {
-      return false; // 권한 부여자가 관리자가 아님
-    }
+    let authorized = true;
+    this.mutateConfigSync(workspaceId, (config) => {
+      // The workspace owner may manage managers even if not themselves listed as a
+      // manager; 'self-promotion' likewise bypasses the grantor-is-manager check.
+      if (grantedBy !== 'self-promotion' && !options?.actorIsOwner && !config.managers.includes(grantedBy)) {
+        authorized = false;
+        return false; // 권한 부여자가 관리자가 아님 — don't write
+      }
 
-    if (!config.managers.includes(userId)) {
+      if (config.managers.includes(userId)) return false; // already a manager — no write
+
       config.managers.push(userId);
-
       // Ensure manager is also a CHOIR user
       if (!config.choirUsers.includes(userId)) {
         config.choirUsers.push(userId);
       }
+    });
 
-      await this.saveWorkspaceConfig(config);
-    }
-
-    return true;
+    return authorized;
   }
 
   /**
@@ -287,24 +328,24 @@ export class WorkspaceStore {
     removedBy: string,
     options?: { actorIsOwner?: boolean },
   ): Promise<boolean> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) return false;
+    if (!(await this.getWorkspaceConfig(workspaceId))) return false;
 
-    // The workspace owner may manage managers even if not listed as one.
-    if (!options?.actorIsOwner && !config.managers.includes(removedBy)) {
-      return false; // 권한 제거자가 관리자가 아님
-    }
+    let authorized = true;
+    this.mutateConfigSync(workspaceId, (config) => {
+      // The workspace owner may manage managers even if not listed as one.
+      if (!options?.actorIsOwner && !config.managers.includes(removedBy)) {
+        authorized = false;
+        return false; // 권한 제거자가 관리자가 아님 — don't write
+      }
 
-    if (config.managers.includes(userId)) {
-      config.managers = config.managers.filter((id) => id !== userId);
+      if (!config.managers.includes(userId)) return false; // nothing to remove — no write
 
       // Note: We don't automatically remove from choirUsers when removing manager
       // This allows former managers to continue using CHOIR if desired
+      config.managers = config.managers.filter((id) => id !== userId);
+    });
 
-      await this.saveWorkspaceConfig(config);
-    }
-
-    return true;
+    return authorized;
   }
 
   /**
@@ -314,13 +355,13 @@ export class WorkspaceStore {
     workspaceId: string,
     repoInfo: { owner: string; repo: string; path: string; branch?: string },
   ): Promise<void> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) {
+    if (
+      this.mutateConfigSync(workspaceId, (config) => {
+        config.githubRepo = repoInfo;
+      }) === null
+    ) {
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
-
-    config.githubRepo = repoInfo;
-    await this.saveWorkspaceConfig(config);
   }
 
   /**
@@ -338,24 +379,26 @@ export class WorkspaceStore {
    * random 32-byte key on first use. No friction by design (first-time setup).
    */
   public async getOrCreateContextKey(workspaceId: string): Promise<Buffer> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) {
+    let key: Buffer | null = null;
+    const applied = this.mutateConfigSync(workspaceId, (config) => {
+      if (config.contextEncryption?.key) {
+        key = Buffer.from(config.contextEncryption.key, 'base64');
+        return false; // key already exists — return it without a (racy) re-write
+      }
+      key = crypto.randomBytes(32);
+      config.contextEncryption = {
+        key: key.toString('base64'),
+        algorithm: 'aes-256-gcm',
+        createdAt: new Date().toISOString(),
+      };
+    });
+    if (applied === null) {
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
-
-    if (config.contextEncryption?.key) {
-      return Buffer.from(config.contextEncryption.key, 'base64');
+    if (applied === true) {
+      this.logger.info(`Generated context encryption key for workspace: ${workspaceId}`);
     }
-
-    const key = crypto.randomBytes(32);
-    config.contextEncryption = {
-      key: key.toString('base64'),
-      algorithm: 'aes-256-gcm',
-      createdAt: new Date().toISOString(),
-    };
-    await this.saveWorkspaceConfig(config);
-    this.logger.info(`Generated context encryption key for workspace: ${workspaceId}`);
-    return key;
+    return key as unknown as Buffer;
   }
 
   /**
@@ -369,31 +412,33 @@ export class WorkspaceStore {
     workspaceId: string,
     options?: { importKeyBase64?: string },
   ): Promise<ContextKeyStatus> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) {
+    let status: ContextKeyStatus | null = null;
+    const applied = this.mutateConfigSync(workspaceId, (config) => {
+      let key: Buffer;
+      if (options?.importKeyBase64) {
+        key = Buffer.from(options.importKeyBase64, 'base64');
+        if (key.length !== 32) {
+          // Throwing aborts the transaction, so nothing is written.
+          throw new Error('Imported context key must be a base64-encoded 32-byte key');
+        }
+      } else {
+        key = crypto.randomBytes(32);
+      }
+
+      const now = new Date().toISOString();
+      config.contextEncryption = {
+        key: key.toString('base64'),
+        algorithm: 'aes-256-gcm',
+        createdAt: config.contextEncryption?.createdAt ?? now,
+        rotatedAt: now,
+      };
+      status = { configured: true, createdAt: config.contextEncryption.createdAt, rotatedAt: now };
+    });
+    if (applied === null) {
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
-
-    let key: Buffer;
-    if (options?.importKeyBase64) {
-      key = Buffer.from(options.importKeyBase64, 'base64');
-      if (key.length !== 32) {
-        throw new Error('Imported context key must be a base64-encoded 32-byte key');
-      }
-    } else {
-      key = crypto.randomBytes(32);
-    }
-
-    const now = new Date().toISOString();
-    config.contextEncryption = {
-      key: key.toString('base64'),
-      algorithm: 'aes-256-gcm',
-      createdAt: config.contextEncryption?.createdAt ?? now,
-      rotatedAt: now,
-    };
-    await this.saveWorkspaceConfig(config);
     this.logger.info(`Rotated context encryption key for workspace: ${workspaceId}`);
-    return { configured: true, createdAt: config.contextEncryption.createdAt, rotatedAt: now };
+    return status as unknown as ContextKeyStatus;
   }
 
   /**
@@ -409,39 +454,39 @@ export class WorkspaceStore {
    * Q&A 채널 설정
    */
   public async setQAChannel(workspaceId: string, channelId: string): Promise<void> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) {
+    if (
+      this.mutateConfigSync(workspaceId, (config) => {
+        config.qaChannel = channelId;
+      }) === null
+    ) {
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
-
-    config.qaChannel = channelId;
-    await this.saveWorkspaceConfig(config);
   }
 
   /**
    * 조직 이름 설정
    */
   public async setOrganizationName(workspaceId: string, name: string): Promise<void> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) {
+    if (
+      this.mutateConfigSync(workspaceId, (config) => {
+        config.organizationName = name;
+      }) === null
+    ) {
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
-
-    config.organizationName = name;
-    await this.saveWorkspaceConfig(config);
   }
 
   /**
    * 조직 설명 설정
    */
   public async setOrganizationDescription(workspaceId: string, description: string): Promise<void> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) {
+    if (
+      this.mutateConfigSync(workspaceId, (config) => {
+        config.organizationDescription = description;
+      }) === null
+    ) {
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
-
-    config.organizationDescription = description;
-    await this.saveWorkspaceConfig(config);
   }
 
   /**
@@ -466,14 +511,14 @@ export class WorkspaceStore {
   }
 
   public async setMarkdownFilesCache(workspaceId: string, files: Array<{ name: string; path: string }>): Promise<void> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) {
+    if (
+      this.mutateConfigSync(workspaceId, (config) => {
+        config.markdownFiles = files;
+        config.markdownFilesCachedAt = new Date();
+      }) === null
+    ) {
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
-
-    config.markdownFiles = files;
-    config.markdownFilesCachedAt = new Date();
-    await this.saveWorkspaceConfig(config);
   }
 
   /**
@@ -602,28 +647,23 @@ export class WorkspaceStore {
    * CHOIR 사용자 설정 (기존 목록 대체)
    */
   public async setCHOIRUsers(workspaceId: string, userIds: string[]): Promise<boolean> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) return false;
-
-    // Ensure all managers are included in CHOIR users
-    const allCHOIRUsers = [...new Set([...config.managers, ...userIds])];
-
-    config.choirUsers = allCHOIRUsers;
-    await this.saveWorkspaceConfig(config);
-    return true;
+    return (
+      this.mutateConfigSync(workspaceId, (config) => {
+        // Ensure all managers are included in CHOIR users
+        config.choirUsers = [...new Set([...config.managers, ...userIds])];
+      }) === true
+    );
   }
 
   /**
    * CHOIR 사용자 추가
    */
   public async addCHOIRUser(workspaceId: string, userId: string): Promise<boolean> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) return false;
-
-    if (!config.choirUsers.includes(userId)) {
+    if (!(await this.getWorkspaceConfig(workspaceId))) return false;
+    this.mutateConfigSync(workspaceId, (config) => {
+      if (config.choirUsers.includes(userId)) return false; // already present — no write
       config.choirUsers.push(userId);
-      await this.saveWorkspaceConfig(config);
-    }
+    });
     return true;
   }
 
@@ -631,17 +671,18 @@ export class WorkspaceStore {
    * CHOIR 사용자 제거 (관리자는 제거할 수 없음)
    */
   public async removeCHOIRUser(workspaceId: string, userId: string): Promise<boolean> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) return false;
+    if (!(await this.getWorkspaceConfig(workspaceId))) return false;
 
-    // 관리자는 CHOIR 사용자에서 제거할 수 없음
-    if (config.managers.includes(userId)) {
-      return false;
-    }
-
-    config.choirUsers = config.choirUsers.filter((id) => id !== userId);
-    await this.saveWorkspaceConfig(config);
-    return true;
+    let allowed = true;
+    this.mutateConfigSync(workspaceId, (config) => {
+      // 관리자는 CHOIR 사용자에서 제거할 수 없음
+      if (config.managers.includes(userId)) {
+        allowed = false;
+        return false; // don't write
+      }
+      config.choirUsers = config.choirUsers.filter((id) => id !== userId);
+    });
+    return allowed;
   }
 
   /**
@@ -661,21 +702,18 @@ export class WorkspaceStore {
       };
     },
   ): Promise<void> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) {
+    const applied = this.mutateConfigSync(workspaceId, (config) => {
+      if (!config.githubTokens) {
+        config.githubTokens = {};
+      }
+      config.githubTokens[userId] = {
+        ...tokenData,
+        connectedAt: new Date(),
+      };
+    });
+    if (applied === null) {
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
-
-    if (!config.githubTokens) {
-      config.githubTokens = {};
-    }
-
-    config.githubTokens[userId] = {
-      ...tokenData,
-      connectedAt: new Date(),
-    };
-
-    await this.saveWorkspaceConfig(config);
     this.logger.info(`Saved GitHub token for user ${userId} in workspace ${workspaceId}`);
   }
 
@@ -724,14 +762,15 @@ export class WorkspaceStore {
    * 사용자의 GitHub 토큰 제거
    */
   public async removeUserGithubToken(workspaceId: string, userId: string): Promise<void> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config?.githubTokens?.[userId]) {
-      return;
+    let removed = false;
+    this.mutateConfigSync(workspaceId, (config) => {
+      if (!config.githubTokens?.[userId]) return false; // nothing to remove — no write
+      delete config.githubTokens[userId];
+      removed = true;
+    });
+    if (removed) {
+      this.logger.info(`Removed GitHub token for user ${userId} in workspace ${workspaceId}`);
     }
-
-    delete config.githubTokens[userId];
-    await this.saveWorkspaceConfig(config);
-    this.logger.info(`Removed GitHub token for user ${userId} in workspace ${workspaceId}`);
   }
 
   /**
@@ -750,13 +789,13 @@ export class WorkspaceStore {
    * 로깅 설정 토글
    */
   public async setLoggingEnabled(workspaceId: string, enabled: boolean): Promise<void> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) {
+    if (
+      this.mutateConfigSync(workspaceId, (config) => {
+        config.loggingEnabled = enabled;
+      }) === null
+    ) {
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
-
-    config.loggingEnabled = enabled;
-    await this.saveWorkspaceConfig(config);
   }
 
   /**
@@ -773,26 +812,24 @@ export class WorkspaceStore {
   }
 
   public async setOpenAISettings(workspaceId: string, settings: WorkspaceOpenAISettings): Promise<void> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) {
+    const applied = this.mutateConfigSync(workspaceId, (config) => {
+      const existing = config.openai ?? {};
+      config.openai = {
+        apiKey: settings.apiKey !== undefined ? settings.apiKey : existing.apiKey,
+        qaModel: settings.qaModel !== undefined ? settings.qaModel : existing.qaModel,
+        documentUpdateModel:
+          settings.documentUpdateModel !== undefined ? settings.documentUpdateModel : existing.documentUpdateModel,
+      };
+    });
+    if (applied === null) {
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
-
-    const existing = config.openai ?? {};
-    config.openai = {
-      apiKey: settings.apiKey !== undefined ? settings.apiKey : existing.apiKey,
-      qaModel: settings.qaModel !== undefined ? settings.qaModel : existing.qaModel,
-      documentUpdateModel:
-        settings.documentUpdateModel !== undefined ? settings.documentUpdateModel : existing.documentUpdateModel,
-    };
-    await this.saveWorkspaceConfig(config);
   }
 
   public async clearOpenAISettings(workspaceId: string): Promise<void> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) return;
-    config.openai = undefined;
-    await this.saveWorkspaceConfig(config);
+    this.mutateConfigSync(workspaceId, (config) => {
+      config.openai = undefined;
+    });
   }
 
   /**
@@ -841,29 +878,25 @@ export class WorkspaceStore {
    * 읽기 전용 파일 목록 설정 (기존 목록 대체)
    */
   public async setReadOnlyFiles(workspaceId: string, fileNames: string[]): Promise<boolean> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) return false;
-
-    config.readOnlyFiles = fileNames;
-    await this.saveWorkspaceConfig(config);
-    return true;
+    return (
+      this.mutateConfigSync(workspaceId, (config) => {
+        config.readOnlyFiles = fileNames;
+      }) === true
+    );
   }
 
   /**
    * 읽기 전용 파일 추가
    */
   public async addReadOnlyFile(workspaceId: string, fileName: string): Promise<boolean> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) return false;
-
-    if (!config.readOnlyFiles) {
-      config.readOnlyFiles = [];
-    }
-
-    if (!config.readOnlyFiles.includes(fileName)) {
+    if (!(await this.getWorkspaceConfig(workspaceId))) return false;
+    this.mutateConfigSync(workspaceId, (config) => {
+      if (!config.readOnlyFiles) {
+        config.readOnlyFiles = [];
+      }
+      if (config.readOnlyFiles.includes(fileName)) return false; // already present — no write
       config.readOnlyFiles.push(fileName);
-      await this.saveWorkspaceConfig(config);
-    }
+    });
     return true;
   }
 
@@ -874,8 +907,10 @@ export class WorkspaceStore {
     const config = await this.getWorkspaceConfig(workspaceId);
     if (!config || !config.readOnlyFiles) return false;
 
-    config.readOnlyFiles = config.readOnlyFiles.filter((name) => name !== fileName);
-    await this.saveWorkspaceConfig(config);
+    this.mutateConfigSync(workspaceId, (c) => {
+      if (!c.readOnlyFiles) return false;
+      c.readOnlyFiles = c.readOnlyFiles.filter((name) => name !== fileName);
+    });
     return true;
   }
 
@@ -942,9 +977,12 @@ export class WorkspaceStore {
    * 워크스페이스의 botUserId를 저장
    */
   public async setBotUserId(workspaceId: string, botUserId: string): Promise<void> {
-    const config = await this.getWorkspaceConfig(workspaceId);
-    if (!config) throw new Error('Workspace config not found');
-    config.botUserId = botUserId;
-    await this.saveWorkspaceConfig(config);
+    if (
+      this.mutateConfigSync(workspaceId, (config) => {
+        config.botUserId = botUserId;
+      }) === null
+    ) {
+      throw new Error('Workspace config not found');
+    }
   }
 }

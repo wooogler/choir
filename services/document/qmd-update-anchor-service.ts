@@ -103,6 +103,10 @@ function matchesSelectedFileByBasename(relativePath: string, selectedFile: strin
 export class QmdUpdateAnchorService {
   private static instance: QmdUpdateAnchorService;
   private readonly storeCache = new Map<string, StoreCacheEntry>();
+  // Dedup concurrent first-time store creation: two callers racing on the same
+  // workspace would otherwise both createStore() against the same dbPath (SQLite
+  // contention) and leak the loser's store instance.
+  private readonly inflightStores = new Map<string, Promise<StoreCacheEntry | null>>();
   private qmdModulePromise?: Promise<QmdModule>;
 
   public static getInstance(): QmdUpdateAnchorService {
@@ -197,32 +201,43 @@ export class QmdUpdateAnchorService {
       return cached;
     }
 
-    const qmd = await this.loadQmdModule();
-    const store = await qmd.createStore({
-      dbPath: this.getDbPath(workspaceId),
-      config: {
-        collections: {
-          docs: {
-            path: sectionsRoot,
-            pattern: '**/*.md',
+    // First-time creation for this workspace: dedup so concurrent callers share
+    // one createStore() instead of racing on the same dbPath. The get/set pair is
+    // synchronous, so it can't interleave with another caller's check.
+    const inflight = this.inflightStores.get(workspaceId);
+    if (inflight) return inflight;
+
+    const creation = (async (): Promise<StoreCacheEntry> => {
+      const qmd = await this.loadQmdModule();
+      const store = await qmd.createStore({
+        dbPath: this.getDbPath(workspaceId),
+        config: {
+          collections: {
+            docs: {
+              path: sectionsRoot,
+              pattern: '**/*.md',
+            },
           },
         },
-      },
-    });
+      });
 
-    await this.syncStoreIndex(store);
+      await this.syncStoreIndex(store);
 
-    const entry: StoreCacheEntry = {
-      store,
-      indexedAt: syncState?.updatedAt,
-      sectionsRoot,
-      owner: repoInfo.owner,
-      repo: repoInfo.repo,
-      branch: repoInfo.branch || syncState?.branch,
-    };
+      const entry: StoreCacheEntry = {
+        store,
+        indexedAt: syncState?.updatedAt,
+        sectionsRoot,
+        owner: repoInfo.owner,
+        repo: repoInfo.repo,
+        branch: repoInfo.branch || syncState?.branch,
+      };
 
-    this.storeCache.set(workspaceId, entry);
-    return entry;
+      this.storeCache.set(workspaceId, entry);
+      return entry;
+    })().finally(() => this.inflightStores.delete(workspaceId));
+
+    this.inflightStores.set(workspaceId, creation);
+    return creation;
   }
 
   public async invalidateWorkspace(workspaceId: string): Promise<void> {
