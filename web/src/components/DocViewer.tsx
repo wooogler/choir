@@ -82,8 +82,15 @@ function findChangedBlockIndexes(previousTexts: string[], currentTexts: string[]
 // Normalize a rendered block or a markdown source line to compare them: strip
 // markdown syntax, collapse whitespace, lowercase. Used to map a rendered block
 // back to its source line so the git-blame line→record map can place a marker.
+//
+// A rendered block only carries the *visible* text, so a source line's markdown
+// links and images must collapse to their label/alt (dropping the URL) — otherwise
+// e.g. `[SDK](https://x)` (source) never equals `SDK` (rendered) and the line
+// silently loses its history marker.
 function normalizeForLineMatch(text: string): string {
   return text
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // ![alt](url) → alt
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // [label](url) → label
     .replace(/[#>*_`~[\]()!-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
