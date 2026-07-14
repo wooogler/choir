@@ -194,64 +194,6 @@ class GithubService {
   }
 
   // File management methods
-  /**
-   * Fetch all encrypted provenance sidecars under `.choir/context/` as text blobs.
-   * Used to repopulate the mirror after a cache purge / fresh deploy. Best-effort:
-   * returns [] if the tree cannot be read.
-   */
-  async fetchContextFiles(params: {
-    owner: string;
-    repo: string;
-    ref?: string;
-    workspaceId?: string;
-    userId?: string;
-  }): Promise<Array<{ path: string; content: string }>> {
-    try {
-      const octokit = await this.getOctokit(params.workspaceId, params.userId);
-      const actualRef =
-        params.ref || (await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId));
-
-      const treeResponse = await this.throttledRequest(() =>
-        octokit.rest.git.getTree({ owner: params.owner, repo: params.repo, tree_sha: actualRef, recursive: true }),
-      );
-      const items = ((treeResponse as any).data.tree as any[]).filter(
-        (item) =>
-          item.type === 'blob' &&
-          typeof item.path === 'string' &&
-          item.path.startsWith('.choir/context/') &&
-          item.path.endsWith('.json.enc'),
-      );
-
-      const out: Array<{ path: string; content: string }> = [];
-      const chunks = this.chunkArray(items, this.throttleOptions.maxConcurrent);
-      for (const chunk of chunks) {
-        const results = await Promise.all(
-          chunk.map(async (item) => {
-            try {
-              const blob = await this.throttledRequest(() =>
-                octokit.rest.git.getBlob({ owner: params.owner, repo: params.repo, file_sha: item.sha }),
-              );
-              return {
-                path: item.path as string,
-                content: Buffer.from((blob as any).data.content, 'base64').toString('utf-8'),
-              };
-            } catch (error) {
-              Logger.warn(`Failed to fetch context blob ${item.path}`, error as Error);
-              return null;
-            }
-          }),
-        );
-        for (const result of results) {
-          if (result) out.push(result);
-        }
-      }
-      return out;
-    } catch (error) {
-      Logger.warn('fetchContextFiles failed', error as Error);
-      return [];
-    }
-  }
-
   async getAllMarkdownFiles(params: {
     owner: string;
     repo: string;
