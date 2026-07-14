@@ -155,11 +155,22 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   useEffect(() => {
     const handlePopState = () => {
       const parsed = parseDocsUrl();
-      if (parsed) setFilePath(parsed.filePath);
+      if (!parsed || parsed.filePath === filePath) return;
+
+      // Back/forward navigation, like an in-app link click, must not silently
+      // discard unsaved edits. popstate can't be vetoed, so on cancel we re-push
+      // the current document's URL to keep the address bar and content in sync.
+      if (dirty && !window.confirm('Unsaved changes will be lost. Continue?')) {
+        window.history.pushState(null, '', `/docs/${encodeURIComponent(workspaceId)}/${encodePath(filePath)}`);
+        return;
+      }
+
+      setFilePath(parsed.filePath);
+      setIsEditing(false);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [dirty, filePath, workspaceId]);
 
   useEffect(() => {
     fetch(`/api/docs/${encodeURIComponent(workspaceId)}`, { credentials: 'same-origin' })
@@ -423,11 +434,42 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       }
     };
 
+    // Recompute (debounced) whenever layout settles or shifts: the initial
+    // render can land mid-transition, and block positions also move when the
+    // sidebar/history panel animates, images finish loading, or fonts swap.
+    let debounce = 0;
+    const scheduleRender = () => {
+      window.clearTimeout(debounce);
+      debounce = window.setTimeout(render, 60);
+    };
+
     const timer = window.setTimeout(render, 120);
-    window.addEventListener('resize', render);
+    window.addEventListener('resize', scheduleRender);
+
+    // A ResizeObserver on the content box catches reflow from the sidebar/panel
+    // transition and image loads that a one-shot timeout would measure too early.
+    const resizeObserver = new ResizeObserver(scheduleRender);
+    resizeObserver.observe(container);
+
+    // Images have no height until loaded, which shifts every block below them.
+    const images = Array.from(container.querySelectorAll('img'));
+    const onImageSettled = () => scheduleRender();
+    for (const img of images) {
+      if (!img.complete) {
+        img.addEventListener('load', onImageSettled);
+        img.addEventListener('error', onImageSettled);
+      }
+    }
+
     return () => {
       window.clearTimeout(timer);
-      window.removeEventListener('resize', render);
+      window.clearTimeout(debounce);
+      window.removeEventListener('resize', scheduleRender);
+      resizeObserver.disconnect();
+      for (const img of images) {
+        img.removeEventListener('load', onImageSettled);
+        img.removeEventListener('error', onImageSettled);
+      }
       clear();
     };
   }, [
@@ -437,6 +479,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     provenanceContent,
     loadedMarkdown,
     historyOpen,
+    sidebarOpen,
     getHighlightBlocks,
     openHistoryAt,
   ]);

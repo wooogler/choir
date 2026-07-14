@@ -86,20 +86,39 @@ describe('deAnonymizeText', () => {
 describe('workspace scoping', () => {
   it('does not leak a workspace-A name into workspace-B text (cross-tenant)', () => {
     const svc = new AnonymizationService();
-    (svc as unknown as { anonymizationData: AnonymizationData }).anonymizationData = { anonymization: {} };
+    // Inject explicit, deliberately non-overlapping fake names. Minting them via
+    // getAnonymizationMapping draws from a shared random name pool, so the two
+    // workspaces' fakes occasionally shared a surname and flaked the pass-through
+    // assertion below — the cross-tenant invariant itself doesn't depend on that.
+    (svc as unknown as { anonymizationData: AnonymizationData }).anonymizationData = {
+      anonymization: {
+        'TWS_A:U1': {
+          realName: 'Alice Anderson',
+          fakeName: 'Quinn Zeta',
+          fakeNickname: 'Quinn',
+          lastUsed: new Date().toISOString(),
+        },
+        'TWS_B:U2': {
+          realName: 'Bob Brown',
+          fakeName: 'Victor Yang',
+          fakeNickname: 'Victor',
+          lastUsed: new Date().toISOString(),
+        },
+      },
+    };
+    const aFake = 'Quinn Zeta';
+    const bFake = 'Victor Yang';
 
-    const a = svc.getAnonymizationMapping('U1', 'Alice Anderson', undefined, 'TWS_A');
-    const b = svc.getAnonymizationMapping('U2', 'Bob Brown', undefined, 'TWS_B');
-
-    // Workspace B de-anonymizing text that happens to contain workspace A's fake
-    // name must NOT reveal workspace A's real name.
-    expect(svc.deAnonymizeText(`ping ${a.fakeName}`, 'TWS_B')).not.toContain('Alice Anderson');
-    expect(svc.deAnonymizeText(`ping ${a.fakeName}`, 'TWS_B')).toContain(a.fakeName);
+    // Workspace B de-anonymizing text that contains workspace A's fake name must
+    // NOT reveal workspace A's real name, and (since B has no such mapping) leaves
+    // the fake name untouched.
+    expect(svc.deAnonymizeText(`ping ${aFake}`, 'TWS_B')).not.toContain('Alice Anderson');
+    expect(svc.deAnonymizeText(`ping ${aFake}`, 'TWS_B')).toContain(aFake);
 
     // Within its own workspace it de-anonymizes correctly.
-    expect(svc.deAnonymizeText(`ping ${a.fakeName}`, 'TWS_A')).toContain('Alice Anderson');
+    expect(svc.deAnonymizeText(`ping ${aFake}`, 'TWS_A')).toContain('Alice Anderson');
     // And workspace B's own mapping still works.
-    expect(svc.deAnonymizeText(`hi ${b.fakeName}`, 'TWS_B')).toContain('Bob Brown');
+    expect(svc.deAnonymizeText(`hi ${bFake}`, 'TWS_B')).toContain('Bob Brown');
   });
 
   it('anonymizes only the current workspace real names', () => {

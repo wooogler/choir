@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ProvenanceListItem, ProvenanceRecord, ProvenanceType } from '../types';
 import { changedLineCount, lineDiff } from '../utils/diff';
 import { encodePath } from '../utils/docs';
@@ -133,6 +133,9 @@ export function HistoryPanel({
   const [userFilter, setUserFilter] = useState('all');
   const [sort, setSort] = useState<SortKey>('newest');
   const [dateRange, setDateRange] = useState<DateKey>('all');
+  // The last focusKey we've already acted on, so re-renders (e.g. records
+  // reloading on panel reopen) don't re-fire a stale marker focus.
+  const handledFocusKeyRef = useRef<number | null | undefined>(null);
 
   useEffect(() => {
     if (!open || !authenticated) return;
@@ -219,14 +222,31 @@ export function HistoryPanel({
   }, []);
 
   // When a gutter marker is clicked, expand and scroll to its record. focusKey is
-  // an intentional re-trigger nonce so clicking the same marker re-focuses.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: focusKey is a re-trigger nonce
+  // an intentional re-trigger nonce so clicking the same marker re-focuses; the
+  // handled-key ref stops a stale focus re-firing on unrelated re-renders.
   useEffect(() => {
     if (!focusId || !records) return;
+    // Only act on a genuinely new marker click. Without this, reopening the panel
+    // (which re-fetches records → new array reference) would re-fire the stale
+    // focus and jump the user to a previously-clicked record.
+    if (focusKey === handledFocusKeyRef.current) return;
+    handledFocusKeyRef.current = focusKey;
+
+    // The target record may be hidden by an active filter/search, which would make
+    // the click silently do nothing. Clear filters so it's always revealed.
+    setSearch('');
+    setUserFilter('all');
+    setDateRange('all');
     setExpandedId(focusId);
-    document
-      .querySelector<HTMLElement>(`[data-record-id="${focusId}"]`)
-      ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+
+    // Scroll after the filter reset has re-rendered the (possibly newly visible)
+    // row into the DOM.
+    const raf = window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-record-id="${focusId}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(raf);
   }, [focusKey, focusId, records]);
 
   if (!open) return null;
