@@ -110,6 +110,10 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [changedBlockCount, setChangedBlockCount] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [lineProvenance, setLineProvenance] = useState<Record<number, string> | null>(null);
+  // The document content from the SAME git-clone snapshot blame ran against; the
+  // line→record map is keyed to THIS content, so markers must be matched against
+  // it (not the possibly-divergent API-mirror content the editor renders).
+  const [provenanceContent, setProvenanceContent] = useState<string | null>(null);
   const [historyFocus, setHistoryFocus] = useState<{ id: string; key: number } | null>(null);
 
   const editorHandleRef = useRef<CrepeEditorHandle | null>(null);
@@ -264,18 +268,25 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   useEffect(() => {
     if (loadedMarkdown === null || session?.authenticated !== true) {
       setLineProvenance(null);
+      setProvenanceContent(null);
       return;
     }
     let cancelled = false;
     fetch(`/api/docs/${encodeURIComponent(workspaceId)}/provenance/${encodePath(filePath)}?lines=1`, {
       credentials: 'same-origin',
     })
-      .then((r) => (r.ok ? (r.json() as Promise<{ lines: Record<number, string> }>) : Promise.reject(new Error())))
+      .then((r) =>
+        r.ok ? (r.json() as Promise<{ lines: Record<number, string>; content?: string }>) : Promise.reject(new Error()),
+      )
       .then((d) => {
-        if (!cancelled) setLineProvenance(d.lines);
+        if (cancelled) return;
+        setLineProvenance(d.lines);
+        setProvenanceContent(d.content ?? null);
       })
       .catch(() => {
-        if (!cancelled) setLineProvenance(null);
+        if (cancelled) return;
+        setLineProvenance(null);
+        setProvenanceContent(null);
       });
     return () => {
       cancelled = true;
@@ -365,7 +376,11 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
 
     const render = () => {
       clear();
-      const srcLines = loadedMarkdown.split('\n').map((text, i) => ({ no: i + 1, norm: normalizeForLineMatch(text) }));
+      // Match blocks against the git-clone snapshot (the content the line→record
+      // map is keyed to), not the API-mirror content the editor renders — they can
+      // diverge. Fall back to the rendered content only if the snapshot is absent.
+      const lineSource = provenanceContent ?? loadedMarkdown;
+      const srcLines = lineSource.split('\n').map((text, i) => ({ no: i + 1, norm: normalizeForLineMatch(text) }));
       const blocks = getHighlightBlocks();
       const containerTop = container.getBoundingClientRect().top;
 
@@ -375,7 +390,9 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         if (!bnorm) continue;
         for (let i = cursor; i < srcLines.length; i += 1) {
           const ln = srcLines[i];
-          if (ln.norm && (ln.norm === bnorm || ln.norm.includes(bnorm) || bnorm.includes(ln.norm))) {
+          // Strict whole-line equality (+ forward cursor for position): loose
+          // substring matching attached markers to the wrong repeated line.
+          if (ln.norm && ln.norm === bnorm) {
             const recordId = lineProvenance[ln.no];
             if (recordId) {
               const top = block.getBoundingClientRect().top - containerTop;
@@ -406,7 +423,16 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       window.removeEventListener('resize', render);
       clear();
     };
-  }, [editorReady, isEditing, lineProvenance, loadedMarkdown, historyOpen, getHighlightBlocks, openHistoryAt]);
+  }, [
+    editorReady,
+    isEditing,
+    lineProvenance,
+    provenanceContent,
+    loadedMarkdown,
+    historyOpen,
+    getHighlightBlocks,
+    openHistoryAt,
+  ]);
 
   const markDocumentChangedBlocks = useCallback(
     (forceFallback: boolean) => {

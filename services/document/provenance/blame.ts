@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { GithubService } from 'services/github';
 import { getGithubRepo } from 'services/slack';
 import { addCommitsForDir, blameLineCommits } from 'services/workspace/git-mirror';
@@ -23,7 +25,7 @@ export async function getLineProvenance(params: {
   workspaceId: string;
   docPath: string;
   userId?: string;
-}): Promise<{ lines: Record<number, string> }> {
+}): Promise<{ lines: Record<number, string>; content?: string }> {
   const { workspaceId, docPath, userId } = params;
   const repo = await getGithubRepo(workspaceId);
   if (!repo) return { lines: {} };
@@ -46,6 +48,18 @@ export async function getLineProvenance(params: {
 
   const gitRoot = mirror.getGitRepoRoot(workspaceId);
   const normalized = docPath.replace(/^\/+/, '');
+
+  // Read the document from the SAME clone snapshot blame runs against, so the
+  // returned content and the line→record map line up exactly. The API-materialized
+  // mirror the viewer would otherwise render can diverge from this snapshot, which
+  // made markers attach to the wrong lines.
+  let content: string | undefined;
+  try {
+    content = await fs.promises.readFile(path.join(gitRoot, normalized), 'utf-8');
+  } catch {
+    content = undefined;
+  }
+
   const [lineShas, addCommits] = await Promise.all([
     blameLineCommits(gitRoot, normalized),
     addCommitsForDir(gitRoot, `${CONTEXT_DIR}/${normalized}`),
@@ -63,5 +77,5 @@ export async function getLineProvenance(params: {
     const recordId = recordBySha.get(sha);
     if (recordId) lines[lineNo] = recordId;
   }
-  return { lines };
+  return { lines, content };
 }
