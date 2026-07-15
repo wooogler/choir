@@ -15,4 +15,9 @@ export const registerUrlActionHandlers = (app: App) => {
     await ack();
     logger.info('Open private DM URL button clicked - handled by deep link');
   });
+
+  app.action('open_dashboard_url', async ({ ack, logger }) => {
+    await ack();
+    logger.info('Open dashboard URL button clicked - handled by link');
+  });
 };

@@ -121,8 +121,11 @@ export const buildHomeView = async (
     { type: 'divider' },
   ];
 
+  const insightsBlocks = buildInsightsBlocks(workspaceId, choirUsers.includes(userId));
+
   return [
     ...homeBlocks,
+    ...insightsBlocks,
     ...documentConnectionBlocks,
     ...choirManagementBlocks,
     ...openAISettingsBlocks,
@@ -132,6 +135,39 @@ export const buildHomeView = async (
     ...readOnlyFilesBlocks,
     ...loggingToggleBlocks,
     ...logDownloadBlocks,
+  ];
+};
+
+/**
+ * "Team Insights" entry linking to the web awareness dashboard. Shown to CHOIR
+ * users (registered members, incl. managers) when a public web base URL is set.
+ * The dashboard page itself re-gates on CHOIR-user status.
+ */
+const buildInsightsBlocks = (workspaceId: string, isChoirUser: boolean): any[] => {
+  const baseUrl = process.env.DOCS_BASE_URL?.replace(/\/$/, '');
+  if (!isChoirUser || !baseUrl) return [];
+
+  const dashboardUrl = `${baseUrl}/docs/${encodeURIComponent(workspaceId)}/dashboard`;
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '📊 *Team Insights* — what the team asks about, how often docs answer it, and where the gaps are. Privacy-preserving: no individual activity is shown.',
+      },
+    },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '📊 Open Team Insights', emoji: true },
+          action_id: 'open_dashboard_url',
+          url: dashboardUrl,
+        },
+      ],
+    },
+    { type: 'divider' },
   ];
 };
 

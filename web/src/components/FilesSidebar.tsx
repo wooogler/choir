@@ -1,14 +1,15 @@
 import type { DocFile, FolderNode, RepoInfo } from '../types';
-import { buildFolderTree, encodePath, folderContainsPath, formatTitle } from '../utils/docs';
+import { buildFolderTree, dashboardPath, encodePath, folderContainsPath, formatTitle, navigate } from '../utils/docs';
 
 type FilesSidebarProps = {
   files: DocFile[];
   currentPath: string;
   repo: RepoInfo | null;
   workspaceId: string;
+  canSeeInsights: boolean;
 };
 
-export function FilesSidebar({ files, currentPath, repo, workspaceId }: FilesSidebarProps) {
+export function FilesSidebar({ files, currentPath, repo, workspaceId, canSeeInsights }: FilesSidebarProps) {
   const tree = buildFolderTree(files);
   const repoLabel = repo ? `${repo.owner}/${repo.name}` : 'Repository';
   const repoInitial = repo?.name?.[0]?.toUpperCase() || 'R';
@@ -65,6 +66,25 @@ export function FilesSidebar({ files, currentPath, repo, workspaceId }: FilesSid
       <nav className="file-list">
         {tree.folders.map(renderFolder)}
         {tree.files.map(renderFile)}
+        {canSeeInsights && (
+          // A button (not an <a href="/docs/…/dashboard">) so DocViewer's link
+          // interceptor doesn't mistake it for a document navigation.
+          <button
+            type="button"
+            className="file-link insights-link"
+            onClick={() => navigate(dashboardPath(workspaceId, currentPath))}
+          >
+            <span className="file-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M2 2a.75.75 0 0 1 .75.75v9.5h10.5a.75.75 0 0 1 0 1.5H2.75A1.75 1.75 0 0 1 1 12V2.75A.75.75 0 0 1 2 2Zm3.75 6a.75.75 0 0 1 .75.75v2a.75.75 0 0 1-1.5 0v-2A.75.75 0 0 1 5.75 8Zm3-3a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0v-5A.75.75 0 0 1 8.75 5Zm3 1.5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5a.75.75 0 0 1 .75-.75Z"
+                />
+              </svg>
+            </span>
+            <span className="file-label">Insights</span>
+          </button>
+        )}
       </nav>
     </aside>
   );

@@ -1,13 +1,21 @@
 import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame.css';
 import './styles.css';
+import { useEffect, useState } from 'react';
+import { Dashboard } from './components/Dashboard';
 import { DocViewer } from './components/DocViewer';
-import { parseDocsUrl } from './utils/docs';
+import { type Route, parseRoute } from './utils/docs';
 
 export default function App() {
-  const parsed = parseDocsUrl();
+  const [route, setRoute] = useState<Route | null>(() => parseRoute());
 
-  if (!parsed) {
+  useEffect(() => {
+    const onNavigate = () => setRoute(parseRoute());
+    window.addEventListener('popstate', onNavigate);
+    return () => window.removeEventListener('popstate', onNavigate);
+  }, []);
+
+  if (!route) {
     return (
       <div className="invalid-url">
         Invalid URL. Expected <code>/docs/:workspaceId/:filePath</code>
@@ -15,5 +23,9 @@ export default function App() {
     );
   }
 
-  return <DocViewer workspaceId={parsed.workspaceId} initialFilePath={parsed.filePath} />;
+  if (route.view === 'dashboard') {
+    return <Dashboard workspaceId={route.workspaceId} fromFilePath={route.from} />;
+  }
+
+  return <DocViewer workspaceId={route.workspaceId} initialFilePath={route.filePath} />;
 }

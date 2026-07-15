@@ -1,12 +1,45 @@
 import type { DocFile, FolderNode, TocItem } from '../types';
 
+// `/docs/:workspaceId/dashboard` is reserved for the Insights view, so parseDocsUrl
+// (used by DocViewer's routing) treats it as "not a document" and stays inert there.
 export function parseDocsUrl(): { workspaceId: string; filePath: string } | null {
   const match = window.location.pathname.match(/^\/docs\/([^/]+)\/(.+)$/);
   if (!match) return null;
-  return {
-    workspaceId: decodeURIComponent(match[1]),
-    filePath: decodeURIComponent(match[2]),
-  };
+  const filePath = decodeURIComponent(match[2]);
+  if (filePath === 'dashboard') return null;
+  return { workspaceId: decodeURIComponent(match[1]), filePath };
+}
+
+export type Route =
+  | { view: 'docs'; workspaceId: string; filePath: string }
+  | { view: 'dashboard'; workspaceId: string; from?: string };
+
+/** Top-level route for App: docs viewer vs the awareness dashboard. */
+export function parseRoute(): Route | null {
+  const match = window.location.pathname.match(/^\/docs\/([^/]+)\/(.+)$/);
+  if (!match) return null;
+  const workspaceId = decodeURIComponent(match[1]);
+  const rest = decodeURIComponent(match[2]);
+  if (rest === 'dashboard') {
+    const from = new URLSearchParams(window.location.search).get('from') || undefined;
+    return { view: 'dashboard', workspaceId, from };
+  }
+  return { view: 'docs', workspaceId, filePath: rest };
+}
+
+export function docsPath(workspaceId: string, filePath: string): string {
+  return `/docs/${encodeURIComponent(workspaceId)}/${encodePath(filePath)}`;
+}
+
+export function dashboardPath(workspaceId: string, fromFilePath?: string): string {
+  const base = `/docs/${encodeURIComponent(workspaceId)}/dashboard`;
+  return fromFilePath ? `${base}?from=${encodeURIComponent(fromFilePath)}` : base;
+}
+
+/** SPA navigation: pushState, then notify App's popstate listener to re-render. */
+export function navigate(path: string): void {
+  window.history.pushState(null, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
 export function slugifyHeading(text: string): string {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DocFile, RepoInfo, TocItem } from '../types';
+import type { DocFile, RepoInfo, SessionInfo, TocItem } from '../types';
 import { encodePath, extractToc, parseDocsUrl, scrollToAnchor, slugifyHeading } from '../utils/docs';
 import { CommitDialog } from './CommitDialog';
 import { CrepeEditor, type CrepeEditorHandle } from './CrepeEditor';
@@ -12,10 +12,6 @@ type DocViewerProps = {
   workspaceId: string;
   initialFilePath: string;
 };
-
-type SessionInfo =
-  | { authenticated: false }
-  | { authenticated: true; workspaceId: string; userId: string; isManager: boolean };
 
 const MOBILE_BREAKPOINT = 820;
 const HIGHLIGHT_BLOCK_SELECTOR = 'li, p, h1, h2, h3, h4, h5, h6, pre, td, th, hr';
@@ -132,6 +128,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
 
   const dirty = changedBlockCount > 0;
   const canEdit = session?.authenticated === true && session.isManager;
+  const canSeeInsights = session?.authenticated === true && session.isChoirUser;
   const sessionLoaded = session !== null;
   const editorReady = loadedMarkdown !== null;
 
@@ -683,7 +680,13 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         onClick={closeSidebarFromBackdrop}
         aria-label="Close sidebar"
       />
-      <FilesSidebar files={files} currentPath={filePath} repo={repo} workspaceId={workspaceId} />
+      <FilesSidebar
+        files={files}
+        currentPath={filePath}
+        repo={repo}
+        workspaceId={workspaceId}
+        canSeeInsights={canSeeInsights}
+      />
       <div className="doc-main">
         <DocHeader
           breadcrumb={breadcrumb}
