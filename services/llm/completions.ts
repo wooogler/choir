@@ -160,6 +160,7 @@ export async function createStructuredResponse<T>(
     schemaName,
     schema,
     schemaDescription,
+    skipAnonymization = false,
   } = options;
 
   const resolved = await resolveLLMConfig(workspaceId, purpose);
@@ -168,7 +169,9 @@ export async function createStructuredResponse<T>(
 
   const processedMessages: ChatCompletionMessageParam[] = messages.map((message) => ({
     ...message,
-    content: anonymizeText(normalizeMessageContent(message.content), workspaceId),
+    content: skipAnonymization
+      ? normalizeMessageContent(message.content)
+      : anonymizeText(normalizeMessageContent(message.content), workspaceId),
   })) as ChatCompletionMessageParam[];
 
   const response = await client.responses.create({
@@ -188,7 +191,7 @@ export async function createStructuredResponse<T>(
   });
 
   const rawResponse = response.output_text;
-  const finalResponse = deAnonymizeText(rawResponse || '', workspaceId);
+  const finalResponse = skipAnonymization ? rawResponse || '' : deAnonymizeText(rawResponse || '', workspaceId);
 
   if (debug) {
     logDebugOutput({

@@ -7,16 +7,18 @@ import registerListeners from './listeners';
 
 import { AppConfig } from '@/config';
 import { sweepExpiredSessions } from 'services/common';
+import { getDocUsage, getGaps, getSummary, getTopics } from 'services/dashboard/dashboard-api';
+import { clusterAllWorkspaces } from 'services/dashboard/topic-clusterer';
 import {
   ALLOWED_IMAGE_TYPES,
   IMAGE_EXTENSIONS,
   MAX_ASSET_BYTES,
+  OAUTH_NONCE_COOKIE,
   buildClearSessionCookieHeader,
   buildSessionCookieHeader,
   buildSlackAuthorizeUrl,
   exchangeSlackOidcCode,
   getSlackOidcConfig,
-  OAUTH_NONCE_COOKIE,
   issueOAuthState,
   issueSessionCookieValue,
   parseSessionCookie,
@@ -230,6 +232,71 @@ function setupPublicSite(): void {
   router.post('/api/docs/logout', async (_req: any, res: any) => {
     res.setHeader('set-cookie', buildClearSessionCookieHeader({ secure: cookieSecure }));
     return res.json({ ok: true });
+  });
+
+  // ── Awareness dashboard API (Part B) ──────────────────────────────────────
+  // Read-only JSON, CHOIR-user gated (registered members, incl. students). Every
+  // response is aggregated to ISO week and k-anonymized inside the service layer.
+  const requireDashboardAccess = async (req: any, res: any, workspaceId: string): Promise<boolean> => {
+    const session = await readSession(req);
+    if (!session || session.workspaceId !== workspaceId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return false;
+    }
+    if (!(await isCHOIRUser(workspaceId, session.userId))) {
+      res.status(403).json({ error: 'Forbidden' });
+      return false;
+    }
+    return true;
+  };
+  const parseWeeks = (req: any): number => {
+    const raw = Number(req.query?.weeks);
+    return Number.isFinite(raw) && raw > 0 && raw <= 104 ? Math.floor(raw) : 12;
+  };
+
+  router.get('/api/dashboard/:workspaceId/summary', async (req: any, res: any) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      if (!(await requireDashboardAccess(req, res, workspaceId))) return;
+      return res.json(getSummary(workspaceId, parseWeeks(req)));
+    } catch (err) {
+      app.logger.error('GET /api/dashboard/:workspaceId/summary failed', err as Error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  router.get('/api/dashboard/:workspaceId/topics', async (req: any, res: any) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      if (!(await requireDashboardAccess(req, res, workspaceId))) return;
+      return res.json(getTopics(workspaceId, parseWeeks(req)));
+    } catch (err) {
+      app.logger.error('GET /api/dashboard/:workspaceId/topics failed', err as Error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  router.get('/api/dashboard/:workspaceId/gaps', async (req: any, res: any) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      if (!(await requireDashboardAccess(req, res, workspaceId))) return;
+      return res.json(getGaps(workspaceId, parseWeeks(req)));
+    } catch (err) {
+      app.logger.error('GET /api/dashboard/:workspaceId/gaps failed', err as Error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  router.get('/api/dashboard/:workspaceId/doc-usage', async (req: any, res: any) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      if (!(await requireDashboardAccess(req, res, workspaceId))) return;
+      const file = req.query?.file ? String(req.query.file) : undefined;
+      return res.json(getDocUsage(workspaceId, parseWeeks(req), Date.now(), file));
+    } catch (err) {
+      app.logger.error('GET /api/dashboard/:workspaceId/doc-usage failed', err as Error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
   router.get('/api/docs/:workspaceId', async (req: any, res: any) => {
@@ -831,6 +898,17 @@ process.once('SIGINT', () => {
       60 * 60 * 1000,
     );
     sessionSweepInterval.unref?.();
+
+    // Awareness-dashboard topic clustering: embed new paraphrases, assign topics,
+    // relabel. Run shortly after startup, then daily. Fire-and-forget; failures
+    // are logged per workspace and never affect the app.
+    const runClustering = () => {
+      void clusterAllWorkspaces().catch((error) => app.logger.warn('Dashboard clustering run failed', error as Error));
+    };
+    const initialClusterTimer = setTimeout(runClustering, 5 * 60 * 1000);
+    initialClusterTimer.unref?.();
+    const clusterInterval = setInterval(runClustering, 24 * 60 * 60 * 1000);
+    clusterInterval.unref?.();
 
     if (slackConfig.mode === 'oauth') {
       app.logger.info('Slack OAuth install path: /slack/install');

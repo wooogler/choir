@@ -30,6 +30,11 @@ export interface QaEventInput {
 // subarray's offset/length is honored (Buffer.from(f32) would byte-truncate).
 const encodeEmbedding = (v: Float32Array): Buffer => Buffer.from(v.buffer, v.byteOffset, v.byteLength);
 
+// Rebuild a fresh, aligned Float32Array — a pooled Buffer may be at a non-4-aligned
+// offset, so slicing into a new ArrayBuffer is the only always-safe reconstruction.
+const decodeEmbedding = (b: Buffer): Float32Array =>
+  new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+
 /**
  * Inserts a Q&A event and its retrieved-chunk rows atomically. Returns the new
  * event id. The callback is fully synchronous, as better-sqlite3 transactions
@@ -119,4 +124,70 @@ export function purgeWorkspaceQaEvents(workspaceId: string): number {
   const removed = db.prepare('DELETE FROM qa_events WHERE workspace_id = ?').run(workspaceId).changes;
   db.prepare('DELETE FROM qa_topics WHERE workspace_id = ?').run(workspaceId);
   return removed;
+}
+
+// ── Clustering support (P1) ─────────────────────────────────────────────────
+
+export interface UnembeddedEvent {
+  id: number;
+  paraphrase: string;
+}
+
+/** Events whose paraphrase has not been embedded yet (the clusterer embeds these). */
+export function getEventsNeedingEmbedding(workspaceId: string, limit = 500): UnembeddedEvent[] {
+  return getDatabase()
+    .prepare(
+      'SELECT id, paraphrase FROM qa_events WHERE workspace_id = ? AND embedding IS NULL ORDER BY created_at ASC LIMIT ?',
+    )
+    .all(workspaceId, limit) as UnembeddedEvent[];
+}
+
+export function setEventEmbedding(eventId: number, embedding: Float32Array): void {
+  getDatabase().prepare('UPDATE qa_events SET embedding = ? WHERE id = ?').run(encodeEmbedding(embedding), eventId);
+}
+
+export interface EmbeddedEvent {
+  id: number;
+  paraphrase: string;
+  embedding: Float32Array;
+  topicId: number | null;
+}
+
+/** All embedded events for a workspace, for the clusterer to (re)assign topics. */
+export function getEmbeddedEvents(workspaceId: string): EmbeddedEvent[] {
+  const rows = getDatabase()
+    .prepare(
+      'SELECT id, paraphrase, embedding, topic_id AS topicId FROM qa_events WHERE workspace_id = ? AND embedding IS NOT NULL ORDER BY created_at ASC',
+    )
+    .all(workspaceId) as Array<{ id: number; paraphrase: string; embedding: Buffer; topicId: number | null }>;
+  return rows.map((r) => ({ ...r, embedding: decodeEmbedding(r.embedding) }));
+}
+
+export function setEventTopic(eventId: number, topicId: number): void {
+  getDatabase().prepare('UPDATE qa_events SET topic_id = ? WHERE id = ?').run(topicId, eventId);
+}
+
+export interface TopicRow {
+  id: number;
+  label: string;
+  representative: string;
+}
+
+export function insertTopic(workspaceId: string, label: string, representative: string, updatedAt: number): number {
+  const res = getDatabase()
+    .prepare('INSERT INTO qa_topics (workspace_id, label, representative, updated_at) VALUES (?, ?, ?, ?)')
+    .run(workspaceId, label, representative, updatedAt);
+  return Number(res.lastInsertRowid);
+}
+
+export function updateTopic(id: number, label: string, representative: string, updatedAt: number): void {
+  getDatabase()
+    .prepare('UPDATE qa_topics SET label = ?, representative = ?, updated_at = ? WHERE id = ?')
+    .run(label, representative, updatedAt, id);
+}
+
+export function getTopics(workspaceId: string): TopicRow[] {
+  return getDatabase()
+    .prepare('SELECT id, label, representative FROM qa_topics WHERE workspace_id = ? ORDER BY id')
+    .all(workspaceId) as TopicRow[];
 }
