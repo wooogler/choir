@@ -1,0 +1,122 @@
+/**
+ * Data access for the awareness-dashboard Q&A analytics tables. Stores only
+ * privacy-scrubbed rows: a paraphrased question (never the raw text), a salted
+ * user hash (never a raw userId), and a week label. See services/db/connection.ts
+ * for the schema.
+ */
+import { getDatabase } from 'services/db/connection';
+
+export interface QaEventChunkInput {
+  fileName: string;
+  sectionId?: string;
+  headingPath?: string;
+}
+
+export interface QaEventInput {
+  workspaceId: string;
+  createdAt: number;
+  isoWeek: string;
+  channelType: 'dm' | 'public' | 'private';
+  canAnswer: boolean;
+  searchResults: number;
+  userHash: string;
+  paraphrase: string;
+  /** Paraphrase embedding, filled later by the P1 clustering job; omit at record time. */
+  embedding?: Float32Array;
+  chunks: QaEventChunkInput[];
+}
+
+// better-sqlite3 binds a Node Buffer for a BLOB. Use the view-safe form so a
+// subarray's offset/length is honored (Buffer.from(f32) would byte-truncate).
+const encodeEmbedding = (v: Float32Array): Buffer => Buffer.from(v.buffer, v.byteOffset, v.byteLength);
+
+/**
+ * Inserts a Q&A event and its retrieved-chunk rows atomically. Returns the new
+ * event id. The callback is fully synchronous, as better-sqlite3 transactions
+ * require — do all async work (paraphrase, embed) before calling this.
+ */
+export function insertQaEvent(input: QaEventInput): number {
+  const db = getDatabase();
+
+  const insertEvent = db.prepare(`
+    INSERT INTO qa_events
+      (workspace_id, created_at, iso_week, channel_type, can_answer, search_results, user_hash, paraphrase, embedding)
+    VALUES
+      (@workspaceId, @createdAt, @isoWeek, @channelType, @canAnswer, @searchResults, @userHash, @paraphrase, @embedding)
+  `);
+  const insertChunk = db.prepare(`
+    INSERT INTO qa_event_chunks (event_id, file_name, section_id, heading_path)
+    VALUES (@eventId, @fileName, @sectionId, @headingPath)
+  `);
+
+  const run = db.transaction((): number => {
+    const res = insertEvent.run({
+      workspaceId: input.workspaceId,
+      createdAt: input.createdAt,
+      isoWeek: input.isoWeek,
+      channelType: input.channelType,
+      canAnswer: input.canAnswer ? 1 : 0,
+      searchResults: input.searchResults,
+      userHash: input.userHash,
+      paraphrase: input.paraphrase,
+      embedding: input.embedding ? encodeEmbedding(input.embedding) : null,
+    });
+    const eventId = Number(res.lastInsertRowid);
+
+    for (const chunk of input.chunks) {
+      insertChunk.run({
+        eventId,
+        fileName: chunk.fileName,
+        sectionId: chunk.sectionId ?? null,
+        headingPath: chunk.headingPath ?? null,
+      });
+    }
+    return eventId;
+  });
+
+  return run();
+}
+
+export interface QaEventRow {
+  id: number;
+  workspaceId: string;
+  createdAt: number;
+  isoWeek: string;
+  channelType: string;
+  canAnswer: boolean;
+  searchResults: number;
+  userHash: string;
+  paraphrase: string;
+  topicId: number | null;
+}
+
+/** Recent events for a workspace (newest first) — used by the P1 clusterer/API. */
+export function getQaEvents(workspaceId: string, limit = 500): QaEventRow[] {
+  const rows = getDatabase()
+    .prepare(`
+      SELECT id, workspace_id AS workspaceId, created_at AS createdAt, iso_week AS isoWeek,
+             channel_type AS channelType, can_answer AS canAnswer, search_results AS searchResults,
+             user_hash AS userHash, paraphrase, topic_id AS topicId
+      FROM qa_events
+      WHERE workspace_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `)
+    .all(workspaceId, limit) as Array<Omit<QaEventRow, 'canAnswer'> & { canAnswer: number }>;
+  return rows.map((r) => ({ ...r, canAnswer: r.canAnswer === 1 }));
+}
+
+export function countQaEvents(workspaceId: string): number {
+  const row = getDatabase().prepare('SELECT COUNT(*) AS n FROM qa_events WHERE workspace_id = ?').get(workspaceId) as {
+    n: number;
+  };
+  return row.n;
+}
+
+/** Removes all dashboard rows for a workspace (chunks cascade via FK). Used on uninstall. */
+export function purgeWorkspaceQaEvents(workspaceId: string): number {
+  const db = getDatabase();
+  const removed = db.prepare('DELETE FROM qa_events WHERE workspace_id = ?').run(workspaceId).changes;
+  db.prepare('DELETE FROM qa_topics WHERE workspace_id = ?').run(workspaceId);
+  return removed;
+}

@@ -16,6 +16,7 @@
     "dev:web": "NODE_ENV=development ENABLE_WEB_CONTENT=true ts-node -r tsconfig-paths/register app.ts",
     "migrate:sqlite": "ts-node -r tsconfig-paths/register scripts/migrate-to-sqlite.ts",
     "purge:workspace-cache": "ts-node -r tsconfig-paths/register scripts/purge-workspace-cache.ts",
+    "backfill:dashboard": "ts-node -r tsconfig-paths/register scripts/backfill-dashboard.ts",
     "lint": "node scripts/run-biome-changed.js check",
     "lint:fix": "node scripts/run-biome-changed.js write",
     "lint:all": "npx @biomejs/biome check *.ts listeners services scripts __tests__ src",
@@ -28,15 +29,7 @@
   },
   "author": "CHOIR contributors",
   "license": "MIT",
-  "keywords": [
-    "slack",
-    "bolt",
-    "typescript",
-    "github",
-    "openai",
-    "knowledge-base",
-    "rag"
-  ],
+  "keywords": ["slack", "bolt", "typescript", "github", "openai", "knowledge-base", "rag"],
   "repository": {
     "type": "git",
     "url": "https://github.com/wooogler/choir.git"

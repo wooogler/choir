@@ -58,6 +58,13 @@ export interface WorkspaceConfig {
     createdAt: string; // ISO
     rotatedAt?: string; // ISO, set on rotate/replace
   };
+  // Awareness dashboard (Part B). `dashboardEnabled` gates collection for the whole
+  // workspace (on by default; a manager can disable it). `dashboardOptOut` holds
+  // userIds who opted out. `dashboardSalt` is a random hex salt used to hash userIds
+  // for k-anonymity counting without storing raw ids; generated lazily on first use.
+  dashboardEnabled?: boolean;
+  dashboardOptOut?: string[];
+  dashboardSalt?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -419,6 +426,73 @@ export class WorkspaceStore {
       this.logger.info(`Generated context encryption key for workspace: ${workspaceId}`);
     }
     return key as unknown as Buffer;
+  }
+
+  /** Whether the awareness dashboard collects Q&A events for this workspace (default on). */
+  public async getDashboardEnabled(workspaceId: string): Promise<boolean> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.dashboardEnabled !== false;
+  }
+
+  /** Enable/disable dashboard collection for a workspace. */
+  public async setDashboardEnabled(workspaceId: string, enabled: boolean): Promise<void> {
+    if (
+      this.mutateConfigSync(workspaceId, (config) => {
+        config.dashboardEnabled = enabled;
+      }) === null
+    ) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+  }
+
+  public async getDashboardOptOut(workspaceId: string): Promise<string[]> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.dashboardOptOut ?? [];
+  }
+
+  /** Add one user to the dashboard opt-out list (idempotent). */
+  public async addDashboardOptOut(workspaceId: string, userId: string): Promise<boolean> {
+    if (!(await this.getWorkspaceConfig(workspaceId))) return false;
+    this.mutateConfigSync(workspaceId, (config) => {
+      if (!config.dashboardOptOut) config.dashboardOptOut = [];
+      if (config.dashboardOptOut.includes(userId)) return false; // already present — no write
+      config.dashboardOptOut.push(userId);
+    });
+    return true;
+  }
+
+  /** Remove one user from the dashboard opt-out list (idempotent). */
+  public async removeDashboardOptOut(workspaceId: string, userId: string): Promise<boolean> {
+    if (!(await this.getWorkspaceConfig(workspaceId))) return false;
+    this.mutateConfigSync(workspaceId, (config) => {
+      if (!config.dashboardOptOut?.includes(userId)) return false;
+      config.dashboardOptOut = config.dashboardOptOut.filter((id) => id !== userId);
+    });
+    return true;
+  }
+
+  /**
+   * Returns the per-workspace dashboard salt, generating and persisting a random
+   * hex salt on first use. Mirrors getOrCreateContextKey: atomic read-modify-write
+   * inside the SQLite transaction, no racy re-write when already set.
+   */
+  public async getOrCreateDashboardSalt(workspaceId: string): Promise<string> {
+    let salt: string | null = null;
+    const applied = this.mutateConfigSync(workspaceId, (config) => {
+      if (config.dashboardSalt) {
+        salt = config.dashboardSalt;
+        return false; // already set — return it without a re-write
+      }
+      salt = crypto.randomBytes(16).toString('hex');
+      config.dashboardSalt = salt;
+    });
+    if (applied === null) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+    if (applied === true) {
+      this.logger.info(`Generated dashboard salt for workspace: ${workspaceId}`);
+    }
+    return salt as unknown as string;
   }
 
   /**

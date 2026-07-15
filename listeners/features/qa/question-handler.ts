@@ -1,5 +1,6 @@
 import { SessionType, generateSessionId, getSessionData, storeSessionData } from 'services/common';
 import { logQuestionProcessing } from 'services/common/interaction-tracker';
+import { recordQaEvent } from 'services/dashboard/qa-event-recorder';
 import { collectReplyImages } from 'services/document/image-captions/resolve-images';
 import { convertMarkdownToSlackText } from 'services/document/markdown';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
@@ -291,6 +292,18 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       });
     }
     answerDelivered = true;
+
+    // Fire-and-forget: record a privacy-scrubbed Q&A event for the awareness
+    // dashboard. Never awaited — must not add latency to or fail the answer.
+    recordQaEvent({
+      workspaceId,
+      userId: event.user,
+      question: userMessage,
+      canAnswer: answerResult.canAnswer,
+      searchResults: relevantDocs.length,
+      channelType: event.channel_type,
+      relevantDocs,
+    }).catch((error) => logger.warn('Dashboard QA recorder failed', error));
 
     // 응답 메시지가 완전히 전송된 후 약간의 지연을 두고 공유 버튼을 전송
     await new Promise((resolve) => setTimeout(resolve, 1000)); // 1초 지연

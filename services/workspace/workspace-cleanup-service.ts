@@ -2,6 +2,7 @@ import { purgeWorkspaceInteractionLogs } from 'services/common/interaction-track
 import { Logger } from 'services/common/logger';
 import { purgeWorkspaceAnonymization, purgeWorkspaceNames } from 'services/common/name-cache';
 import { purgeWorkspaceSessions } from 'services/common/session-store';
+import { purgeWorkspaceQaEvents } from 'services/dashboard/qa-event-store';
 import { purgeWorkspaceAppState } from 'services/document/document-store';
 import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
 import { VectorStoreService } from 'services/file-registry/main-service';
@@ -19,6 +20,7 @@ export interface WorkspaceCleanupResult {
   purgedCache: boolean;
   removedInteractionLogLines: number;
   removedAnonymizationMappings: number;
+  removedQaEvents: number;
 }
 
 export class WorkspaceCleanupService {
@@ -50,10 +52,12 @@ export class WorkspaceCleanupService {
       purgedCache: false,
       removedInteractionLogLines: 0,
       removedAnonymizationMappings: 0,
+      removedQaEvents: 0,
     };
 
     result.removedSessions = purgeWorkspaceSessions(workspaceId);
     result.removedAppState = purgeWorkspaceAppState(workspaceId);
+    result.removedQaEvents = purgeWorkspaceQaEvents(workspaceId);
 
     // Purge user PII this workspace left behind: interaction logs, cached names,
     // and anonymization mappings.

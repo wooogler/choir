@@ -18,6 +18,14 @@ export interface ChatCompletionOptions {
   function_name?: string;
   debug?: boolean;
   response_format?: { type: 'text' | 'json_object' };
+  /**
+   * Skip both the input anonymization and the output de-anonymization passes. Use
+   * when the caller has already scrubbed the input and must NOT have names restored
+   * in the output (e.g. the dashboard paraphrase). Note: omitting workspaceId does
+   * NOT skip these passes — with no workspaceId the anonymization map is global, so
+   * de-anonymization still runs and would restore real names.
+   */
+  skipAnonymization?: boolean;
 }
 
 export interface StructuredResponseOptions extends Omit<ChatCompletionOptions, 'response_format'> {
@@ -96,6 +104,7 @@ async function createResponseText(
     function_name = 'None',
     debug = process.env.OPENAI_DEBUG === 'true',
     response_format,
+    skipAnonymization = false,
   } = options;
 
   const resolved = await resolveLLMConfig(workspaceId, purpose);
@@ -104,7 +113,9 @@ async function createResponseText(
 
   const processedMessages: ChatCompletionMessageParam[] = messages.map((message) => ({
     ...message,
-    content: anonymizeText(normalizeMessageContent(message.content), workspaceId),
+    content: skipAnonymization
+      ? normalizeMessageContent(message.content)
+      : anonymizeText(normalizeMessageContent(message.content), workspaceId),
   })) as ChatCompletionMessageParam[];
 
   const response = await client.responses.create({
@@ -120,7 +131,7 @@ async function createResponseText(
   });
 
   const rawResponse = response.output_text;
-  const finalResponse = deAnonymizeText(rawResponse || '', workspaceId);
+  const finalResponse = skipAnonymization ? rawResponse || '' : deAnonymizeText(rawResponse || '', workspaceId);
 
   if (debug) {
     logDebugOutput({

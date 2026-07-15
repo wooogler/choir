@@ -75,6 +75,47 @@ function initializeSchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_app_state_type ON app_state (state_type);
+
+    -- Awareness dashboard (Part B). Privacy-scrubbed Q&A analytics: only a
+    -- paraphrased (not raw) question, a per-workspace-salted user hash (for
+    -- k-anonymity counting, never a raw userId), and week-level time. created_at
+    -- is kept for internal ordering/retention but is never exposed via the API.
+    CREATE TABLE IF NOT EXISTS qa_topics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      representative TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_qa_topics_workspace ON qa_topics (workspace_id);
+
+    CREATE TABLE IF NOT EXISTS qa_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      iso_week TEXT NOT NULL,
+      channel_type TEXT NOT NULL,
+      can_answer INTEGER NOT NULL DEFAULT 0,
+      search_results INTEGER NOT NULL DEFAULT 0,
+      user_hash TEXT NOT NULL,
+      paraphrase TEXT NOT NULL,
+      embedding BLOB,
+      topic_id INTEGER REFERENCES qa_topics(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_qa_events_ws_week ON qa_events (workspace_id, iso_week);
+    CREATE INDEX IF NOT EXISTS idx_qa_events_ws_hash ON qa_events (workspace_id, user_hash);
+
+    CREATE TABLE IF NOT EXISTS qa_event_chunks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES qa_events(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      section_id TEXT,
+      heading_path TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_qa_event_chunks_event ON qa_event_chunks (event_id);
   `);
 }
 
