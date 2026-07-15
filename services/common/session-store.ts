@@ -13,9 +13,14 @@ export enum SessionType {
   ANONYMOUS_MESSAGE = 'anonymous_message', // Anonymous 질문 메시지 추적
   CREATE_FILE_MODAL = 'create_file_modal', // Create File Modal 데이터
   GENERAL_CONVERSATION = 'general_conversation', // General conversation correction buttons
+  REGISTRATION_REQUEST = 'registration_request', // Non-user access request pending manager approval
 }
 
 const sessionTimers = new Map<string, NodeJS.Timeout>();
+
+// setTimeout delays are stored as a 32-bit signed int; anything larger clamps to
+// 1ms and fires immediately. TTLs beyond this rely on lazy expiry + sweep instead.
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
 function getSessionKey(sessionId: string, sessionType: SessionType): string {
   return `${sessionType}:${sessionId}`;
@@ -81,16 +86,23 @@ export function storeSessionData(
   // 만료 타이머 설정. unref so a long-lived timer never keeps the process alive
   // (graceful shutdown / test runners), and guard the callback so a fire after
   // the DB is closed can't crash.
-  const timerId = setTimeout(() => {
-    try {
-      deleteSession(sessionId, sessionType);
-    } catch {
-      // DB may be closed (shutdown/test teardown); expiry is best-effort.
-    }
-    sessionTimers.delete(sessionKey);
-  }, expirationMs);
-  timerId.unref?.();
-  sessionTimers.set(sessionKey, timerId);
+  //
+  // Only schedule the eager timer when the delay fits setTimeout's 32-bit range
+  // (~24.8 days). A larger delay silently clamps to 1ms and would delete the row
+  // almost immediately; for those TTLs the row still expires correctly via its
+  // expires_at column (lazy read-check + sweepExpiredSessions).
+  if (expirationMs <= MAX_TIMER_DELAY_MS) {
+    const timerId = setTimeout(() => {
+      try {
+        deleteSession(sessionId, sessionType);
+      } catch {
+        // DB may be closed (shutdown/test teardown); expiry is best-effort.
+      }
+      sessionTimers.delete(sessionKey);
+    }, expirationMs);
+    timerId.unref?.();
+    sessionTimers.set(sessionKey, timerId);
+  }
 
   getDatabase()
     .prepare(`

@@ -10,6 +10,7 @@ import { registerDMFeatures } from './features/dm';
 import { registerDocumentUpdateFeature } from './features/document-update';
 import { registerPreferencesFeature } from './features/preferences';
 import { registerQAFeature } from './features/qa';
+import { registerRegistrationFeature } from './features/registration';
 
 const registerListeners = (app: App) => {
   registerAppHome(app);
@@ -23,6 +24,7 @@ const registerListeners = (app: App) => {
   registerPreferencesFeature(app);
   registerConversationFeature(app);
   registerDMFeatures(app);
+  registerRegistrationFeature(app);
 };
 
 export default registerListeners;

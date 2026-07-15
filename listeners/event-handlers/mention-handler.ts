@@ -1,10 +1,11 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
-import { getManagers, getNonUserResponseMessage, getWorkspaceId, isCHOIRUser } from 'services/slack';
+import { getWorkspaceId, isCHOIRUser } from 'services/slack';
 import { getOrInitBotUserId } from 'services/slack/user-management';
 // import { rejectUpdateCallback } from "../features/document-update/reject-update"; // 삭제: document-update feature에서 중앙 관리
 // import suggestUpdatesCallback from "../features/document-update/suggest-updates"; // 삭제: document-update feature에서 중앙 관리
 // import { applySelectedToGithubAction } from "../features/document-update/update-documents"; // 삭제: document-update feature에서 중앙 관리
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { handleNonUserAccess } from '../features/registration';
 // import cancelDocumentUpdatesCallback from "../features/document-update/cancel-document-updates-action"; // 삭제: document-update feature에서 중앙 관리
 import { handleIncomingMessage } from './message-router';
 
@@ -73,32 +74,13 @@ const appMentionCallback = async ({
 
     const isUserCHOIRUser = await isCHOIRUser(workspaceId, userId);
 
-    // If user is not a CHOIR user, send Non-user response
+    // If user is not a CHOIR user, offer the self-service access flow. In a public
+    // channel the notice is ephemeral so "you're not registered" isn't posted for
+    // everyone to see.
     if (!isUserCHOIRUser) {
-      const managers = await getManagers(workspaceId);
-      const consentFormUrl = process.env.CHOIR_CONSENT_FORM_URL; // Optional consent form URL
-      const nonUserMessage = await getNonUserResponseMessage(managers, consentFormUrl, client);
-
-      await client.chat.postMessage({
-        channel: event.channel,
-        text: nonUserMessage,
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: nonUserMessage,
-            },
-            block_id: createCHOIRBlockId(CHOIRMessageType.AUTHORIZATION),
-          },
-        ],
-      });
-
-      logger.info('Non-CHOIR user attempted to use mention', {
-        workspaceId,
-        userId,
-        channel: event.channel,
-      });
+      const heldQuestion =
+        'text' in event && typeof event.text === 'string' ? event.text.replace(/<@[A-Z0-9]+>/, '').trim() : '';
+      await handleNonUserAccess({ client, event, logger, userId, workspaceId, heldQuestion, isMention: true });
       return;
     }
 

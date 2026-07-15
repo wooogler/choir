@@ -18,11 +18,24 @@ export {
   getCHOIRUsers,
   setCHOIRUsers,
   isCHOIRUser,
+  approveCHOIRUser,
   resolveUserNames,
-  getNonUserResponseMessage,
+  buildNonUserResponse,
+  type NonUserResponseState,
   getOrInitBotUserId,
   ensureWorkspaceAnonymizationMigrated,
 } from './user-management';
+
+// Registration requests (non-user access flow)
+export {
+  getRegistrationRequest,
+  saveRegistrationRequest,
+  clearRegistrationRequest,
+  type RegistrationRequest,
+  type RegistrationStatus,
+  type RegistrationRequestOrigin,
+  type ManagerMessageRef,
+} from './registration-requests';
 
 // Message Utils
 export {

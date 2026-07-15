@@ -1,7 +1,8 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
-import { getManagers, getNonUserResponseMessage, getWorkspaceId, isCHOIRUser } from 'services/slack';
+import { getWorkspaceId, isCHOIRUser } from 'services/slack';
 import { getOrInitBotUserId } from 'services/slack/user-management';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { handleNonUserAccess } from '../features/registration';
 import { mpimMessageMentionsBot } from './mention-detection';
 import { handleIncomingMessage } from './message-router';
 
@@ -91,32 +92,11 @@ const dmMessageCallback = async ({
 
     const isUserCHOIRUser = await isCHOIRUser(workspaceId, userId);
 
-    // If user is not a CHOIR user, send Non-user response
+    // If user is not a CHOIR user, offer the self-service access flow (holding
+    // this question to auto-answer on approval).
     if (!isUserCHOIRUser) {
-      const managers = await getManagers(workspaceId);
-      const consentFormUrl = process.env.CHOIR_CONSENT_FORM_URL; // Optional consent form URL
-      const nonUserMessage = await getNonUserResponseMessage(managers, consentFormUrl, client);
-
-      await client.chat.postMessage({
-        channel: event.channel,
-        text: nonUserMessage,
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: nonUserMessage,
-            },
-            block_id: createCHOIRBlockId(CHOIRMessageType.AUTHORIZATION),
-          },
-        ],
-      });
-
-      logger.info('Non-CHOIR user attempted to use DM', {
-        workspaceId,
-        userId,
-        channel: event.channel,
-      });
+      const heldQuestion = 'text' in event && typeof event.text === 'string' ? event.text.trim() : '';
+      await handleNonUserAccess({ client, event, logger, userId, workspaceId, heldQuestion, isMention: false });
       return;
     }
 

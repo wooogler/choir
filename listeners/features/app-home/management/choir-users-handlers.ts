@@ -1,6 +1,6 @@
 import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
-import { getCHOIRUsers, getWorkspaceId, setCHOIRUsers } from 'services/slack';
+import { clearRegistrationRequest, getCHOIRUsers, getWorkspaceId, setCHOIRUsers } from 'services/slack';
 import { logManagementButtonError, refreshAppHomeSoon, requireManagerForAction } from './shared';
 
 export const registerChoirUsersHandlers = (app: App) => {
@@ -154,6 +154,12 @@ export const registerChoirUsersHandlers = (app: App) => {
       const success = await setCHOIRUsers(workspaceId, selectedUsers, client);
 
       if (success) {
+        // A manual roster change supersedes any self-service access request for
+        // these users (idempotent no-op when none is pending).
+        for (const id of selectedUsers) {
+          clearRegistrationRequest(workspaceId, id);
+        }
+
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,

@@ -396,44 +396,88 @@ export async function getManagerText(workspaceId: string, client: WebClient): Pr
 }
 
 /**
- * Get standardized Non-user response message with manager list and consent form URL
+ * Registers an approved user as a CHOIR user in one step: adds them to the
+ * workspace's CHOIR user list and enrolls them in the workspace-scoped
+ * anonymization map. The anonymization step mirrors setCHOIRUsers() and is
+ * essential — without it the user's real name would reach the LLM unmasked until
+ * a manager next re-saved the CHOIR user list.
  */
-export async function getNonUserResponseMessage(
-  managers: string[],
-  consentFormUrl?: string,
-  client?: WebClient,
-): Promise<string> {
-  let managerMentions: string;
+export async function approveCHOIRUser(workspaceId: string, userId: string, client: WebClient): Promise<void> {
+  await workspaceStore.addCHOIRUser(workspaceId, userId);
 
-  if (client) {
-    // Get actual usernames
-    const managerNames = await Promise.all(
-      managers.map(async (id) => {
-        const name = await getUserName(id, client);
-        return `*${name}*`;
-      }),
-    );
-    managerMentions = managerNames.join(', ');
-  } else {
-    // Fallback to user IDs if no client provided
-    managerMentions = managers.map((id) => `*${id}*`).join(', ');
+  try {
+    const userName = await getUserName(userId, client);
+    getAnonymizationMapping(userId, userName, undefined, workspaceId);
+    Logger.info('Approved user registered in anonymization mapping', { workspaceId, userId });
+  } catch (error) {
+    Logger.warn('Failed to register approved user in anonymization mapping', { workspaceId, userId, error });
+  }
+}
+
+export type NonUserResponseState = 'fresh' | 'pending' | 'declined';
+
+/**
+ * Builds the reply shown to a non-CHOIR-user, varying by where they are in the
+ * self-service access flow. The caller supplies an AUTHORIZATION block_id (so the
+ * message is excluded from conversation history) and, for the 'fresh' state,
+ * appends the "Request Access" button itself (keeping the button's action_id in
+ * the listener layer). Returns `{ text, blocks }` ready to post.
+ */
+export async function buildNonUserResponse(
+  state: NonUserResponseState,
+  options: {
+    authorizationBlockId: string;
+    consentFormUrl?: string;
+  },
+): Promise<{ text: string; blocks: any[] }> {
+  const { authorizationBlockId, consentFormUrl } = options;
+
+  if (state === 'pending') {
+    const text = "⏳ Your access request is waiting for manager approval. I'll message you as soon as you're in!";
+    return { text, blocks: [section(text, authorizationBlockId)] };
   }
 
-  const consentSection = consentFormUrl
-    ? `2. *Complete the research consent form* - <${consentFormUrl}|Click here to access the consent form>`
-    : '2. *Complete the research consent form* - your manager will provide you with the consent form link';
+  if (state === 'declined') {
+    const text =
+      "Your earlier access request wasn't approved. If you think this is a mistake, please reach out to a workspace manager directly.";
+    return { text, blocks: [section(text, authorizationBlockId)] };
+  }
 
-  return `Hi there! 👋 
+  // fresh
+  const text =
+    "Hi! 👋 I'm CHOIR, your team's documentation assistant. You're not a CHOIR user yet — tap the button below and a workspace manager can approve you with one click.";
+  const blocks: any[] = [
+    section(text, authorizationBlockId),
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: "If approved, I'll answer the question you just asked right away. Until then it stays private — I don't process or store it.",
+        },
+      ],
+    },
+  ];
 
-I'd love to help you, but it looks like you're not currently registered as a CHOIR user. CHOIR is part of a research study designed to help teams manage and access their collective knowledge more effectively.
+  if (consentFormUrl) {
+    blocks.push({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: `Your manager may ask you to complete the consent form: <${consentFormUrl}|here>.`,
+        },
+      ],
+    });
+  }
 
-To start using CHOIR, you'll need to:
-1. *Contact a CHOIR developer* - Sangwook Lee (sangwooklee@vt.edu) can add you to the CHOIR user list
-${consentSection}
+  return { text, blocks };
+}
 
-*Why join?* CHOIR can help you quickly find answers from your team's documentation, get contextual responses to questions, and contribute to advancing research on AI-powered collaboration tools.
-
-If you're interested in participating, please reach out to one of your workspace managers who can guide you through the process. We'd be happy to have you as part of our research community! 🎓✨
-
-_Note: Your messages and interactions are not being recorded or used for research purposes until you officially join as a CHOIR user._`;
+function section(text: string, blockId?: string) {
+  return {
+    type: 'section',
+    text: { type: 'mrkdwn', text },
+    ...(blockId ? { block_id: blockId } : {}),
+  };
 }
