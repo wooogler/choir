@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DocFile, RepoInfo, SessionInfo, TocItem } from '../types';
+import type { DocFile, DocSectionUsage, RepoInfo, SessionInfo, TocItem } from '../types';
 import { encodePath, extractToc, parseDocsUrl, scrollToAnchor, slugifyHeading } from '../utils/docs';
 import { CommitDialog } from './CommitDialog';
 import { CrepeEditor, type CrepeEditorHandle } from './CrepeEditor';
@@ -118,6 +118,17 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   // it (not the possibly-divergent API-mirror content the editor renders).
   const [provenanceContent, setProvenanceContent] = useState<string | null>(null);
   const [historyFocus, setHistoryFocus] = useState<{ id: string; key: number } | null>(null);
+  // Q&A usage highlight: shade sections that were retrieved to answer questions.
+  const [qaUsageOn, setQaUsageOn] = useState<boolean>(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get('usage') === '1') return true;
+      return window.localStorage.getItem('choir_qa_usage') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [usageSections, setUsageSections] = useState<DocSectionUsage[] | null>(null);
+  const [usageUnmatched, setUsageUnmatched] = useState(0);
 
   const editorHandleRef = useRef<CrepeEditorHandle | null>(null);
   const editorContainerRef = useRef<HTMLDivElement | null>(null);
@@ -481,6 +492,129 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     openHistoryAt,
   ]);
 
+  const toggleQaUsage = useCallback(() => {
+    setQaUsageOn((v) => {
+      const next = !v;
+      try {
+        window.localStorage.setItem('choir_qa_usage', next ? '1' : '0');
+      } catch {
+        // localStorage may be unavailable (private mode); the toggle still works for the session.
+      }
+      return next;
+    });
+  }, []);
+
+  // Fetch per-section Q&A usage for the current file when the highlight is on.
+  useEffect(() => {
+    if (!qaUsageOn || !canSeeInsights) {
+      setUsageSections(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/dashboard/${encodeURIComponent(workspaceId)}/doc-usage?file=${encodeURIComponent(filePath)}`, {
+      credentials: 'same-origin',
+    })
+      .then((r) =>
+        r.ok ? (r.json() as Promise<{ sections?: DocSectionUsage[] }>) : Promise.reject(new Error(`${r.status}`)),
+      )
+      .then((data) => {
+        if (!cancelled) setUsageSections(data.sections ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setUsageSections([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [qaUsageOn, canSeeInsights, workspaceId, filePath]);
+
+  // Shade each rendered section by how often it was retrieved to answer questions.
+  // Highlights are plain classes on the rendered blocks, so they reflow with the
+  // content (no gutter positioning needed). Only runs in read-only view.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadedMarkdown/editorKey re-trigger after the editor re-renders
+  useEffect(() => {
+    const container = editorContainerRef.current;
+    if (!qaUsageOn || !usageSections || !editorReady || isEditing || !container) return;
+    const proseEl = container.querySelector('.ProseMirror');
+    if (!proseEl) return;
+
+    // Aggregate usage by heading (the last segment of a chunk's heading path).
+    const bySlug = new Map<string, { retrievals: number; unanswered: number }>();
+    for (const section of usageSections) {
+      if (!section.headingPath) continue;
+      const slug = slugifyHeading(section.headingPath.split('>').pop()?.trim() ?? '');
+      if (!slug) continue;
+      const cur = bySlug.get(slug) ?? { retrievals: 0, unanswered: 0 };
+      cur.retrievals += section.retrievals;
+      cur.unanswered += section.unanswered;
+      bySlug.set(slug, cur);
+    }
+    const maxRetrievals = Math.max(1, ...Array.from(bySlug.values()).map((u) => u.retrievals));
+    const bucketOf = (n: number): number => {
+      const r = n / maxRetrievals;
+      return r > 0.75 ? 4 : r > 0.5 ? 3 : r > 0.25 ? 2 : 1;
+    };
+    const TINT_CLASSES = ['doc-usage-1', 'doc-usage-2', 'doc-usage-3', 'doc-usage-4'];
+
+    // The count "chip" is a data-attribute + CSS ::after, NOT a child node: adding
+    // a child would pollute heading.textContent and break slug-based TOC/anchors,
+    // and injecting foreign nodes into ProseMirror is fragile.
+    const clearHighlights = () => {
+      for (const el of Array.from(proseEl.querySelectorAll<HTMLElement>('.doc-usage-hl'))) {
+        el.classList.remove('doc-usage-hl', 'doc-usage-warn', ...TINT_CLASSES);
+        el.removeAttribute('data-usage');
+        if (el.dataset.usageTitle != null) {
+          el.removeAttribute('title');
+          delete el.dataset.usageTitle;
+        }
+      }
+    };
+
+    const apply = () => {
+      clearHighlights();
+      const matched = new Set<string>();
+      let current: { level: number; bucket: number } | null = null;
+
+      for (const el of Array.from(proseEl.children) as HTMLElement[]) {
+        const headingLevel = /^H([1-6])$/.exec(el.tagName);
+        if (headingLevel) {
+          const level = Number(headingLevel[1]);
+          if (current && level <= current.level) current = null; // section ended
+          const slug = slugifyHeading(el.textContent ?? '');
+          const usage = bySlug.get(slug);
+          if (usage) {
+            matched.add(slug);
+            const bucket = bucketOf(usage.retrievals);
+            current = { level, bucket };
+            el.classList.add('doc-usage-hl', `doc-usage-${bucket}`);
+            const answeredRatio = usage.retrievals > 0 ? (usage.retrievals - usage.unanswered) / usage.retrievals : 1;
+            const weak = answeredRatio < 0.5;
+            if (weak) el.classList.add('doc-usage-warn');
+            el.setAttribute('data-usage', `${weak ? '⚠ ' : ''}${usage.retrievals}×`);
+            el.title = `Retrieved in ${usage.retrievals} question${usage.retrievals === 1 ? '' : 's'} (last 12 weeks); ${usage.unanswered} unanswered`;
+            el.dataset.usageTitle = '1';
+          } else if (current) {
+            el.classList.add('doc-usage-hl', `doc-usage-${current.bucket}`); // deeper subheading in a used section
+          }
+        } else if (current) {
+          el.classList.add('doc-usage-hl', `doc-usage-${current.bucket}`);
+        }
+      }
+
+      let unmatched = 0;
+      for (const [slug, usage] of bySlug) if (!matched.has(slug)) unmatched += usage.retrievals;
+      setUsageUnmatched(unmatched);
+    };
+
+    // The editor DOM can settle a tick after editorReady flips.
+    const timer = window.setTimeout(apply, 120);
+    return () => {
+      window.clearTimeout(timer);
+      clearHighlights();
+      setUsageUnmatched(0);
+    };
+  }, [qaUsageOn, usageSections, editorReady, isEditing, loadedMarkdown, editorKey]);
+
   const markDocumentChangedBlocks = useCallback(
     (forceFallback: boolean) => {
       const previousTexts = documentEditStartBlockTextsRef.current;
@@ -608,6 +742,16 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
 
   const headerRight = (
     <>
+      {canSeeInsights && !isEditing && (
+        <button
+          type="button"
+          className={`doc-button doc-button-ghost${qaUsageOn ? ' active' : ''}`}
+          onClick={toggleQaUsage}
+          title="Highlight the sections used to answer questions"
+        >
+          Q&amp;A usage
+        </button>
+      )}
       {sessionLoaded && !isEditing && (
         <button
           type="button"
@@ -701,6 +845,14 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           </main>
         ) : (
           <main className="doc-page">
+            {qaUsageOn && canSeeInsights && (
+              <div className="doc-usage-legend">
+                <span className="doc-usage-legend-swatch" /> Shaded sections were retrieved to answer questions (darker
+                = more).
+                {usageUnmatched > 0 &&
+                  ` ${usageUnmatched} retrieval${usageUnmatched === 1 ? '' : 's'} refer to sections that have since changed.`}
+              </div>
+            )}
             {notice && <output className="doc-notice">{notice}</output>}
             {saveError && (
               <div className="doc-notice doc-notice-error" role="alert">

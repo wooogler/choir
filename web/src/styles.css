@@ -1372,3 +1372,63 @@ a {
     gap: 8px;
   }
 }
+
+/* ── Q&A usage highlight (in-doc) ─────────────────────────────────────────── */
+/* Background band extended horizontally via box-shadow so shaded prose reads as
+   a section, not just a highlighted line. Tints are the accent blue at 4 alphas. */
+.doc-usage-hl {
+  border-radius: 2px;
+}
+.doc-usage-1 {
+  background: rgba(47, 111, 235, 0.05);
+  box-shadow: -8px 0 0 rgba(47, 111, 235, 0.05), 8px 0 0 rgba(47, 111, 235, 0.05);
+}
+.doc-usage-2 {
+  background: rgba(47, 111, 235, 0.1);
+  box-shadow: -8px 0 0 rgba(47, 111, 235, 0.1), 8px 0 0 rgba(47, 111, 235, 0.1);
+}
+.doc-usage-3 {
+  background: rgba(47, 111, 235, 0.16);
+  box-shadow: -8px 0 0 rgba(47, 111, 235, 0.16), 8px 0 0 rgba(47, 111, 235, 0.16);
+}
+.doc-usage-4 {
+  background: rgba(47, 111, 235, 0.24);
+  box-shadow: -8px 0 0 rgba(47, 111, 235, 0.24), 8px 0 0 rgba(47, 111, 235, 0.24);
+}
+/* Count chip via ::after so heading.textContent stays clean (TOC/anchor slugs). */
+.doc-usage-hl[data-usage]::after {
+  content: attr(data-usage);
+  display: inline-block;
+  margin-left: 10px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  vertical-align: middle;
+  color: #2f6feb;
+  background: rgba(47, 111, 235, 0.14);
+  user-select: none;
+}
+.doc-usage-hl.doc-usage-warn[data-usage]::after {
+  color: #b45309;
+  background: rgba(180, 83, 9, 0.14);
+}
+.doc-usage-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  border: 1px solid #e3e9f8;
+  background: #f5f8ff;
+  border-radius: 8px;
+  color: #4f5b6e;
+  font-size: 13px;
+}
+.doc-usage-legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: rgba(47, 111, 235, 0.24);
+  flex-shrink: 0;
+}

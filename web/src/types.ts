@@ -86,3 +86,11 @@ export type GapsResponse = { gaps: GapView[]; other: { unanswered: number } };
 
 export type DocUsageFile = { fileName: string; retrievals: number; unanswered: number; lastWeek: string };
 export type DocUsageResponse = { files: DocUsageFile[] };
+
+export type DocSectionUsage = {
+  sectionId: string | null;
+  headingPath: string | null;
+  retrievals: number;
+  unanswered: number;
+};
+export type DocSectionUsageResponse = { file: string; sections: DocSectionUsage[] };
