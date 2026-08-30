@@ -19,6 +19,7 @@ import {
   buildSessionCookieHeader,
   buildSlackAuthorizeUrl,
   exchangeSlackOidcCode,
+  getDocsWriteAccess,
   getSlackOidcConfig,
   issueOAuthState,
   issueSessionCookieValue,
@@ -231,12 +232,24 @@ function setupPublicSite(): void {
         isManager(payload.workspaceId, payload.userId),
         isCHOIRUser(payload.workspaceId, payload.userId),
       ]);
+      // Being a CHOIR manager is not enough to commit — the linked GitHub
+      // account needs write access to the repo. Resolve it here so the viewer
+      // can withhold the Edit button instead of failing at save time. Only
+      // managers pay for the lookup, and a failed lookup is omitted rather than
+      // failing the whole session read (the save endpoint still enforces it).
+      const github = manager
+        ? await getDocsWriteAccess(payload.workspaceId, payload.userId).catch((err) => {
+            app.logger.warn(`GitHub write-access lookup failed: ${(err as Error).message}`);
+            return undefined;
+          })
+        : undefined;
       return res.json({
         authenticated: true,
         workspaceId: payload.workspaceId,
         userId: payload.userId,
         isManager: manager,
         isChoirUser: choirUser,
+        github,
       });
     } catch (err) {
       app.logger.error('GET /api/docs/session failed', err as Error);
@@ -608,6 +621,16 @@ function setupPublicSite(): void {
           return res.status(403).json({ error: 'User is not a workspace manager' });
         }
 
+        // Refuse before staging or committing anything: GitHub would otherwise
+        // only reveal a missing write permission mid-save, as a 404.
+        const writeAccess = await getDocsWriteAccess(workspaceId, session.userId);
+        if (!writeAccess.canPush) {
+          return res.status(403).json({
+            error: writeAccess.reason ?? 'No write access to the workspace repository',
+            code: 'GITHUB_WRITE_FORBIDDEN',
+          });
+        }
+
         const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
         const resolved = path.resolve(repoRoot, filePath);
         if (!resolved.startsWith(path.resolve(repoRoot))) {
@@ -650,6 +673,15 @@ function setupPublicSite(): void {
         const managerCheck = await isManager(workspaceId, session.userId);
         if (!managerCheck) {
           return res.status(403).json({ error: 'User is not a workspace manager' });
+        }
+
+        // Assets are committed to GitHub too, so the same write-access gate applies.
+        const writeAccess = await getDocsWriteAccess(workspaceId, session.userId);
+        if (!writeAccess.canPush) {
+          return res.status(403).json({
+            error: writeAccess.reason ?? 'No write access to the workspace repository',
+            code: 'GITHUB_WRITE_FORBIDDEN',
+          });
         }
 
         const body = req.body;

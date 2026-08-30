@@ -138,7 +138,13 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const changedBlockElsRef = useRef<Set<HTMLElement>>(new Set());
 
   const dirty = changedBlockCount > 0;
-  const canEdit = session?.authenticated === true && session.isManager;
+  // A manager whose GitHub account cannot push to the repo must not be offered
+  // the editor: the commit would be refused and the edit lost. `github` is
+  // absent on older servers, which we read as "unknown" and allow.
+  const isManager = session?.authenticated === true && session.isManager;
+  const githubAccess = session?.authenticated === true ? session.github : undefined;
+  const writeBlockedReason = isManager && githubAccess?.canPush === false ? githubAccess.reason : null;
+  const canEdit = isManager && !writeBlockedReason;
   const canSeeInsights = session?.authenticated === true && session.isChoirUser;
   const sessionLoaded = session !== null;
   const editorReady = loadedMarkdown !== null;
@@ -797,12 +803,17 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           </button>
         </>
       )}
-      {!isEditing && !dirty && sessionLoaded && canEdit && (
+      {writeBlockedReason && !isEditing && (
+        <span className="doc-change-count" title={writeBlockedReason}>
+          Read-only
+        </span>
+      )}
+      {!isEditing && !dirty && sessionLoaded && isManager && (
         <button type="button" className="doc-button doc-button-ghost" onClick={handleSignOut}>
           Sign out
         </button>
       )}
-      {!isEditing && sessionLoaded && !canEdit && (
+      {!isEditing && sessionLoaded && !isManager && (
         <button type="button" className="doc-button doc-button-primary" onClick={handleSignIn}>
           Edit as manager
         </button>
@@ -852,6 +863,11 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
                 {usageUnmatched > 0 &&
                   ` ${usageUnmatched} retrieval${usageUnmatched === 1 ? '' : 's'} refer to sections that have since changed.`}
               </div>
+            )}
+            {writeBlockedReason && (
+              <output className="doc-notice doc-notice-error">
+                You are a CHOIR manager, but this document cannot be edited here. {writeBlockedReason}
+              </output>
             )}
             {notice && <output className="doc-notice">{notice}</output>}
             {saveError && (

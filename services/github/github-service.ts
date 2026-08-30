@@ -36,6 +36,21 @@ interface FileContentCache {
   lastModified: Date;
 }
 
+/** Whether a user's linked GitHub account may write to a repository. */
+export interface RepoWriteAccess {
+  /** A GitHub account is linked for this user in this workspace. */
+  connected: boolean;
+  /** That account can push to the repository. */
+  canPush: boolean;
+  /** Why not, phrased for the person who has to fix it. */
+  reason?: string;
+}
+
+interface RepoWriteAccessCache {
+  value: RepoWriteAccess;
+  expiresAt: number;
+}
+
 /**
  * 중앙화된 GitHub 서비스 - 모든 GitHub API 호출의 단일 진입점
  */
@@ -49,8 +64,13 @@ class GithubService {
     baseDelay: 1000,
   };
   private fileContentCache = new Map<string, FileContentCache>();
+  private repoWriteAccessCache = new Map<string, RepoWriteAccessCache>();
   private static readonly MAX_OCTOKIT_INSTANCES = 200;
   private static readonly MAX_FILE_CONTENT_CACHE = 500;
+  private static readonly MAX_REPO_WRITE_ACCESS_CACHE = 500;
+  // Short enough that a manager granted access mid-session only has to wait a
+  // minute (and reload) before the editor opens up.
+  private static readonly REPO_WRITE_ACCESS_TTL_MS = 60_000;
 
   // Insert into a Map with a size cap, evicting the oldest entries (Maps preserve
   // insertion order) so these in-memory caches don't grow without bound.
@@ -738,6 +758,96 @@ class GithubService {
         reason: failure.message,
       });
       throw failure;
+    }
+  }
+
+  /**
+   * Whether this user's linked GitHub account can push to the repository.
+   *
+   * The docs editor asks before offering the Edit affordance and again before
+   * saving: GitHub only reveals a missing write permission when the write is
+   * attempted (as a 404), so without this check a manager could compose a whole
+   * edit and lose it at commit time. Cached briefly so a page load costs at most
+   * one API call per minute.
+   */
+  public async getRepoWriteAccess(params: {
+    owner: string;
+    repo: string;
+    workspaceId: string;
+    userId: string;
+  }): Promise<RepoWriteAccess> {
+    const cacheKey = `${params.workspaceId}/${params.userId}/${params.owner}/${params.repo}`;
+    const cached = this.repoWriteAccessCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+
+    const value = await this.probeRepoWriteAccess(params);
+    GithubService.setBounded(
+      this.repoWriteAccessCache,
+      cacheKey,
+      { value, expiresAt: Date.now() + GithubService.REPO_WRITE_ACCESS_TTL_MS },
+      GithubService.MAX_REPO_WRITE_ACCESS_CACHE,
+    );
+    return value;
+  }
+
+  private async probeRepoWriteAccess(params: {
+    owner: string;
+    repo: string;
+    workspaceId: string;
+    userId: string;
+  }): Promise<RepoWriteAccess> {
+    const slug = `${params.owner}/${params.repo}`;
+    const token = await this.getGitHubToken(params.workspaceId, params.userId);
+    if (!token) {
+      return {
+        connected: false,
+        canPush: false,
+        reason: `Connect your GitHub account from the CHOIR App Home to edit ${slug}.`,
+      };
+    }
+
+    try {
+      const octokit = await this.getOctokit(params.workspaceId, params.userId);
+      const response = await this.throttledRequest(() =>
+        octokit.rest.repos.get({ owner: params.owner, repo: params.repo }),
+      );
+      const data = (response as any).data;
+
+      if (data?.archived) {
+        return { connected: true, canPush: false, reason: `${slug} is archived on GitHub, so it cannot be edited.` };
+      }
+
+      const permissions = data?.permissions ?? {};
+      if (!(permissions.push || permissions.admin || permissions.maintain)) {
+        return {
+          connected: true,
+          canPush: false,
+          reason: `Your GitHub account has read-only access to ${slug}. Ask a repository admin for Write access, then reload this page.`,
+        };
+      }
+
+      return { connected: true, canPush: true };
+    } catch (error) {
+      if ((error as { status?: number }).status === 404) {
+        return {
+          connected: true,
+          canPush: false,
+          reason: `Your GitHub account cannot see ${slug}. Ask a repository admin to grant you access, then reload this page.`,
+        };
+      }
+
+      // Fail open: a GitHub hiccup must not lock managers out of editing. The
+      // save path reports the real reason if the write is genuinely refused.
+      Logger.warn('Could not resolve GitHub write access; allowing the edit', {
+        owner: params.owner,
+        repo: params.repo,
+        workspaceId: params.workspaceId,
+        userId: params.userId,
+        error: (error as Error).message,
+      });
+      return { connected: true, canPush: true };
     }
   }
 

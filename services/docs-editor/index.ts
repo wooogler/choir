@@ -17,3 +17,5 @@ export { sanitizeNextPath } from './safe-redirect';
 export { OAUTH_NONCE_COOKIE, issueOAuthState, verifyOAuthState } from './oauth-state';
 export { buildSlackAuthorizeUrl, exchangeSlackOidcCode, getSlackOidcConfig } from './slack-oidc';
 export type { SlackOidcConfig, SlackOidcResult } from './slack-oidc';
+export { getDocsWriteAccess } from './write-access';
+export type { DocsWriteAccess } from './write-access';

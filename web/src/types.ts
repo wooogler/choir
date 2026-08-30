@@ -47,9 +47,23 @@ export type ProvenanceRecord = {
 
 export type ProvenanceListItem = ProvenanceRecord & { id: string };
 
+/**
+ * Whether the manager's linked GitHub account can commit to the workspace repo.
+ * Present only for managers; absent on older servers, which the viewer treats as
+ * "unknown" and lets the save endpoint decide.
+ */
+export type GithubWriteAccess = { connected: boolean; canPush: boolean; repo?: string; reason?: string };
+
 export type SessionInfo =
   | { authenticated: false }
-  | { authenticated: true; workspaceId: string; userId: string; isManager: boolean; isChoirUser: boolean };
+  | {
+      authenticated: true;
+      workspaceId: string;
+      userId: string;
+      isManager: boolean;
+      isChoirUser: boolean;
+      github?: GithubWriteAccess;
+    };
 
 // ── Awareness dashboard API response shapes (mirror services/dashboard/dashboard-api.ts) ──
 
