@@ -6,6 +6,7 @@ import { type DocumentTree, parseMarkdownToTree } from 'services/document';
 import type { SlackMessage } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { findConcurrentlyChangedPath } from './commit-concurrency';
+import { toGitHubWriteError } from './write-error';
 
 export interface MarkdownFile {
   name: string;
@@ -451,16 +452,22 @@ class GithubService {
       });
       return { commitSha };
     } catch (error) {
+      const failure = toGitHubWriteError(error, {
+        owner: params.owner,
+        repo: params.repo,
+        branch: params.branch,
+        path: params.path,
+        action: 'update',
+      });
       Logger.error('Failed to update file', error as Error, {
         owner: params.owner,
         repo: params.repo,
         path: params.path,
         branch: params.branch,
+        githubStatus: (error as { status?: number }).status,
+        reason: failure.message,
       });
-      throw new GitHubError('Failed to update file', {
-        code: ErrorCodes.GITHUB_UPDATE_FAILED,
-        metadata: { owner: params.owner, repo: params.repo, path: params.path },
-      });
+      throw failure;
     }
   }
 
@@ -623,11 +630,23 @@ class GithubService {
       Logger.info(`Committed ${params.files.length} file(s) in one commit ${commitSha}`, { owner, repo, branch });
       return { commitSha };
     } catch (error) {
-      Logger.error('Failed to commit files with context', error as Error, { owner, repo });
-      throw new GitHubError('Failed to commit files with context', {
-        code: ErrorCodes.GITHUB_UPDATE_FAILED,
-        metadata: { owner, repo, files: params.files.map((f) => f.path) },
+      const failure = toGitHubWriteError(error, {
+        owner,
+        repo,
+        branch: params.branch,
+        // files[0] is the document; the rest are sidecars committed alongside it.
+        path: params.files[0]?.path,
+        action: 'commit',
       });
+      Logger.error('Failed to commit files with context', error as Error, {
+        owner,
+        repo,
+        branch: params.branch,
+        files: params.files.map((f) => f.path),
+        githubStatus: (error as { status?: number }).status,
+        reason: failure.message,
+      });
+      throw failure;
     }
   }
 
@@ -703,16 +722,22 @@ class GithubService {
       });
       return { commitSha, created: true };
     } catch (error) {
+      const failure = toGitHubWriteError(error, {
+        owner: params.owner,
+        repo: params.repo,
+        branch: params.branch,
+        path: params.path,
+        action: 'upload',
+      });
       Logger.error('Failed to upload asset', error as Error, {
         owner: params.owner,
         repo: params.repo,
         path: params.path,
         branch: params.branch,
+        githubStatus: (error as { status?: number }).status,
+        reason: failure.message,
       });
-      throw new GitHubError('Failed to upload asset', {
-        code: ErrorCodes.GITHUB_UPDATE_FAILED,
-        metadata: { owner: params.owner, repo: params.repo, path: params.path },
-      });
+      throw failure;
     }
   }
 

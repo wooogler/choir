@@ -39,15 +39,6 @@ export async function saveEditedDocument(params: {
   const editedFileName = params.filePath.split('/').pop() || params.filePath;
   const beforeContent = vectorStore.getMarkdownFile(params.filePath, params.workspaceId)?.content ?? '';
 
-  await documentUpdateService.stageMarkdownUpdate({
-    workspaceId: params.workspaceId,
-    filePath: params.filePath,
-    content: params.content,
-    owner: repoInfo.owner,
-    repo: repoInfo.repo,
-    branch: repoInfo.branch,
-  });
-
   const trimmedMessage = params.commitMessage.trim() || `Update ${params.filePath}`;
 
   // Manual web edit: provenance carries the manager + diff (no conversation).
@@ -67,6 +58,11 @@ export async function saveEditedDocument(params: {
     record,
   });
 
+  // Commit BEFORE touching the local mirror. The mirror is what the docs viewer
+  // and Q&A read, so staging first meant a rejected push (no write access to the
+  // repo, a protected branch, GitHub down) left CHOIR serving an edit that does
+  // not exist on GitHub, with nothing to reconcile it. Nothing below the commit
+  // needs the staged copy, so the remote write is the safe first step.
   const { commitSha } = await githubService.commitFilesWithContext({
     owner: repoInfo.owner,
     repo: repoInfo.repo,
@@ -75,6 +71,15 @@ export async function saveEditedDocument(params: {
     files: [{ path: params.filePath, content: params.content }, contextFile],
     workspaceId: params.workspaceId,
     userId: params.userId,
+  });
+
+  await documentUpdateService.stageMarkdownUpdate({
+    workspaceId: params.workspaceId,
+    filePath: params.filePath,
+    content: params.content,
+    owner: repoInfo.owner,
+    repo: repoInfo.repo,
+    branch: repoInfo.branch,
   });
   await persistContextToMirror(params.workspaceId, contextFile);
 

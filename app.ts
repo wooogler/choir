@@ -7,6 +7,7 @@ import registerListeners from './listeners';
 
 import { AppConfig } from '@/config';
 import { sweepExpiredSessions } from 'services/common';
+import { CHOIRError } from 'services/common/error-handler';
 import { getDocUsage, getGaps, getSummary, getTopics } from 'services/dashboard/dashboard-api';
 import { clusterAllWorkspaces } from 'services/dashboard/topic-clusterer';
 import {
@@ -131,6 +132,21 @@ app.use(usageMonitoringMiddleware);
 
 const gitHubSyncService = GitHubSyncService.getInstance();
 const vectorStore = VectorStoreService.getInstance();
+
+/**
+ * Status for a failed docs API call. Domain errors (GitHubError and friends)
+ * carry the status that matches the real cause — a rejected GitHub write is a
+ * 403, not an opaque 500 — so the viewer can tell the manager what to fix.
+ */
+function apiErrorStatus(err: unknown, fallback: number): number {
+  return err instanceof CHOIRError && typeof err.statusCode === 'number' ? err.statusCode : fallback;
+}
+
+/** Error body for the docs API: the actionable message plus a stable code. */
+function apiErrorBody(err: unknown): { error: string; code?: string } {
+  const error = err instanceof Error ? err.message : 'Internal server error';
+  return err instanceof CHOIRError ? { error, code: err.code } : { error };
+}
 
 function setupPublicSite(): void {
   let router: any;
@@ -609,8 +625,7 @@ function setupPublicSite(): void {
         return res.json({ ok: true, commitSha: result.commitSha });
       } catch (err) {
         app.logger.error('PUT /api/docs failed', err as Error);
-        const message = err instanceof Error ? err.message : 'Internal server error';
-        return res.status(500).json({ error: message });
+        return res.status(apiErrorStatus(err, 500)).json(apiErrorBody(err));
       }
     },
   );
@@ -652,8 +667,7 @@ function setupPublicSite(): void {
         return res.json({ ok: true, path: result.path });
       } catch (err) {
         app.logger.error('POST /api/docs assets failed', err as Error);
-        const message = err instanceof Error ? err.message : 'Internal server error';
-        return res.status(400).json({ error: message });
+        return res.status(apiErrorStatus(err, 400)).json(apiErrorBody(err));
       }
     },
   );
