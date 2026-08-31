@@ -34,6 +34,8 @@ export type DriftOutcome =
   | 'drifted-again'
   /** No baseline to compare against, so drift cannot be measured. */
   | 'baseline-lost'
+  /** The GitHub document behind this replica is gone. */
+  | 'orphaned'
   | 'trashed'
   | 'not-linked'
   | 'not-connected'
@@ -76,6 +78,21 @@ export async function checkDocumentForDrift(workspaceId: string, githubPath: str
     }
 
     const state = await getDocState(workspaceId, githubPath);
+
+    // The source document may have been deleted or moved on GitHub. Publishing
+    // is already impossible; say so rather than leaving the replica looking live.
+    const source = await WorkspaceMirrorService.getInstance().readMirrorFile(workspaceId, githubPath);
+    if (source === null) {
+      if (state?.status !== 'orphaned') {
+        await mutateDocState(workspaceId, githubPath, (current) => ({
+          ...(current ?? { updatedAt: '' }),
+          status: 'orphaned',
+          error: 'The GitHub document no longer exists',
+          updatedAt: '',
+        }));
+      }
+      return { githubPath, outcome: 'orphaned' as const };
+    }
 
     try {
       const meta = await getDocMeta(auth, mapping.fileId);
@@ -222,7 +239,7 @@ export async function sweepWorkspace(workspaceId: string): Promise<SweepResult> 
       result.drifted.push(outcome);
     } else if (outcome.outcome === 'banner-restored') {
       result.healed += 1;
-    } else if (outcome.outcome === 'failed' || outcome.outcome === 'trashed') {
+    } else if (outcome.outcome === 'failed' || outcome.outcome === 'trashed' || outcome.outcome === 'orphaned') {
       result.failed += 1;
     } else if (outcome.outcome === 'not-connected') {
       // Nothing in this workspace can be checked; stop rather than repeating the

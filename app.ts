@@ -339,6 +339,7 @@ function setupPublicSite(): void {
     cookieSecure,
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     jsonBody: require('express').json({ limit: '64kb' }),
+    slackClient: app.client,
     logger: {
       info: (message: string, meta?: unknown) => app.logger.info(message, meta),
       warn: (message: string, meta?: unknown) => app.logger.warn(message, meta),

@@ -215,8 +215,12 @@ describe('Google Docs drift detection', () => {
 
   describe('sweeping a workspace', () => {
     const linkDocs = async (count: number) => {
+      const repoDir = path.join(tempDir, 'workspaces', 'T1', 'repo', 'docs');
       for (let index = 0; index < count; index += 1) {
         const docPath = `docs/doc-${index}.md`;
+        // The mirror file has to exist: a mapping whose source is gone is
+        // orphaned, and never reaches the drift comparison.
+        fs.writeFileSync(path.join(repoDir, `doc-${index}.md`), '# Title\n\nBody text.\n');
         await store.setGoogleDocMapping('T1', docPath, {
           fileId: `file-${index}`,
           webViewLink: `https://example.com/${index}`,
@@ -269,5 +273,63 @@ describe('Google Docs drift detection', () => {
       expect(result.checked).toBe(1);
       expect(mockGetMeta).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('a replica whose GitHub source is gone', () => {
+  let tempDir: string;
+  let store: WorkspaceStore;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    closeDatabase();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'choir-gdocs-orphan-'));
+    process.env.DATABASE_URL = `file:${path.join(tempDir, 'choir.db')}`;
+    process.env.CHOIR_DB_KEY_FILE = path.join(tempDir, '.db-key');
+    process.env.CHOIR_DATA_DIR = tempDir;
+
+    store = new WorkspaceStore();
+    await store.saveWorkspaceConfig({
+      workspaceId: 'T1',
+      managers: ['U-manager'],
+      choirUsers: ['U-manager'],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await store.setGoogleDocMapping('T1', 'docs/deleted.md', {
+      fileId: 'file-x',
+      webViewLink: 'https://example.com/x',
+      linkedBy: 'U-manager',
+    });
+    fs.mkdirSync(path.join(tempDir, 'workspaces', 'T1', 'repo'), { recursive: true });
+
+    mockClient.mockResolvedValue({} as never);
+  });
+
+  afterEach(() => {
+    closeDatabase();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    for (const key of ['DATABASE_URL', 'CHOIR_DB_KEY_FILE', 'CHOIR_DATA_DIR']) {
+      Reflect.deleteProperty(process.env, key);
+    }
+  });
+
+  it('marks the replica orphaned without calling Drive', async () => {
+    const result = await checkDocumentForDrift('T1', 'docs/deleted.md');
+
+    expect(result.outcome).toBe('orphaned');
+    expect((await getDocState('T1', 'docs/deleted.md'))?.status).toBe('orphaned');
+    // Nothing can be published or compared, so there is no reason to spend a call.
+    expect(mockGetMeta).not.toHaveBeenCalled();
+  });
+
+  it('stays orphaned without rewriting the state on every poll', async () => {
+    await checkDocumentForDrift('T1', 'docs/deleted.md');
+    const first = await getDocState('T1', 'docs/deleted.md');
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await checkDocumentForDrift('T1', 'docs/deleted.md');
+
+    expect((await getDocState('T1', 'docs/deleted.md'))?.updatedAt).toBe(first?.updatedAt);
   });
 });

@@ -13,6 +13,7 @@ import {
 } from './google-auth-service';
 import { issuePickerNonce, verifyPickerNonce } from './picker-nonce';
 import { publishReplica } from './replica-publisher';
+import { retireAllReviewCards, retireReviewCards } from './review-cards';
 import { approveReview, buildReview, rejectReview } from './review-service';
 
 /**
@@ -31,6 +32,8 @@ export interface GoogleRouteDeps {
   isManager: (workspaceId: string, userId: string) => Promise<boolean>;
   cookieSecure: boolean;
   jsonBody: unknown;
+  /** Used to retire review cards whose decision is no longer possible. */
+  slackClient?: import('@slack/web-api').WebClient;
   logger: {
     info: (m: string, meta?: unknown) => void;
     warn: (m: string, meta?: unknown) => void;
@@ -318,6 +321,16 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
         return res.status(400).json({ error: 'filePath is required' });
       }
 
+      // Retire cards before the mapping goes: a manager clicking Approve on a
+      // card for an unlinked document would act against a mapping that no
+      // longer exists.
+      await retireReviewCards({
+        workspaceId,
+        githubPath: filePath,
+        reason: 'This document is no longer synced to Google Docs, so the pending edit was dropped.',
+        client: deps.slackClient,
+      });
+
       const removed = await store.removeGoogleDocMapping(workspaceId, filePath);
       // Drop the bookkeeping too: a stale baseline would be compared against a
       // different document if this path is ever linked again.
@@ -404,6 +417,11 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
         return undefined;
       }
 
+      await retireAllReviewCards({
+        workspaceId,
+        reason: 'The workspace Google account was disconnected, so this pending edit can no longer be applied.',
+        client: deps.slackClient,
+      });
       await disconnectWorkspace(workspaceId);
       deps.logger.info('Disconnected the workspace Google account', { workspaceId });
       // Mappings survive on purpose: reconnecting the same account restores every
