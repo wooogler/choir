@@ -253,6 +253,23 @@ async function main() {
     res.end('not found');
   });
 
+  // A bare EADDRINUSE surfaces as an unhandled 'error' event and a stack dump.
+  // The usual cause is an SSH tunnel for this very port that was opened on the
+  // wrong host, so name the likely culprit instead of making the reader guess.
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`\nPort ${PORT} on this machine is already taken.`);
+      console.error('Find the holder with:  ss -tlnp | grep -w ' + PORT);
+      console.error('If it is an `ssh -L` tunnel, that command belongs on the machine running your');
+      console.error('BROWSER, not on this one. Exit that session, or run the spike on another port:');
+      console.error(`  PORT=5600 node dist/spike-gdocs/picker-spike.js\n`);
+      process.exitCode = 1;
+      return;
+    }
+    console.error(error);
+    process.exitCode = 1;
+  });
+
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`\nPicker spike running. Open:  http://127.0.0.1:${PORT}\n`);
     if (allowWrite) {
