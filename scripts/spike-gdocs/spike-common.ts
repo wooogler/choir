@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import readline from 'node:readline';
 import { URL } from 'node:url';
 import { auth as googleAuth, type drive_v3 } from '@googleapis/drive';
 
@@ -63,23 +64,74 @@ export async function authorize(): Promise<InstanceType<typeof googleAuth.OAuth2
 
   const authUrl = oauth2.generateAuthUrl({ access_type: 'offline', scope: SCOPES, prompt: 'consent' });
   console.log(`\nOpen this URL to authorize (scope: ${SCOPES.join(' ')}):\n\n${authUrl}\n`);
+  console.log('If the browser runs on another machine, the redirect to 127.0.0.1 will fail to load —');
+  console.log('that is expected. Copy the whole URL out of the address bar and paste it here.\n');
 
-  const code = await new Promise<string>((resolve, reject) => {
-    server.on('request', (req, res) => {
-      const requested = new URL(req.url || '/', redirectUri);
-      const received = requested.searchParams.get('code');
-      const error = requested.searchParams.get('error');
-      res.end(received ? 'Authorized. You can close this tab.' : `Authorization failed: ${error}`);
-      server.close();
-      received ? resolve(received) : reject(new Error(error || 'no code'));
-    });
-  });
+  const code = await waitForAuthCode(server, redirectUri);
 
   const { tokens } = await oauth2.getToken(code);
   oauth2.setCredentials(tokens);
   fs.writeFileSync(TOKEN_CACHE, JSON.stringify(tokens), { mode: 0o600 });
   console.log(`Token cached at ${TOKEN_CACHE}`);
   return oauth2;
+}
+
+/**
+ * Pulls the authorization code out of whatever the user has to hand: the raw
+ * code, the query string, or the entire redirect URL copied from a browser that
+ * could not reach our loopback listener.
+ */
+export function extractAuthCode(input: string): string | null {
+  const trimmed = input.trim().replace(/^['"]|['"]$/g, '');
+  if (!trimmed) return null;
+
+  if (trimmed.includes('code=')) {
+    const match = trimmed.match(/[?&]code=([^&\s]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+  // A bare code. Google's look like `4/0A...`; reject obvious pastes of something else.
+  return /\s/.test(trimmed) ? null : trimmed;
+}
+
+/**
+ * Resolves the authorization code from whichever channel produces it first: the
+ * loopback redirect (when the browser shares a host with this process) or a paste
+ * on stdin (when it does not, which is the usual case for a remote checkout).
+ */
+async function waitForAuthCode(server: http.Server, redirectUri: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  const fromLoopback = new Promise<string>((resolve, reject) => {
+    server.on('request', (req, res) => {
+      const requested = new URL(req.url || '/', redirectUri);
+      const received = requested.searchParams.get('code');
+      const error = requested.searchParams.get('error');
+      res.end(received ? 'Authorized. You can close this tab.' : `Authorization failed: ${error}`);
+      received ? resolve(received) : reject(new Error(error || 'no code'));
+    });
+  });
+
+  const fromPaste = new Promise<string>((resolve) => {
+    const ask = () => {
+      rl.question('Paste the redirect URL (or just the code) here: ', (answer) => {
+        const parsed = extractAuthCode(answer);
+        if (parsed) {
+          resolve(parsed);
+          return;
+        }
+        console.log('Could not find a code in that. Try again.');
+        ask();
+      });
+    };
+    ask();
+  });
+
+  try {
+    return await Promise.race([fromLoopback, fromPaste]);
+  } finally {
+    rl.close();
+    server.close();
+  }
 }
 
 /**
