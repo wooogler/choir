@@ -134,7 +134,6 @@ async function verifyServerSide(
   const drive = driveClient({ version: 'v3', auth: fresh });
 
   const lines: string[] = [`Picked: ${name} (${fileId})`, ''];
-  let inconclusive = false;
   const record = (step: string, ok: boolean, detail: string) => {
     const line = `${ok ? 'PASS' : 'FAIL'}  ${step} — ${detail}`;
     lines.push(line);
@@ -165,9 +164,22 @@ async function verifyServerSide(
 
     // drive.file covers app-created files as well as picked ones, so a document
     // this spike made would pass every check without the Picker grant doing
-    // anything. That reads as a pass but proves nothing.
+    // anything. Stop here rather than printing results that read as a pass.
     if (SPIKE_CREATED_NAME.test(meta.data.name ?? '')) {
-      inconclusive = true;
+      return [
+        `Picked: ${name} (${fileId})`,
+        '',
+        'REJECTED — this spike created this document, so it cannot test the Picker grant.',
+        'The drive.file scope already covers files this app created; every check would pass',
+        'whether or not picking the file granted anything.',
+        '',
+        'Pick a document this app has never touched. If you do not have one to hand:',
+        '  1. open https://docs.google.com and create a blank document',
+        '  2. type a line into it so it is not empty',
+        '  3. come back to this page and pick that document',
+        '',
+        'The picker is still open for business — just click the button again.',
+      ].join('\n');
     }
   } catch (error) {
     record('1. files.get on a picked file', false, (error as Error).message);
@@ -213,17 +225,13 @@ async function verifyServerSide(
     lines.push('SKIP  4. content replace — re-run with --allow-write on a throwaway doc to verify');
   }
 
-  if (inconclusive) {
-    lines.push(
-      '',
-      'INCONCLUSIVE — this document was created by the spike itself.',
-      'The drive.file scope already grants access to files this app created, so the checks',
-      'above would pass with or without a Picker grant. Re-run and pick a document you made',
-      'yourself to actually test the grant.',
-    );
-  }
-
-  lines.push('', 'Done. You can close this tab and stop the spike with Ctrl-C.');
+  lines.push(
+    '',
+    'GRANT CONFIRMED — the checks above ran against a document this app did not create,',
+    'reached from a client holding only the refresh token.',
+    '',
+    'Done. You can close this tab and stop the spike with Ctrl-C.',
+  );
   return lines.join('\n');
 }
 
