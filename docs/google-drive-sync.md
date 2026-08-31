@@ -137,7 +137,19 @@ state/ 하위 첫 서브디렉터리이므로 서비스가 직접 mkdir):
 
 ---
 
-## P0 — 스파이크 확장: 남은 가정 검증 (반나절, GCP 자격증명 필요)
+## P0 — 남은 가정 검증 (검증 A 완료 2026-08-31: 9/9 PASS)
+
+**검증 A 결과 — 설계 전제 전부 확인됨** (상세: `scripts/spike-gdocs/README.md`):
+내용 교체 시 fileId·URL 유지, `files.update` 응답의 `version`이 직후 `files.get`과 일치
+(펜스 그대로 사용 가능), 반복 export 및 동일 내용 재push가 **byte 단위로 동일**
+(base64 이미지 페이로드 포함 — 정규화 레이어 불필요), 메타데이터 변경만으로도 version 증가
+(계획대로 export-vs-baseline이 진실 판정이어야 함을 확인). **P1~P4를 그대로 진행 가능.**
+
+**검증 B(Picker per-file grant)는 미완** — `picker-spike.ts`가 준비되어 있고 GCP의
+Picker API + API 키 + 프로젝트 번호가 필요하다. 실패 시 P1의 "기존 Doc 선택"을
+"CHOIR가 새 Doc 생성 + 폴더만 선택"으로 격하한다.
+
+### 남은 스파이크 항목
 
 `scripts/spike-gdocs/drive-spike.ts`의 기존 5개 체크(폴더 생성 / markdown import /
 **내용 교체 시 fileId 유지** / 권한 / 공유 드라이브)에 더해:
@@ -288,16 +300,23 @@ baseline·export·GitHub 모두 재조회 가능하므로 재기동에도 안전
 
 1. base=baseline, theirs=현재 export, ours=현재 GitHub markdown — 셋 다 배너 규칙 적용.
    **추출 시점에 `oursBlobSha`(GitHub 블롭 SHA)와 `reviewedVersion`(Doc version)을 기록.**
-2. 이미지 정규화: export의 `[imageN]: <data:...>` 참조에서, base64 내용 해시가 baseline과
-   동일한 이미지는 참조 토큰으로 치환(노이즈 상쇄). **새로운** data URL은 저장소 자산 후보로
+2. **export 문법 역정규화(측정 기반)**: 변환 노이즈는 unchanged 구간에서 상쇄되지만,
+   **사람이 새로 쓴 줄은 Docs export 문법을 달고 들어온다.** 추가/변경된 헝크에 한해
+   역이스케이프(`1\.`→`1.`, `\[`→`[`, `\=`→`=`)와 줄 끝 하드브레이크 공백 제거를 적용한 뒤
+   ours에 병합한다. 적용 범위를 헝크로 한정하는 것이 중요하다 — 문서 전체에 돌리면
+   원본에 의도적으로 있던 이스케이프까지 망가진다.
+3. 이미지 정규화: export의 `[imageN]: <data:...>` 참조에서, base64 내용 해시가 baseline과
+   동일한 이미지는 참조 토큰으로 치환(노이즈 상쇄). 측정상 base64 인코딩이 결정적이므로
+   해시 비교로 충분하다. **새로운** data URL은 저장소 자산 후보로
    추출하되 반입 검증을 통과해야 한다: **매직 바이트 기준 래스터 allowlist(png/jpeg/gif/webp,
    SVG는 무조건 거부)** + 디코드 후 길이에 `MAX_ASSET_BYTES` 적용(버퍼링 전) + 델타당 자산
    수 상한. 기존 자산 라우트의 검증은 HTTP 경로에 붙어 있으므로 **여기서 동일 검증을 직접
    재적용**(우회 금지). 새 자산은 리뷰 카드/화면에 명시적으로 나열해 관리자가 인지하고 승인.
-3. `node-diff3`(신규 소형 의존성; 대안: 로컬 gitrepo 미러에서 `git merge-file`)로 3-way merge.
-4. **코드 블록 가드**: 델타 헝크가 ours의 펜스 코드 블록 범위와 교차하면 자동 병합하지 않고
-   충돌로 승격.
-5. 산출: `{ merged, conflicts[], newAssets[] }`.
+4. `node-diff3`(신규 소형 의존성; 대안: 로컬 gitrepo 미러에서 `git merge-file`)로 3-way merge.
+5. **코드 블록 가드**: 델타 헝크가 ours의 펜스 코드 블록 범위와 교차하면 자동 병합하지 않고
+   충돌로 승격. 측정 확인: Docs export는 펜스를 잃고 각 줄을 별도 문단으로 만들므로
+   코드 블록 안의 편집은 구조적으로 자동 병합이 불가능하다.
+6. 산출: `{ merged, conflicts[], newAssets[] }`.
 
 **승인 UX** — 관리자 DM 카드에서:
 
@@ -331,9 +350,10 @@ baseline·export·GitHub 모두 재조회 가능하므로 재기동에도 안전
 
 | 항목 | 상태 |
 |---|---|
-| 내용 교체 시 fileId/URL 유지 | 설계 전제. **P0 스파이크로 확인**(미확인 상태로 P2 진행 금지) |
-| Export 멱등성 | 3-way merge 전제. **P0로 확인.** 비멱등이면 정규화 레이어 추가 |
-| Picker per-file grant | 기존 문서 선택 UX의 전제. **P0로 확인.** 실패 시 "새 Doc 생성 + 폴더 선택"으로 격하 |
+| 내용 교체 시 fileId/URL 유지 | **확인됨 (P0-A)** |
+| Export 멱등성 | **확인됨 (P0-A)** — byte 단위 동일, base64 포함. 정규화 레이어 불필요 |
+| version 펜스 | **확인됨 (P0-A)** — `files.update` 응답 version이 직후 `files.get`과 일치 |
+| Picker per-file grant | 기존 문서 선택 UX의 전제. **미검증** — `picker-spike.ts`. 실패 시 "새 Doc 생성 + 폴더 선택"으로 격하 |
 | Google export 직렬화 변경 | 통제 불가 외부 리스크. P3의 대량 드리프트 차단기로 완화 |
 | baseline 유실 | data/는 비버전 관리(과거 디스크 사고 이력 있음). baseline-lost 상태 + 자동 재push 금지로 데이터 손실 방지 |
 | `DOCS_BASE_URL` 공인 HTTPS | 이미지 임베드의 배포 전제. 비공개 호스트면 이미지는 드롭(렌더러의 기존 정책) |
