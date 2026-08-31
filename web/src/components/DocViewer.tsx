@@ -6,6 +6,7 @@ import { CrepeEditor, type CrepeEditorHandle } from './CrepeEditor';
 import { DocHeader } from './DocHeader';
 import { FilesSidebar } from './FilesSidebar';
 import { FloatingToc } from './FloatingToc';
+import { GoogleDocsReview } from './GoogleDocsReview';
 import { GoogleDocsSync } from './GoogleDocsSync';
 import { HistoryPanel } from './HistoryPanel';
 
@@ -114,6 +115,10 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [editorKey, setEditorKey] = useState(0);
   const [changedBlockCount, setChangedBlockCount] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Slack's "Review changes" card links straight here.
+  const [gdocsReviewOpen, setGdocsReviewOpen] = useState(
+    () => new URLSearchParams(window.location.search).get('gdocsReview') === '1',
+  );
   const [lineProvenance, setLineProvenance] = useState<Record<number, string> | null>(null);
   // The document content from the SAME git-clone snapshot blame ran against; the
   // line→record map is keyed to THIS content, so markers must be matched against
@@ -829,7 +834,12 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         </button>
       )}
       {!isEditing && sessionLoaded && (
-        <GoogleDocsSync workspaceId={workspaceId} filePath={filePath} isManager={isManager} />
+        <GoogleDocsSync
+          workspaceId={workspaceId}
+          filePath={filePath}
+          isManager={isManager}
+          onReview={isManager ? () => setGdocsReviewOpen(true) : undefined}
+        />
       )}
     </>
   );
@@ -916,6 +926,14 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         )}
         <FloatingToc activeSlug={activeSlug} items={toc} />
       </div>
+      {gdocsReviewOpen && isManager && (
+        <GoogleDocsReview
+          workspaceId={workspaceId}
+          filePath={filePath}
+          onClose={() => setGdocsReviewOpen(false)}
+          onApplied={() => window.location.reload()}
+        />
+      )}
       <HistoryPanel
         workspaceId={workspaceId}
         filePath={filePath}

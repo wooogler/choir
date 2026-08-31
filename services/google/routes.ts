@@ -13,6 +13,7 @@ import {
 } from './google-auth-service';
 import { issuePickerNonce, verifyPickerNonce } from './picker-nonce';
 import { publishReplica } from './replica-publisher';
+import { approveReview, buildReview, rejectReview } from './review-service';
 
 /**
  * HTTP surface for connecting a workspace's Google account and linking documents
@@ -325,6 +326,73 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       return res.json({ ok: true, removed });
     } catch (err) {
       deps.logger.error('DELETE google/link failed', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // ── Review an edit made in Google Docs ───────────────────────────────────
+
+  router.get('/api/docs/:workspaceId/google/review', async (req: Req, res: Res) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      if (!(await requireManagerOf(req, res, workspaceId))) {
+        return undefined;
+      }
+
+      const filePath = typeof req.query?.filePath === 'string' ? req.query.filePath : '';
+      if (!filePath) {
+        return res.status(400).json({ error: 'filePath is required' });
+      }
+
+      return res.json(await buildReview(workspaceId, filePath));
+    } catch (err) {
+      deps.logger.error('GET google/review failed', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  router.post('/api/docs/:workspaceId/google/review/approve', deps.jsonBody, async (req: Req, res: Res) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      const session = await requireManagerOf(req, res, workspaceId);
+      if (!session) {
+        return undefined;
+      }
+
+      const filePath = String(req.body?.filePath || '').trim();
+      const content = typeof req.body?.content === 'string' ? req.body.content : null;
+      if (!filePath || content === null) {
+        return res.status(400).json({ error: 'filePath and content are required' });
+      }
+
+      const result = await approveReview({ workspaceId, githubPath: filePath, userId: session.userId, content });
+      // 409 for the fences: the manager decided against a state that has moved,
+      // and the client should re-read the rebuilt review rather than retry.
+      const status = result.outcome === 'committed' ? 200 : result.outcome === 'failed' ? 500 : 409;
+      return res.status(status).json(result);
+    } catch (err) {
+      deps.logger.error('POST google/review/approve failed', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  router.post('/api/docs/:workspaceId/google/review/reject', deps.jsonBody, async (req: Req, res: Res) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      if (!(await requireManagerOf(req, res, workspaceId))) {
+        return undefined;
+      }
+
+      const filePath = String(req.body?.filePath || '').trim();
+      if (!filePath) {
+        return res.status(400).json({ error: 'filePath is required' });
+      }
+
+      const result = await rejectReview(workspaceId, filePath);
+      const status = result.outcome === 'restored' ? 200 : result.outcome === 'failed' ? 500 : 409;
+      return res.status(status).json(result);
+    } catch (err) {
+      deps.logger.error('POST google/review/reject failed', err);
       return res.status(500).json({ error: 'Internal server error' });
     }
   });

@@ -104,10 +104,13 @@ export function GoogleDocsSync({
   workspaceId,
   filePath,
   isManager,
+  onReview,
 }: {
   workspaceId: string;
   filePath: string;
   isManager: boolean;
+  /** Opens the review panel; absent for people who cannot decide. */
+  onReview?: () => void;
 }) {
   const [status, setStatus] = useState<GoogleStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -236,8 +239,18 @@ export function GoogleDocsSync({
   if (!status?.configured) return null;
 
   if (status.document) {
+    const awaitingReview =
+      status.document.status === 'drifted' ||
+      status.document.status === 'pending-review' ||
+      status.document.status === 'applying';
+
     return (
       <span className="doc-gdocs">
+        {awaitingReview && onReview && (
+          <button type="button" className="doc-button doc-button-primary" onClick={onReview}>
+            Review Docs edit
+          </button>
+        )}
         <a
           className="doc-button doc-button-ghost"
           href={status.document.webViewLink}

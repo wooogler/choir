@@ -6,10 +6,18 @@ import { getDocMeta } from 'services/google/drive-client';
 import { getWorkspaceClient } from 'services/google/google-auth-service';
 import { issuePickerNonce } from 'services/google/picker-nonce';
 import { publishReplica } from 'services/google/replica-publisher';
+import { approveReview, buildReview, rejectReview } from 'services/google/review-service';
 import { registerGoogleDriveRoutes } from 'services/google/routes';
 import { type WorkspaceConfig, WorkspaceStore } from 'services/workspace/workspace-store';
 
 jest.mock('services/google/drive-client', () => ({ getDocMeta: jest.fn() }));
+// The review service is covered by its own suite; here it stands in so the
+// routes can be exercised without pulling the GitHub stack into jest.
+jest.mock('services/google/review-service', () => ({
+  buildReview: jest.fn(),
+  approveReview: jest.fn(),
+  rejectReview: jest.fn(),
+}));
 jest.mock('services/google/replica-publisher', () => ({ publishReplica: jest.fn() }));
 jest.mock('services/google/google-auth-service', () => ({
   getWorkspaceClient: jest.fn(),
@@ -22,6 +30,9 @@ jest.mock('services/google/google-auth-service', () => ({
 const mockGetDocMeta = getDocMeta as jest.MockedFunction<typeof getDocMeta>;
 const mockPublish = publishReplica as jest.MockedFunction<typeof publishReplica>;
 const mockClient = getWorkspaceClient as jest.MockedFunction<typeof getWorkspaceClient>;
+const mockBuildReview = buildReview as jest.MockedFunction<typeof buildReview>;
+const mockApprove = approveReview as jest.MockedFunction<typeof approveReview>;
+const mockReject = rejectReview as jest.MockedFunction<typeof rejectReview>;
 
 interface Captured {
   method: string;
@@ -310,6 +321,108 @@ describe('Google Drive routes', () => {
 
       expect(res.body).toEqual({ ok: true, removed: true });
       expect(await store.getGoogleDocMapping('T1', 'docs/a.md')).toBeNull();
+    });
+  });
+
+  describe('review decisions', () => {
+    beforeEach(() => {
+      mockBuildReview.mockResolvedValue({ githubPath: 'docs/a.md', docUrl: 'https://example.com/a', status: 'ready' });
+      mockApprove.mockResolvedValue({ outcome: 'committed', commitSha: 'abc' });
+      mockReject.mockResolvedValue({ outcome: 'restored' });
+    });
+
+    it('returns the proposal for a manager', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+
+      await route('get', '/api/docs/:workspaceId/google/review')(
+        { params: { workspaceId: 'T1' }, query: { filePath: 'docs/a.md' } },
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({ status: 'ready' });
+    });
+
+    it('refuses a review to a non-manager', async () => {
+      const route = collectRoutes(false);
+      const res = makeRes();
+
+      await route('get', '/api/docs/:workspaceId/google/review')(
+        { params: { workspaceId: 'T1' }, query: { filePath: 'docs/a.md' } },
+        res,
+      );
+
+      expect(res.statusCode).toBe(403);
+      expect(mockBuildReview).not.toHaveBeenCalled();
+    });
+
+    it('commits an approval as the signed-in manager', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+
+      await route('post', '/api/docs/:workspaceId/google/review/approve')(
+        { params: { workspaceId: 'T1' }, body: { filePath: 'docs/a.md', content: '# Merged' } },
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(mockApprove).toHaveBeenCalledWith(expect.objectContaining({ userId: 'U-manager', content: '# Merged' }));
+    });
+
+    it('answers 409 when a fence refuses the decision', async () => {
+      // The client must re-read the rebuilt review rather than retry the same
+      // decision against a state that has moved on.
+      mockApprove.mockResolvedValue({ outcome: 'stale' });
+      const route = collectRoutes();
+      const res = makeRes();
+
+      await route('post', '/api/docs/:workspaceId/google/review/approve')(
+        { params: { workspaceId: 'T1' }, body: { filePath: 'docs/a.md', content: 'x' } },
+        res,
+      );
+
+      expect(res.statusCode).toBe(409);
+      expect(res.body).toMatchObject({ outcome: 'stale' });
+    });
+
+    it('requires content on approval so an empty body cannot blank a document', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+
+      await route('post', '/api/docs/:workspaceId/google/review/approve')(
+        { params: { workspaceId: 'T1' }, body: { filePath: 'docs/a.md' } },
+        res,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(mockApprove).not.toHaveBeenCalled();
+    });
+
+    it('restores the replica on rejection', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+
+      await route('post', '/api/docs/:workspaceId/google/review/reject')(
+        { params: { workspaceId: 'T1' }, body: { filePath: 'docs/a.md' } },
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(mockReject).toHaveBeenCalledWith('T1', 'docs/a.md');
+    });
+
+    it('refuses a rejection from another workspace', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+
+      await route('post', '/api/docs/:workspaceId/google/review/reject')(
+        { params: { workspaceId: 'T2' }, body: { filePath: 'docs/a.md' } },
+        res,
+      );
+
+      expect(res.statusCode).toBe(401);
+      expect(mockReject).not.toHaveBeenCalled();
     });
   });
 
