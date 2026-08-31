@@ -19,3 +19,6 @@ python/venv/
 python/*.pdf
 python/*.md
 python/*.html
+
+# Spike token cache (contains OAuth refresh token)
+scripts/spike-gdocs/.drive-spike-token.json
