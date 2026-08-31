@@ -34,6 +34,7 @@ import {
 import { getLineProvenance, getProvenanceRecord, listProvenanceForDoc } from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
+import { startDriftPoller } from 'services/google/poller';
 import { registerGoogleDriveRoutes } from 'services/google/routes';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
@@ -973,6 +974,10 @@ process.once('SIGINT', () => {
     initialClusterTimer.unref?.();
     const clusterInterval = setInterval(runClustering, 24 * 60 * 60 * 1000);
     clusterInterval.unref?.();
+
+    // Watch Google Docs replicas for edits made by people. No-op unless the
+    // workspace has connected an account; see docs/google-drive-sync.md.
+    startDriftPoller(app.client);
 
     if (slackConfig.mode === 'oauth') {
       app.logger.info('Slack OAuth install path: /slack/install');

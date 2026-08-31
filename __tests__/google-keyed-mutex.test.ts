@@ -85,3 +85,27 @@ describe('KeyedMutex', () => {
     expect(order).toEqual(Array.from({ length: 25 }, (_unused, index) => index));
   });
 });
+
+describe('KeyedMutex re-entrancy', () => {
+  it('deadlocks if a task takes the same key again — which is why callers must not nest', async () => {
+    // Guards the drift detector's structure: it must report 'banner-removed' and
+    // let the caller republish afterwards, because publishing takes the same
+    // per-document key. Nesting them would hang the poller permanently.
+    const mutex = new KeyedMutex();
+    let innerRan = false;
+
+    const nested = mutex.run('doc', async () => {
+      await mutex.run('doc', async () => {
+        innerRan = true;
+      });
+    });
+
+    const settled = await Promise.race([
+      nested.then(() => 'completed'),
+      new Promise((resolve) => setTimeout(() => resolve('still-waiting'), 60)),
+    ]);
+
+    expect(settled).toBe('still-waiting');
+    expect(innerRan).toBe(false);
+  });
+});
