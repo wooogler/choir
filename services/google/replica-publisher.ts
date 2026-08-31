@@ -2,7 +2,7 @@ import { Logger } from 'services/common/logger';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { withBanner } from './banner';
 import { exportDocMarkdown, getDocMeta, replaceDocContent } from './drive-client';
-import { contentHash, getDocState, mutateDocState, writeBaseline } from './gdocs-state';
+import { contentHash, getDocState, mutateDocState, writeBaseline, writeSourceSnapshot } from './gdocs-state';
 import { getWorkspaceClient, noteCredentialFailure } from './google-auth-service';
 import { rewriteImagesForDrive } from './image-rewrite';
 import { docKey, replicaLock } from './keyed-mutex';
@@ -106,7 +106,11 @@ export async function publishReplica(params: PublishParams): Promise<PublishResu
         return { outcome: 'published' as const, detail: 'raced-into-drift' };
       }
 
+      // Both halves of the same moment: the export, and the repository markdown
+      // that produced it. Delta extraction needs the pair to bridge the two
+      // markdown dialects (see readSourceSnapshot).
       await writeBaseline(workspaceId, githubPath, fenced.baseline);
+      await writeSourceSnapshot(workspaceId, githubPath, params.markdown);
       await mutateDocState(workspaceId, githubPath, (current) => ({
         ...(current ?? { updatedAt: '' }),
         status: 'synced',

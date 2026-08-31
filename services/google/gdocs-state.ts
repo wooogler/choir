@@ -40,6 +40,12 @@ function baselinePath(workspaceId: string, githubPath: string): string {
   return path.join(baselineDir(workspaceId), `${digest}.md`);
 }
 
+/** The repository markdown that produced the baseline, kept beside it. */
+function sourceSnapshotPath(workspaceId: string, githubPath: string): string {
+  const digest = crypto.createHash('sha256').update(githubPath).digest('hex');
+  return path.join(baselineDir(workspaceId), `${digest}.source.md`);
+}
+
 function emptyFile(): GdocsSyncFile {
   return { version: 1, docs: {}, updatedAt: new Date().toISOString() };
 }
@@ -141,6 +147,36 @@ export async function writeBaseline(workspaceId: string, githubPath: string, con
 
 export async function removeBaseline(workspaceId: string, githubPath: string): Promise<void> {
   await fs.promises.rm(baselinePath(workspaceId, githubPath), { force: true });
+  await fs.promises.rm(sourceSnapshotPath(workspaceId, githubPath), { force: true });
+}
+
+/**
+ * The GitHub markdown that produced the current baseline.
+ *
+ * Delta extraction needs both halves of the same moment. The baseline is in
+ * Docs' export dialect and the repository is in GitHub's, and the two differ
+ * everywhere — escaped punctuation, hard-break spaces, code fences that do not
+ * survive the round trip. Diffing across that gap marks every line as changed.
+ * Keeping the source snapshot gives a line-by-line correspondence between the
+ * dialects, so a human's edit can be carried back into repository markdown.
+ */
+export async function readSourceSnapshot(workspaceId: string, githubPath: string): Promise<string | null> {
+  try {
+    return await fs.promises.readFile(sourceSnapshotPath(workspaceId, githubPath), 'utf-8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      Logger.error(`Google Docs source snapshot unreadable for ${workspaceId}:${githubPath}`, error as Error);
+    }
+    return null;
+  }
+}
+
+export async function writeSourceSnapshot(workspaceId: string, githubPath: string, markdown: string): Promise<void> {
+  await fs.promises.mkdir(baselineDir(workspaceId), { recursive: true });
+  const target = sourceSnapshotPath(workspaceId, githubPath);
+  const temp = `${target}.${process.pid}.tmp`;
+  await fs.promises.writeFile(temp, markdown, 'utf-8');
+  await fs.promises.rename(temp, target);
 }
 
 /** Stable hash of the GitHub markdown, used to skip pushes that would be no-ops. */

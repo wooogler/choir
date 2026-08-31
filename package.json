@@ -61,6 +61,7 @@
     "jsdom": "^29.1.1",
     "marked": "^15.0.6",
     "mdast-util-to-string": "^4.0.0",
+    "node-diff3": "^3.2.1",
     "octokit": "^4.1.0",
     "openai": "^4.80.0",
     "remark-parse": "^11.0.0",

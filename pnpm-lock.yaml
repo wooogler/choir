@@ -50,6 +50,9 @@ importers:
       mdast-util-to-string:
         specifier: ^4.0.0
         version: 4.0.0
+      node-diff3:
+        specifier: ^3.2.1
+        version: 3.2.1
       octokit:
         specifier: ^4.1.0
         version: 4.1.4
@@ -3329,6 +3332,10 @@ packages:
 
   node-api-headers@1.8.0:
     resolution: {integrity: sha512-jfnmiKWjRAGbdD1yQS28bknFM1tbHC1oucyuMPjmkEs+kpiu76aRs40WlTmBmyEgzDM76ge1DQ7XJ3R5deiVjQ==}
+
+  node-diff3@3.2.1:
+    resolution: {integrity: sha512-eKZcJ8RtMQ3cIaA15EgmtwG927fYnRlhtdA4Q9HAcCpAZPQhhU2XptnTH9GeAkMiX2bAXxlJSAFa9shFbztPgw==}
+    engines: {bun: '>=1.3.10'}
 
   node-domexception@1.0.0:
     resolution: {integrity: sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==}
@@ -8672,6 +8679,8 @@ snapshots:
   node-addon-api@8.7.0: {}
 
   node-api-headers@1.8.0: {}
+
+  node-diff3@3.2.1: {}
 
   node-domexception@1.0.0: {}
 
