@@ -127,3 +127,27 @@ describe('Google Docs replica sync state', () => {
     expect(contentHash('# a')).not.toBe(contentHash('# b'));
   });
 });
+
+describe('empty baselines versus missing ones', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'choir-gdocs-empty-'));
+    process.env.CHOIR_DATA_DIR = tempDir;
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    Reflect.deleteProperty(process.env, 'CHOIR_DATA_DIR');
+  });
+
+  it('keeps an empty baseline distinct from a missing one', async () => {
+    // An empty Google Doc exports to zero bytes (measured in the P0 spike), so a
+    // stored empty baseline is a real measurement — a human deleted everything —
+    // while a missing file means drift cannot be measured at all.
+    await writeBaseline('T1', 'docs/emptied.md', '');
+
+    expect(await readBaseline('T1', 'docs/emptied.md')).toBe('');
+    expect(await readBaseline('T1', 'docs/never-pushed.md')).toBeNull();
+  });
+});

@@ -187,7 +187,13 @@ async function verifyServerSide(
 
   try {
     const markdown = await exportMarkdown(drive, fileId);
-    record('2. files.export as markdown', markdown.length > 0, `${markdown.length} bytes exported`);
+    // An empty document exports to zero bytes, which is a correct result rather
+    // than a failure — the check is whether the export call is permitted at all.
+    record(
+      '2. files.export as markdown',
+      true,
+      markdown.length > 0 ? `${markdown.length} bytes exported` : '0 bytes — the document is empty',
+    );
   } catch (error) {
     record('2. files.export as markdown', false, (error as Error).message);
   }

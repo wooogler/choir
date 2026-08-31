@@ -148,8 +148,11 @@ state/ 하위 첫 서브디렉터리이므로 서비스가 직접 mkdir):
 **검증 B 결과 — Picker per-file grant 확인됨 (GRANT CONFIRMED)**: 앱이 만들지 않은 문서를
 Picker로 고른 뒤, refresh token만 보유한 새 클라이언트로 서버측 `files.get` / `files.export` /
 메타데이터 쓰기가 모두 성공. **P1의 "기존 Doc 선택" UX를 그대로 구현한다.**
-(고른 문서의 *내용 교체*는 `--allow-write`로 미검증. 같은 writer 권한을 쓰므로 통과가
-예상되지만 P1 구현 전에 버려도 되는 문서로 확인할 것.)
+고른 문서의 **내용 교체**도 `--allow-write`로 확인됨(fileId 유지). **P0 전체 완료.**
+
+부수 발견: 빈 Doc의 export는 0바이트다. 드리프트 판정은 `baseline 파일 부재`(측정 불가 →
+`baseline-lost`)와 `baseline이 빈 문자열`(사람이 내용을 전부 삭제 → 정상적인 드리프트)을
+반드시 구분해야 한다.
 
 ### 남은 스파이크 항목
 
@@ -356,7 +359,7 @@ baseline·export·GitHub 모두 재조회 가능하므로 재기동에도 안전
 | Export 멱등성 | **확인됨 (P0-A)** — byte 단위 동일, base64 포함. 정규화 레이어 불필요 |
 | version 펜스 | **확인됨 (P0-A)** — `files.update` 응답 version이 직후 `files.get`과 일치 |
 | Picker per-file grant | **확인됨 (P0-B)** — 서버측 refresh token으로 지속 접근 |
-| 고른 문서의 내용 교체 | 미검증(`--allow-write`). 같은 writer 권한이라 통과 예상 |
+| 고른 문서의 내용 교체 | **확인됨 (P0-B)** — fileId 유지 |
 | Google export 직렬화 변경 | 통제 불가 외부 리스크. P3의 대량 드리프트 차단기로 완화 |
 | baseline 유실 | data/는 비버전 관리(과거 디스크 사고 이력 있음). baseline-lost 상태 + 자동 재push 금지로 데이터 손실 방지 |
 | `DOCS_BASE_URL` 공인 HTTPS | 이미지 임베드의 배포 전제. 비공개 호스트면 이미지는 드롭(렌더러의 기존 정책) |
