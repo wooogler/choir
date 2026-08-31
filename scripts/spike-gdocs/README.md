@@ -17,17 +17,45 @@ CHOIR가 문서를 *직접 생성*하므로 `drive.file` 스코프면 충분합�
 
 | 파일 | 역할 |
 | --- | --- |
-| `fixture.md` | 변환 위험 요소를 모아둔 테스트 픽스처 |
-| `drive-spike.ts` | `drive.file` 스코프만으로 폴더 생성 / 문서 생성 / **내용 교체 시 fileId 유지** / 권한 설정 / 공유 드라이브를 검증. 기본은 마크다운 import, `--html`로 HTML 경로 |
+| `fixture.md` | 변환 위험 요소를 모아둔 테스트 픽스처 (중첩 목록·표·코드 블록·원격 이미지) |
+| `spike-common.ts` | 공용: 루프백 OAuth(토큰 캐시), 마크다운 export, 스냅샷 비교, base64 정규화 |
+| `drive-spike.ts` | P0 체크 9종 — 폴더 생성 / 문서 생성 / **내용 교체 시 fileId 유지** / **version 펜스** / **export 멱등성** / 메타데이터 변경의 version 영향 / 권한 / 목록. 기본은 마크다운 import, `--html`로 HTML 경로 |
+| `picker-spike.ts` | P0 체크 — **Picker로 고른 남의 문서에 서버측(refresh token만으로) 접근이 되는지**. 로컬 페이지를 띄워 실제 Picker를 사용 |
 | `markdown-to-docs-html.ts` | HTML import 경로용 렌더러 (`marked` 재사용). **측정 결과 마크다운 import가 우세해 기본 경로에서는 불필요** — 코드 블록 우선이면 사용 |
 | `render.ts` | 위 렌더러로 마크다운 파일을 HTML로 렌더 |
+
+## GCP 준비 (P0 실행 전 1회)
+
+[console.cloud.google.com](https://console.cloud.google.com) 에서:
+
+1. **프로젝트 생성** (기존 것 재사용 가능). 좌측 상단 프로젝트 선택 → 새 프로젝트.
+2. **API 사용 설정** — "APIs & Services" → "Enable APIs and Services" 에서 두 개를 켭니다:
+   - **Google Drive API** (필수)
+   - **Google Picker API** (검증 B에만 필요)
+3. **OAuth consent screen** — External / Testing으로 두고, **Test users에 본인 Google 계정을
+   추가**합니다. Testing 모드에서는 심사 없이 test user만 사용할 수 있어 스파이크에 충분합니다.
+   스코프는 화면에서 추가하지 않아도 됩니다(스크립트가 요청).
+4. **OAuth 클라이언트 ID** — "Credentials" → "Create credentials" → "OAuth client ID" →
+   Application type **Desktop app** → 생성 후 **JSON 다운로드**. 이 파일 경로가
+   `GOOGLE_OAUTH_CLIENT` 입니다.
+5. (검증 B만) **API 키** — "Create credentials" → "API key". 스파이크 동안은 제한 없이 두고,
+   끝나면 삭제하거나 Picker API로 제한하십시오. 이 값이 `GOOGLE_PICKER_API_KEY` 입니다.
+6. (검증 B만) **프로젝트 번호** — 콘솔 대시보드 "Project info"의 *Project number*(숫자).
+   Project **ID**(문자열)가 아닙니다. 이 값이 `GOOGLE_PROJECT_NUMBER` 입니다.
+
+주의: Picker의 `setAppId`는 프로젝트 번호이고 **OAuth 클라이언트와 같은 프로젝트**여야
+per-file grant가 앱에 붙습니다. 다르면 검증 B가 조용히 실패합니다.
+
+첫 실행 시 인가 URL이 콘솔에 출력됩니다. 브라우저에서 열어 승인하면
+`scripts/spike-gdocs/.drive-spike-token.json`(0600, gitignore됨)에 refresh token이 캐시되어
+이후에는 다시 묻지 않습니다. 검증이 끝나면 이 파일을 지우십시오.
 
 ## 실행
 
 레포의 ts-node는 현재 이 스크립트를 직접 실행하지 못합니다(아래 "알려진 환경 문제"). 직접 컴파일합니다:
 
 ```bash
-npx tsc --ignoreConfig scripts/spike-gdocs/markdown-to-docs-html.ts scripts/spike-gdocs/render.ts scripts/spike-gdocs/drive-spike.ts --outDir dist/spike-gdocs --rootDir scripts/spike-gdocs --module commonjs --target es2020 --esModuleInterop --skipLibCheck --types node
+npx tsc --ignoreConfig scripts/spike-gdocs/*.ts --outDir dist/spike-gdocs --rootDir scripts/spike-gdocs --module commonjs --target es2020 --esModuleInterop --skipLibCheck --types node
 ```
 
 (`pnpm build`가 `rm -rf dist`를 하므로 빌드 후에는 위 컴파일을 다시 돌려야 합니다.)
@@ -38,13 +66,39 @@ npx tsc --ignoreConfig scripts/spike-gdocs/markdown-to-docs-html.ts scripts/spik
 node dist/spike-gdocs/render.js scripts/spike-gdocs/fixture.md dist/spike-gdocs/fixture.html
 ```
 
-Drive 검증 (GCP 콘솔에서 "Desktop app" OAuth 클라이언트 JSON 필요):
+### P0 검증 A — Drive 동작 (자격증명 1개)
 
 ```bash
 GOOGLE_OAUTH_CLIENT=/path/to/client_secret.json node dist/spike-gdocs/drive-spike.js --keep
 ```
 
+체크 9종이 PASS/FAIL로 출력됩니다. 설계상 가장 중요한 것은:
+
+- **4. replace content in place** — fileId/URL이 유지되어야 함 (복제본 URL 안정성의 전제)
+- **5. version fence** — `files.update` 응답의 `version`이 직후 `files.get`과 일치해야 함.
+  불일치하거나 응답에 `version`이 없으면 publisher의 펜스를 get-before/after로 바꿔야 함
+- **3 / 6. export 멱등성** — 같은 내용이 항상 같은 markdown으로 export되어야 함.
+  실패 시 base64 이미지 페이로드만 흔들리는지(정규화로 해결 가능) 아닌지를 함께 보고
+
 `--html`을 붙이면 마크다운 대신 HTML import 경로로 같은 검증을 돌립니다.
+첫 export 원문은 `dist/spike-gdocs/export-sample.md`에 저장되어 눈으로 확인할 수 있습니다.
+
+### P0 검증 B — Picker per-file grant (자격증명 3개)
+
+"기존 Doc 선택" UX의 전제를 검증합니다. 브라우저가 아니라 **서버가 refresh token만으로**
+그 문서에 접근되는지를 봅니다(3분 폴러가 며칠 뒤에 하는 일과 동일).
+
+```bash
+GOOGLE_OAUTH_CLIENT=/path/to/client_secret.json \
+GOOGLE_PICKER_API_KEY=... \
+GOOGLE_PROJECT_NUMBER=... \
+node dist/spike-gdocs/picker-spike.js
+```
+
+출력된 `http://127.0.0.1:5599`를 열고 **이 스파이크가 만들지 않은** Doc을 고르면 콘솔과
+페이지에 결과가 찍힙니다. 쓰기 검증은 기본이 **이름 변경 후 복원**(비파괴)이며,
+`--allow-write`를 붙이면 내용 교체까지 검증합니다 — 이 경우 고른 문서의 내용이 **삭제**되므로
+반드시 버려도 되는 문서로 하십시오.
 
 ## 실측 결과 (2026-08-31)
 

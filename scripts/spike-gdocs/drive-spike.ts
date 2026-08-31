@@ -1,25 +1,30 @@
 /**
- * Spike: verifies the parts of the GitHub → Google Docs replica design that the
- * Drive MCP connector cannot answer, because it authenticates with broad scopes
- * and its update tool only changes metadata.
+ * P0 spike: verifies the assumptions docs/google-drive-sync.md is built on that
+ * the Drive MCP connector cannot answer (it authenticates with broad scopes and
+ * its update tool only changes metadata).
  *
- * Specifically it proves (or disproves) that with ONLY the `drive.file` scope —
- * the non-sensitive one that avoids restricted-scope verification and the annual
- * CASA assessment — an app can:
+ * With ONLY the `drive.file` scope — the non-sensitive one that avoids
+ * restricted-scope verification and the annual CASA assessment — it proves (or
+ * disproves) that an app can:
  *
  *   1. create a folder,
- *   2. create a Google Doc inside it by importing markdown (--html for the HTML path),
+ *   2. create a Google Doc by importing markdown (--html for the HTML path),
  *   3. REPLACE that doc's content in place and keep the same fileId/URL,
- *   4. set a reader permission so the replica is read-only,
- *   5. do all of the above inside a shared drive (optional, --shared-drive).
+ *   4. observe `version` on the update response and again on files.get,
+ *   5. round-trip identical content to an identical markdown export,
+ *   6. tell a content change from a metadata-only change,
+ *   7. set a reader permission,
+ *   8. list what it created — and nothing else.
  *
- * Step 3 is the load-bearing one: the whole design assumes a stable Doc URL
- * across syncs. Step 5 is the likely blocker for org-wide sharing.
+ * Check 3 is load-bearing for the stable Doc URL. Checks 4-6 are load-bearing for
+ * drift detection: the publisher records a version it observed atomically with the
+ * content it baselined, and the poller decides "human edited this" by comparing a
+ * fresh export against that baseline. If exports are not deterministic, the
+ * baseline 3-way merge has no ground truth.
  *
  * Setup:
- *   pnpm add -D @googleapis/drive
- *   # GCP console → create an OAuth 2.0 Client ID of type "Desktop app",
- *   # download the JSON, and point GOOGLE_OAUTH_CLIENT at it.
+ *   # GCP console → enable the Drive API → create an OAuth 2.0 Client ID of type
+ *   # "Desktop app", download the JSON, and point GOOGLE_OAUTH_CLIENT at it.
  *   export GOOGLE_OAUTH_CLIENT=/path/to/client_secret.json
  *
  * Run:
@@ -33,17 +38,10 @@
  */
 
 import fs from 'node:fs';
-import http from 'node:http';
 import path from 'node:path';
-import { URL } from 'node:url';
-import { auth as googleAuth, drive as driveClient } from '@googleapis/drive';
+import { drive as driveClient } from '@googleapis/drive';
 import { renderMarkdownToDocsHtml } from './markdown-to-docs-html';
-
-// The single scope under test. Deliberately NOT drive or drive.readonly: the
-// point of the spike is that this one suffices for an app that only ever touches
-// files it created itself.
-const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
-const TOKEN_CACHE = path.join(__dirname, '.drive-spike-token.json');
+import { authorize, compareText, exportMarkdown, normalizeDataUrls } from './spike-common';
 
 interface Args {
   sharedDriveId?: string;
@@ -58,55 +56,6 @@ function parseArgs(argv: string[]): Args {
     keep: argv.includes('--keep'),
     useHtml: argv.includes('--html'),
   };
-}
-
-/**
- * Installed-app OAuth over a loopback redirect. Caches the refresh token next to
- * this script so repeat runs don't re-prompt.
- */
-async function authorize() {
-  const clientPath = process.env.GOOGLE_OAUTH_CLIENT;
-  if (!clientPath || !fs.existsSync(clientPath)) {
-    throw new Error('Set GOOGLE_OAUTH_CLIENT to the path of your OAuth desktop-app client JSON.');
-  }
-
-  const credentials = JSON.parse(fs.readFileSync(clientPath, 'utf-8'));
-  const { client_id, client_secret } = credentials.installed || credentials.web;
-
-  // Port 0 lets the OS pick a free port; the redirect URI is registered as
-  // http://localhost for desktop clients, which accepts any port.
-  const server = http.createServer();
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const port = (server.address() as { port: number }).port;
-  const redirectUri = `http://127.0.0.1:${port}`;
-
-  const oauth2 = new googleAuth.OAuth2(client_id, client_secret, redirectUri);
-
-  if (fs.existsSync(TOKEN_CACHE)) {
-    oauth2.setCredentials(JSON.parse(fs.readFileSync(TOKEN_CACHE, 'utf-8')));
-    server.close();
-    return oauth2;
-  }
-
-  const authUrl = oauth2.generateAuthUrl({ access_type: 'offline', scope: SCOPES, prompt: 'consent' });
-  console.log(`\nOpen this URL to authorize (scope: ${SCOPES.join(' ')}):\n\n${authUrl}\n`);
-
-  const code = await new Promise<string>((resolve, reject) => {
-    server.on('request', (req, res) => {
-      const requested = new URL(req.url || '/', redirectUri);
-      const received = requested.searchParams.get('code');
-      const error = requested.searchParams.get('error');
-      res.end(received ? 'Authorized. You can close this tab.' : `Authorization failed: ${error}`);
-      server.close();
-      received ? resolve(received) : reject(new Error(error || 'no code'));
-    });
-  });
-
-  const { tokens } = await oauth2.getToken(code);
-  oauth2.setCredentials(tokens);
-  fs.writeFileSync(TOKEN_CACHE, JSON.stringify(tokens), { mode: 0o600 });
-  console.log(`Token cached at ${TOKEN_CACHE}`);
-  return oauth2;
 }
 
 const BANNER = '이 문서는 GitHub에서 자동 생성된 복제본입니다. 여기서 편집한 내용은 반영되지 않습니다.';
@@ -129,6 +78,12 @@ async function main() {
   const auth = await authorize();
   const drive = driveClient({ version: 'v3', auth });
 
+  // The real fixture, not a toy string: nested lists, a table, a fenced code
+  // block and a remote image are exactly the constructs whose export stability
+  // the design depends on.
+  const fixture = fs.readFileSync(path.join(__dirname, 'fixture.md'), 'utf-8');
+  const editedFixture = `${fixture}\n\n## 8. 두 번째 버전\n\n내용이 교체되었습니다.\n`;
+
   // Shared-drive calls need these flags on every request, so build them once.
   const sharedDriveOpts = args.sharedDriveId ? { supportsAllDrives: true } : {};
   const results: Array<{ step: string; ok: boolean; detail: string }> = [];
@@ -140,7 +95,7 @@ async function main() {
   let folderId: string | undefined;
   let docId: string | undefined;
 
-  // 1. Folder creation — the replica mirrors the repo's directory tree.
+  // 1. Folder creation — replicas live in a CHOIR-owned folder.
   try {
     const folder = await drive.files.create({
       requestBody: {
@@ -158,6 +113,7 @@ async function main() {
   }
 
   // 2. Create the Doc by importing markdown (mimeType asks Drive to convert).
+  const importLabel = `2. import ${args.useHtml ? 'HTML' : 'markdown'} as Doc`;
   try {
     const created = await drive.files.create({
       requestBody: {
@@ -165,60 +121,186 @@ async function main() {
         mimeType: 'application/vnd.google-apps.document',
         parents: folderId ? [folderId] : undefined,
       },
-      media: uploadBody('# 최초 버전\n\n이 문단은 곧 교체됩니다.\n\n```ts\nconst before = 1;\n```\n', 'v1', args.useHtml),
-      fields: 'id, webViewLink, mimeType',
+      media: uploadBody(fixture, 'v1', args.useHtml),
+      fields: 'id, webViewLink, mimeType, version',
       ...sharedDriveOpts,
     });
     docId = created.data.id ?? undefined;
-    record(`2. import ${args.useHtml ? 'HTML' : 'markdown'} as Doc`, created.data.mimeType === 'application/vnd.google-apps.document', `id=${docId} url=${created.data.webViewLink}`);
+    record(
+      importLabel,
+      created.data.mimeType === 'application/vnd.google-apps.document',
+      `id=${docId} version=${created.data.version} url=${created.data.webViewLink}`,
+    );
   } catch (error) {
-    record(`2. import ${args.useHtml ? 'HTML' : 'markdown'} as Doc`, false, (error as Error).message);
+    record(importLabel, false, (error as Error).message);
   }
 
-  // 3. THE load-bearing check: replace content in place, same fileId and URL.
-  if (docId) {
-    try {
-      const before = docId;
-      const updated = await drive.files.update({
-        fileId: docId,
-        media: uploadBody('# 두 번째 버전\n\n내용이 통째로 교체되었습니다.\n\n```ts\nconst after = 2;\n```\n', 'v2', args.useHtml),
-        fields: 'id, webViewLink, modifiedTime',
-        ...sharedDriveOpts,
-      });
-      const stable = updated.data.id === before;
-      record('3. replace content in place', stable, stable ? `fileId unchanged (${before}), url=${updated.data.webViewLink}` : `fileId CHANGED: ${before} → ${updated.data.id}`);
-    } catch (error) {
-      record('3. replace content in place', false, (error as Error).message);
+  if (!docId) {
+    console.log('\nNo document to test against — aborting the remaining checks.');
+    process.exitCode = 1;
+    return;
+  }
+
+  // 3. Repeated export of an unchanged doc must be byte-identical, or the poller
+  //    would flag drift on every tick with nobody having touched the document.
+  let baselineA = '';
+  try {
+    baselineA = await exportMarkdown(drive, docId);
+    const baselineB = await exportMarkdown(drive, docId);
+    const raw = compareText(baselineA, baselineB);
+    if (raw.identical) {
+      record('3. export is repeatable', true, raw.summary);
+    } else {
+      // Distinguish "the serializer is unstable" from "only base64 image payloads
+      // wobble", which the design could normalize away.
+      const normalized = compareText(normalizeDataUrls(baselineA), normalizeDataUrls(baselineB));
+      record(
+        '3. export is repeatable',
+        false,
+        normalized.identical
+          ? `differs ONLY inside base64 image payloads — normalizable. ${raw.summary}`
+          : raw.summary,
+      );
     }
+  } catch (error) {
+    record('3. export is repeatable', false, (error as Error).message);
   }
 
-  // 4. Read-only sharing, so viewers can't edit a doc whose edits would be lost.
-  if (docId) {
-    try {
-      await drive.permissions.create({
-        fileId: docId,
-        requestBody: { type: 'anyone', role: 'reader' },
-        ...sharedDriveOpts,
-      });
-      record('4. set reader permission', true, 'type=anyone role=reader');
-    } catch (error) {
-      record('4. set reader permission', false, (error as Error).message);
+  // 4. THE load-bearing check: replace content in place, same fileId and URL.
+  //    Also capture `version` from the update response and again from files.get —
+  //    the publisher's fence needs both to be observable and to agree when nobody
+  //    else is editing.
+  let versionAfterUpdate: string | undefined;
+  try {
+    const before = docId;
+    const updated = await drive.files.update({
+      fileId: docId,
+      media: uploadBody(editedFixture, 'v2', args.useHtml),
+      fields: 'id, webViewLink, modifiedTime, version',
+      ...sharedDriveOpts,
+    });
+    const stable = updated.data.id === before;
+    versionAfterUpdate = updated.data.version ?? undefined;
+    record(
+      '4. replace content in place',
+      stable,
+      stable
+        ? `fileId unchanged (${before}), version=${versionAfterUpdate}, url=${updated.data.webViewLink}`
+        : `fileId CHANGED: ${before} → ${updated.data.id}`,
+    );
+  } catch (error) {
+    record('4. replace content in place', false, (error as Error).message);
+  }
+
+  // 5. The version fence: files.update's response version must be observable and
+  //    must match a files.get taken right after. If update does not return a
+  //    version, the publisher cannot fence and must fall back to get-before/after.
+  try {
+    const meta = await drive.files.get({ fileId: docId, fields: 'version, modifiedTime', ...sharedDriveOpts });
+    const versionFromGet = meta.data.version ?? undefined;
+    const observable = Boolean(versionAfterUpdate);
+    const agree = observable && versionAfterUpdate === versionFromGet;
+    record(
+      '5. version fence (update vs get)',
+      agree,
+      observable
+        ? `update=${versionAfterUpdate} get=${versionFromGet}${agree ? ' (agree)' : ' — DISAGREE: fence must use get-before/after'}`
+        : 'files.update did NOT return `version` — fence must use get-before/after',
+    );
+  } catch (error) {
+    record('5. version fence (update vs get)', false, (error as Error).message);
+  }
+
+  // 6. Round-trip determinism, the real drift-detection assumption: pushing the
+  //    SAME content again must export to the SAME markdown. If it does not, every
+  //    republish would look like a human edit.
+  try {
+    const baselineBeforeNoop = await exportMarkdown(drive, docId);
+    await drive.files.update({
+      fileId: docId,
+      media: uploadBody(editedFixture, 'v2-again', args.useHtml),
+      fields: 'id, version',
+      ...sharedDriveOpts,
+    });
+    const baselineAfterNoop = await exportMarkdown(drive, docId);
+    const raw = compareText(baselineBeforeNoop, baselineAfterNoop);
+    if (raw.identical) {
+      record('6. identical re-push → identical export', true, raw.summary);
+    } else {
+      const normalized = compareText(normalizeDataUrls(baselineBeforeNoop), normalizeDataUrls(baselineAfterNoop));
+      record(
+        '6. identical re-push → identical export',
+        false,
+        normalized.identical
+          ? `differs ONLY inside base64 image payloads — normalizable. ${raw.summary}`
+          : raw.summary,
+      );
     }
+  } catch (error) {
+    record('6. identical re-push → identical export', false, (error as Error).message);
   }
 
-  // 5. Confirm drive.file really does keep access to what we created — and
+  // 7. A metadata-only change (rename) tells us how noisy `version` is as a
+  //    trigger. A bump here is expected and harmless — it is why export-vs-baseline
+  //    is the truth test rather than version alone — but measure it, don't assume.
+  try {
+    const beforeRename = await drive.files.get({ fileId: docId, fields: 'version', ...sharedDriveOpts });
+    await drive.files.update({
+      fileId: docId,
+      requestBody: { name: 'CHOIR replica spike (renamed)' },
+      fields: 'id',
+      ...sharedDriveOpts,
+    });
+    const afterRename = await drive.files.get({ fileId: docId, fields: 'version', ...sharedDriveOpts });
+    const bumped = beforeRename.data.version !== afterRename.data.version;
+    record(
+      '7. metadata-only change bumps version?',
+      true,
+      bumped
+        ? `YES (${beforeRename.data.version} → ${afterRename.data.version}) — version is a trigger only; export-vs-baseline is the truth test`
+        : `NO (stayed ${afterRename.data.version}) — version tracks content only`,
+    );
+  } catch (error) {
+    record('7. metadata-only change bumps version?', false, (error as Error).message);
+  }
+
+  // 8. Read-only sharing, so viewers can't edit a doc whose edits would be lost.
+  try {
+    await drive.permissions.create({
+      fileId: docId,
+      requestBody: { type: 'anyone', role: 'reader' },
+      ...sharedDriveOpts,
+    });
+    record('8. set reader permission', true, 'type=anyone role=reader');
+  } catch (error) {
+    record('8. set reader permission', false, (error as Error).message);
+  }
+
+  // 9. Confirm drive.file really does keep access to what we created — and
   //    nothing else. A files.list restricted to our folder should return the doc.
   if (folderId) {
     try {
       const listed = await drive.files.list({
         q: `'${folderId}' in parents and trashed = false`,
         fields: 'files(id, name)',
-        ...(args.sharedDriveId ? { supportsAllDrives: true, includeItemsFromAllDrives: true, corpora: 'drive', driveId: args.sharedDriveId } : {}),
+        ...(args.sharedDriveId
+          ? { supportsAllDrives: true, includeItemsFromAllDrives: true, corpora: 'drive', driveId: args.sharedDriveId }
+          : {}),
       });
       const found = (listed.data.files || []).some((f) => f.id === docId);
-      record('5. list app-created files', found, `${listed.data.files?.length ?? 0} file(s) visible in folder`);
+      record('9. list app-created files', found, `${listed.data.files?.length ?? 0} file(s) visible in folder`);
     } catch (error) {
-      record('5. list app-created files', false, (error as Error).message);
+      record('9. list app-created files', false, (error as Error).message);
+    }
+  }
+
+  if (baselineA) {
+    const dumpPath = path.join(__dirname, '..', '..', 'dist', 'spike-gdocs', 'export-sample.md');
+    try {
+      fs.writeFileSync(dumpPath, baselineA, 'utf-8');
+      console.log(`\nFirst export written to ${dumpPath} for eyeballing conversion fidelity.`);
+    } catch {
+      // Non-essential.
     }
   }
 
@@ -226,8 +308,8 @@ async function main() {
     for (const id of [docId, folderId].filter(Boolean) as string[]) {
       await drive.files.delete({ fileId: id, ...sharedDriveOpts }).catch(() => undefined);
     }
-    console.log('\nCleaned up spike files (pass --keep to inspect them by hand).');
-  } else if (docId) {
+    console.log('Cleaned up spike files (pass --keep to inspect them by hand).');
+  } else {
     console.log(`\nKept: https://docs.google.com/document/d/${docId}/edit`);
   }
 
