@@ -9,6 +9,30 @@ import { decryptJson, encryptJson } from 'services/db/crypto';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
 import { isReadOnlyFile } from './read-only';
 
+/**
+ * The single Google account a workspace syncs replicas through. One per
+ * workspace, connected once by a manager: every Drive call — publish, poll,
+ * approve — is made with this refresh token. Stored inside WorkspaceConfig so it
+ * is encrypted at rest with the rest of the config.
+ */
+export interface GoogleAuthRecord {
+  refreshToken: string;
+  /** The connected account, for display in the viewer. */
+  email?: string;
+  connectedBy: string;
+  connectedAt: Date;
+  /** Set when Google rejects the refresh token (invalid_grant): needs re-connecting. */
+  broken?: boolean;
+}
+
+/** A GitHub document's Google Docs replica. Keyed by repo-relative path. */
+export interface GoogleDocMapping {
+  fileId: string;
+  webViewLink: string;
+  linkedBy: string;
+  linkedAt: Date;
+}
+
 export interface WorkspaceConfig {
   workspaceId: string;
   githubRepo?: {
@@ -65,6 +89,13 @@ export interface WorkspaceConfig {
   dashboardEnabled?: boolean;
   dashboardOptOut?: string[];
   dashboardSalt?: string;
+  // Google Drive replica sync — see docs/google-drive-sync.md. Non-secret
+  // per-document bookkeeping (versions, baselines) lives on the filesystem
+  // instead; only the credential and the path→fileId mapping belong here.
+  google?: {
+    auth?: GoogleAuthRecord;
+    docs?: { [githubPath: string]: GoogleDocMapping };
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -126,6 +157,14 @@ export class WorkspaceStore {
     if (config.githubTokens) {
       for (const userId in config.githubTokens) {
         config.githubTokens[userId].connectedAt = new Date(config.githubTokens[userId].connectedAt);
+      }
+    }
+    if (config.google?.auth) {
+      config.google.auth.connectedAt = new Date(config.google.auth.connectedAt);
+    }
+    if (config.google?.docs) {
+      for (const githubPath in config.google.docs) {
+        config.google.docs[githubPath].linkedAt = new Date(config.google.docs[githubPath].linkedAt);
       }
     }
 
@@ -924,6 +963,117 @@ export class WorkspaceStore {
     this.mutateConfigSync(workspaceId, (config) => {
       config.openai = undefined;
     });
+  }
+
+  /**
+   * Stores the workspace's Google credential. Replaces any previous connection —
+   * there is exactly one Google account per workspace by design, so re-connecting
+   * as a different manager deliberately takes the account over. Existing document
+   * mappings are kept: they are addressed by fileId, which survives the swap as
+   * long as the new account can still reach those files.
+   */
+  public async setGoogleAuth(
+    workspaceId: string,
+    auth: { refreshToken: string; email?: string; connectedBy: string },
+  ): Promise<void> {
+    const applied = this.mutateConfigSync(workspaceId, (config) => {
+      config.google = config.google ?? {};
+      config.google.auth = {
+        refreshToken: auth.refreshToken,
+        email: auth.email,
+        connectedBy: auth.connectedBy,
+        connectedAt: new Date(),
+      };
+    });
+    if (applied === null) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+    this.logger.info(`Connected Google account for workspace ${workspaceId} (by ${auth.connectedBy})`);
+  }
+
+  public async getGoogleAuth(workspaceId: string): Promise<GoogleAuthRecord | null> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.google?.auth ?? null;
+  }
+
+  /**
+   * Flags the stored refresh token as rejected by Google. Every replica trigger
+   * checks this, so one `invalid_grant` disables publishing and polling for the
+   * workspace instead of burning quota on calls that cannot succeed.
+   */
+  public async setGoogleAuthBroken(workspaceId: string, broken: boolean): Promise<void> {
+    this.mutateConfigSync(workspaceId, (config) => {
+      if (!config.google?.auth) return false;
+      if (Boolean(config.google.auth.broken) === broken) return false;
+      config.google.auth.broken = broken;
+    });
+  }
+
+  /** Removes the credential. Mappings are left in place but become inert. */
+  public async clearGoogleAuth(workspaceId: string): Promise<void> {
+    this.mutateConfigSync(workspaceId, (config) => {
+      if (!config.google?.auth) return false;
+      config.google.auth = undefined;
+    });
+    this.logger.info(`Disconnected Google account for workspace ${workspaceId}`);
+  }
+
+  /**
+   * Links a repo document to a Google Doc. Rejects a fileId already linked to a
+   * different path: two documents publishing into one Doc would overwrite each
+   * other on every sync and make drift impossible to attribute.
+   */
+  public async setGoogleDocMapping(
+    workspaceId: string,
+    githubPath: string,
+    mapping: { fileId: string; webViewLink: string; linkedBy: string },
+  ): Promise<void> {
+    let conflictPath: string | undefined;
+    const applied = this.mutateConfigSync(workspaceId, (config) => {
+      config.google = config.google ?? {};
+      config.google.docs = config.google.docs ?? {};
+
+      for (const [existingPath, existing] of Object.entries(config.google.docs)) {
+        if (existing.fileId === mapping.fileId && existingPath !== githubPath) {
+          conflictPath = existingPath;
+          return false;
+        }
+      }
+
+      config.google.docs[githubPath] = {
+        fileId: mapping.fileId,
+        webViewLink: mapping.webViewLink,
+        linkedBy: mapping.linkedBy,
+        linkedAt: new Date(),
+      };
+    });
+
+    if (conflictPath) {
+      throw new Error(`Google Doc ${mapping.fileId} is already linked to ${conflictPath}`);
+    }
+    if (applied === null) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+  }
+
+  public async getGoogleDocMapping(workspaceId: string, githubPath: string): Promise<GoogleDocMapping | null> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.google?.docs?.[githubPath] ?? null;
+  }
+
+  public async getGoogleDocMappings(workspaceId: string): Promise<Record<string, GoogleDocMapping>> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.google?.docs ?? {};
+  }
+
+  public async removeGoogleDocMapping(workspaceId: string, githubPath: string): Promise<boolean> {
+    let removed = false;
+    this.mutateConfigSync(workspaceId, (config) => {
+      if (!config.google?.docs?.[githubPath]) return false;
+      delete config.google.docs[githubPath];
+      removed = true;
+    });
+    return removed;
   }
 
   /**

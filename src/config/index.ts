@@ -90,6 +90,27 @@ export class AppConfig {
     };
   }
 
+  /**
+   * Google Drive replica sync (docs/google-drive-sync.md). Optional: when the
+   * client id/secret are unset the feature stays dormant rather than throwing at
+   * boot, so existing deployments are unaffected until they configure it.
+   *
+   * `pickerApiKey` and `projectNumber` are only needed for the browser-side file
+   * picker; `projectNumber` must belong to the same Cloud project as the OAuth
+   * client, or the per-file grant never attaches to this app.
+   */
+  static getGoogleConfig() {
+    const clientId = AppConfig.getOptionalEnvVar('GOOGLE_OAUTH_CLIENT_ID');
+    const clientSecret = AppConfig.getOptionalEnvVar('GOOGLE_OAUTH_CLIENT_SECRET');
+    return {
+      clientId,
+      clientSecret,
+      pickerApiKey: AppConfig.getOptionalEnvVar('GOOGLE_PICKER_API_KEY'),
+      projectNumber: AppConfig.getOptionalEnvVar('GOOGLE_PROJECT_NUMBER'),
+      configured: Boolean(clientId && clientSecret),
+    };
+  }
+
   static getManagerPromotionConfig() {
     return {
       password: AppConfig.getOptionalEnvVar('MANAGER_PROMOTION_PASSWORD'),
