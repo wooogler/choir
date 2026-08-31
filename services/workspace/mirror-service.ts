@@ -385,6 +385,22 @@ export class WorkspaceMirrorService {
     }
   }
 
+  /**
+   * Reads one file from the workspace mirror, or null when it is absent. Goes
+   * through resolveMirrorPath so the repo-root containment guard applies to
+   * callers outside this class.
+   */
+  public async readMirrorFile(workspaceId: string, relativePath: string): Promise<string | null> {
+    try {
+      return await fs.promises.readFile(this.resolveMirrorPath(workspaceId, relativePath), 'utf-8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
   public async getSyncState(workspaceId: string): Promise<WorkspaceSyncState | null> {
     const syncStatePath = this.getSyncStatePath(workspaceId);
     if (!fs.existsSync(syncStatePath)) {

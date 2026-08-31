@@ -34,6 +34,7 @@ import {
 import { getLineProvenance, getProvenanceRecord, listProvenanceForDoc } from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
+import { registerGoogleDriveRoutes } from 'services/google/routes';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { isCHOIRUser, isManager } from 'services/slack';
@@ -326,6 +327,23 @@ function setupPublicSite(): void {
       app.logger.error('GET /api/dashboard/:workspaceId/doc-usage failed', err as Error);
       return res.status(500).json({ error: 'Internal server error' });
     }
+  });
+
+  // ── Google Drive replica sync ─────────────────────────────────────────────
+  // Registered before the '/api/docs/:workspaceId/*splat' content route below,
+  // which would otherwise swallow every '/api/docs/<id>/google/...' path.
+  registerGoogleDriveRoutes(router, {
+    readSession,
+    isManager,
+    cookieSecure,
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    jsonBody: require('express').json({ limit: '64kb' }),
+    logger: {
+      info: (message: string, meta?: unknown) => app.logger.info(message, meta),
+      warn: (message: string, meta?: unknown) => app.logger.warn(message, meta),
+      error: (message: string, err?: unknown) => app.logger.error(message, err as Error),
+    },
+    sanitizeNextPath,
   });
 
   router.get('/api/docs/:workspaceId', async (req: any, res: any) => {
