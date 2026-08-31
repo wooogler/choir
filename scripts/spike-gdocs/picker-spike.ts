@@ -33,6 +33,9 @@ import { authorize, exportMarkdown, loadClientCredentials } from './spike-common
 
 const PORT = Number(process.env.PORT || 5599);
 
+/** Names drive-spike gives its own documents; picking one makes the run meaningless. */
+const SPIKE_CREATED_NAME = /^CHOIR replica spike/;
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -56,9 +59,12 @@ function pickerPage(config: { token: string; apiKey: string; appId: string; allo
 </head>
 <body>
   <h1>Picker grant spike</h1>
-  <p>Pick a Google Doc that this spike did <strong>not</strong> create. The server will then
-     throw away this page's token, mint a fresh one from the stored refresh token, and try to
+  <p>Pick a Google Doc <strong>you made yourself</strong>, before this spike existed. The server
+     will throw away this page's token, mint a fresh one from the stored refresh token, and try to
      read (and write) the file you picked.</p>
+  <p class="warn"><strong>Do not pick anything named &ldquo;CHOIR replica spike&rdquo;.</strong>
+     The <code>drive.file</code> scope already covers files this app created, so picking one of
+     those proves nothing about the Picker grant — every check would pass either way.</p>
   <p class="warn">${
     config.allowWrite
       ? 'Running with <strong>--allow-write</strong>: the content of the document you pick <strong>will be replaced</strong>. Pick a throwaway document.'
@@ -128,6 +134,7 @@ async function verifyServerSide(
   const drive = driveClient({ version: 'v3', auth: fresh });
 
   const lines: string[] = [`Picked: ${name} (${fileId})`, ''];
+  let inconclusive = false;
   const record = (step: string, ok: boolean, detail: string) => {
     const line = `${ok ? 'PASS' : 'FAIL'}  ${step} — ${detail}`;
     lines.push(line);
@@ -145,13 +152,23 @@ async function verifyServerSide(
   }
 
   try {
-    const meta = await drive.files.get({ fileId, fields: 'id, name, mimeType, version, modifiedTime, trashed' });
+    const meta = await drive.files.get({
+      fileId,
+      fields: 'id, name, mimeType, version, modifiedTime, createdTime, trashed',
+    });
     originalName = meta.data.name ?? undefined;
     record(
       '1. files.get on a picked file',
       meta.data.id === fileId,
-      `name=${meta.data.name} version=${meta.data.version} mimeType=${meta.data.mimeType}`,
+      `name=${meta.data.name} version=${meta.data.version} created=${meta.data.createdTime}`,
     );
+
+    // drive.file covers app-created files as well as picked ones, so a document
+    // this spike made would pass every check without the Picker grant doing
+    // anything. That reads as a pass but proves nothing.
+    if (SPIKE_CREATED_NAME.test(meta.data.name ?? '')) {
+      inconclusive = true;
+    }
   } catch (error) {
     record('1. files.get on a picked file', false, (error as Error).message);
   }
@@ -194,6 +211,16 @@ async function verifyServerSide(
     }
   } else {
     lines.push('SKIP  4. content replace — re-run with --allow-write on a throwaway doc to verify');
+  }
+
+  if (inconclusive) {
+    lines.push(
+      '',
+      'INCONCLUSIVE — this document was created by the spike itself.',
+      'The drive.file scope already grants access to files this app created, so the checks',
+      'above would pass with or without a Picker grant. Re-run and pick a document you made',
+      'yourself to actually test the grant.',
+    );
   }
 
   lines.push('', 'Done. You can close this tab and stop the spike with Ctrl-C.');
