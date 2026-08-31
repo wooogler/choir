@@ -107,6 +107,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [writeNoticeDismissed, setWriteNoticeDismissed] = useState(false);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => !isMobileViewport());
   const [editorKey, setEditorKey] = useState(0);
@@ -150,6 +151,14 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const editorReady = loadedMarkdown !== null;
 
   const breadcrumb = useMemo(() => filePath, [filePath]);
+
+  // Dismissing the read-only notice is per-visit: a new reason (or a reload
+  // after access is granted) should speak up again. The header keeps the
+  // Read-only chip either way, so closing it never hides the state entirely.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetting on a new reason is the point
+  useEffect(() => {
+    setWriteNoticeDismissed(false);
+  }, [writeBlockedReason]);
 
   useEffect(() => {
     let cancelled = false;
@@ -864,9 +873,18 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
                   ` ${usageUnmatched} retrieval${usageUnmatched === 1 ? '' : 's'} refer to sections that have since changed.`}
               </div>
             )}
-            {writeBlockedReason && (
-              <output className="doc-notice doc-notice-error">
-                You are a CHOIR manager, but this document cannot be edited here. {writeBlockedReason}
+            {writeBlockedReason && !writeNoticeDismissed && (
+              <output className="doc-notice doc-notice-error doc-notice-dismissible">
+                <span>{writeBlockedReason}</span>
+                <button
+                  type="button"
+                  className="doc-notice-close"
+                  onClick={() => setWriteNoticeDismissed(true)}
+                  aria-label="Dismiss this notice"
+                  title="Dismiss"
+                >
+                  ×
+                </button>
               </output>
             )}
             {notice && <output className="doc-notice">{notice}</output>}
