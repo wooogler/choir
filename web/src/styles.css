@@ -1461,3 +1461,14 @@ a {
   background: rgba(47, 111, 235, 0.24);
   flex-shrink: 0;
 }
+
+/* Google Docs replica controls in the document header. */
+.doc-gdocs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.doc-gdocs a.doc-button {
+  text-decoration: none;
+}

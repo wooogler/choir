@@ -6,6 +6,7 @@ import { CrepeEditor, type CrepeEditorHandle } from './CrepeEditor';
 import { DocHeader } from './DocHeader';
 import { FilesSidebar } from './FilesSidebar';
 import { FloatingToc } from './FloatingToc';
+import { GoogleDocsSync } from './GoogleDocsSync';
 import { HistoryPanel } from './HistoryPanel';
 
 type DocViewerProps = {
@@ -826,6 +827,9 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         <button type="button" className="doc-button doc-button-primary" onClick={handleSignIn}>
           Edit as manager
         </button>
+      )}
+      {!isEditing && sessionLoaded && (
+        <GoogleDocsSync workspaceId={workspaceId} filePath={filePath} isManager={isManager} />
       )}
     </>
   );
