@@ -56,8 +56,19 @@ export interface GdocsDocState {
    * are indistinguishable here. Display only.
    */
   lastModifyingUser?: string;
-  /** Doc version the manager's review was rendered against — the reject fence. */
+  /**
+   * The Doc version the manager's review was rendered against — the fence both
+   * decisions are checked against. Written only by buildReview: if the poller
+   * moved it, a sweep landing between the render and the click would advance the
+   * fence past an edit the manager never saw and wave the decision through.
+   */
   reviewedVersion?: string;
+  /**
+   * The newest version the poller has seen. Separate from `reviewedVersion` so
+   * repeat sweeps stay cheap and cards can be refreshed without disarming the
+   * fence.
+   */
+  latestVersion?: string;
   /** GitHub blob SHA the delta was merged against — the approve fence. */
   oursBlobSha?: string;
   reviewCards?: GdocsReviewCard[];

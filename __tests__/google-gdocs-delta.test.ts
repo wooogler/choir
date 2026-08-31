@@ -275,3 +275,125 @@ describe('extracting a Google Docs edit as repository markdown', () => {
     expect(result.hasChanges).toBe(true);
   });
 });
+
+describe('lines the export cannot represent', () => {
+  // The repository writes an image as a path; the export writes it as a
+  // reference plus a data URL. They never align, so the image line is a hole in
+  // the correspondence between the two dialects.
+  const source = [
+    '# Title',
+    '',
+    'Intro paragraph.',
+    '',
+    '![diagram](images/arch.png)',
+    '',
+    'Closing paragraph.',
+    '',
+  ].join('\n');
+
+  const baseline = [
+    REPLICA_BANNER,
+    '',
+    '# Title',
+    '',
+    'Intro paragraph.',
+    '',
+    '![diagram][image1]',
+    '',
+    'Closing paragraph.',
+    '',
+    `[image1]: <data:image/png;base64,${PNG}>`,
+  ].join('\n');
+
+  it('does not delete an image when a paragraph above it is removed', () => {
+    // The deletion's projected end used to run forward to the next anchored
+    // line, swallowing the image on the way and committing the file without it.
+    const exported = baseline.replace('Intro paragraph.\n\n', '');
+
+    const result = extractDelta({ baseline, exported, sourceAtPush: source, currentSource: source });
+
+    expect(result.merged).toContain('![diagram](images/arch.png)');
+  });
+
+  it('does not delete an HTML comment the export drops', () => {
+    const commented = source.replace('Intro paragraph.', 'Intro paragraph.\n\n<!-- generated: do not edit -->');
+    const commentedBaseline = baseline;
+
+    const result = extractDelta({
+      baseline: commentedBaseline,
+      exported: commentedBaseline.replace('Closing paragraph.', 'Closing paragraph, revised.'),
+      sourceAtPush: commented,
+      currentSource: commented,
+    });
+
+    expect(result.merged).toContain('<!-- generated: do not edit -->');
+  });
+
+  it('raises a conflict rather than guessing when the edit covers the image line', () => {
+    const exported = baseline.replace('![diagram][image1]', 'A sentence replacing the picture.');
+
+    const result = extractDelta({ baseline, exported, sourceAtPush: source, currentSource: source });
+
+    expect(result.conflicts.map((c) => c.reason)).toContain('unmappable');
+    expect(result.merged).toContain('![diagram](images/arch.png)');
+  });
+
+  it('keeps unrelated edits working around the image', () => {
+    const exported = baseline.replace('Closing paragraph.', 'Closing paragraph, revised.');
+
+    const result = extractDelta({ baseline, exported, sourceAtPush: source, currentSource: source });
+
+    expect(result.conflicts).toEqual([]);
+    expect(result.merged).toContain('Closing paragraph, revised.');
+    expect(result.merged).toContain('![diagram](images/arch.png)');
+  });
+});
+
+describe('images a person adds in Google Docs', () => {
+  const source = '# Title\n\nSome prose.\n';
+  const baseline = `${REPLICA_BANNER}\n\n# Title\n\nSome prose.\n`;
+
+  it('becomes an ordinary markdown reference to the committed asset', () => {
+    const exported = [
+      REPLICA_BANNER,
+      '',
+      '# Title',
+      '',
+      'Some prose.',
+      '',
+      '![A photo][image1]',
+      '',
+      `[image1]: <data:image/png;base64,${PNG}>`,
+    ].join('\n');
+
+    const result = extractDelta({ baseline, exported, sourceAtPush: source, currentSource: source });
+
+    // The rekeyed label is internal bookkeeping; committing it would leave a
+    // dangling reference that renders broken and is then pushed back to the Doc.
+    expect(result.merged).not.toContain('img-');
+    expect(result.merged).not.toContain('<embedded-image>');
+    expect(result.merged).toMatch(/!\[A photo\]\(assets\/[0-9a-f]{40}\.png\)/);
+    expect(result.newAssets[0].rekeyLabel).toBeTruthy();
+  });
+
+  it('raises a conflict for an image whose bytes were rejected', () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>').toString('base64');
+    const exported = [
+      REPLICA_BANNER,
+      '',
+      '# Title',
+      '',
+      'Some prose.',
+      '',
+      '![Bad][image1]',
+      '',
+      `[image1]: <data:image/svg+xml;base64,${svg}>`,
+    ].join('\n');
+
+    const result = extractDelta({ baseline, exported, sourceAtPush: source, currentSource: source });
+
+    expect(result.newAssets).toEqual([]);
+    // A broken link is worse than telling the manager it could not be brought over.
+    expect(result.conflicts.some((c) => c.incoming.join('').includes('img-'))).toBe(true);
+  });
+});

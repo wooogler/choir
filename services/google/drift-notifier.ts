@@ -1,6 +1,7 @@
+import { sanitizeText } from '@/utils';
 import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
-import { getManagers } from 'services/slack/user-management';
+import { getManagers, isManager } from 'services/slack/user-management';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import type { DriftResult } from './drift-detector';
 import { getDocState, mutateDocState } from './gdocs-state';
@@ -36,7 +37,11 @@ function buildBlocks(params: {
 }): unknown[] {
   const fileName = params.githubPath.split('/').pop() || params.githubPath;
   const context = [
-    params.editor ? `Last edited by ${params.editor}.` : 'The editor could not be identified.',
+    // The editor is a Google display name we do not control; unescaped it can
+    // inject links and formatting into a manager's DM.
+    params.editor
+      ? `Last edited by ${sanitizeText(params.editor).slice(0, 120)}.`
+      : 'The editor could not be identified.',
     'The replica will not be overwritten until this is resolved.',
   ];
   if (params.alsoChangedOnGithub) {
@@ -80,15 +85,15 @@ async function recipientsFor(workspaceId: string, githubPath: string): Promise<s
   if (mapping?.linkedBy) recipients.add(mapping.linkedBy);
   if (auth?.connectedBy) recipients.add(auth.connectedBy);
 
-  // Both could have left the workspace; falling back keeps the edit from sitting
-  // unseen forever.
-  if (recipients.size === 0) {
-    for (const managerId of await getManagers(workspaceId)) {
-      recipients.add(managerId);
-    }
+  // Whoever linked the document may since have been demoted, and a review card
+  // is an Approve button: only current managers should be handed one.
+  const current: string[] = [];
+  for (const userId of recipients) {
+    if (await isManager(workspaceId, userId)) current.push(userId);
   }
 
-  return Array.from(recipients);
+  // They could all have left; falling back keeps the edit from sitting unseen.
+  return current.length > 0 ? current : await getManagers(workspaceId);
 }
 
 export async function notifyDrift(params: {

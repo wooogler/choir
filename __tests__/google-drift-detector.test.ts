@@ -101,7 +101,7 @@ describe('Google Docs drift detection', () => {
     expect(state?.lastPushedVersion).toBe('11');
   });
 
-  it('flags a human edit and records the version the review is against', async () => {
+  it('flags a human edit and records the newest version it has seen', async () => {
     mockGetMeta.mockResolvedValue({ fileId: 'file-a', version: '11', lastModifyingUser: 'someone@example.com' });
     mockExport.mockResolvedValue(`${REPLICA_BANNER}\n\n# Title\n\nBody text with an addition.\n`);
 
@@ -111,7 +111,9 @@ describe('Google Docs drift detection', () => {
     expect(result.lastModifyingUser).toBe('someone@example.com');
     const state = await getDocState('T1', 'docs/a.md');
     expect(state?.status).toBe('drifted');
-    expect(state?.reviewedVersion).toBe('11');
+    expect(state?.latestVersion).toBe('11');
+    // The decision fence is set when a review is rendered, not by the poller.
+    expect(state?.reviewedVersion).toBeUndefined();
     expect(state?.driftDetectedAt).toBeTruthy();
   });
 
@@ -170,7 +172,7 @@ describe('Google Docs drift detection', () => {
     await mutateDocState('T1', 'docs/a.md', (current) => ({
       ...(current ?? { updatedAt: '' }),
       status: 'drifted',
-      reviewedVersion: '11',
+      latestVersion: '11',
       updatedAt: '',
     }));
     mockGetMeta.mockResolvedValue({ fileId: 'file-a', version: '11' });
@@ -191,9 +193,32 @@ describe('Google Docs drift detection', () => {
     const result = await checkDocumentForDrift('T1', 'docs/a.md');
 
     expect(result.outcome).toBe('drifted-again');
-    // The state stays in review; only the fence moves, so the card can refresh.
     expect((await getDocState('T1', 'docs/a.md'))?.status).toBe('pending-review');
-    expect((await getDocState('T1', 'docs/a.md'))?.reviewedVersion).toBe('12');
+    // Only the "newest seen" marker moves. Advancing reviewedVersion here would
+    // carry the decision fence past an edit the manager never saw, and approving
+    // would then destroy it.
+    expect((await getDocState('T1', 'docs/a.md'))?.latestVersion).toBe('12');
+    expect((await getDocState('T1', 'docs/a.md'))?.reviewedVersion).toBe('11');
+  });
+
+  it('releases a document whose edit was undone in the Doc', async () => {
+    await mutateDocState('T1', 'docs/a.md', (current) => ({
+      ...(current ?? { updatedAt: '' }),
+      status: 'drifted',
+      driftDetectedAt: 'earlier',
+      latestVersion: '11',
+      updatedAt: '',
+    }));
+    mockGetMeta.mockResolvedValue({ fileId: 'file-a', version: '12' });
+    mockExport.mockResolvedValue(BASELINE);
+
+    await checkDocumentForDrift('T1', 'docs/a.md');
+
+    // Otherwise the document sits in a holding state with nothing to review,
+    // silently freezing every future GitHub push to it.
+    const state = await getDocState('T1', 'docs/a.md');
+    expect(state?.status).toBe('synced');
+    expect(state?.driftDetectedAt).toBeUndefined();
   });
 
   it('marks whitespace-only differences as normalization', async () => {

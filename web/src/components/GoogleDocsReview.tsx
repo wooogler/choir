@@ -116,6 +116,32 @@ export function GoogleDocsReview({
     [workspaceId, filePath, content, load, onApplied, onClose],
   );
 
+  const rebaseline = useCallback(async () => {
+    if (!window.confirm('Replace the Google Doc with the GitHub version? Anything written in the Doc will be lost.')) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/docs/${encodeURIComponent(workspaceId)}/google/rebaseline`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ filePath }),
+      });
+      const body = (await response.json()) as { detail?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(body.detail || body.error || 'Could not republish');
+      }
+      onApplied();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not republish');
+    } finally {
+      setBusy(false);
+    }
+  }, [workspaceId, filePath, onApplied, onClose]);
+
   if (!review) {
     return (
       <aside className="gdocs-review">
@@ -140,6 +166,20 @@ export function GoogleDocsReview({
           </button>
         </header>
         <p className="gdocs-review-note">{STATUS_MESSAGE[review.status]}</p>
+        {review.status === 'baseline-lost' && (
+          <>
+            <p className="gdocs-review-note">
+              Republishing from GitHub rebuilds the comparison snapshot and gets syncing going again.{' '}
+              <strong>Anything currently in the Google Doc will be replaced</strong>, so copy out whatever is worth
+              keeping first.
+            </p>
+            <footer className="gdocs-review-actions">
+              <button type="button" className="doc-button doc-button-ghost" onClick={rebaseline} disabled={busy}>
+                Republish from GitHub
+              </button>
+            </footer>
+          </>
+        )}
       </aside>
     );
   }

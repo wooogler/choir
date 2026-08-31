@@ -34,6 +34,8 @@ export interface DeltaConflict {
 export interface DeltaAsset {
   /** sha256 of the decoded bytes, used to content-address the committed file. */
   hash: string;
+  /** The `img-<hash>` label this image carries in the rekeyed text. */
+  rekeyLabel: string;
   contentType: string;
   extension: string;
   bytes: Buffer;
@@ -202,6 +204,7 @@ function collectNewAssets(
     }
 
     assets.push({
+      rekeyLabel: hash,
       hash: crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 40),
       contentType: sniffed.contentType,
       extension: sniffed.extension,
@@ -247,18 +250,29 @@ function projectPosition(mapping: number[], baselineIndex: number, sourceLength:
 /** Line ranges covered by fenced code blocks, which never survive the export. */
 function fencedRanges(lines: string[]): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
-  let openedAt: number | null = null;
+  let open: { at: number; marker: string; length: number } | null = null;
 
   lines.forEach((line, index) => {
-    if (!/^\s*(```|~~~)/.test(line)) return;
-    if (openedAt === null) {
-      openedAt = index;
-    } else {
-      ranges.push([openedAt, index]);
-      openedAt = null;
+    // Four spaces or more is an indented code block, not a fence.
+    const match = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (!match) return;
+    const marker = match[1][0];
+    const length = match[1].length;
+
+    if (open === null) {
+      open = { at: index, marker, length };
+      return;
+    }
+    // A block opened with ``` is not closed by ~~~, and the closing run must be
+    // at least as long as the opening one. Toggling on any marker would shift
+    // every later range and mis-report which lines are code.
+    if (marker === open.marker && length >= open.length) {
+      ranges.push([open.at, index]);
+      open = null;
     }
   });
-  if (openedAt !== null) ranges.push([openedAt, lines.length - 1]);
+
+  if (open !== null) ranges.push([(open as { at: number }).at, lines.length - 1]);
 
   return ranges;
 }
@@ -312,21 +326,31 @@ export function extractDelta(params: ExtractDeltaParams): DeltaResult {
     const [baselineStart, baselineLength] = hunk.buffer1;
     const incoming = (hunk.buffer2Content ?? []).map(unescapeExportedLine);
 
-    const start = projectPosition(mapping, baselineStart, sourceAtPushLines.length);
-    const end = projectPosition(mapping, baselineStart + baselineLength, sourceAtPushLines.length);
+    const covered = Array.from({ length: baselineLength }, (_unused, offset) => mapping[baselineStart + offset]);
+    const anchors = covered.filter((index) => index >= 0);
 
-    // A replaced range whose baseline lines have no repository counterpart cannot
-    // be placed: we would be guessing where the text belongs.
-    const anchored =
-      baselineLength === 0 ||
-      Array.from({ length: baselineLength }, (_unused, offset) => mapping[baselineStart + offset]).some(
-        (index) => index >= 0,
-      );
-
-    if (!anchored) {
+    // A replaced range with no repository counterpart at all cannot be placed:
+    // we would be guessing where the text belongs.
+    if (baselineLength > 0 && anchors.length === 0) {
       conflicts.push({ reason: 'unmappable', incoming });
       continue;
     }
+    // Partially anchored is no better. A hunk covering a line the repository
+    // writes differently — an image, whose repository form is a path and whose
+    // exported form is a reference — cannot be rewritten without destroying that
+    // line, so hand it to a person instead.
+    if (covered.some((index) => index < 0)) {
+      conflicts.push({ reason: 'unmappable', incoming });
+      continue;
+    }
+
+    // Bound the replacement by the lines this hunk actually anchors. Projecting
+    // the end position forward to the next anchor would swallow every repository
+    // line in between — lines the person never touched — and delete them with no
+    // conflict raised.
+    const start = baselineLength === 0 ? projectPosition(mapping, baselineStart, sourceAtPushLines.length) : anchors[0];
+    const end = baselineLength === 0 ? start : anchors[anchors.length - 1] + 1;
+
     // Code fences are lost in the export, so an edit landing in one cannot be
     // reconstructed — the person may have been editing the code or the prose
     // around it and the export cannot tell us which.
@@ -337,6 +361,26 @@ export function extractDelta(params: ExtractDeltaParams): DeltaResult {
 
     edits.push({ start, end: Math.max(start, end), lines: incoming });
   }
+
+  // Distinct hunks can project onto overlapping repository ranges. Splicing both
+  // would apply one over the other and lose whichever went first.
+  const ordered = [...edits].sort((a, b) => a.start - b.start || a.end - b.end);
+  const applicable: typeof edits = [];
+  let reach = -1;
+  for (const edit of ordered) {
+    if (edit.start < reach) {
+      conflicts.push({
+        reason: 'unmappable',
+        incoming: edit.lines,
+        current: sourceAtPushLines.slice(edit.start, edit.end),
+      });
+      continue;
+    }
+    applicable.push(edit);
+    reach = Math.max(reach, edit.end);
+  }
+  edits.length = 0;
+  edits.push(...applicable);
 
   const theirs = applyEdits(sourceAtPushLines, edits);
 
@@ -356,13 +400,64 @@ export function extractDelta(params: ExtractDeltaParams): DeltaResult {
     }
   }
 
+  const resolved = resolveImageReferences(merged, assets, conflicts);
+
   return {
-    merged: merged.join('\n'),
+    merged: resolved.join('\n'),
     conflicts,
     newAssets: assets,
     rejectedAssets: rejected,
     hasChanges: true,
   };
+}
+
+/** Where a committed asset lives, matching the web editor's upload path. */
+export function assetRepoPath(asset: DeltaAsset): string {
+  return `assets/${asset.hash}.${asset.extension}`;
+}
+
+const REKEYED_REFERENCE = /!\[([^\]]*)\]\[img-([0-9a-f]{16})\]/g;
+const REKEYED_DEFINITION = /^\[img-([0-9a-f]{16})\]: <embedded-image>\s*$/;
+
+/**
+ * Turns the internal `img-<hash>` bookkeeping back into ordinary markdown.
+ *
+ * Rekeying exists so Docs' positional image numbering cannot read as a change;
+ * those labels are meaningless outside this module. Left in place they would be
+ * committed as a dangling reference — the image renders broken in the repository
+ * and, because the approved text is republished, the placeholder is pushed back
+ * into the Doc and the pasted image is destroyed.
+ *
+ * A reference with no accompanying asset (its bytes were rejected, or it belongs
+ * to an image that failed validation) becomes a conflict rather than a broken
+ * link.
+ */
+function resolveImageReferences(lines: string[], assets: DeltaAsset[], conflicts: DeltaConflict[]): string[] {
+  const byLabel = new Map(assets.map((asset) => [asset.rekeyLabel, asset]));
+  const unresolved = new Set<string>();
+
+  const rewritten = lines
+    .filter((line) => !REKEYED_DEFINITION.test(line))
+    .map((line) =>
+      line.replace(REKEYED_REFERENCE, (whole, alt: string, label: string) => {
+        const asset = byLabel.get(label);
+        if (!asset) {
+          unresolved.add(whole);
+          return whole;
+        }
+        return `![${alt}](${assetRepoPath(asset)})`;
+      }),
+    );
+
+  for (const reference of unresolved) {
+    conflicts.push({
+      reason: 'unmappable',
+      incoming: [reference],
+      current: ['This image could not be brought across; add it by hand if it matters.'],
+    });
+  }
+
+  return rewritten;
 }
 
 /** Applies non-overlapping replacements, latest first so earlier indices hold. */

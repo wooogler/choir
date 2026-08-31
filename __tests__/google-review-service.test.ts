@@ -212,7 +212,11 @@ describe('Google Docs review and decisions', () => {
         Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
         Buffer.from('body'),
       ]).toString('base64');
-      mockExport.mockResolvedValue(`${EDITED_EXPORT}\n[image1]: <data:image/png;base64,${png}>\n`);
+      // A real export carries both the inline reference and the definition; an
+      // image the text does not point at is no longer committed.
+      mockExport.mockResolvedValue(
+        `${EDITED_EXPORT}\n![A photo][image1]\n\n[image1]: <data:image/png;base64,${png}>\n`,
+      );
 
       const review = await buildReview('T1', 'docs/a.md');
       await approveReview({
@@ -226,6 +230,33 @@ describe('Google Docs review and decisions', () => {
       const asset = files.find((file: { path: string }) => file.path.startsWith('assets/'));
       expect(asset.encoding).toBe('base64');
       expect(asset.path).toMatch(/\.png$/);
+      // The document must point at the committed file, not at the internal
+      // rekeyed label, or the image renders broken and is pushed back as a
+      // placeholder that destroys the original.
+      expect(files[0].content).toContain(asset.path);
+      expect(files[0].content).not.toContain('img-');
+    });
+
+    it('does not commit an image the manager removed while resolving conflicts', async () => {
+      const png = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        Buffer.from('body'),
+      ]).toString('base64');
+      mockExport.mockResolvedValue(
+        `${EDITED_EXPORT}\n![A photo][image1]\n\n[image1]: <data:image/png;base64,${png}>\n`,
+      );
+
+      await buildReview('T1', 'docs/a.md');
+      // The manager approves text with the image reference taken out.
+      await approveReview({
+        workspaceId: 'T1',
+        githubPath: 'docs/a.md',
+        userId: 'U-manager',
+        content: '# Guide\n\nJust the text, no picture.\n',
+      });
+
+      const files = commitFilesWithContext.mock.calls[0][0].files;
+      expect(files.some((file: { path: string }) => file.path.startsWith('assets/'))).toBe(false);
     });
   });
 
@@ -255,5 +286,112 @@ describe('Google Docs review and decisions', () => {
     it('refuses when the document is not under review', async () => {
       expect((await rejectReview('T1', 'docs/a.md')).outcome).toBe('not-pending');
     });
+  });
+});
+
+describe('the approve fence against the Google Doc', () => {
+  let tempDir: string;
+  let store: WorkspaceStore;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    closeDatabase();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'choir-gdocs-fence-'));
+    process.env.DATABASE_URL = `file:${path.join(tempDir, 'choir.db')}`;
+    process.env.CHOIR_DB_KEY_FILE = path.join(tempDir, '.db-key');
+    process.env.CHOIR_DATA_DIR = tempDir;
+
+    store = new WorkspaceStore();
+    await store.saveWorkspaceConfig({
+      workspaceId: 'T1',
+      managers: ['U-manager'],
+      choirUsers: ['U-manager'],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await store.setGoogleDocMapping('T1', 'docs/a.md', {
+      fileId: 'file-a',
+      webViewLink: 'https://example.com/a',
+      linkedBy: 'U-manager',
+    });
+
+    const dir = path.join(tempDir, 'workspaces', 'T1', 'repo', 'docs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'a.md'), SOURCE);
+    await writeBaseline('T1', 'docs/a.md', BASELINE);
+    await writeSourceSnapshot('T1', 'docs/a.md', SOURCE);
+    await mutateDocState('T1', 'docs/a.md', () => ({ status: 'drifted', lastPushedVersion: '10', updatedAt: '' }));
+
+    mockClient.mockResolvedValue({} as never);
+    mockGetMeta.mockResolvedValue({ fileId: 'file-a', version: '11' });
+    mockExport.mockResolvedValue(EDITED_EXPORT);
+    mockPublish.mockResolvedValue({ outcome: 'published' });
+    commitFilesWithContext.mockResolvedValue({ commitSha: 'abc123' });
+  });
+
+  afterEach(() => {
+    closeDatabase();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    for (const key of ['DATABASE_URL', 'CHOIR_DB_KEY_FILE', 'CHOIR_DATA_DIR']) {
+      Reflect.deleteProperty(process.env, key);
+    }
+  });
+
+  it('refuses to approve after the Doc has moved on', async () => {
+    const review = await buildReview('T1', 'docs/a.md');
+    // Approving republishes over the whole document, so anything written since
+    // would vanish from the Doc and never reach the commit either.
+    mockGetMeta.mockResolvedValue({ fileId: 'file-a', version: '12' });
+    mockExport.mockResolvedValue(`${EDITED_EXPORT}\n\nAnd another paragraph.\n`);
+
+    const result = await approveReview({
+      workspaceId: 'T1',
+      githubPath: 'docs/a.md',
+      userId: 'U-manager',
+      content: review.after ?? '',
+    });
+
+    expect(result.outcome).toBe('stale');
+    expect(commitFilesWithContext).not.toHaveBeenCalled();
+  });
+
+  it('is not disarmed by the poller seeing the newer version first', async () => {
+    await buildReview('T1', 'docs/a.md');
+
+    // A sweep lands between the render and the click. It may refresh the card,
+    // but it must not move the fence the decision is checked against.
+    await mutateDocState('T1', 'docs/a.md', (current) => ({
+      ...(current ?? { updatedAt: '' }),
+      latestVersion: '12',
+      updatedAt: '',
+    }));
+    mockGetMeta.mockResolvedValue({ fileId: 'file-a', version: '12' });
+
+    const result = await approveReview({
+      workspaceId: 'T1',
+      githubPath: 'docs/a.md',
+      userId: 'U-manager',
+      content: 'anything',
+    });
+
+    expect(result.outcome).toBe('stale');
+  });
+
+  it('reports a commit whose replica could not be republished', async () => {
+    const review = await buildReview('T1', 'docs/a.md');
+    mockPublish.mockResolvedValue({ outcome: 'failed', detail: 'quota exceeded' });
+
+    const result = await approveReview({
+      workspaceId: 'T1',
+      githubPath: 'docs/a.md',
+      userId: 'U-manager',
+      content: review.after ?? '',
+    });
+
+    // The edit is committed and safe, but the Doc and the baseline no longer
+    // describe it, so saying "committed" alone would be misleading.
+    expect(result.outcome).toBe('committed-not-republished');
+    expect(result.commitSha).toBe('abc123');
+    expect((await getDocState('T1', 'docs/a.md'))?.status).toBe('drifted');
   });
 });

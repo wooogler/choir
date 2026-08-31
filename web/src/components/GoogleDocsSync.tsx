@@ -239,16 +239,19 @@ export function GoogleDocsSync({
   if (!status?.configured) return null;
 
   if (status.document) {
+    // baseline-lost is frozen rather than pending, but it is the same panel that
+    // offers the way out of it.
     const awaitingReview =
       status.document.status === 'drifted' ||
       status.document.status === 'pending-review' ||
-      status.document.status === 'applying';
+      status.document.status === 'applying' ||
+      status.document.status === 'baseline-lost';
 
     return (
       <span className="doc-gdocs">
         {awaitingReview && onReview && (
           <button type="button" className="doc-button doc-button-primary" onClick={onReview}>
-            Review Docs edit
+            {status.document.status === 'baseline-lost' ? 'Fix Docs sync' : 'Review Docs edit'}
           </button>
         )}
         <a

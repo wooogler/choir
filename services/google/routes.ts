@@ -381,7 +381,14 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       const result = await approveReview({ workspaceId, githubPath: filePath, userId: session.userId, content });
       // 409 for the fences: the manager decided against a state that has moved,
       // and the client should re-read the rebuilt review rather than retry.
-      const status = result.outcome === 'committed' ? 200 : result.outcome === 'failed' ? 500 : 409;
+      const status =
+        result.outcome === 'committed'
+          ? 200
+          : // The commit landed; the replica did not. Report it as a server-side
+            // problem so the manager is told, not as a refused fence.
+            result.outcome === 'failed' || result.outcome === 'committed-not-republished'
+            ? 500
+            : 409;
       return res.status(status).json(result);
     } catch (err) {
       deps.logger.error('POST google/review/approve failed', err);
@@ -406,6 +413,53 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       return res.status(status).json(result);
     } catch (err) {
       deps.logger.error('POST google/review/reject failed', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  /**
+   * Rebuilds the comparison snapshot by republishing from GitHub.
+   *
+   * `baseline-lost` and `orphaned` are otherwise terminal: drift cannot be
+   * measured, so publishing stays blocked and the document is frozen forever.
+   * The way out is destructive — whatever is in the Doc is replaced — so it is a
+   * manager's explicit decision rather than something the poller does quietly.
+   */
+  router.post('/api/docs/:workspaceId/google/rebaseline', deps.jsonBody, async (req: Req, res: Res) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      if (!(await requireManagerOf(req, res, workspaceId))) {
+        return undefined;
+      }
+
+      const filePath = String(req.body?.filePath || '').trim();
+      if (!filePath) {
+        return res.status(400).json({ error: 'filePath is required' });
+      }
+      if (!(await store.getGoogleDocMapping(workspaceId, filePath))) {
+        return res.status(404).json({ error: 'This document is not linked to a Google Doc' });
+      }
+
+      const markdown = await WorkspaceMirrorService.getInstance().readMirrorFile(workspaceId, filePath);
+      if (markdown === null) {
+        return res.status(409).json({
+          error: 'The GitHub document no longer exists. Unlink this replica instead.',
+        });
+      }
+
+      await retireReviewCards({
+        workspaceId,
+        githubPath: filePath,
+        reason: 'A manager republished this document from GitHub, so the pending edit was discarded.',
+        client: deps.slackClient,
+      });
+
+      const published = await publishReplica({ workspaceId, githubPath: filePath, markdown, force: true });
+      return res
+        .status(published.outcome === 'published' ? 200 : 500)
+        .json({ outcome: published.outcome, detail: published.detail });
+    } catch (err) {
+      deps.logger.error('POST google/rebaseline failed', err);
       return res.status(500).json({ error: 'Internal server error' });
     }
   });

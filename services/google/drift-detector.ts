@@ -108,9 +108,10 @@ export async function checkDocumentForDrift(workspaceId: string, githubPath: str
       }
 
       // Already flagged and not touched since: nothing new to report.
-      const alreadyFlagged = state?.status === 'drifted' || state?.status === 'pending-review';
+      const alreadyFlagged =
+        state?.status === 'drifted' || state?.status === 'pending-review' || state?.status === 'applying';
       const reference = alreadyFlagged
-        ? (state?.reviewedVersion ?? state?.lastPushedVersion)
+        ? (state?.latestVersion ?? state?.reviewedVersion ?? state?.lastPushedVersion)
         : state?.lastPushedVersion;
       if (meta.version && reference && meta.version === reference) {
         return { githubPath, outcome: 'unchanged' as const };
@@ -141,11 +142,18 @@ export async function checkDocumentForDrift(workspaceId: string, githubPath: str
           return { githubPath, outcome: 'banner-removed' as const };
         }
 
-        // Absorb the version bump so the next poll is cheap again.
+        // The text matches the baseline again. Besides absorbing the version
+        // bump, this releases a document whose edit was undone in the Doc:
+        // leaving it in a holding state would freeze every future GitHub push
+        // to it with nothing left to review.
+        const decisionInFlight = state?.status === 'pending-review' || state?.status === 'applying';
         await mutateDocState(workspaceId, githubPath, (current) => ({
           ...(current ?? { updatedAt: '' }),
-          status: current?.status ?? 'synced',
+          status: decisionInFlight ? (current?.status ?? 'synced') : 'synced',
           lastPushedVersion: meta.version,
+          latestVersion: undefined,
+          driftDetectedAt: decisionInFlight ? current?.driftDetectedAt : undefined,
+          error: undefined,
           updatedAt: '',
         }));
         return { githubPath, outcome: 'metadata-only' as const };
@@ -157,7 +165,10 @@ export async function checkDocumentForDrift(workspaceId: string, githubPath: str
         ...(current ?? { updatedAt: '' }),
         status: alreadyFlagged ? (current?.status ?? 'drifted') : 'drifted',
         driftDetectedAt: current?.driftDetectedAt ?? new Date().toISOString(),
-        reviewedVersion: meta.version,
+        // Only the "newest seen" marker moves. reviewedVersion belongs to
+        // buildReview: advancing it here would carry a decision fence past an
+        // edit the manager never saw.
+        latestVersion: meta.version,
         lastModifyingUser: meta.lastModifyingUser,
         updatedAt: '',
       }));

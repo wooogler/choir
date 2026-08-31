@@ -38,8 +38,7 @@ export function CommitDialog({ defaultMessage, submitting, onCancel, onSubmit }:
       <form className="commit-dialog" onSubmit={handleSubmit}>
         <h2 className="commit-dialog-title">Commit changes</h2>
         <p className="commit-dialog-subtitle">
-          A new commit will be pushed to your GitHub repository. Q&A retrieval and the QMD index refresh
-          automatically.
+          A new commit will be pushed to your GitHub repository. Q&A retrieval and the QMD index refresh automatically.
         </p>
         <label className="commit-dialog-label" htmlFor="commit-message">
           Commit message
@@ -55,12 +54,7 @@ export function CommitDialog({ defaultMessage, submitting, onCancel, onSubmit }:
           required
         />
         <div className="commit-dialog-actions">
-          <button
-            type="button"
-            className="doc-button doc-button-ghost"
-            onClick={onCancel}
-            disabled={submitting}
-          >
+          <button type="button" className="doc-button doc-button-ghost" onClick={onCancel} disabled={submitting}>
             Cancel
           </button>
           <button type="submit" className="doc-button doc-button-primary" disabled={submitting || !message.trim()}>

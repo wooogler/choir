@@ -9,7 +9,7 @@ import { getGithubRepo } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { exportDocMarkdown, getDocMeta } from './drive-client';
-import { type DeltaAsset, type DeltaConflict, type RejectedAsset, extractDelta } from './gdocs-delta';
+import { type DeltaAsset, type DeltaConflict, type RejectedAsset, assetRepoPath, extractDelta } from './gdocs-delta';
 import { getDocState, mutateDocState, readBaseline, readSourceSnapshot } from './gdocs-state';
 import { getWorkspaceClient } from './google-auth-service';
 import { docKey, replicaLock } from './keyed-mutex';
@@ -43,6 +43,8 @@ export interface ReviewPayload {
 
 export type DecisionOutcome =
   | 'committed'
+  /** The commit landed but the replica could not be republished from it. */
+  | 'committed-not-republished'
   | 'restored'
   /** The document or the repository moved; the review was rebuilt. */
   | 'stale'
@@ -161,6 +163,7 @@ export async function buildReview(workspaceId: string, githubPath: string): Prom
       ...(current ?? { updatedAt: '' }),
       status: 'pending-review',
       reviewedVersion: materials.version,
+      latestVersion: materials.version,
       oursBlobSha: gitBlobSha(materials.currentSource),
       lastModifyingUser: materials.editor,
       updatedAt: '',
@@ -209,6 +212,13 @@ export async function approveReview(params: {
     if (state.oursBlobSha && gitBlobSha(gathered.materials.currentSource) !== state.oursBlobSha) {
       return { blocked: 'stale' as const };
     }
+    // And the Doc may have moved on. Approving republishes the manager's text
+    // over the whole document, so writing that were more paragraphs added since
+    // the review was rendered would vanish from the Doc and never reach the
+    // commit either — destroyed without anyone having read them.
+    if (state.reviewedVersion && gathered.materials.version !== state.reviewedVersion) {
+      return { blocked: 'stale' as const };
+    }
 
     const delta = extractDelta({
       baseline: gathered.materials.baseline,
@@ -243,6 +253,12 @@ export async function approveReview(params: {
     return { outcome: prepared.blocked };
   }
 
+  // Commit only the images the approved text still points at. The manager may
+  // have deleted a reference while resolving conflicts, and committing its bytes
+  // anyway would put an unreferenced binary into the repository that nobody
+  // chose to accept.
+  const referenced = (prepared.assets ?? []).filter((asset) => params.content.includes(assetRepoPath(asset)));
+
   try {
     const commitSha = await commitApprovedEdit({
       workspaceId,
@@ -250,7 +266,7 @@ export async function approveReview(params: {
       userId,
       before: prepared.before ?? '',
       after: params.content,
-      assets: prepared.assets ?? [],
+      assets: referenced,
       fileId: prepared.fileId ?? '',
       editor: prepared.editor,
     });
@@ -258,7 +274,20 @@ export async function approveReview(params: {
     // Force: the document is still in a holding state and, after the commit, the
     // content hash matches — both guards would otherwise skip the republish and
     // leave the Doc showing the pre-review text.
-    await publishReplica({ workspaceId, githubPath, markdown: params.content, force: true });
+    const republished = await publishReplica({ workspaceId, githubPath, markdown: params.content, force: true });
+
+    if (republished.outcome !== 'published') {
+      // The commit landed, so the edit is not lost — but the replica and the
+      // recorded baseline no longer describe it. Leaving the document in
+      // 'applying' would freeze it; 'drifted' makes the next sweep look again.
+      await mutateDocState(workspaceId, githubPath, (current) => ({
+        ...(current ?? { updatedAt: '' }),
+        status: 'drifted',
+        error: `Committed, but the replica was not republished: ${republished.detail ?? republished.outcome}`,
+        updatedAt: '',
+      }));
+      return { outcome: 'committed-not-republished', commitSha, detail: republished.detail ?? republished.outcome };
+    }
 
     return { outcome: 'committed', commitSha };
   } catch (error) {
