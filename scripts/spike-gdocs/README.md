@@ -62,10 +62,11 @@ per-file grant가 앱에 붙습니다. 다르면 검증 B가 조용히 실패합
 레포의 ts-node는 현재 이 스크립트를 직접 실행하지 못합니다(아래 "알려진 환경 문제"). 직접 컴파일합니다:
 
 ```bash
-npx tsc --ignoreConfig scripts/spike-gdocs/*.ts --outDir dist/spike-gdocs --rootDir scripts/spike-gdocs --module commonjs --target es2020 --esModuleInterop --skipLibCheck --types node
+pnpm spike:gdocs
 ```
 
-(`pnpm build`가 `rm -rf dist`를 하므로 빌드 후에는 위 컴파일을 다시 돌려야 합니다.)
+`pnpm build`(그리고 이를 포함하는 `pnpm verify`)가 `rm -rf dist`를 하므로 그 뒤에는
+`pnpm spike:gdocs`를 다시 돌려야 합니다. 토큰 캐시는 `scripts/spike-gdocs/`에 있어 살아남습니다.
 
 렌더만:
 
