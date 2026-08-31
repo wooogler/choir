@@ -5,6 +5,7 @@ import { DocumentUpdateService } from 'services/document/document-update-service
 import { type ProvenanceRecord, buildContextFile, persistContextToMirror } from 'services/document/provenance';
 import { applyAnchorReplacement } from 'services/document/update-anchor';
 import { VectorStoreService } from 'services/file-registry/main-service';
+import { schedulePublish } from 'services/google/replica-publisher';
 import { getUserName, parseGithubUrl, resolveUserNames } from 'services/slack';
 import GithubService from './github-service';
 
@@ -223,6 +224,15 @@ export async function applyDocumentUpdatesToGithub({
           repo,
           branch,
           commitSha: updateResult.commitSha,
+        });
+
+        // Marked [choir-auto], so the webhook skips this commit and the
+        // full-sync replica hook never sees it. Publish the replica here.
+        schedulePublish({
+          workspaceId,
+          githubPath: currentMarkdownFile.path,
+          markdown: updatedMarkdownForGithub,
+          reason: 'slack-document-update',
         });
       }
 

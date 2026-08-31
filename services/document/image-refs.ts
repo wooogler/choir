@@ -65,6 +65,24 @@ export function applyImageCaptions(
   return { markdown: next, changed };
 }
 
+/**
+ * Rewrites every image `src` in a document through `rewrite`, dropping images for
+ * which it returns null. Alt text and any title are preserved exactly.
+ *
+ * Used to turn repo-relative image paths into absolute public URLs before
+ * handing markdown to an external renderer that has to fetch them itself.
+ */
+export function rewriteImageSrcs(markdown: string, rewrite: (src: string) => string | null): string {
+  return markdown.replace(IMAGE_MD, (full, alt: string, srcToken: string, title: string) => {
+    const src = unwrapSrc(srcToken);
+    if (!src) return full;
+    const next = rewrite(src);
+    if (next === null) return '';
+    if (next === src) return full;
+    return `![${alt}](${next}${title})`;
+  });
+}
+
 export function classifyImageSrc(src: string): ImageSrcKind {
   if (/^data:/i.test(src)) return 'data';
   if (/^(https?:)?\/\//i.test(src) || /^https?:/i.test(src)) return 'remote';

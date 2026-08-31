@@ -47,6 +47,7 @@
     "url": "https://github.com/wooogler/choir/issues"
   },
   "dependencies": {
+    "@googleapis/drive": "^21.0.0",
     "@langchain/core": "^0.3.62",
     "@mozilla/readability": "^0.6.0",
     "@slack/bolt": "^4.2.0",
@@ -72,7 +73,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "@googleapis/drive": "^21.0.0",
     "@types/archiver": "^6.0.3",
     "@types/better-sqlite3": "^7.6.13",
     "@types/diff": "^7.0.0",

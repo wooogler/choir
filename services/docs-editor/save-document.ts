@@ -5,6 +5,7 @@ import { enrichWorkspaceImageCaptions } from 'services/document/image-captions';
 import { type ProvenanceRecord, buildContextFile, persistContextToMirror } from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService, type MarkdownFile } from 'services/github';
+import { schedulePublish } from 'services/google/replica-publisher';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { getGithubRepo } from 'services/slack';
 
@@ -122,6 +123,15 @@ export async function saveEditedDocument(params: {
   } catch (error) {
     Logger.warn('saveEditedDocument: failed to refresh in-memory vector store entry', error as Error);
   }
+
+  // The commit above is marked [choir-auto], so the GitHub webhook skips it and
+  // the full-sync replica hook never runs for web edits. Publish here instead.
+  schedulePublish({
+    workspaceId: params.workspaceId,
+    githubPath: params.filePath,
+    markdown: params.content,
+    reason: 'docs-editor-save',
+  });
 
   scheduleQmdWarmup({
     workspaceId: params.workspaceId,

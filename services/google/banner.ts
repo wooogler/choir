@@ -1,0 +1,74 @@
+/**
+ * The notice prepended to every replica, and the rules for taking it back off.
+ *
+ * The banner is content as far as Google Docs is concerned, so it comes back in
+ * every export and would show up in every diff. Both sides of a comparison are
+ * stripped before use.
+ *
+ * Stripping matches structurally rather than by exact string. An exact match
+ * breaks twice: the day the wording changes, every stored baseline still holds
+ * the old text and every document reports a banner-only drift; and a reader who
+ * edits the banner line — the most likely thing a confused person touches —
+ * defeats the match on one side only, so their mangled banner reads as an
+ * addition and can be committed to the repository.
+ */
+
+export const REPLICA_BANNER =
+  '*This document is a read-only replica of a GitHub document, synced by CHOIR. ' +
+  'Edits made here are not applied directly — they are sent to a manager for review.*';
+
+/**
+ * Anything that has ever been used as the banner's opening. Matching the opening
+ * rather than the whole sentence means later wording changes do not invalidate
+ * baselines written by earlier deploys; add to this list, never replace it.
+ */
+const BANNER_OPENINGS = [
+  'This document is a read-only replica',
+  // Pre-release Korean wording, kept so early baselines still strip cleanly.
+  '이 문서는 GitHub에서 자동 생성된 복제본입니다',
+];
+
+/**
+ * A banner line as it survives a Docs round trip: the italic markers may be lost
+ * or doubled, and Docs escapes some punctuation, so only the opening is anchored.
+ */
+function isBannerLine(line: string): boolean {
+  const bare = line
+    .trim()
+    .replace(/^[*_]+/, '')
+    .replace(/\\/g, '');
+  return BANNER_OPENINGS.some((opening) => bare.startsWith(opening));
+}
+
+export interface StrippedBanner {
+  /** The document without its banner (and without the blank line that followed). */
+  body: string;
+  /** False when the banner was missing — someone deleted it, or this is not a replica. */
+  hadBanner: boolean;
+}
+
+export function stripBanner(markdown: string): StrippedBanner {
+  const lines = markdown.split('\n');
+
+  let index = 0;
+  while (index < lines.length && lines[index].trim() === '') {
+    index += 1;
+  }
+
+  if (index >= lines.length || !isBannerLine(lines[index])) {
+    return { body: markdown, hadBanner: false };
+  }
+
+  index += 1;
+  while (index < lines.length && lines[index].trim() === '') {
+    index += 1;
+  }
+
+  return { body: lines.slice(index).join('\n'), hadBanner: true };
+}
+
+/** Prepends the banner, replacing any banner already present. */
+export function withBanner(markdown: string): string {
+  const { body } = stripBanner(markdown);
+  return `${REPLICA_BANNER}\n\n${body}`;
+}

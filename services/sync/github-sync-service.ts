@@ -2,6 +2,7 @@ import { Logger } from 'services/common/logger';
 import { enrichWorkspaceImageCaptions } from 'services/document/image-captions';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService, type MarkdownFile } from 'services/github';
+import { schedulePublishAll } from 'services/google/replica-publisher';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { WorkspaceMirrorMarkdownLoader } from 'services/workspace/mirror-markdown-loader';
 import { WorkspaceMirrorService, type WorkspaceSyncSource } from 'services/workspace/mirror-service';
@@ -62,6 +63,11 @@ export class GitHubSyncService {
       void enrichWorkspaceImageCaptions(params.workspaceId).catch((error) => {
         Logger.warn('GitHubSyncService: image caption enrichment failed', error as Error);
       });
+
+      // Republish any documents with a Google Docs replica. This is the full
+      // file set rather than a delta; the publisher filters to linked paths and
+      // skips content it has already pushed.
+      schedulePublishAll(params.workspaceId, params.markdownFiles, `github-sync:${params.source}`);
     }
   }
 
