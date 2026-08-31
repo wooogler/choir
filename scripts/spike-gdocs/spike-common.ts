@@ -15,7 +15,17 @@ import { auth as googleAuth, type drive_v3 } from '@googleapis/drive';
 // point of the spike is that this one suffices for an app that only ever touches
 // files it created itself or the user picked for it.
 export const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
-const TOKEN_CACHE = path.join(__dirname, '.drive-spike-token.json');
+
+/**
+ * These scripts are compiled into `dist/spike-gdocs/` but their data files
+ * (fixture, token cache) belong with the source: `dist` is wiped by `pnpm build`,
+ * which would silently discard the cached refresh token and force a re-authorize.
+ */
+export const SPIKE_SOURCE_DIR = fs.existsSync(path.join(__dirname, 'fixture.md'))
+  ? __dirname
+  : path.resolve(__dirname, '..', '..', 'scripts', 'spike-gdocs');
+
+const TOKEN_CACHE = path.join(SPIKE_SOURCE_DIR, '.drive-spike-token.json');
 
 export interface ClientCredentials {
   clientId: string;

@@ -41,7 +41,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { drive as driveClient } from '@googleapis/drive';
 import { renderMarkdownToDocsHtml } from './markdown-to-docs-html';
-import { authorize, compareText, exportMarkdown, normalizeDataUrls } from './spike-common';
+import { SPIKE_SOURCE_DIR, authorize, compareText, exportMarkdown, normalizeDataUrls } from './spike-common';
 
 interface Args {
   sharedDriveId?: string;
@@ -81,7 +81,7 @@ async function main() {
   // The real fixture, not a toy string: nested lists, a table, a fenced code
   // block and a remote image are exactly the constructs whose export stability
   // the design depends on.
-  const fixture = fs.readFileSync(path.join(__dirname, 'fixture.md'), 'utf-8');
+  const fixture = fs.readFileSync(path.join(SPIKE_SOURCE_DIR, 'fixture.md'), 'utf-8');
   const editedFixture = `${fixture}\n\n## 8. 두 번째 버전\n\n내용이 교체되었습니다.\n`;
 
   // Shared-drive calls need these flags on every request, so build them once.
@@ -295,7 +295,7 @@ async function main() {
   }
 
   if (baselineA) {
-    const dumpPath = path.join(__dirname, '..', '..', 'dist', 'spike-gdocs', 'export-sample.md');
+    const dumpPath = path.join(__dirname, 'export-sample.md');
     try {
       fs.writeFileSync(dumpPath, baselineA, 'utf-8');
       console.log(`\nFirst export written to ${dumpPath} for eyeballing conversion fidelity.`);
