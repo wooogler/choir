@@ -17,13 +17,32 @@ import { auth as googleAuth, type drive_v3 } from '@googleapis/drive';
 export const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
 
 /**
- * These scripts are compiled into `dist/spike-gdocs/` but their data files
- * (fixture, token cache) belong with the source: `dist` is wiped by `pnpm build`,
- * which would silently discard the cached refresh token and force a re-authorize.
+ * These scripts run from compiled output, but their data files (fixture, token
+ * cache) belong with the source — the token cache in particular must survive a
+ * `pnpm build`, which wipes the output directory and would otherwise force a
+ * re-authorize every time.
+ *
+ * Found by searching upward rather than by a fixed relative hop, so moving the
+ * output directory does not break it.
  */
-export const SPIKE_SOURCE_DIR = fs.existsSync(path.join(__dirname, 'fixture.md'))
-  ? __dirname
-  : path.resolve(__dirname, '..', '..', 'scripts', 'spike-gdocs');
+function findSpikeSourceDir(): string {
+  if (fs.existsSync(path.join(__dirname, 'fixture.md'))) {
+    return __dirname;
+  }
+  let dir = __dirname;
+  for (let depth = 0; depth < 6; depth += 1) {
+    const candidate = path.join(dir, 'scripts', 'spike-gdocs');
+    if (fs.existsSync(path.join(candidate, 'fixture.md'))) {
+      return candidate;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error('Could not locate scripts/spike-gdocs relative to ' + __dirname);
+}
+
+export const SPIKE_SOURCE_DIR = findSpikeSourceDir();
 
 const TOKEN_CACHE = path.join(SPIKE_SOURCE_DIR, '.drive-spike-token.json');
 

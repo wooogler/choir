@@ -18,7 +18,7 @@
  *   export GOOGLE_PROJECT_NUMBER=...      # GCP → project settings → project number
  *
  * Run:
- *   node dist/spike-gdocs/picker-spike.js [--allow-write]
+ *   node dist-spike/picker-spike.js [--allow-write]
  *   # then open the printed http://127.0.0.1:5599 and pick a document
  *
  * Write probes: by default the write test is a rename-and-restore, which proves
@@ -297,7 +297,7 @@ async function main() {
       console.error('Find the holder with:  ss -tlnp | grep -w ' + PORT);
       console.error('If it is an `ssh -L` tunnel, that command belongs on the machine running your');
       console.error('BROWSER, not on this one. Exit that session, or run the spike on another port:');
-      console.error(`  PORT=5600 node dist/spike-gdocs/picker-spike.js\n`);
+      console.error(`  PORT=5600 node dist-spike/picker-spike.js\n`);
       process.exitCode = 1;
       return;
     }

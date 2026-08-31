@@ -17,7 +17,7 @@
     "migrate:sqlite": "ts-node -r tsconfig-paths/register scripts/migrate-to-sqlite.ts",
     "purge:workspace-cache": "ts-node -r tsconfig-paths/register scripts/purge-workspace-cache.ts",
     "backfill:dashboard": "ts-node -r tsconfig-paths/register scripts/backfill-dashboard.ts",
-    "spike:gdocs": "tsc --ignoreConfig scripts/spike-gdocs/*.ts --outDir dist/spike-gdocs --rootDir scripts/spike-gdocs --module commonjs --target es2020 --esModuleInterop --skipLibCheck --types node",
+    "spike:gdocs": "tsc --ignoreConfig scripts/spike-gdocs/*.ts --outDir dist-spike --rootDir scripts/spike-gdocs --module commonjs --target es2020 --esModuleInterop --skipLibCheck --types node",
     "lint": "node scripts/run-biome-changed.js check",
     "lint:fix": "node scripts/run-biome-changed.js write",
     "lint:all": "npx @biomejs/biome check *.ts listeners services scripts __tests__ src",

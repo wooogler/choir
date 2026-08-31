@@ -6,6 +6,7 @@ node_modules
 .env
 .env.development
 dist
+dist-spike
 public/docs-app/
 coverage/
 .tsbuildinfo

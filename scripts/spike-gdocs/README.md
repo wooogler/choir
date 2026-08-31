@@ -71,13 +71,13 @@ pnpm spike:gdocs
 렌더만:
 
 ```bash
-node dist/spike-gdocs/render.js scripts/spike-gdocs/fixture.md dist/spike-gdocs/fixture.html
+node dist-spike/render.js scripts/spike-gdocs/fixture.md dist-spike/fixture.html
 ```
 
 ### P0 검증 A — Drive 동작 (자격증명 1개)
 
 ```bash
-GOOGLE_OAUTH_CLIENT=/path/to/client_secret.json node dist/spike-gdocs/drive-spike.js --keep
+GOOGLE_OAUTH_CLIENT=/path/to/client_secret.json node dist-spike/drive-spike.js --keep
 ```
 
 체크 9종이 PASS/FAIL로 출력됩니다. 설계상 가장 중요한 것은:
@@ -89,7 +89,7 @@ GOOGLE_OAUTH_CLIENT=/path/to/client_secret.json node dist/spike-gdocs/drive-spik
   실패 시 base64 이미지 페이로드만 흔들리는지(정규화로 해결 가능) 아닌지를 함께 보고
 
 `--html`을 붙이면 마크다운 대신 HTML import 경로로 같은 검증을 돌립니다.
-첫 export 원문은 `dist/spike-gdocs/export-sample.md`에 저장되어 눈으로 확인할 수 있습니다.
+첫 export 원문은 `dist-spike/export-sample.md`에 저장되어 눈으로 확인할 수 있습니다.
 
 ### P0 검증 B — Picker per-file grant (자격증명 3개)
 
@@ -100,7 +100,7 @@ GOOGLE_OAUTH_CLIENT=/path/to/client_secret.json node dist/spike-gdocs/drive-spik
 GOOGLE_OAUTH_CLIENT=/path/to/client_secret.json \
 GOOGLE_PICKER_API_KEY=... \
 GOOGLE_PROJECT_NUMBER=... \
-node dist/spike-gdocs/picker-spike.js
+node dist-spike/picker-spike.js
 ```
 
 **브라우저가 다른 머신에 있을 때는 포트 포워딩이 필요합니다.** 아래 명령은 **브라우저가 도는
@@ -111,7 +111,7 @@ node dist/spike-gdocs/picker-spike.js
 ssh -L 5599:127.0.0.1:5599 <user>@<choir-host>
 ```
 
-포트가 이미 잡혀 있으면 `PORT=5600 node dist/spike-gdocs/picker-spike.js`처럼 바꿀 수 있습니다.
+포트가 이미 잡혀 있으면 `PORT=5600 node dist-spike/picker-spike.js`처럼 바꿀 수 있습니다.
 
 출력된 `http://127.0.0.1:5599`를 열고 Doc을 고르면 콘솔과 페이지에 결과가 찍힙니다.
 
@@ -238,7 +238,7 @@ writer 권한을 쓰므로 3이 통과하면 4도 통과할 것으로 보이지�
 내용을 GitHub 버전으로 교체**하는 파괴적 작업이라 버려도 되는 문서로 한 번 확인해 두는 편이 낫습니다:
 
 ```bash
-… node dist/spike-gdocs/picker-spike.js --allow-write
+… node dist-spike/picker-spike.js --allow-write
 ```
 
 ### 아직 미검증

@@ -28,10 +28,8 @@
  *   export GOOGLE_OAUTH_CLIENT=/path/to/client_secret.json
  *
  * Run:
- *   npx tsc --ignoreConfig scripts/spike-gdocs/*.ts --outDir dist/spike-gdocs \
- *     --rootDir scripts/spike-gdocs --module commonjs --target es2020 \
- *     --esModuleInterop --skipLibCheck --types node
- *   node dist/spike-gdocs/drive-spike.js [--shared-drive <driveId>] [--keep] [--html]
+ *   pnpm spike:gdocs
+ *   node dist-spike/drive-spike.js [--shared-drive <driveId>] [--keep] [--html]
  *
  * (The repo's ts-node cannot run this directly — see the note at the bottom of
  * scripts/spike-gdocs/README.md.)
