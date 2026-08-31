@@ -217,12 +217,34 @@ export-vs-baseline이어야 함을 확인해 줍니다.
 따라서 P4의 델타는 **추가/변경된 헝크에 한해 역이스케이프·트레일링 공백 제거**를 거쳐야
 GitHub 마크다운에 그대로 커밋해도 지저분하지 않습니다. 코드 블록은 계획대로 충돌 승격.
 
-### 아직 미검증 (`picker-spike.ts`가 답할 항목)
+### P0 검증 B 결과 (2026-08-31, GRANT CONFIRMED)
 
-- **Picker로 고른(앱이 만들지 않은) 문서에 서버측 refresh token으로 접근되는지** —
-  "기존 Doc 선택" UX의 전제
+앱이 만들지 않은 문서(10일 전 사용자가 직접 생성)를 Picker로 선택한 뒤,
+**refresh token만 보유한 새 OAuth 클라이언트**로 서버측에서:
+
+| 체크 | 결과 |
+| --- | --- |
+| 0. refresh token만으로 액세스 토큰 발급 | PASS |
+| 1. `files.get` | PASS (version=276, created=2026-08-21) |
+| 2. `files.export` 마크다운 | PASS (11478 bytes) |
+| 3. 쓰기(이름 변경 후 복원) | PASS |
+| 4. 내용 교체 | SKIP — `--allow-write` 필요 |
+
+**결론: Picker per-file grant는 서버측에서 지속됩니다.** "사용자가 기존 Doc을 고르면 그 뒤로
+CHOIR가 계속 동기화한다"는 P1 UX가 성립합니다.
+
+체크 4는 미검증입니다. Drive의 권한 모델에서 `files.update`는 메타데이터든 내용이든 같은
+writer 권한을 쓰므로 3이 통과하면 4도 통과할 것으로 보이지만, P1의 첫 동작이 곧 **고른 문서의
+내용을 GitHub 버전으로 교체**하는 파괴적 작업이라 버려도 되는 문서로 한 번 확인해 두는 편이 낫습니다:
+
+```bash
+… node dist/spike-gdocs/picker-spike.js --allow-write
+```
+
+### 아직 미검증
+
 - 공유 드라이브(shared drive)에서 위가 모두 되는지 — 조직 전체 공유가 목표라면 실질 관문
-  (`--shared-drive <driveId>`)
+  (`drive-spike.js --shared-drive <driveId>`)
 
 ### 실측에 쓴 문서
 

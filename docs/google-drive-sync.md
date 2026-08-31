@@ -145,9 +145,11 @@ state/ 하위 첫 서브디렉터리이므로 서비스가 직접 mkdir):
 (base64 이미지 페이로드 포함 — 정규화 레이어 불필요), 메타데이터 변경만으로도 version 증가
 (계획대로 export-vs-baseline이 진실 판정이어야 함을 확인). **P1~P4를 그대로 진행 가능.**
 
-**검증 B(Picker per-file grant)는 미완** — `picker-spike.ts`가 준비되어 있고 GCP의
-Picker API + API 키 + 프로젝트 번호가 필요하다. 실패 시 P1의 "기존 Doc 선택"을
-"CHOIR가 새 Doc 생성 + 폴더만 선택"으로 격하한다.
+**검증 B 결과 — Picker per-file grant 확인됨 (GRANT CONFIRMED)**: 앱이 만들지 않은 문서를
+Picker로 고른 뒤, refresh token만 보유한 새 클라이언트로 서버측 `files.get` / `files.export` /
+메타데이터 쓰기가 모두 성공. **P1의 "기존 Doc 선택" UX를 그대로 구현한다.**
+(고른 문서의 *내용 교체*는 `--allow-write`로 미검증. 같은 writer 권한을 쓰므로 통과가
+예상되지만 P1 구현 전에 버려도 되는 문서로 확인할 것.)
 
 ### 남은 스파이크 항목
 
@@ -353,7 +355,8 @@ baseline·export·GitHub 모두 재조회 가능하므로 재기동에도 안전
 | 내용 교체 시 fileId/URL 유지 | **확인됨 (P0-A)** |
 | Export 멱등성 | **확인됨 (P0-A)** — byte 단위 동일, base64 포함. 정규화 레이어 불필요 |
 | version 펜스 | **확인됨 (P0-A)** — `files.update` 응답 version이 직후 `files.get`과 일치 |
-| Picker per-file grant | 기존 문서 선택 UX의 전제. **미검증** — `picker-spike.ts`. 실패 시 "새 Doc 생성 + 폴더 선택"으로 격하 |
+| Picker per-file grant | **확인됨 (P0-B)** — 서버측 refresh token으로 지속 접근 |
+| 고른 문서의 내용 교체 | 미검증(`--allow-write`). 같은 writer 권한이라 통과 예상 |
 | Google export 직렬화 변경 | 통제 불가 외부 리스크. P3의 대량 드리프트 차단기로 완화 |
 | baseline 유실 | data/는 비버전 관리(과거 디스크 사고 이력 있음). baseline-lost 상태 + 자동 재push 금지로 데이터 손실 방지 |
 | `DOCS_BASE_URL` 공인 HTTPS | 이미지 임베드의 배포 전제. 비공개 호스트면 이미지는 드롭(렌더러의 기존 정책) |
