@@ -38,6 +38,7 @@ export interface PublishResult {
 const HOLDING_STATES: ReadonlySet<GdocsDocStatus> = new Set<GdocsDocStatus>([
   'drifted',
   'pending-review',
+  'applying',
   'baseline-lost',
   'orphaned',
 ]);

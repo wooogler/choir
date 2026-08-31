@@ -38,11 +38,7 @@ export class PathMapService {
   }
 
   private getMapPath(workspaceId: string): string {
-    return path.join(
-      WorkspaceMirrorService.getInstance().getWorkspaceRoot(workspaceId),
-      'state',
-      'path-map.json',
-    );
+    return path.join(WorkspaceMirrorService.getInstance().getWorkspaceRoot(workspaceId), 'state', 'path-map.json');
   }
 
   public async save(workspaceId: string, originalPaths: string[]): Promise<void> {

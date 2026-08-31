@@ -18,6 +18,12 @@ export type GdocsDocStatus =
   | 'drifted'
   /** Delta extracted and a manager is reviewing it. */
   | 'pending-review'
+  /**
+   * A decision is being carried out. Claimed under the document lock so a second
+   * manager clicking approve moments later is refused rather than committing the
+   * same edit twice.
+   */
+  | 'applying'
   /** The baseline file is missing or unreadable, so drift cannot be measured. */
   | 'baseline-lost'
   /** The GitHub document behind this replica was deleted or moved. */

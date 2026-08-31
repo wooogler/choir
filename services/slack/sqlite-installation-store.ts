@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Installation, InstallationQuery, InstallationStore } from '@slack/oauth';
 import { getDataPath } from 'services/common/data-path';
-import { decryptJson, encryptJson } from 'services/db/crypto';
-import { getDatabase } from 'services/db/connection';
 import { Logger } from 'services/common/logger';
+import { getDatabase } from 'services/db/connection';
+import { decryptJson, encryptJson } from 'services/db/crypto';
 
 function getInstallationId(query: InstallationQuery<boolean>): string {
   if (query.isEnterpriseInstall && query.enterpriseId) {

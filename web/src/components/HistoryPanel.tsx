@@ -19,6 +19,7 @@ const TYPE_LABEL: Record<ProvenanceType, string> = {
   append: 'Append',
   'new-file': 'New file',
   'web-edit': 'Manual edit',
+  'gdocs-edit': 'Google Docs edit',
 };
 
 type SortKey = 'newest' | 'size';

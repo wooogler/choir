@@ -1,4 +1,4 @@
-export type ProvenanceType = 'update' | 'append' | 'new-file' | 'web-edit';
+export type ProvenanceType = 'update' | 'append' | 'new-file' | 'web-edit' | 'gdocs-edit';
 
 export interface ProvenanceMessage {
   userId?: string;
@@ -17,9 +17,11 @@ export interface ProvenanceRecord {
   file: { path: string; name: string };
   createdAt: string; // ISO
   updatedBy: { userId?: string; name?: string };
-  source?: { channelId?: string; threadTs?: string };
-  knowledge: string; // extracted knowledge ("" for web-edit)
-  messages: ProvenanceMessage[]; // conversation as-is ([] for web-edit)
+  // Where the change came from: a Slack thread, or the Google Doc replica it
+  // was written in ('gdocs-edit').
+  source?: { channelId?: string; threadTs?: string; fileId?: string; editor?: string };
+  knowledge: string; // extracted knowledge ("" for web-edit and gdocs-edit)
+  messages: ProvenanceMessage[]; // conversation as-is ([] for web-edit and gdocs-edit)
   diff: {
     before: string; // whole-file content before the change ("" for new-file)
     after: string; // whole-file content after the change

@@ -24,7 +24,7 @@ export type TocItem = {
   slug: string;
 };
 
-export type ProvenanceType = 'update' | 'append' | 'new-file' | 'web-edit';
+export type ProvenanceType = 'update' | 'append' | 'new-file' | 'web-edit' | 'gdocs-edit';
 
 export type ProvenanceMessage = {
   userId?: string;
@@ -39,7 +39,7 @@ export type ProvenanceRecord = {
   file: { path: string; name: string };
   createdAt: string;
   updatedBy: { userId?: string; name?: string };
-  source?: { channelId?: string; threadTs?: string };
+  source?: { channelId?: string; threadTs?: string; fileId?: string; editor?: string };
   knowledge: string;
   messages: ProvenanceMessage[];
   diff: { before: string; after: string; sections?: string[]; nodeIds?: string[] };

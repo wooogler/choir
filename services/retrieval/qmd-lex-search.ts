@@ -83,7 +83,10 @@ export function buildQmdLexQueryCandidates(query: string): string[] {
     return [];
   }
 
-  const punctuationStripped = normalized.replace(/[^\p{L}\p{N}\s-]+/gu, ' ').replace(/\s+/g, ' ').trim();
+  const punctuationStripped = normalized
+    .replace(/[^\p{L}\p{N}\s-]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const tokens = tokenizeQuery(punctuationStripped || normalized);
   const candidates: string[] = [normalized];
 

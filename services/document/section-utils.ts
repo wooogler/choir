@@ -5,14 +5,16 @@ import type { DocumentMetadata } from 'services/file-registry/types';
  * GitHub는 헤딩을 소문자로 변환하고 공백을 하이픈으로 바꾸며 특수문자를 제거합니다
  */
 function createGitHubAnchor(headingText: string): string {
-  return headingText
-    .toLowerCase()
-    // Keep Unicode letters/numbers (like GitHub), not just ASCII — otherwise a
-    // Korean/CJK heading was stripped to an empty or wrong anchor.
-    .replace(/[^\p{L}\p{N}\s-]/gu, '') // 특수문자 제거 (유니코드 문자는 유지)
-    .replace(/\s+/g, '-') // 공백을 하이픈으로
-    .replace(/-+/g, '-') // 연속된 하이픈을 하나로
-    .replace(/^-|-$/g, ''); // 시작과 끝의 하이픈 제거
+  return (
+    headingText
+      .toLowerCase()
+      // Keep Unicode letters/numbers (like GitHub), not just ASCII — otherwise a
+      // Korean/CJK heading was stripped to an empty or wrong anchor.
+      .replace(/[^\p{L}\p{N}\s-]/gu, '') // 특수문자 제거 (유니코드 문자는 유지)
+      .replace(/\s+/g, '-') // 공백을 하이픈으로
+      .replace(/-+/g, '-') // 연속된 하이픈을 하나로
+      .replace(/^-|-$/g, '')
+  ); // 시작과 끝의 하이픈 제거
 }
 
 /**

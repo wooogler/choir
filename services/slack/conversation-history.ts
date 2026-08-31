@@ -2,7 +2,6 @@ import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
 // Removed anonymization imports - now handled in LLM services
 import { getUserName, isBotUser } from 'services/slack';
-import { safeSlackCall } from './rate-limit-handler';
 import {
   type CHOIRMessageMetadata,
   CHOIRMessageType,
@@ -11,6 +10,7 @@ import {
   SESSION_START_TYPES,
   getCHOIRMessageTypeFromBlocks,
 } from 'types/message-types';
+import { safeSlackCall } from './rate-limit-handler';
 
 export interface ConversationHistoryOptions {
   timeLimit?: number; // minutes
@@ -499,11 +499,14 @@ export async function gatherExtractionCandidates(
       if (isEarlyMention) {
         const parentSeconds = Number.parseFloat(event.thread_ts);
         const historyResult = await safeSlackCall(
-          () => client.conversations.history({ channel, latest: event.thread_ts, inclusive: false, limit: maxCandidates }),
+          () =>
+            client.conversations.history({ channel, latest: event.thread_ts, inclusive: false, limit: maxCandidates }),
           'gatherExtractionCandidates: pre-parent history',
         );
         const preParent = boundChannelBurst(
-          filterMessagesByType(filterMessagesByUsers(((historyResult?.messages as SlackMessage[]) || []).reverse(), choirUsers)),
+          filterMessagesByType(
+            filterMessagesByUsers(((historyResult?.messages as SlackMessage[]) || []).reverse(), choirUsers),
+          ),
           parentSeconds - lookbackSeconds,
           gapSeconds,
           event.thread_ts, // anchor: the pre-parent burst must be contiguous up to the parent
@@ -519,7 +522,9 @@ export async function gatherExtractionCandidates(
         'gatherExtractionCandidates: channel history',
       );
       candidates = boundChannelBurst(
-        filterMessagesByType(filterMessagesByUsers(((historyResult?.messages as SlackMessage[]) || []).reverse(), choirUsers)),
+        filterMessagesByType(
+          filterMessagesByUsers(((historyResult?.messages as SlackMessage[]) || []).reverse(), choirUsers),
+        ),
         referenceSeconds - lookbackSeconds,
         gapSeconds,
       );

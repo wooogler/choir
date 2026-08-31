@@ -535,7 +535,12 @@ class GithubService {
     repo: string;
     branch?: string;
     message: string;
-    files: Array<{ path: string; content: string }>;
+    /**
+     * files[0] is the document; the rest are sidecars committed alongside it.
+     * `encoding` defaults to utf-8; pass 'base64' for binary content (images),
+     * whose bytes would otherwise be committed as literal base64 text.
+     */
+    files: Array<{ path: string; content: string; encoding?: 'utf-8' | 'base64' }>;
     workspaceId?: string;
     userId?: string;
   }): Promise<{ commitSha: string }> {
@@ -558,7 +563,7 @@ class GithubService {
       const blobs = await Promise.all(
         params.files.map(async (file) => {
           const blob = await this.throttledRequest(() =>
-            octokit.rest.git.createBlob({ owner, repo, content: file.content, encoding: 'utf-8' }),
+            octokit.rest.git.createBlob({ owner, repo, content: file.content, encoding: file.encoding ?? 'utf-8' }),
           );
           return { path: file.path, sha: (blob as any).data.sha };
         }),

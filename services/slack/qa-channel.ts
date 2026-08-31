@@ -117,7 +117,7 @@ export async function createQAChannelMessage(
   userComment?: string,
   client?: WebClient,
 ) {
-  const senderIdentity = isAnonymous ? 'A team member' : (questionerName ? `*${questionerName}*` : 'A team member');
+  const senderIdentity = isAnonymous ? 'A team member' : questionerName ? `*${questionerName}*` : 'A team member';
   const blocks: any[] = [];
 
   if (!canAnswer) {
@@ -166,16 +166,13 @@ export async function createQAChannelMessage(
       };
     }
 
-    blocks.push(
-      introBlock,
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `However, I was not able to answer the question. Could anyone help?`,
-        },
+    blocks.push(introBlock, {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `However, I was not able to answer the question. Could anyone help?`,
       },
-    );
+    });
   } else {
     const introBlock: any = {
       type: 'section',
@@ -252,7 +249,7 @@ export async function createQAChannelMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${isAnonymous ? 'The team member' : (questionerName || 'A team member')} added:*\n${userComment}`,
+          text: `*${isAnonymous ? 'The team member' : questionerName || 'A team member'} added:*\n${userComment}`,
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.USER_COMMENT),
       },
@@ -379,7 +376,7 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${isAnonymous ? 'The team member' : (questionerName || 'A team member')} added:*\n${userComment}`,
+          text: `*${isAnonymous ? 'The team member' : questionerName || 'A team member'} added:*\n${userComment}`,
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.USER_COMMENT),
       },

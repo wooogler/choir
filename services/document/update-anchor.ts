@@ -102,7 +102,9 @@ export function applyAnchorReplacement(markdown: string, anchor: UpdateAnchor, r
   }
 
   const updatedMarkdown =
-    normalizedMarkdown.slice(0, selectedMatch) + replacement.trim() + normalizedMarkdown.slice(selectedMatch + targetText.length);
+    normalizedMarkdown.slice(0, selectedMatch) +
+    replacement.trim() +
+    normalizedMarkdown.slice(selectedMatch + targetText.length);
 
   return {
     success: true,

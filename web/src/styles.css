@@ -828,6 +828,11 @@ a {
   color: #6e6e69;
 }
 
+.history-badge.type-gdocs-edit {
+  background: #fdf0e3;
+  color: #a55a10;
+}
+
 .history-item-meta {
   display: flex;
   flex-direction: column;

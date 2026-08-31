@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseMarkdownToTree } from 'services/document/markdown';
 import { Logger } from 'services/common/logger';
+import { parseMarkdownToTree } from 'services/document/markdown';
 import type { MarkdownFile } from 'services/github';
 import { WorkspaceMirrorService } from './mirror-service';
 
