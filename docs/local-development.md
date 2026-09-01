@@ -55,29 +55,31 @@ the HMR websocket then share one origin.
 
 ## Google Docs sync against real Drive
 
-The OAuth client in GCP project `choir-507215` is a **desktop ("installed") client**, so
-Google accepts only loopback redirect URIs from it — `http://localhost:5173/...` is
-accepted and any `https://` host, including the ngrok domain, is rejected with
-`redirect_uri_mismatch`. Measured against Google's authorize endpoint:
+`.env.development` uses a **Web application** OAuth client in GCP project
+`choir-507215` with both callbacks registered, so one client covers both modes:
 
-| redirect_uri | |
-| --- | --- |
-| `http://localhost:5173/docs/auth/google/callback` | accepted |
-| `http://127.0.0.1:5599` (what the P0 spike used) | accepted |
-| `https://lion-supreme-cleanly.ngrok-free.app/docs/auth/google/callback` | rejected |
-| any other `https://` host (control) | rejected |
+    https://lion-supreme-cleanly.ngrok-free.app/docs/auth/google/callback   (pnpm dev:tunnel)
+    http://localhost:5173/docs/auth/google/callback                         (pnpm dev:local)
 
-`pnpm dev:local` sets `DOCS_BASE_URL=http://localhost:5173`, which lands in the accepted
-column, so `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_PICKER_API_KEY`
-and `GOOGLE_PROJECT_NUMBER` in `.env.development` are all that is needed — no GCP console
-change, because `http://localhost` is already the client's registered redirect URI and
-desktop clients accept any port and path under it.
+Measured against Google's authorize endpoint — both accepted, an unregistered
+`https://` host rejected with `redirect_uri_mismatch`. The launcher sets
+`DOCS_BASE_URL` to match whichever mode is running, so nothing needs editing
+between them.
 
-Consequence: **real Google Docs sync and `pnpm dev:tunnel` cannot be combined on this
-client.** Connect the Google account from `pnpm dev:local`. To reach Google through the
-tunnel, add a second OAuth client of type **Web application** in project `choir-507215`
-with `https://<your ngrok domain>/docs/auth/google/callback` as an authorized redirect
-URI, and point `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` at it.
+Two things that are easy to miss:
+
+- The Picker needs no authorized JavaScript origin. The access token is minted
+  server-side (`/api/docs/:workspaceId/google/picker-token`) and the browser only
+  loads `apis.google.com/js/api.js` with the API key and the project number as
+  `appId` — so `GOOGLE_PICKER_API_KEY` and `GOOGLE_PROJECT_NUMBER` carry over from
+  the older desktop client unchanged. If the Picker alone fails, check the API
+  key's HTTP-referrer restrictions.
+- If the OAuth consent screen is External and still in **Testing**, Google expires
+  refresh tokens after 7 days, so the workspace has to reconnect weekly. Internal
+  (Workspace org) has no such expiry.
+
+The older desktop ("installed") client in the same project only ever accepted
+loopback redirect URIs; that is why it could not be used through the tunnel.
 
 ## Testing Google Docs sync without Google
 

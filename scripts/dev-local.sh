@@ -18,7 +18,7 @@
 #
 # --tunnel points ngrok at Vite (not at the node app) so that OAuth callbacks
 # come back to the same origin the browser is already on. It takes the domain
-# from CHOIR_DEV_TUNNEL_HOST in .env.development, and needs that same host
+# from CHOIR_NGROK_DOMAIN in .env.development, and needs that same host
 # registered as a redirect URL on the Slack app. Note that Google's desktop
 # OAuth client will not accept an https callback — see docs/local-development.md.
 set -euo pipefail
@@ -64,10 +64,10 @@ if port_busy "$WEB_PORT"; then die "port $WEB_PORT is already in use (another de
 # not override a variable that is already exported.
 if [ "$USE_TUNNEL" = true ]; then
   command -v ngrok >/dev/null || die "ngrok is not on PATH"
-  TUNNEL_HOST="${CHOIR_DEV_TUNNEL_HOST:-$(sed -n 's/^CHOIR_DEV_TUNNEL_HOST=//p' "$ENV_FILE" | tail -1 | tr -d '\r')}"
+  TUNNEL_HOST="${CHOIR_DEV_TUNNEL_HOST:-$(sed -n 's/^CHOIR_NGROK_DOMAIN=//p' "$ENV_FILE" | tail -1 | tr -d '\r')}"
   TUNNEL_HOST="${TUNNEL_HOST#*://}"
   TUNNEL_HOST="${TUNNEL_HOST%%/*}"
-  [ -n "$TUNNEL_HOST" ] || die "set CHOIR_DEV_TUNNEL_HOST in $ENV_FILE to your reserved ngrok domain"
+  [ -n "$TUNNEL_HOST" ] || die "set CHOIR_NGROK_DOMAIN in $ENV_FILE to your reserved ngrok domain"
   export CHOIR_DEV_TUNNEL_HOST="$TUNNEL_HOST"
   export DOCS_BASE_URL="https://$TUNNEL_HOST"
 else
