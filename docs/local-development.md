@@ -52,6 +52,37 @@ Requirements:
 The tunnel points at Vite rather than at the node app on purpose: OAuth callbacks and
 the HMR websocket then share one origin.
 
+## Testing Google Docs sync without Google
+
+```bash
+pnpm dev:local --fake-google   # terminal 1
+pnpm gdocs:seed                # link a repo document to a fake replica
+pnpm gdocs:edit                # play the part of someone typing in Docs
+pnpm gdocs:reset               # start over
+```
+
+`--fake-google` preloads `scripts/dev/fake-google.ts`, which replaces
+`services/google/drive-client` with a file-backed fake (`data/dev/fake-drive.json`)
+and the GitHub write path with one that commits straight into the workspace mirror.
+It also drops the drift sweep to every 5 seconds and turns on `/docs/auth/dev-login`,
+so the whole state machine — `synced → drifted → pending-review → committed` — runs
+in seconds with no Google account, no GCP project and no GitHub push rights.
+
+`pnpm dev:local --fake-google` prints a `/docs/auth/dev-login?workspace=…&user=…` URL.
+That route mints a docs session directly; it exists only because Slack will not accept
+a localhost callback. It is fenced (see `services/docs-editor/dev-login.ts`) and
+`--fake-google` cannot be combined with `--tunnel`.
+
+What this does **not** prove: Google's export dialect. A real replica round trip is
+markdown → Docs → markdown and comes back subtly different — list markers, escaping,
+trailing whitespace — which is precisely what delta extraction has to survive. The fake
+reads back exactly what was written. Rehearse that part with `pnpm dev:tunnel` against a
+real Drive account before shipping.
+
+`pnpm gdocs:reset` unlinks the documents and empties the fake Drive, but it does not
+undo an approved edit: that was a real write to `data/dev/workspaces/<id>/repo`. Use
+"Reload from GitHub" in App Home to restore the mirror.
+
 ## Security notes
 
 - **Never run the Vite dev server with `--host`.** Vite serves arbitrary repository
@@ -60,8 +91,11 @@ the HMR websocket then share one origin.
   `data/dev/.choir-docs-editor-key` and forge a manager session cookie for any user.
 - `pnpm dev:local` binds the node app to `127.0.0.1`. `pnpm dev:socket` does not; it
   binds `0.0.0.0`.
-- `pnpm dev:tunnel` deliberately adds no authentication shortcut. If a dev-only sign-in
-  route is ever added, it must never be reachable through the tunnel.
+- `pnpm dev:tunnel` adds no authentication shortcut, and `scripts/dev-local.sh` refuses
+  `--tunnel --fake-google` together: `/docs/auth/dev-login` mints a session for any known
+  user, and publishing that through a tunnel would put an authentication bypass on the
+  public internet. The route also refuses to register when `CHOIR_DEV_TUNNEL_HOST` is set.
+- The fakes under `scripts/dev/` throw on load when `NODE_ENV=production`.
 
 ## What local development cannot exercise
 
@@ -69,12 +103,14 @@ the HMR websocket then share one origin.
   "Reload from GitHub" button in App Home instead.
 - **Images in Slack replies, and image import from Drive replicas.** Both are fetched by
   a third-party server, not by the browser, so a localhost origin drops them.
-- **Google Docs sync**, unless `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`
-  are added to `.env.development` — it currently has neither. `DOCS_BASE_URL` must also
-  be set: `getRedirectUri()` throws without it, and that is on the path of *every* Drive
-  call, not just the consent screen.
-- The drift poller sweeps every 3 minutes by default; set `GOOGLE_DRIFT_POLL_MS` lower
-  when iterating on the review flow.
+- **Google Docs sync against real Drive**, unless `GOOGLE_OAUTH_CLIENT_ID` /
+  `GOOGLE_OAUTH_CLIENT_SECRET` are added to `.env.development` — it currently has
+  neither. `DOCS_BASE_URL` must also be set: `getRedirectUri()` throws without it, and
+  that is on the path of *every* Drive call, not just the consent screen. Use
+  `--fake-google` above for the everyday loop.
+- The drift poller sweeps every 3 minutes by default, and does not start at all unless
+  `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` are set. `--fake-google`
+  supplies inert placeholders and sets `GOOGLE_DRIFT_POLL_MS=5000`.
 
 ## ts-node configuration
 

@@ -111,8 +111,17 @@ pnpm dev:tunnel
 ```
 
 which additionally publishes the Vite server through the ngrok domain in
-`DOCS_BASE_URL`. See [docs/local-development.md](docs/local-development.md) for the
-full picture, including what each mode can and cannot exercise.
+`DOCS_BASE_URL`.
+
+To work on Google Docs sync without a Google account:
+
+```bash
+pnpm dev:local --fake-google
+pnpm gdocs:seed && pnpm gdocs:edit
+```
+
+See [docs/local-development.md](docs/local-development.md) for the full picture,
+including what each mode can and cannot exercise.
 
 Notes:
 
@@ -187,6 +196,7 @@ Runtime state is stored in SQLite by default:
 - `pnpm dev:oauth`: isolated OAuth/HTTP development on port `3030`
 - `pnpm dev:watch`: the app alone under `nodemon`, same isolated env as `dev:socket`
 - `pnpm dev:web:vite`: the docs viewer's Vite dev server alone
+- `pnpm gdocs:seed` / `pnpm gdocs:edit` / `pnpm gdocs:reset`: drive the Google Docs review flow against a fake Drive
 - `pnpm dev:prod`: HTTP-mode runtime
 - `pnpm dev:web`: development with web content enhancement enabled
 - `pnpm build`: compile TypeScript into `dist/`

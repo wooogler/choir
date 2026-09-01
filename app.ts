@@ -31,6 +31,7 @@ import {
   verifyOAuthState,
   verifySessionCookieValue,
 } from 'services/docs-editor';
+import { registerDevLoginRoute } from 'services/docs-editor/dev-login';
 import { getLineProvenance, getProvenanceRecord, listProvenanceForDoc } from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
@@ -603,6 +604,22 @@ function setupPublicSite(): void {
       return res.status(500).send('Sign-in failed');
     }
   });
+
+  // Development only, and only when explicitly opted into: mints a session
+  // without Slack, because Slack will not accept an http://localhost redirect
+  // URL. registerDevLoginRoute registers nothing unless every gate is open —
+  // see services/docs-editor/dev-login.ts for what they are and which of them
+  // actually hold.
+  if (
+    registerDevLoginRoute(router, {
+      cookieSecure,
+      sanitizeNextPath,
+      isKnownUser: async (workspaceId: string, userId: string) => isCHOIRUser(workspaceId, userId),
+      logger: { warn: (message: string) => app.logger.warn(message) },
+    })
+  ) {
+    app.logger.warn('dev-login is enabled: /docs/auth/dev-login will mint a session for any known user');
+  }
 
   // API: save edited markdown back to the workspace mirror and GitHub.
   // Auth: signed session cookie + manager check.
