@@ -1,7 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildContextFile, persistContextToMirror } from 'services/document/provenance';
-import type { ProvenanceRecord } from 'services/document/provenance/types';
 import { GithubService } from 'services/github';
 import { getGithubRepo } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
@@ -90,30 +88,21 @@ export async function importGoogleDoc(params: {
       return { outcome: 'empty', detail: 'That document exported as empty' };
     }
 
-    const record: ProvenanceRecord = {
-      version: 1,
-      type: 'new-file',
-      file: { path: githubPath, name: path.posix.basename(githubPath) },
-      createdAt: new Date().toISOString(),
-      updatedBy: { userId },
-      source: { fileId, editor: meta.lastModifyingUser },
-      knowledge: '',
-      messages: [],
-      diff: { before: '', after: extraction.markdown },
-    };
-    const contextFile = await buildContextFile({ workspaceId, docPath: githubPath, record });
-
-    // files[0] is the document and the rest are sidecars, matching every other
-    // commit path. The images the Doc carried ride along in the same commit as
-    // the text that references them.
+    // No provenance sidecar. A record is the *why* behind a change — the other
+    // new-file path carries the extracted knowledge and the conversation it came
+    // from — and an import has none of that: it would be an empty `knowledge`,
+    // no `messages`, and a `diff.after` holding a second encrypted copy of the
+    // document, which the viewer then renders as a change list restating the
+    // whole file. Where it came from is already on the commit message and in the
+    // Google Doc mapping. Documents with no records are an ordinary state:
+    // readRecords returns [] for a missing directory.
     const { commitSha } = await GithubService.getInstance().commitFilesWithContext({
       owner: repoInfo.owner,
       repo: repoInfo.repo,
       branch: repoInfo.branch,
-      message: `Import ${path.posix.basename(githubPath)} from Google Docs`,
+      message: `Import ${path.posix.basename(githubPath)} from Google Docs (${meta.name ?? fileId})`,
       files: [
         { path: githubPath, content: extraction.markdown },
-        contextFile,
         ...extraction.assets.map((asset) => ({
           path: assetRepoPath(asset),
           content: asset.bytes.toString('base64'),
@@ -127,7 +116,6 @@ export async function importGoogleDoc(params: {
     // The mirror is what the viewer reads, and the GitHub sync that would
     // otherwise refresh it runs on its own schedule.
     await mirror.writeMarkdownFile(workspaceId, githubPath, extraction.markdown);
-    await persistContextToMirror(workspaceId, contextFile);
     const repoRoot = mirror.getRepoRoot(workspaceId);
     for (const asset of extraction.assets) {
       const absolute = path.join(repoRoot, assetRepoPath(asset));

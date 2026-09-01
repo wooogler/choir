@@ -45,6 +45,7 @@ Docs에서 발생한 사람 편집을 **관리자 승인을 거쳐** GitHub에 �
 - **덮어쓰지 않는다.** 대상 경로가 이미 있으면 `exists`로 거부. import가 기존 문서를 소리 없이 교체하는 것은 리뷰를 우회하는 것과 같다.
 - **경로 검증은 `import-path.ts`** (순수 함수, 서비스 그래프 없음): 저장소 상대 경로 + `.md`만, `..` 금지, `assets/`·`.choir/` 금지. 미러는 자기 루트를 지키지만 커밋은 GitHub으로도 나간다.
 - **이미지는 델타 경로와 같은 처리를 공유한다** (`extractImportable` → `rekeyImagesByContent` → `collectNewAssets`). export의 base64 data URI를 content-addressed asset으로 만들어 본문과 같은 커밋에 싣는다. 거부된 이미지는 dangling reference를 남기지 않고 참조째 제거하고 사유를 보고한다.
+- **provenance 사이드카를 쓰지 않는다.** 기록은 변경의 *이유*이고(Slack 생성 경로는 추출된 지식과 원본 대화를 담는다), import에는 그게 없다 — `knowledge` 빈 값, `messages` 없음, `diff.after`에 문서 전체의 암호화된 두 번째 사본만 남아 뷰어가 문서를 그대로 되읊는 변경 목록으로 렌더한다. 출처는 커밋 메시지와 Doc 매핑에 이미 있다. 기록이 없는 문서는 정상 상태다(`readRecords`는 디렉터리가 없으면 `[]`).
 - **import 직후 replica로 연결**한다(`setGoogleDocMapping` + `publishReplica force`). 그래서 그 Doc은 이때부터 배너를 달고, 이후 편집은 평소의 drift→리뷰 경로를 탄다.
 - Picker nonce 필수. 없으면 임의 fileId를 POST해서 워크스페이스 계정이 접근 가능한 아무 문서나 저장소에 커밋시킬 수 있다.
 
