@@ -1,5 +1,6 @@
 import type { DocFile, FolderNode, RepoInfo } from '../types';
 import { buildFolderTree, dashboardPath, encodePath, folderContainsPath, formatTitle, navigate } from '../utils/docs';
+import { GoogleDocsImport } from './GoogleDocsImport';
 
 type FilesSidebarProps = {
   files: DocFile[];
@@ -85,6 +86,7 @@ export function FilesSidebar({ files, currentPath, repo, workspaceId, canSeeInsi
             <span className="file-label">Insights</span>
           </button>
         )}
+        <GoogleDocsImport workspaceId={workspaceId} />
       </nav>
     </aside>
   );

@@ -38,6 +38,18 @@ Docs에서 발생한 사람 편집을 **관리자 승인을 거쳐** GitHub에 �
 
 ---
 
+## Docs → 저장소 import
+
+`services/google/import-service.ts`. Picker로 고른 Google Doc을 **새 저장소 문서로 커밋**한다. replica 방향(GitHub→Docs)의 반대이며, 리뷰 없이 Docs 내용이 GitHub으로 넘어가는 유일한 경로 — 저장소에 아직 그 문서가 없으니 리뷰할 대상이 없기 때문이다.
+
+- **덮어쓰지 않는다.** 대상 경로가 이미 있으면 `exists`로 거부. import가 기존 문서를 소리 없이 교체하는 것은 리뷰를 우회하는 것과 같다.
+- **경로 검증은 `import-path.ts`** (순수 함수, 서비스 그래프 없음): 저장소 상대 경로 + `.md`만, `..` 금지, `assets/`·`.choir/` 금지. 미러는 자기 루트를 지키지만 커밋은 GitHub으로도 나간다.
+- **이미지는 델타 경로와 같은 처리를 공유한다** (`extractImportable` → `rekeyImagesByContent` → `collectNewAssets`). export의 base64 data URI를 content-addressed asset으로 만들어 본문과 같은 커밋에 싣는다. 거부된 이미지는 dangling reference를 남기지 않고 참조째 제거하고 사유를 보고한다.
+- **import 직후 replica로 연결**한다(`setGoogleDocMapping` + `publishReplica force`). 그래서 그 Doc은 이때부터 배너를 달고, 이후 편집은 평소의 drift→리뷰 경로를 탄다.
+- Picker nonce 필수. 없으면 임의 fileId를 POST해서 워크스페이스 계정이 접근 가능한 아무 문서나 저장소에 커밋시킬 수 있다.
+
+UI는 사이드바의 `Import from Google Docs`(`web/src/components/GoogleDocsImport.tsx`) — 만들어질 문서가 아직 없으므로 문서별이 아니라 워크스페이스 단위다.
+
 ## 동작 모델
 
 문서별 상태 기계 (매핑 하나당):

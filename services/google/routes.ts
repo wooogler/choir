@@ -11,6 +11,7 @@ import {
   exchangeCodeForCredential,
   getWorkspaceClient,
 } from './google-auth-service';
+import { importGoogleDoc } from './import-service';
 import { issuePickerNonce, verifyPickerNonce } from './picker-nonce';
 import { publishReplica } from './replica-publisher';
 import { retireAllReviewCards, retireReviewCards } from './review-cards';
@@ -306,6 +307,58 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       }
       deps.logger.error('POST google/link failed', err);
       return res.status(500).json({ error: message });
+    }
+  });
+
+  /**
+   * Brings a Google Doc into the repository as a new document, then links it.
+   *
+   * The picker nonce is required for the same reason as linking: this writes a
+   * commit from a fileId the caller supplies, so it must follow a deliberate
+   * pick rather than an arbitrary id posted at the endpoint.
+   */
+  router.post('/api/docs/:workspaceId/google/import', deps.jsonBody, async (req: Req, res: Res) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      const session = await requireManagerOf(req, res, workspaceId);
+      if (!session) {
+        return undefined;
+      }
+
+      const filePath = String(req.body?.filePath || '').trim();
+      const fileId = String(req.body?.fileId || '').trim();
+      const pickerNonce = String(req.body?.pickerNonce || '');
+
+      if (!filePath || !fileId) {
+        return res.status(400).json({ error: 'filePath and fileId are required' });
+      }
+      if (!verifyPickerNonce(pickerNonce, workspaceId, session.userId)) {
+        return res.status(400).json({ error: 'Pick the document again — this import request has expired' });
+      }
+
+      const result = await importGoogleDoc({ workspaceId, githubPath: filePath, fileId, userId: session.userId });
+
+      if (result.outcome === 'imported') {
+        deps.logger.info('Imported a Google Doc into the repository', {
+          workspaceId,
+          filePath: result.githubPath,
+          fileId,
+        });
+        return res.json(result);
+      }
+
+      const status =
+        result.outcome === 'exists'
+          ? 409
+          : result.outcome === 'not-connected'
+            ? 409
+            : result.outcome === 'invalid-path' || result.outcome === 'empty'
+              ? 400
+              : 500;
+      return res.status(status).json({ error: result.detail ?? result.outcome, code: result.outcome });
+    } catch (err) {
+      deps.logger.error('POST google/import failed', err);
+      return res.status(500).json({ error: 'Internal server error' });
     }
   });
 

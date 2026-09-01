@@ -4,6 +4,7 @@ import path from 'node:path';
 import { closeDatabase } from 'services/db/connection';
 import { getDocMeta } from 'services/google/drive-client';
 import { getWorkspaceClient } from 'services/google/google-auth-service';
+import { importGoogleDoc } from 'services/google/import-service';
 import { issuePickerNonce } from 'services/google/picker-nonce';
 import { publishReplica } from 'services/google/replica-publisher';
 import { approveReview, buildReview, rejectReview } from 'services/google/review-service';
@@ -19,6 +20,9 @@ jest.mock('services/google/review-service', () => ({
   rejectReview: jest.fn(),
 }));
 jest.mock('services/google/replica-publisher', () => ({ publishReplica: jest.fn() }));
+// Same reason as the review service: its own suite covers what it does, and it
+// reaches the GitHub client, which jest cannot load.
+jest.mock('services/google/import-service', () => ({ importGoogleDoc: jest.fn() }));
 jest.mock('services/google/google-auth-service', () => ({
   getWorkspaceClient: jest.fn(),
   disconnectWorkspace: jest.fn(),
@@ -33,6 +37,7 @@ const mockClient = getWorkspaceClient as jest.MockedFunction<typeof getWorkspace
 const mockBuildReview = buildReview as jest.MockedFunction<typeof buildReview>;
 const mockApprove = approveReview as jest.MockedFunction<typeof approveReview>;
 const mockReject = rejectReview as jest.MockedFunction<typeof rejectReview>;
+const mockImport = importGoogleDoc as jest.MockedFunction<typeof importGoogleDoc>;
 
 interface Captured {
   method: string;
@@ -242,6 +247,60 @@ describe('Google Drive routes', () => {
       expect(res.statusCode).toBe(400);
       expect(mockPublish).not.toHaveBeenCalled();
       expect(await store.getGoogleDocMapping('T1', 'docs/a.md')).toBeNull();
+    });
+
+    it('imports a picked document and reports where it landed', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+      mockImport.mockResolvedValue({ outcome: 'imported', githubPath: 'notes/imported.md', linked: true });
+
+      await route('post', '/api/docs/:workspaceId/google/import')(
+        {
+          params: { workspaceId: 'T1' },
+          body: {
+            filePath: 'notes/imported.md',
+            fileId: 'file-a',
+            pickerNonce: issuePickerNonce('T1', 'U-manager'),
+          },
+        },
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(mockImport).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: 'T1', githubPath: 'notes/imported.md', fileId: 'file-a' }),
+      );
+    });
+
+    it('refuses an import without a nonce from a recent pick', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+
+      // A bare POST would commit the contents of any document the workspace
+      // account can reach, to a path of the caller's choosing.
+      await route('post', '/api/docs/:workspaceId/google/import')(
+        { params: { workspaceId: 'T1' }, body: { filePath: 'a.md', fileId: 'file-a', pickerNonce: 'forged' } },
+        res,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(mockImport).not.toHaveBeenCalled();
+    });
+
+    it('reports an import onto an existing path as a conflict', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+      mockImport.mockResolvedValue({ outcome: 'exists', detail: 'a.md already exists in this repository' });
+
+      await route('post', '/api/docs/:workspaceId/google/import')(
+        {
+          params: { workspaceId: 'T1' },
+          body: { filePath: 'a.md', fileId: 'file-a', pickerNonce: issuePickerNonce('T1', 'U-manager') },
+        },
+        res,
+      );
+
+      expect(res.statusCode).toBe(409);
     });
 
     it('refuses a nonce issued to a different manager', async () => {

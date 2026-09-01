@@ -215,6 +215,33 @@ function collectNewAssets(
   return { assets, rejected };
 }
 
+/** A Docs export turned into something committable, for the import path. */
+export interface ImportExtraction {
+  markdown: string;
+  assets: DeltaAsset[];
+  rejected: RejectedAsset[];
+}
+
+/**
+ * Prepares a whole Docs export for import as a new repository document.
+ *
+ * Deliberately shares the delta path's image handling: the export dialect is the
+ * same either way, and so are the limits and the magic-byte sniffing that keep a
+ * pasted SVG out of the repository. The difference is only that everything is
+ * new, so the comparison is against an empty "before".
+ *
+ * An image whose bytes were refused leaves no dangling reference behind — the
+ * reference is dropped and the reason is reported, rather than committing markdown
+ * that renders broken.
+ */
+export function extractImportable(exported: string): ImportExtraction {
+  const { text, payloads } = rekeyImagesByContent(exported);
+  const { assets, rejected } = collectNewAssets(new Map(), payloads);
+  const resolved = resolveImageReferences(text.split('\n'), assets, []);
+  const markdown = resolved.join('\n').replace(REKEYED_REFERENCE, '');
+  return { markdown, assets, rejected };
+}
+
 // ── Alignment ─────────────────────────────────────────────────────────────────
 
 /**
