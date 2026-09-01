@@ -43,12 +43,12 @@ The workspace id is in the app's startup log. See `services/docs-editor/dev-logi
 for the gates; the route refuses to register whenever `CHOIR_DEV_TUNNEL_HOST` is set,
 so `pnpm dev:tunnel` gets the real Slack flow and no bypass.
 
-`pnpm dev:tunnel` is for rehearsing the real Slack sign-in. It publishes the Vite server
-through the ngrok domain taken from `DOCS_BASE_URL`, so the callback lands on the origin
-the browser is already on. It needs the domain reserved on the ngrok account
-(`manifest.dev.json` uses `lion-supreme-cleanly.ngrok-free.app`) and
-`https://<domain>/docs/auth/slack/callback` registered as a redirect URL on the Slack
-app, and `DOCS_BASE_URL` set back to that domain.
+`pnpm dev:tunnel` publishes the Vite server through the domain in
+`CHOIR_DEV_TUNNEL_HOST`, and sets `DOCS_BASE_URL` to match, so OAuth callbacks land on
+the origin the browser is already on. It needs that domain reserved on the ngrok account
+and `https://<domain>/docs/auth/slack/callback` registered as a redirect URL on the Slack
+app — both already true for `lion-supreme-cleanly.ngrok-free.app` (`manifest.dev.json`).
+In this mode the real Slack sign-in works and dev-login does not exist.
 
 The tunnel points at Vite rather than at the node app on purpose: OAuth callbacks and
 the HMR websocket then share one origin.
@@ -58,18 +58,26 @@ the HMR websocket then share one origin.
 The OAuth client in GCP project `choir-507215` is a **desktop ("installed") client**, so
 Google accepts only loopback redirect URIs from it — `http://localhost:5173/...` is
 accepted and any `https://` host, including the ngrok domain, is rejected with
-`redirect_uri_mismatch`. That is why `.env.development` sets:
+`redirect_uri_mismatch`. Measured against Google's authorize endpoint:
 
-    DOCS_BASE_URL=http://localhost:5173
+| redirect_uri | |
+| --- | --- |
+| `http://localhost:5173/docs/auth/google/callback` | accepted |
+| `http://127.0.0.1:5599` (what the P0 spike used) | accepted |
+| `https://lion-supreme-cleanly.ngrok-free.app/docs/auth/google/callback` | rejected |
+| any other `https://` host (control) | rejected |
 
-together with `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
-`GOOGLE_PICKER_API_KEY` and `GOOGLE_PROJECT_NUMBER`. No GCP console change is needed;
-`http://localhost` is already the client's registered redirect URI and desktop clients
-accept any port and path under it.
+`pnpm dev:local` sets `DOCS_BASE_URL=http://localhost:5173`, which lands in the accepted
+column, so `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_PICKER_API_KEY`
+and `GOOGLE_PROJECT_NUMBER` in `.env.development` are all that is needed — no GCP console
+change, because `http://localhost` is already the client's registered redirect URI and
+desktop clients accept any port and path under it.
 
-Consequence: real Google Docs sync and `pnpm dev:tunnel` are mutually exclusive on this
-client. Connect the account from `pnpm dev:local`. To use Google through a tunnel you
-would need a separate **Web application** OAuth client with the ngrok callback registered.
+Consequence: **real Google Docs sync and `pnpm dev:tunnel` cannot be combined on this
+client.** Connect the Google account from `pnpm dev:local`. To reach Google through the
+tunnel, add a second OAuth client of type **Web application** in project `choir-507215`
+with `https://<your ngrok domain>/docs/auth/google/callback` as an authorized redirect
+URI, and point `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` at it.
 
 ## Testing Google Docs sync without Google
 
