@@ -82,7 +82,10 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, CrepeEditorProps>(funct
       });
     });
 
-    crepe
+    // Held so teardown can wait for creation to settle. React StrictMode
+    // mounts, unmounts and remounts every effect in development, so without
+    // this the cleanup would destroy an editor that is still being created.
+    const created = crepe
       .create()
       .then(() => {
         if (cancelled) return;
@@ -96,8 +99,10 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, CrepeEditorProps>(funct
     return () => {
       cancelled = true;
       crepeRef.current = null;
-      crepe.destroy().catch(() => {
-        // ignore destroy errors during unmount
+      created.finally(() => {
+        crepe.destroy().catch(() => {
+          // ignore destroy errors during unmount
+        });
       });
     };
   }, [markdown]);

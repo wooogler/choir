@@ -11,7 +11,10 @@
     "dev": "NODE_ENV=development ts-node -r tsconfig-paths/register app.ts",
     "dev:socket": "ENV_FILE=.env.development SLACK_MODE=single NODE_ENV=development CHOIR_DATA_DIR=data/dev DATABASE_URL=file:data/dev/choir-dev.db ts-node -r tsconfig-paths/register app.ts",
     "dev:oauth": "ENV_FILE=.env.development SLACK_MODE=oauth NODE_ENV=development CHOIR_DATA_DIR=data/dev DATABASE_URL=file:data/dev/choir-dev.db PORT=3030 ts-node -r tsconfig-paths/register app.ts",
-    "dev:watch": "nodemon --watch '**/*.ts' --exec 'ts-node -r tsconfig-paths/register' app.ts",
+    "dev:local": "bash scripts/dev-local.sh",
+    "dev:tunnel": "bash scripts/dev-local.sh --tunnel",
+    "dev:web:vite": "pnpm --filter choir-web dev",
+    "dev:watch": "ENV_FILE=.env.development SLACK_MODE=single NODE_ENV=development CHOIR_DATA_DIR=data/dev DATABASE_URL=file:data/dev/choir-dev.db nodemon --watch '**/*.ts' --exec 'ts-node -r tsconfig-paths/register' app.ts",
     "dev:prod": "NODE_ENV=production ts-node -r tsconfig-paths/register app.ts",
     "dev:web": "NODE_ENV=development ENABLE_WEB_CONTENT=true ts-node -r tsconfig-paths/register app.ts",
     "migrate:sqlite": "ts-node -r tsconfig-paths/register scripts/migrate-to-sqlite.ts",
@@ -30,15 +33,7 @@
   },
   "author": "CHOIR contributors",
   "license": "MIT",
-  "keywords": [
-    "slack",
-    "bolt",
-    "typescript",
-    "github",
-    "openai",
-    "knowledge-base",
-    "rag"
-  ],
+  "keywords": ["slack", "bolt", "typescript", "github", "openai", "knowledge-base", "rag"],
   "repository": {
     "type": "git",
     "url": "https://github.com/wooogler/choir.git"
@@ -85,6 +80,7 @@
     "jest": "^30.0.3",
     "nodemon": "^3.1.9",
     "ts-jest": "^29.4.0",
+    "ts-node": "^10.9.2",
     "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^6.0.3"

@@ -91,16 +91,32 @@ Optional but commonly used:
 
 ### 4. Run the app
 
-For local development with Socket Mode (no public URL required):
+For local development, start the app and the docs viewer together:
 
 ```bash
-pnpm dev:socket
+pnpm dev:local
 ```
 
-This reads `.env.development`, forces `SLACK_MODE=single`, and isolates state under `data/dev/`, so it does not clash with a production deployment.
+This runs the Slack app in Socket Mode on `127.0.0.1:3031` under `nodemon`, and the
+React docs viewer on <http://localhost:5173> under Vite with hot reload. It reads
+`.env.development`, forces `SLACK_MODE=single`, and isolates state under `data/dev/`,
+so it does not clash with a production deployment. Editing anything under `web/`
+reloads in the browser without a rebuild; editing a `.ts` file restarts the app.
+
+Signing in to the docs viewer needs a public HTTPS callback, because Slack does not
+accept `http://localhost` redirect URLs. For that, use:
+
+```bash
+pnpm dev:tunnel
+```
+
+which additionally publishes the Vite server through the ngrok domain in
+`DOCS_BASE_URL`. See [docs/local-development.md](docs/local-development.md) for the
+full picture, including what each mode can and cannot exercise.
 
 Notes:
 
+- `pnpm dev:socket` runs the app alone, without the viewer's dev server.
 - `pnpm dev` also uses Socket Mode because `NODE_ENV=development`.
 - `pnpm dev:prod` runs in HTTP mode locally (useful for testing webhook handlers).
 - `pnpm dev:oauth` listens on port `3030` in OAuth mode for OAuth-flow debugging.
@@ -164,10 +180,13 @@ Runtime state is stored in SQLite by default:
 
 ## Scripts
 
+- `pnpm dev:local`: app + docs viewer with hot reload (the usual loop)
+- `pnpm dev:tunnel`: the same, published through the ngrok domain in `DOCS_BASE_URL`
 - `pnpm dev`: local development in Socket Mode
-- `pnpm dev:socket`: isolated Socket Mode development using `.env.development` and `data/choir-dev.db`
+- `pnpm dev:socket`: isolated Socket Mode development using `.env.development` and `data/dev/choir-dev.db`
 - `pnpm dev:oauth`: isolated OAuth/HTTP development on port `3030`
-- `pnpm dev:watch`: development with `nodemon`
+- `pnpm dev:watch`: the app alone under `nodemon`, same isolated env as `dev:socket`
+- `pnpm dev:web:vite`: the docs viewer's Vite dev server alone
 - `pnpm dev:prod`: HTTP-mode runtime
 - `pnpm dev:web`: development with web content enhancement enabled
 - `pnpm build`: compile TypeScript into `dist/`

@@ -101,5 +101,19 @@
     // "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
     "skipLibCheck": true /* Skip type checking all .d.ts files. */
   },
-  "exclude": ["node_modules", "dist", "__tests__", "web"]
+  "exclude": ["node_modules", "dist", "__tests__", "web"],
+  /* ts-node powers every `pnpm dev:*` script. Two settings are load-bearing:
+     `files` pulls in the ambient declarations under src/types (without it
+     src/types/node-diff3.d.ts is invisible and startup dies on TS2307), and
+     `transpileOnly` drops a ~9s type-check from every restart. Type errors
+     still surface in the editor and in `pnpm verify`. `rootDir` is required
+     because TypeScript 6 otherwise infers the common source directory from
+     the single entry file. tsc ignores this block. */
+  "ts-node": {
+    "files": true,
+    "transpileOnly": true,
+    "compilerOptions": {
+      "rootDir": "."
+    }
+  }
 }
