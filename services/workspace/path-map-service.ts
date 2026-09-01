@@ -26,9 +26,29 @@ function handelize(p: string): string {
     .join('/');
 }
 
+/**
+ * The form qmd produces when a path appears as a *directory* component instead
+ * of the final filename: only the last segment keeps its extension, so the file
+ * `06_Conferences.md` becomes `06-conferences-md` inside the section path
+ * `06-conferences-md/3.md`. Section files live under `<original path>/<index>.md`,
+ * so every reverse lookup that starts from a section path arrives in this form
+ * and would miss the `06-conferences.md` key `handelize()` writes.
+ */
+function handelizeAsDirectory(p: string): string {
+  return p
+    .replace(/___/g, '/')
+    .toLowerCase()
+    .split('/')
+    .map((segment) => segment.replace(/[^\p{L}\p{N}$]+/gu, '-').replace(/^-+|-+$/g, ''))
+    .filter(Boolean)
+    .join('/');
+}
+
 export class PathMapService {
   private static instance: PathMapService;
   private readonly cache = new Map<string, Record<string, string>>();
+  /** Derived from `cache`: directory-form key → original path. See `handelizeAsDirectory`. */
+  private readonly directoryCache = new Map<string, Record<string, string>>();
 
   public static getInstance(): PathMapService {
     if (!PathMapService.instance) {
@@ -52,6 +72,7 @@ export class PathMapService {
     }
     await fs.promises.writeFile(this.getMapPath(workspaceId), JSON.stringify(map, null, 2), 'utf-8');
     this.cache.set(workspaceId, map);
+    this.directoryCache.delete(workspaceId);
   }
 
   public async upsert(workspaceId: string, originalPath: string): Promise<void> {
@@ -63,6 +84,7 @@ export class PathMapService {
     }
     await fs.promises.writeFile(this.getMapPath(workspaceId), JSON.stringify(map, null, 2), 'utf-8');
     this.cache.set(workspaceId, map);
+    this.directoryCache.delete(workspaceId);
   }
 
   private loadSync(workspaceId: string): Record<string, string> {
@@ -82,12 +104,33 @@ export class PathMapService {
     return {};
   }
 
+  /**
+   * Directory-form keys are derived on read rather than written by `save`, so
+   * path maps already on disk resolve without a re-sync.
+   */
+  private loadDirectoryIndex(workspaceId: string): Record<string, string> {
+    const cached = this.directoryCache.get(workspaceId);
+    if (cached) return cached;
+
+    const index: Record<string, string> = {};
+    for (const original of Object.values(this.loadSync(workspaceId))) {
+      try {
+        index[handelizeAsDirectory(original)] = original;
+      } catch {
+        // skip paths that can't be handelized
+      }
+    }
+    this.directoryCache.set(workspaceId, index);
+    return index;
+  }
+
   public getOriginalPath(workspaceId: string, handelizedPath: string): string {
     const map = this.loadSync(workspaceId);
-    return map[handelizedPath] ?? handelizedPath;
+    return map[handelizedPath] ?? this.loadDirectoryIndex(workspaceId)[handelizedPath] ?? handelizedPath;
   }
 
   public invalidate(workspaceId: string): void {
     this.cache.delete(workspaceId);
+    this.directoryCache.delete(workspaceId);
   }
 }
