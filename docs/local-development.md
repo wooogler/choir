@@ -31,26 +31,45 @@ Slack workspace configured in that file.
 
 The docs viewer is gated on a signed session cookie, minted only by
 `/docs/auth/slack/callback` after a real Slack OIDC round trip. Slack will not accept an
-`http://localhost` redirect URL, so plain `pnpm dev:local` cannot sign you in. The cookie
-is host-scoped, so one obtained on the tunnel domain is not sent to `localhost` either.
+`http://localhost` redirect URL, so on a local loop there is no way to complete that
+round trip — the SPA loads and then every `/api` call 401s.
 
-```bash
-pnpm dev:tunnel
-```
+`pnpm dev:local` therefore turns on `/docs/auth/dev-login`, which mints the cookie
+directly. Open the URL the script prints:
 
-publishes the Vite server through the ngrok domain taken from `DOCS_BASE_URL` in
-`.env.development`, so the callback lands on the same origin the browser is already on.
-Requirements:
+    http://localhost:5173/docs/auth/dev-login?workspace=<workspaceId>&user=<userId>
 
-- the domain is reserved on the ngrok account (`manifest.dev.json` already uses
-  `lion-supreme-cleanly.ngrok-free.app`)
-- `https://<domain>/docs/auth/slack/callback` is registered as a redirect URL on the
-  Slack app
-- for Google Docs sync, `https://<domain>/docs/auth/google/callback` is an authorized
-  redirect URI on the Google OAuth client
+The workspace id is in the app's startup log. See `services/docs-editor/dev-login.ts`
+for the gates; the route refuses to register whenever `CHOIR_DEV_TUNNEL_HOST` is set,
+so `pnpm dev:tunnel` gets the real Slack flow and no bypass.
+
+`pnpm dev:tunnel` is for rehearsing the real Slack sign-in. It publishes the Vite server
+through the ngrok domain taken from `DOCS_BASE_URL`, so the callback lands on the origin
+the browser is already on. It needs the domain reserved on the ngrok account
+(`manifest.dev.json` uses `lion-supreme-cleanly.ngrok-free.app`) and
+`https://<domain>/docs/auth/slack/callback` registered as a redirect URL on the Slack
+app, and `DOCS_BASE_URL` set back to that domain.
 
 The tunnel points at Vite rather than at the node app on purpose: OAuth callbacks and
 the HMR websocket then share one origin.
+
+## Google Docs sync against real Drive
+
+The OAuth client in GCP project `choir-507215` is a **desktop ("installed") client**, so
+Google accepts only loopback redirect URIs from it — `http://localhost:5173/...` is
+accepted and any `https://` host, including the ngrok domain, is rejected with
+`redirect_uri_mismatch`. That is why `.env.development` sets:
+
+    DOCS_BASE_URL=http://localhost:5173
+
+together with `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+`GOOGLE_PICKER_API_KEY` and `GOOGLE_PROJECT_NUMBER`. No GCP console change is needed;
+`http://localhost` is already the client's registered redirect URI and desktop clients
+accept any port and path under it.
+
+Consequence: real Google Docs sync and `pnpm dev:tunnel` are mutually exclusive on this
+client. Connect the account from `pnpm dev:local`. To use Google through a tunnel you
+would need a separate **Web application** OAuth client with the ngrok callback registered.
 
 ## Testing Google Docs sync without Google
 

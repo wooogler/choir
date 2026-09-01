@@ -103,15 +103,10 @@ React docs viewer on <http://localhost:5173> under Vite with hot reload. It read
 so it does not clash with a production deployment. Editing anything under `web/`
 reloads in the browser without a rebuild; editing a `.ts` file restarts the app.
 
-Signing in to the docs viewer needs a public HTTPS callback, because Slack does not
-accept `http://localhost` redirect URLs. For that, use:
-
-```bash
-pnpm dev:tunnel
-```
-
-which additionally publishes the Vite server through the ngrok domain in
-`DOCS_BASE_URL`.
+Slack does not accept `http://localhost` redirect URLs, so the viewer's normal sign-in
+cannot complete locally. `pnpm dev:local` prints a `/docs/auth/dev-login` URL that mints
+the session directly; `pnpm dev:tunnel` publishes the Vite server through the ngrok
+domain in `DOCS_BASE_URL` instead, for rehearsing the real Slack flow.
 
 To work on Google Docs sync without a Google account:
 

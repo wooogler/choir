@@ -16,11 +16,11 @@
 # The browser talks to Vite only. That is what makes the loop fast: editing
 # anything under web/ is a hot reload, with no `pnpm build:web` and no deploy.
 #
-# --tunnel points ngrok at Vite (not at the node app) so that Slack's and
-# Google's OAuth callbacks come back to the same origin the browser is already
-# on. It needs DOCS_BASE_URL in .env.development to match the ngrok domain, and
-# the same URL registered as a redirect URL on the Slack app and the Google
-# OAuth client.
+# --tunnel points ngrok at Vite (not at the node app) so that OAuth callbacks
+# come back to the same origin the browser is already on. It takes the domain
+# from CHOIR_DEV_TUNNEL_HOST in .env.development, and needs that same host
+# registered as a redirect URL on the Slack app. Note that Google's desktop
+# OAuth client will not accept an https callback — see docs/local-development.md.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -58,14 +58,20 @@ port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 if port_busy "$APP_PORT"; then die "port $APP_PORT is already in use (another dev server?)"; fi
 if port_busy "$WEB_PORT"; then die "port $WEB_PORT is already in use (another dev server?)"; fi
 
-DOCS_BASE_URL_VALUE="$(sed -n 's/^DOCS_BASE_URL=//p' "$ENV_FILE" | tail -1 | tr -d '\r')"
-
+# DOCS_BASE_URL is the origin every OAuth callback is built from, so it has to
+# name whatever the browser is actually on. Setting it here rather than in the
+# env file means both modes work without hand-editing between them: dotenv does
+# not override a variable that is already exported.
 if [ "$USE_TUNNEL" = true ]; then
   command -v ngrok >/dev/null || die "ngrok is not on PATH"
-  TUNNEL_HOST="${CHOIR_DEV_TUNNEL_HOST:-${DOCS_BASE_URL_VALUE#*://}}"
+  TUNNEL_HOST="${CHOIR_DEV_TUNNEL_HOST:-$(sed -n 's/^CHOIR_DEV_TUNNEL_HOST=//p' "$ENV_FILE" | tail -1 | tr -d '\r')}"
+  TUNNEL_HOST="${TUNNEL_HOST#*://}"
   TUNNEL_HOST="${TUNNEL_HOST%%/*}"
-  [ -n "$TUNNEL_HOST" ] || die "set CHOIR_DEV_TUNNEL_HOST or DOCS_BASE_URL in $ENV_FILE"
+  [ -n "$TUNNEL_HOST" ] || die "set CHOIR_DEV_TUNNEL_HOST in $ENV_FILE to your reserved ngrok domain"
   export CHOIR_DEV_TUNNEL_HOST="$TUNNEL_HOST"
+  export DOCS_BASE_URL="https://$TUNNEL_HOST"
+else
+  export DOCS_BASE_URL="http://localhost:$WEB_PORT"
 fi
 
 pids=()
@@ -93,16 +99,25 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "▸ node app   http://127.0.0.1:$APP_PORT  (Socket Mode, $ENV_FILE, data/dev)"
+echo "  DOCS_BASE_URL=$DOCS_BASE_URL"
 echo "  This connects to the REAL Slack workspace configured in $ENV_FILE."
 
 TS_NODE_EXEC='ts-node -r tsconfig-paths/register'
+
+# Without this the viewer is unusable locally: the SPA loads but every /api call
+# 401s, because Slack will not accept an http://localhost sign-in callback. The
+# route refuses to register whenever CHOIR_DEV_TUNNEL_HOST is set, so --tunnel
+# still gets the real Slack flow and no bypass.
+if [ "$USE_TUNNEL" = false ]; then
+  export CHOIR_DEV_LOGIN=true
+fi
+
 if [ "$FAKE_GOOGLE" = true ]; then
   TS_NODE_EXEC="$TS_NODE_EXEC -r ./scripts/dev/fake-google.ts"
-  export CHOIR_DEV_LOGIN=true
   # The sweep is what turns a simulated edit into a review card. Three minutes
   # is right for production and far too slow to iterate against.
   export GOOGLE_DRIFT_POLL_MS="${GOOGLE_DRIFT_POLL_MS:-5000}"
-  echo "  Drive and GitHub are faked, and /docs/auth/dev-login is on."
+  echo "  Drive and GitHub are faked."
 fi
 
 ENV_FILE="$ENV_FILE" \
@@ -137,12 +152,12 @@ echo
 echo "Open the viewer at:"
 if [ "$USE_TUNNEL" = true ]; then
   echo "  https://$CHOIR_DEV_TUNNEL_HOST/docs/<workspaceId>/README.md"
-elif [ "$FAKE_GOOGLE" = true ]; then
-  echo "  http://localhost:$WEB_PORT/docs/auth/dev-login?workspace=<workspaceId>&user=<userId>"
-  echo "  then: pnpm gdocs:seed  →  pnpm gdocs:edit"
 else
-  echo "  http://localhost:$WEB_PORT/docs/<workspaceId>/README.md"
-  echo "  (signing in needs a public HTTPS callback: use --tunnel or --fake-google)"
+  echo "  http://localhost:$WEB_PORT/docs/auth/dev-login?workspace=<workspaceId>&user=<userId>"
+  echo "  (signs you in, then opens the doc — the workspace id is in the startup log above)"
+  if [ "$FAKE_GOOGLE" = true ]; then
+    echo "  then: pnpm gdocs:seed  →  pnpm gdocs:edit"
+  fi
 fi
 echo
 echo "Ctrl-C stops everything."
