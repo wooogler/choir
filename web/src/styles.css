@@ -555,6 +555,20 @@ a {
   background: #f1f1ee;
 }
 
+/* Destructive actions. Ghost-weight until hovered, so it does not compete with
+   the primary action for attention while still reading as dangerous. */
+.doc-button-danger {
+  background: transparent;
+  color: #b42318;
+  border-color: #f0c7c2;
+}
+
+.doc-button-danger:not(:disabled):hover {
+  background: #b42318;
+  border-color: #b42318;
+  color: #ffffff;
+}
+
 .doc-notice {
   /* <output> is display:inline by default, so the vertical padding would spill
      out of the line box and overlap the content above instead of pushing it

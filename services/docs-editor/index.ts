@@ -1,3 +1,5 @@
+export { deleteDocument } from './delete-document';
+export type { DeleteDocumentResult } from './delete-document';
 export { saveEditedDocument } from './save-document';
 export type { SaveDocumentResult } from './save-document';
 export { saveUploadedAsset, IMAGE_EXTENSIONS, MAX_ASSET_BYTES, ALLOWED_IMAGE_TYPES } from './save-asset';

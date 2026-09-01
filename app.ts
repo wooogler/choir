@@ -18,6 +18,7 @@ import {
   buildClearSessionCookieHeader,
   buildSessionCookieHeader,
   buildSlackAuthorizeUrl,
+  deleteDocument,
   exchangeSlackOidcCode,
   getDocsWriteAccess,
   getSlackOidcConfig,
@@ -45,6 +46,8 @@ import { SqliteSlackInstallationStore } from 'services/slack/sqlite-installation
 import { ensureWorkspaceInitialized } from 'services/slack/workspace-bootstrap';
 import { GitHubSyncService } from 'services/sync/github-sync-service';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
+import { isReadOnlyFile } from 'services/workspace/read-only';
+import { WorkspaceStore } from 'services/workspace/workspace-store';
 
 dotenv.config({ path: process.env.ENV_FILE || process.env.DOTENV_CONFIG_PATH || '.env' });
 
@@ -685,6 +688,95 @@ function setupPublicSite(): void {
         return res.json({ ok: true, commitSha: result.commitSha });
       } catch (err) {
         app.logger.error('PUT /api/docs failed', err as Error);
+        return res.status(apiErrorStatus(err, 500)).json(apiErrorBody(err));
+      }
+    },
+  );
+
+  // API: delete a markdown document — removes it from GitHub and unwinds the
+  // local state keyed to it. Auth: signed session cookie + manager + GitHub push
+  // access, the same ladder as the save route above.
+  //
+  // Registered after registerGoogleDriveRoutes so DELETE /api/docs/:ws/google/link
+  // still matches ahead of this splat.
+  router.delete(
+    '/api/docs/:workspaceId/*splat',
+    expressForBodyParser.json({ limit: '64kb' }),
+    async (req: any, res: any) => {
+      try {
+        const workspaceId = String(req.params.workspaceId);
+        const filePath = Array.isArray(req.params.splat) ? req.params.splat.join('/') : String(req.params.splat);
+
+        if (!filePath) {
+          return res.status(400).json({ error: 'filePath is required' });
+        }
+        if (!filePath.endsWith('.md')) {
+          return res.status(400).json({ error: 'Only markdown documents can be deleted' });
+        }
+        // Deleting is irreversible in the viewer, so the caller has to name the
+        // document it means. The dialog makes the manager type it.
+        if (String(req.body?.confirmPath || '') !== filePath) {
+          return res.status(400).json({ error: 'The typed path does not match this document' });
+        }
+
+        const session = await readSession(req);
+        if (!session) {
+          return res.status(401).json({ error: 'Not signed in' });
+        }
+        if (session.workspaceId !== workspaceId) {
+          return res.status(403).json({ error: 'Session does not match workspace' });
+        }
+
+        const managerCheck = await isManager(workspaceId, session.userId);
+        if (!managerCheck) {
+          return res.status(403).json({ error: 'User is not a workspace manager' });
+        }
+
+        const writeAccess = await getDocsWriteAccess(workspaceId, session.userId);
+        if (!writeAccess.canPush) {
+          return res.status(403).json({
+            error: writeAccess.reason ?? 'No write access to the workspace repository',
+            code: 'GITHUB_WRITE_FORBIDDEN',
+          });
+        }
+
+        // The stricter containment form, with the trailing separator: for a
+        // delete a path escape means an unlink outside the mirror.
+        const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
+        const repoRootResolved = path.resolve(repoRoot);
+        const resolved = path.resolve(repoRootResolved, filePath);
+        if (resolved !== repoRootResolved && !resolved.startsWith(repoRootResolved + path.sep)) {
+          return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        const normalized = path.posix.normalize(filePath).replace(/^\/+/, '');
+        if (normalized === '.choir' || normalized.startsWith('.choir/')) {
+          return res.status(404).json({ error: 'File not found' });
+        }
+        if (!fs.existsSync(resolved)) {
+          return res.status(404).json({ error: 'File not found' });
+        }
+
+        // Read-only is advisory everywhere else, but this operation cannot be
+        // undone from the viewer, so here it is a refusal.
+        const readOnlyFiles = await new WorkspaceStore().getReadOnlyFiles(workspaceId);
+        if (isReadOnlyFile(readOnlyFiles, { path: filePath, name: path.posix.basename(filePath) })) {
+          return res.status(403).json({
+            error: 'This document is marked read-only. Clear that in App Home before deleting it.',
+            code: 'DOCUMENT_READ_ONLY',
+          });
+        }
+
+        const result = await deleteDocument({
+          workspaceId,
+          userId: session.userId,
+          filePath,
+          slackClient: app.client,
+        });
+
+        return res.json({ ok: true, commitSha: result.commitSha, nextFilePath: result.nextFilePath });
+      } catch (err) {
+        app.logger.error('DELETE /api/docs failed', err as Error);
         return res.status(apiErrorStatus(err, 500)).json(apiErrorBody(err));
       }
     },

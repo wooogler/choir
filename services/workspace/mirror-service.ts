@@ -140,6 +140,26 @@ export class WorkspaceMirrorService {
   }
 
   /**
+   * Removes a markdown document from the mirror, undoing every side effect of
+   * `writeMarkdownFile` except the path-map entry, which the caller re-saves
+   * from the surviving list.
+   *
+   * The section directory matters as much as the file: the QMD indexes are built
+   * from `sections/`, so leaving it behind keeps the deleted document answering
+   * questions. Empty parent directories are deliberately left alone — pruning
+   * them would race a concurrent write of a sibling document underneath.
+   */
+  public async removeMarkdownFile(workspaceId: string, relativePath: string): Promise<void> {
+    const targetPath = this.resolveMirrorPath(workspaceId, relativePath);
+    await fs.promises.rm(targetPath, { force: true });
+
+    const sectionDir = path.join(this.getSectionsRoot(workspaceId), relativePath);
+    await fs.promises.rm(sectionDir, { recursive: true, force: true });
+
+    Logger.info(`Workspace mirror removed file: ${relativePath}`, { workspaceId, targetPath });
+  }
+
+  /**
    * Writes a non-markdown repo file (e.g. an encrypted provenance sidecar under
    * `.choir/context/`) into the mirror so the viewer can read it locally without a
    * GitHub round-trip. Skips the markdown-only concerns (section split / path map).

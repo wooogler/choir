@@ -6,6 +6,7 @@ import { type DocumentTree, parseMarkdownToTree } from 'services/document';
 import type { SlackMessage } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { findConcurrentlyChangedPath } from './commit-concurrency';
+import { buildTreeEntries } from './commit-tree';
 import { toGitHubWriteError } from './write-error';
 
 export interface MarkdownFile {
@@ -541,11 +542,19 @@ class GithubService {
      * whose bytes would otherwise be committed as literal base64 text.
      */
     files: Array<{ path: string; content: string; encoding?: 'utf-8' | 'base64' }>;
+    /**
+     * Paths to remove in the same commit. In the Git Data API a tree entry whose
+     * `sha` is null deletes that path, so deletions ride the identical machinery
+     * as writes — including the clash detection and the non-fast-forward retry
+     * below, which the Contents API's deleteFile would skip.
+     */
+    deletions?: string[];
     workspaceId?: string;
     userId?: string;
   }): Promise<{ commitSha: string }> {
     const { owner, repo } = params;
-    if (params.files.length === 0) {
+    const deletions = params.deletions ?? [];
+    if (params.files.length === 0 && deletions.length === 0) {
       throw new GitHubError('commitFilesWithContext requires at least one file', {
         code: ErrorCodes.GITHUB_UPDATE_FAILED,
         metadata: { owner, repo },
@@ -569,7 +578,9 @@ class GithubService {
         }),
       );
 
-      const targetPaths = params.files.map((f) => f.path);
+      // Deletions belong here too: without them a manager saving the same
+      // document while a delete is in flight would go unnoticed and be clobbered.
+      const targetPaths = [...params.files.map((f) => f.path), ...deletions];
       const maxAttempts = 4;
       let commitSha = '';
       let firstHeadSha: string | undefined;
@@ -607,7 +618,7 @@ class GithubService {
             owner,
             repo,
             base_tree: baseTreeSha,
-            tree: blobs.map((b) => ({ path: b.path, mode: '100644', type: 'blob', sha: b.sha })),
+            tree: buildTreeEntries(blobs, deletions),
           }),
         );
         const newTreeSha = (treeResponse as any).data.sha;
@@ -642,17 +653,22 @@ class GithubService {
         }
       }
 
-      // Invalidate content cache for every committed path.
-      for (const file of params.files) {
+      // Invalidate content cache for every path the commit touched, deletions
+      // included — a cached body for a path that no longer exists is worse than
+      // a stale one.
+      for (const touchedPath of targetPaths) {
         const cacheKeys = Array.from(this.fileContentCache.keys()).filter((key) =>
-          key.startsWith(`${owner}/${repo}/${file.path}:`),
+          key.startsWith(`${owner}/${repo}/${touchedPath}:`),
         );
         for (const key of cacheKeys) {
           this.fileContentCache.delete(key);
         }
       }
 
-      Logger.info(`Committed ${params.files.length} file(s) in one commit ${commitSha}`, { owner, repo, branch });
+      Logger.info(
+        `Committed ${params.files.length} file(s) and ${deletions.length} deletion(s) in one commit ${commitSha}`,
+        { owner, repo, branch },
+      );
       return { commitSha };
     } catch (error) {
       const failure = toGitHubWriteError(error, {

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DocFile, DocSectionUsage, RepoInfo, SessionInfo, TocItem } from '../types';
-import { encodePath, extractToc, parseDocsUrl, scrollToAnchor, slugifyHeading } from '../utils/docs';
+import { docsPath, encodePath, extractToc, parseDocsUrl, scrollToAnchor, slugifyHeading } from '../utils/docs';
 import { CommitDialog } from './CommitDialog';
 import { CrepeEditor, type CrepeEditorHandle } from './CrepeEditor';
+import { DeleteDocumentDialog } from './DeleteDocumentDialog';
 import { DocHeader } from './DocHeader';
 import { FilesSidebar } from './FilesSidebar';
 import { FloatingToc } from './FloatingToc';
@@ -106,6 +107,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [activeSlug, setActiveSlug] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [showCommitDialog, setShowCommitDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -724,6 +726,45 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     clearEditSession();
   }, [clearEditSession]);
 
+  const handleDeleteDocument = useCallback(async () => {
+    setSaving(true);
+    setSaveError(null);
+
+    try {
+      const response = await fetch(`/api/docs/${encodeURIComponent(workspaceId)}/${encodePath(filePath)}`, {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        // The server checks this against the path in the URL, so a stray click
+        // on a different document cannot be what gets deleted.
+        body: JSON.stringify({ confirmPath: filePath }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || `${response.status} ${response.statusText}`);
+      }
+
+      const data = (await response.json()) as { nextFilePath?: string | null };
+      setShowDeleteDialog(false);
+
+      if (data.nextFilePath) {
+        // A full load, not a pushState: the file tree is fetched once per
+        // workspace, so a soft navigation would leave the deleted document in
+        // the sidebar.
+        window.location.href = docsPath(workspaceId, data.nextFilePath);
+        return;
+      }
+      // Nothing left to show, and /docs/:workspaceId alone does not render a
+      // document, so stay put and say so.
+      setNotice('Document deleted. This repository has no markdown documents left.');
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Failed to delete');
+    } finally {
+      setSaving(false);
+    }
+  }, [filePath, workspaceId]);
+
   const handleSubmitCommit = useCallback(
     async (commitMessage: string) => {
       setSaving(true);
@@ -801,6 +842,16 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       {canEdit && !isEditing && (
         <button type="button" className="doc-button doc-button-ghost" onClick={handleStartDocumentEdit}>
           Edit document
+        </button>
+      )}
+      {canEdit && !isEditing && !dirty && (
+        <button
+          type="button"
+          className="doc-button doc-button-ghost"
+          onClick={() => setShowDeleteDialog(true)}
+          disabled={saving}
+        >
+          Delete…
         </button>
       )}
       {canEdit && dirty && (
@@ -950,6 +1001,15 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           submitting={saving}
           onCancel={() => setShowCommitDialog(false)}
           onSubmit={handleSubmitCommit}
+        />
+      )}
+      {showDeleteDialog && (
+        <DeleteDocumentDialog
+          filePath={filePath}
+          branch={repo?.branch}
+          submitting={saving}
+          onCancel={() => setShowDeleteDialog(false)}
+          onConfirm={handleDeleteDocument}
         />
       )}
     </div>
