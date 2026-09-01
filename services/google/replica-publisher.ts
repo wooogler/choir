@@ -159,8 +159,20 @@ interface FencedPush {
  * nothing changed in between.
  *
  * The version is observed twice: once on the update response and once after the
- * export. Verified in the P0 spike that these agree when nobody else is editing,
- * so a disagreement means a human wrote to the document inside the window.
+ * export. When they agree, nothing happened in the window and the export is a
+ * faithful baseline.
+ *
+ * When they disagree, that is a trigger and not proof. Drive bumps `version`
+ * for metadata as readily as for content — a rename alone does it, measured in
+ * the P0 spike — and in practice a freshly linked document disagrees routinely:
+ * the write settles in more than one bump, or somebody simply has the Doc open.
+ * Treating that as a human edit left every new replica `drifted` with no
+ * baseline at all, holding back the very first push.
+ *
+ * So a disagreement is settled on content instead: take the export again, and
+ * if the two are byte-identical then nothing was written between them and the
+ * first one still describes the document. Only genuinely differing bytes mean
+ * somebody wrote inside the window.
  */
 async function pushWithVersionFence(
   auth: Awaited<ReturnType<typeof getWorkspaceClient>> & object,
@@ -171,11 +183,20 @@ async function pushWithVersionFence(
   const baseline = await exportDocMarkdown(auth, fileId);
   const after = await getDocMeta(auth, fileId);
 
-  return {
-    version: after.version,
-    baseline,
-    fenced: Boolean(written.version) && written.version === after.version,
-  };
+  if (Boolean(written.version) && written.version === after.version) {
+    return { version: after.version, baseline, fenced: true };
+  }
+
+  const confirmation = await exportDocMarkdown(auth, fileId);
+  const settled = await getDocMeta(auth, fileId);
+
+  if (confirmation === baseline) {
+    // The newest version we have seen, so the poller does not read the same
+    // bump we just forgave as a fresh change.
+    return { version: settled.version, baseline, fenced: true };
+  }
+
+  return { version: settled.version, baseline: confirmation, fenced: false };
 }
 
 export interface PublishManyResult {

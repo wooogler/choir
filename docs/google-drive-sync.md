@@ -239,8 +239,13 @@ publishReplica(workspaceId, path, content, { force })
   → files.update(text/markdown import, 응답 fields=version) … v0 관측
   → files.export(text/markdown) → baseline 후보
   → files.get(version) … v1 관측
-  → v1 !== v0 이면: baseline 후보 폐기, 1회 재시도 → 재실패 시 state=drifted로 마킹
-     (update~export 사이에 낀 사람 편집이 baseline에 흡수되어 영구 미감지되는 것 방지)
+  → v1 !== v0 이면: export를 1회 더 떠서 **내용으로 판정**
+     · 두 export가 byte 동일 → 사람이 끼어들지 않았다. baseline 저장, lastPushedVersion=v2
+       (관측한 최신 version. 안 그러면 다음 sweep이 방금 눈감아준 bump를 새 변경으로 읽는다)
+     · 다르면 → baseline 후보 폐기, state=drifted
+     (update~export 사이에 낀 사람 편집이 baseline에 흡수되어 영구 미감지되는 것 방지.
+      단 version 증가만으로 drifted를 찍으면 갓 링크한 복제본이 baseline 없이 묶인다 —
+      실제 Drive는 내용 쓰기 하나에 version을 여러 번 올리고, Doc을 탭에 열어두기만 해도 오른다)
   → v1 === v0 이면: baseline 저장, lastPushedVersion=v1, 해시·시각 기록, state=synced
 ```
 

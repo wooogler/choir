@@ -172,12 +172,13 @@ describe('Google Docs replica publisher', () => {
     expect(state?.driftDetectedAt).toBeUndefined();
   });
 
-  it('treats a version change between write and readback as drift and stores no baseline', async () => {
+  it('treats differing exports across a version change as drift and stores no baseline', async () => {
     // A human edit landing inside that window would otherwise be exported into
     // the baseline, after which the poller compares their edit against itself and
     // the change is never reported.
     mockReplace.mockResolvedValue({ fileId: 'file-a', version: '7' });
     mockGetMeta.mockResolvedValue({ fileId: 'file-a', version: '8' });
+    mockExport.mockResolvedValueOnce('exported markdown').mockResolvedValueOnce('somebody typed this');
 
     const result = await publishReplica({ workspaceId: 'T1', githubPath: 'docs/a.md', markdown: '# Title' });
 
@@ -186,14 +187,35 @@ describe('Google Docs replica publisher', () => {
     expect((await getDocState('T1', 'docs/a.md'))?.status).toBe('drifted');
   });
 
-  it('treats a missing version on the update response as unfenced', async () => {
+  it('forgives a version change that did not change the content', async () => {
+    // Drive bumps `version` for metadata as readily as for content, and a
+    // freshly linked document does it routinely. Reading that as a human edit
+    // left every new replica drifted with no baseline, holding back the first
+    // push — so identical exports settle it instead.
+    mockReplace.mockResolvedValue({ fileId: 'file-a', version: '7' });
+    mockGetMeta.mockResolvedValue({ fileId: 'file-a', version: '9' });
+
+    const result = await publishReplica({ workspaceId: 'T1', githubPath: 'docs/a.md', markdown: '# Title' });
+
+    expect(result.outcome).toBe('published');
+    expect(result.detail).toBeUndefined();
+    expect(await readBaseline('T1', 'docs/a.md')).toBe('exported markdown');
+
+    const state = await getDocState('T1', 'docs/a.md');
+    expect(state?.status).toBe('synced');
+    // The newest version seen, so the next sweep does not read the forgiven bump
+    // as a fresh change.
+    expect(state?.lastPushedVersion).toBe('9');
+  });
+
+  it('settles a missing version on the update response the same way', async () => {
     mockReplace.mockResolvedValue({ fileId: 'file-a' });
     mockGetMeta.mockResolvedValue({ fileId: 'file-a', version: '7' });
 
     const result = await publishReplica({ workspaceId: 'T1', githubPath: 'docs/a.md', markdown: '# Title' });
 
-    expect(result.detail).toBe('raced-into-drift');
-    expect(await readBaseline('T1', 'docs/a.md')).toBeNull();
+    expect(result.outcome).toBe('published');
+    expect(await readBaseline('T1', 'docs/a.md')).toBe('exported markdown');
   });
 
   it('reports an unlinked document without calling Drive', async () => {
