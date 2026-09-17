@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { suggestUpdatesCallback } from '../document-update/suggestions/suggest-updates-handler';
@@ -12,10 +13,14 @@ export const suggestUpdatesFromAnonymousReplyCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // Everything here is DM'd back to the person who clicked.
+  const t = tForRequest(context);
 
   try {
     const actionValue = body.actions[0].value;
@@ -35,14 +40,14 @@ export const suggestUpdatesFromAnonymousReplyCallback = async ({
     if (!originalSessionData) {
       await client.chat.postMessage({
         channel: body.user.id, // DM으로 전송
-        text: "😅 I can't find the original conversation details. The session may have expired.",
+        text: t('qa.error.sessionExpired'),
         blocks: [
           {
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
             text: {
               type: 'mrkdwn',
-              text: "😅 I can't find the original conversation details. The session may have expired.",
+              text: t('qa.error.sessionExpired'),
             },
           },
         ],
@@ -80,23 +85,23 @@ ${replies.map((reply: string, index: number) => `- ${replyAuthors[index]}: ${rep
     // Get managers for the workspace
     const workspaceId = await getWorkspaceId(client);
     const managers = await getManagers(workspaceId);
-    let managerText = 'managers';
+    let managerText = t('qa.managers.fallback');
     if (managers.length > 0) {
       // Get first manager's name as example
       const firstManagerName = await getUserName(managers[0], client);
-      managerText = managers.length === 1 ? firstManagerName : `${firstManagerName} and other managers`;
+      managerText = managers.length === 1 ? firstManagerName : t('qa.managers.andOthers', { name: firstManagerName });
     }
 
     // 성공 메시지 표시
     await client.chat.postMessage({
       channel: body.user.id, // DM으로 전송
-      text: `✅ Analysis Complete • 📊 10 messages analyzed\nSure! I'll suggest the following update to ${managerText}.`,
+      text: t('qa.anonReply.analysis.text', { managers: managerText }),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `✅ *Analysis Complete* • 📊 10 messages analyzed\nSure! I'll suggest the following update to ${managerText}.`,
+            text: t('qa.anonReply.analysis', { managers: managerText }),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
         },
@@ -152,12 +157,12 @@ ${replies.map((reply: string, index: number) => `- ${replyAuthors[index]}: ${rep
 
     await client.chat.postMessage({
       channel: body.user.id, // DM으로 전송
-      text: '😔 Something went wrong starting the document update. Please try again.',
+      text: t('qa.error.startUpdate'),
       blocks: [
         {
           type: 'section',
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-          text: { type: 'mrkdwn', text: '😔 Something went wrong starting the document update. Please try again.' },
+          text: { type: 'mrkdwn', text: t('qa.error.startUpdate') },
         },
       ],
     });

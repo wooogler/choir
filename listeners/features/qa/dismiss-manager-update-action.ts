@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -10,10 +11,15 @@ export const dismissManagerUpdateCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // `replace_original` rewrites the manager's own ephemeral, so this is their
+  // language.
+  const t = tForRequest(context);
 
   try {
     const actionValue = body.actions[0].value;
@@ -32,13 +38,13 @@ export const dismissManagerUpdateCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: 'Reply sent successfully!',
+          text: t('qa.dismissManager.text'),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '✅ *Reply successfully sent to the anonymous questioner!*\nIf you need help with documentation updates in the future, just mention me.',
+                text: t('qa.dismissManager'),
               },
             },
           ],

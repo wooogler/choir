@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -10,10 +11,15 @@ export const dismissAnonymousReplyCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // `replace_original` rewrites the clicker's own ephemeral, so this is their
+  // language.
+  const t = tForRequest(context);
 
   try {
     const sessionId = body.actions[0].value;
@@ -27,13 +33,13 @@ export const dismissAnonymousReplyCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: 'Thanks for the reply!',
+          text: t('qa.dismissAnonymous.text'),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '✅ *Thanks for the reply!*\nIf you need help with documentation updates in the future, just mention me.',
+                text: t('qa.dismissAnonymous'),
               },
             },
           ],

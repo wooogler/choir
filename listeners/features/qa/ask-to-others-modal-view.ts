@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, trackAnonymousMessage } from 'services/common';
+import { tForRequest, tForUser } from 'services/i18n';
 import { createPrivateMessage, createPrivateMessagePreview, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { logModalSubmit } from '../../../services/common/interaction-tracker';
@@ -12,10 +13,15 @@ export const askToOthersSubmitCallback = async ({
   body,
   view,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs) => {
   const startTime = Date.now();
   await ack();
+
+  // Confirmations go back to the submitter; the DM itself is written for the
+  // people receiving it (see `tRecipient` below).
+  const t = tForRequest(context);
 
   try {
     const sessionId = view.private_metadata;
@@ -76,6 +82,12 @@ export const askToOthersSubmitCallback = async ({
     // DM 참여자 결정: anonymous가 아닌 경우 질문자도 포함
     const dmParticipants = isAnonymous ? selectedUsers : [userId, ...selectedUsers];
 
+    // A group DM has several readers and one language: the first person the
+    // sharer picked stands in for the group. `client` is passed because a
+    // recipient may never have been looked up before.
+    const recipient = { workspaceId: currentWorkspaceId, userId: selectedUsers[0], client };
+    const tRecipient = await tForUser(currentWorkspaceId, selectedUsers[0], client);
+
     // 변수 선언
     let successCount = 0;
     let failCount = 0;
@@ -111,7 +123,7 @@ export const askToOthersSubmitCallback = async ({
 
       if (conversationId) {
         // 공통 함수를 사용해 메시지 블록 생성 (anonymous 옵션 포함)
-        const messageBlocks = createPrivateMessage(
+        const messageBlocks = await createPrivateMessage(
           conversationId,
           userId,
           sessionData.originalQuestion,
@@ -121,10 +133,11 @@ export const askToOthersSubmitCallback = async ({
           userName,
           sessionId, // sessionId 전달
           userComment,
+          recipient,
         );
 
         // Create comprehensive text that matches the blocks content for conversation history
-        const messageText = createPrivateMessagePreview(
+        const messageText = await createPrivateMessagePreview(
           'team member', // recipientName - generic since it could be multiple people
           userName,
           sessionData.originalQuestion,
@@ -132,6 +145,7 @@ export const askToOthersSubmitCallback = async ({
           true, // canAnswer - assume true for private sharing
           isAnonymous,
           userComment,
+          recipient,
         );
 
         const postedMessage = await client.chat.postMessage({
@@ -155,13 +169,13 @@ export const askToOthersSubmitCallback = async ({
           await client.chat.postMessage({
             channel: conversationId,
             thread_ts: postedMessage.ts,
-            text: 'Feel free to discuss this question in this thread! Your responses will be automatically shared with the anonymous questioner.',
+            text: tRecipient('qa.othersSubmit.threadGuide.text'),
             blocks: [
               {
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
-                  text: "👋 Feel free to discuss this question in this thread!\n\n💡 *Your responses will be automatically shared with the anonymous questioner.*\n\n🤖 *Need CHOIR to help?* Just mention me with `@choir` and I'll join the discussion!",
+                  text: tRecipient('qa.othersSubmit.threadGuide'),
                 },
                 block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
               },
@@ -195,13 +209,13 @@ export const askToOthersSubmitCallback = async ({
       // 공통 성공 메시지. For an anonymous question a PUBLIC post in the original
       // thread ties the hidden questioner to this action, so notify them privately
       // (ephemeral) instead; non-anonymous keeps the public confirmation.
-      const confirmationText = `✅ Private DM created with: ${participantsList}`;
+      const confirmationText = t('qa.othersSubmit.dmCreated.text', { participants: participantsList });
       const confirmationBlocks = [
         {
           type: 'section' as const,
           text: {
             type: 'mrkdwn' as const,
-            text: `✅ *Private DM created*\n📋 Participants: ${participantsList}`,
+            text: t('qa.othersSubmit.dmCreated', { participants: participantsList }),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
         },
@@ -240,13 +254,13 @@ export const askToOthersSubmitCallback = async ({
           channel: sessionData.originalChannelId,
           user: userId,
           ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
-          text: 'Access your private DM',
+          text: t('qa.othersSubmit.dmReady.text'),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '💬 *Your private DM is ready*\nClick the button below to open the conversation.',
+                text: t('qa.othersSubmit.dmReady'),
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.EPHEMERAL_HELPER),
             },
@@ -257,7 +271,7 @@ export const askToOthersSubmitCallback = async ({
                   type: 'button',
                   text: {
                     type: 'plain_text',
-                    text: 'Open DM',
+                    text: t('qa.othersSubmit.openDm.button'),
                     emoji: true,
                   },
                   style: 'primary',
@@ -278,13 +292,13 @@ export const askToOthersSubmitCallback = async ({
         channel: sessionData.originalChannelId,
         user: userId,
         ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
-        text: "⚠️ I couldn't create the private DM. Please try again.",
+        text: t('qa.othersSubmit.dmFailed.text'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: "⚠️ *I couldn't create the private DM.* Please try again in a moment.",
+              text: t('qa.othersSubmit.dmFailed'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -298,7 +312,7 @@ export const askToOthersSubmitCallback = async ({
     });
 
     // 로그: 결과
-    const workspaceId = await getWorkspaceId(client);
+    const workspaceId = currentWorkspaceId;
     // originalChannelId에서 채널 정보 추출
     const actualChannelId = sessionData.originalChannelId || 'modal';
     let actualChannelType: 'public' | 'private' | 'dm' = 'dm';

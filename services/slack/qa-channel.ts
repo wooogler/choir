@@ -1,9 +1,57 @@
 import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { type T, createT } from '../../src/i18n';
+import { DEFAULT_LOCALE } from '../../src/i18n/supported-locales';
+import { tForUser, tForWorkspace } from '../i18n';
 import { WorkspaceStore } from '../workspace/workspace-store';
+import { getWorkspaceId } from './user-management';
 
 const workspaceStore = new WorkspaceStore();
+
+/** Who a privately shared Q&A is addressed to, so it can be written in their language. */
+export interface PrivateMessageRecipient {
+  workspaceId: string;
+  userId: string;
+  /** Pass it when the recipient may never have been looked up before. */
+  client?: WebClient;
+}
+
+/**
+ * A Q&A posted into a channel has no single reader, so it follows the
+ * workspace's language. `workspaceId` is passed in when the caller already has
+ * it; otherwise it is looked up from the client, the way the rest of this file
+ * gets at workspace-scoped state.
+ *
+ * A locale is a presentation detail: if resolving it fails, the message still
+ * goes out, in English.
+ */
+async function translatorForChannel(workspaceId?: string, client?: WebClient): Promise<T> {
+  try {
+    const resolved = workspaceId ?? (client ? await getWorkspaceId(client) : undefined);
+    if (resolved) return await tForWorkspace(resolved);
+  } catch (error) {
+    Logger.error('Error resolving the workspace locale for a shared Q&A', error as Error, { workspaceId });
+  }
+  return createT(DEFAULT_LOCALE);
+}
+
+/**
+ * A Q&A sent as a DM is read by the person it was sent to, so it follows their
+ * language. A group DM has several readers and only one language: the first
+ * person the sharer picked stands in for the group.
+ */
+async function translatorForRecipient(recipient?: PrivateMessageRecipient): Promise<T> {
+  if (!recipient) return createT(DEFAULT_LOCALE);
+  try {
+    return await tForUser(recipient.workspaceId, recipient.userId, recipient.client);
+  } catch (error) {
+    Logger.error('Error resolving a recipient locale for a private Q&A', error as Error, {
+      userId: recipient.userId,
+    });
+    return createT(DEFAULT_LOCALE);
+  }
+}
 
 // When no Q&A channel is configured and no #qna exists, getQAChannel would scan
 // conversations.list on EVERY question (a Tier-2, ~20/min rate-limited call).
@@ -116,8 +164,11 @@ export async function createQAChannelMessage(
   questionerName?: string,
   userComment?: string,
   client?: WebClient,
+  workspaceId?: string,
 ) {
-  const senderIdentity = isAnonymous ? 'A team member' : questionerName ? `*${questionerName}*` : 'A team member';
+  const t = await translatorForChannel(workspaceId, client);
+  const teamMember = t('qa.share.sender.teamMember');
+  const senderIdentity = isAnonymous ? teamMember : questionerName ? `*${questionerName}*` : teamMember;
   const blocks: any[] = [];
 
   if (!canAnswer) {
@@ -125,7 +176,7 @@ export async function createQAChannelMessage(
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `Hi, #${channelName} - ${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n${question}`,
+        text: t('qa.share.channel.intro', { channelName, sender: senderIdentity, question }),
       },
       block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO_UNANSWERED),
     };
@@ -138,14 +189,14 @@ export async function createQAChannelMessage(
           introBlock.accessory = {
             type: 'image',
             image_url: userInfo.user.profile.image_192,
-            alt_text: questionerName || 'User profile',
+            alt_text: questionerName || t('qa.share.image.alt.profile'),
           };
         } else {
           // Fallback to default profile image
           introBlock.accessory = {
             type: 'image',
             image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-            alt_text: questionerName || 'User profile',
+            alt_text: questionerName || t('qa.share.image.alt.profile'),
           };
         }
       } catch (error) {
@@ -154,7 +205,7 @@ export async function createQAChannelMessage(
         introBlock.accessory = {
           type: 'image',
           image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-          alt_text: questionerName || 'User profile',
+          alt_text: questionerName || t('qa.share.image.alt.profile'),
         };
       }
     } else if (isAnonymous) {
@@ -162,7 +213,7 @@ export async function createQAChannelMessage(
       introBlock.accessory = {
         type: 'image',
         image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-        alt_text: 'Anonymous user',
+        alt_text: t('qa.share.image.alt.anonymous'),
       };
     }
 
@@ -170,7 +221,7 @@ export async function createQAChannelMessage(
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `However, I was not able to answer the question. Could anyone help?`,
+        text: t('qa.share.channel.unanswered'),
       },
     });
   } else {
@@ -178,7 +229,7 @@ export async function createQAChannelMessage(
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `Hi, #${channelName} - ${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n${question}`,
+        text: t('qa.share.channel.intro', { channelName, sender: senderIdentity, question }),
       },
       block_id: createCHOIRBlockId(CHOIRMessageType.QA_SHARE_INTRO_ANSWERED),
     };
@@ -191,14 +242,14 @@ export async function createQAChannelMessage(
           introBlock.accessory = {
             type: 'image',
             image_url: userInfo.user.profile.image_192,
-            alt_text: questionerName || 'User profile',
+            alt_text: questionerName || t('qa.share.image.alt.profile'),
           };
         } else {
           // Fallback to default profile image
           introBlock.accessory = {
             type: 'image',
             image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-            alt_text: questionerName || 'User profile',
+            alt_text: questionerName || t('qa.share.image.alt.profile'),
           };
         }
       } catch (error) {
@@ -207,7 +258,7 @@ export async function createQAChannelMessage(
         introBlock.accessory = {
           type: 'image',
           image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-          alt_text: questionerName || 'User profile',
+          alt_text: questionerName || t('qa.share.image.alt.profile'),
         };
       }
     } else if (isAnonymous) {
@@ -215,7 +266,7 @@ export async function createQAChannelMessage(
       introBlock.accessory = {
         type: 'image',
         image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-        alt_text: 'Anonymous user',
+        alt_text: t('qa.share.image.alt.anonymous'),
       };
     }
 
@@ -225,14 +276,16 @@ export async function createQAChannelMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*My response:*\n${response}`,
+          text: t('qa.share.response', { response }),
         },
       },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `${isAnonymous ? 'The team member' : senderIdentity} would like to discuss this response with others. Could anyone help?`,
+          text: t('qa.share.channel.discuss', {
+            sender: isAnonymous ? t('qa.share.sender.theTeamMember') : senderIdentity,
+          }),
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
       },
@@ -249,7 +302,10 @@ export async function createQAChannelMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${isAnonymous ? 'The team member' : questionerName || 'A team member'} added:*\n${userComment}`,
+          text: t('qa.share.comment', {
+            author: isAnonymous ? t('qa.share.sender.theTeamMember') : questionerName || teamMember,
+            comment: userComment,
+          }),
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.USER_COMMENT),
       },
@@ -262,7 +318,7 @@ export async function createQAChannelMessage(
 /**
  * Q&A 채널용 미리보기 텍스트를 생성합니다
  */
-export function createQAChannelPreview(
+export async function createQAChannelPreview(
   channelName: string,
   questionerId: string,
   question: string,
@@ -271,19 +327,28 @@ export function createQAChannelPreview(
   isAnonymous?: boolean,
   questionerName?: string,
   userComment?: string,
-): string {
-  const senderIdentity = isAnonymous ? 'Anonymous user' : questionerName || 'A team member';
+  workspaceId?: string,
+): Promise<string> {
+  const t = await translatorForChannel(workspaceId);
+  const senderIdentity = isAnonymous
+    ? t('qa.share.sender.anonymous')
+    : questionerName || t('qa.share.sender.teamMember');
   let preview = '';
 
   if (!canAnswer) {
-    preview = `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. Could anyone help?`;
+    preview = t('qa.share.channel.preview.unanswered', { channelName, sender: senderIdentity, question });
   } else {
-    preview = `Hi, #${channelName}\n${senderIdentity} asked the following question and this was my response.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nHowever, ${senderIdentity} wants to discuss this with others. Could anyone help?`;
+    preview = t('qa.share.channel.preview.answered', {
+      channelName,
+      sender: senderIdentity,
+      question,
+      response,
+    });
   }
 
   // Add user comment if provided
   if (userComment && userComment.trim()) {
-    preview += `\n\n*${senderIdentity} added:*\n${userComment}`;
+    preview += `\n\n${t('qa.share.comment', { author: senderIdentity, comment: userComment })}`;
   }
 
   return preview;
@@ -292,7 +357,7 @@ export function createQAChannelPreview(
 /**
  * 개인 메시지용 블록을 생성합니다
  */
-export function createPrivateMessage(
+export async function createPrivateMessage(
   recipientId: string,
   questionerId: string,
   question: string,
@@ -302,8 +367,11 @@ export function createPrivateMessage(
   questionerName?: string,
   sessionId?: string,
   userComment?: string,
+  recipient?: PrivateMessageRecipient,
 ) {
-  const senderIdentity = isAnonymous ? 'A team member' : questionerName || 'A team member';
+  const t = await translatorForRecipient(recipient);
+  const teamMember = t('qa.share.sender.teamMember');
+  const senderIdentity = isAnonymous ? teamMember : questionerName || teamMember;
 
   const blocks: any[] = [];
 
@@ -313,7 +381,7 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.`,
+          text: t('qa.private.intro', { sender: senderIdentity }),
         },
         ...(isAnonymous && { block_id: createCHOIRBlockId(CHOIRMessageType.ANONYMOUS_QUESTION) }),
       },
@@ -321,14 +389,14 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Question:*\n${question}`,
+          text: t('qa.private.question', { question }),
         },
       },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `However, I was not able to answer the question. The team member would like your help with this question.`,
+          text: t('qa.private.unanswered'),
         },
       },
     );
@@ -338,7 +406,7 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.`,
+          text: t('qa.private.intro', { sender: senderIdentity }),
         },
         ...(isAnonymous && { block_id: createCHOIRBlockId(CHOIRMessageType.ANONYMOUS_QUESTION) }),
       },
@@ -346,21 +414,21 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Question:*\n${question}`,
+          text: t('qa.private.question', { question }),
         },
       },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*My response:*\n${response}`,
+          text: t('qa.share.response', { response }),
         },
       },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `${senderIdentity} would like to discuss this with you. Could you help them?`,
+          text: t('qa.private.discuss', { sender: senderIdentity }),
         },
       },
     );
@@ -376,7 +444,10 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${isAnonymous ? 'The team member' : questionerName || 'A team member'} added:*\n${userComment}`,
+          text: t('qa.share.comment', {
+            author: isAnonymous ? t('qa.share.sender.theTeamMember') : questionerName || teamMember,
+            comment: userComment,
+          }),
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.USER_COMMENT),
       },
@@ -393,7 +464,7 @@ export function createPrivateMessage(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '💬 *Want to reply to the questioner?*\nSimply respond in this thread! Your replies will be automatically forwarded to the anonymous questioner.',
+          text: t('qa.private.anonymousReplyHint'),
         },
       },
     );
@@ -405,7 +476,7 @@ export function createPrivateMessage(
 /**
  * 개인 메시지용 미리보기 텍스트를 생성합니다
  */
-export function createPrivateMessagePreview(
+export async function createPrivateMessagePreview(
   recipientName: string,
   questionerName: string,
   question: string,
@@ -413,19 +484,21 @@ export function createPrivateMessagePreview(
   canAnswer: boolean,
   isAnonymous?: boolean,
   userComment?: string,
-): string {
-  const senderIdentity = isAnonymous ? 'Anonymous user' : questionerName;
+  recipient?: PrivateMessageRecipient,
+): Promise<string> {
+  const t = await translatorForRecipient(recipient);
+  const senderIdentity = isAnonymous ? t('qa.share.sender.anonymous') : questionerName;
   let preview = '';
 
   if (!canAnswer) {
-    preview = `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\nHowever, I was not able to answer the question. The team member would like your help with this question.`;
+    preview = t('qa.private.preview.unanswered', { sender: senderIdentity, question });
   } else {
-    preview = `Hi there!\n${senderIdentity} asked me the following question and shared my response with you.\n\n*Question:*\n\`\`\`${question}\`\`\`\n\n*My response:*\n\`\`\`${response}\`\`\`\n\nThe team member would like to discuss this with you. Could you help them?`;
+    preview = t('qa.private.preview.answered', { sender: senderIdentity, question, response });
   }
 
   // Add user comment if provided
   if (userComment && userComment.trim()) {
-    preview += `\n\n*${senderIdentity} added:*\n${userComment}`;
+    preview += `\n\n${t('qa.share.comment', { author: senderIdentity, comment: userComment })}`;
   }
 
   return preview;

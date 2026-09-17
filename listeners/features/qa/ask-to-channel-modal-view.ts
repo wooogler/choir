@@ -1,8 +1,10 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
+import { tForRequest } from 'services/i18n';
 import { createQAChannelMessage, createQAChannelPreview, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { logModalSubmit } from '../../../services/common/interaction-tracker';
+import type { T } from '../../../src/i18n';
 
 async function postQAChannelMessage(params: {
   client: any;
@@ -10,8 +12,9 @@ async function postQAChannelMessage(params: {
   messageText: string;
   messageBlocks: any[];
   logger: any;
+  t: T;
 }) {
-  const { client, qaChannelId, messageText, messageBlocks, logger } = params;
+  const { client, qaChannelId, messageText, messageBlocks, logger, t } = params;
 
   try {
     return await client.chat.postMessage({
@@ -29,9 +32,7 @@ async function postQAChannelMessage(params: {
       await client.conversations.join({ channel: qaChannelId });
     } catch (joinError: any) {
       if (joinError?.data?.error === 'missing_scope' && joinError?.data?.needed === 'channels:join') {
-        throw new Error(
-          'The bot is not in the configured Q&A channel and cannot join automatically because the Slack app is missing the channels:join scope. Add channels:join and reinstall the app, or invite the bot to the Q&A channel manually.',
-        );
+        throw new Error(t('qa.channelSubmit.notInChannel'));
       }
       throw joinError;
     }
@@ -71,10 +72,16 @@ export const askToChannelSubmitCallback = async ({
   body,
   view,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs) => {
   const startTime = Date.now();
   await ack();
+
+  // Everything this handler says back is addressed to the submitter. What goes
+  // *into* the Q&A channel follows the workspace's language instead, which
+  // `createQAChannelMessage` / `createQAChannelPreview` resolve themselves.
+  const t = tForRequest(context);
 
   try {
     const { sessionId, qaChannelId } = JSON.parse(view.private_metadata);
@@ -82,10 +89,10 @@ export const askToChannelSubmitCallback = async ({
       (view.state.values.anonymous_select?.anonymous_checkbox_channel?.selected_options?.length || 0) > 0;
     const userComment = view.state.values.user_comment?.comment_text?.value || '';
     const userId = body.user.id;
+    const workspaceId = await getWorkspaceId(client);
 
     if (!sessionId || !qaChannelId) {
       // 로그: 필수 데이터 없음
-      const workspaceId = await getWorkspaceId(client);
       logModalSubmit(
         userId,
         workspaceId,
@@ -108,7 +115,6 @@ export const askToChannelSubmitCallback = async ({
     const sessionData = getSessionData(sessionId, SessionType.DOCUMENT_UPDATE) as any;
     if (!sessionData) {
       // 로그: 세션 데이터 없음
-      const workspaceId = await getWorkspaceId(client);
       logModalSubmit(
         userId,
         workspaceId,
@@ -156,10 +162,11 @@ export const askToChannelSubmitCallback = async ({
       userName,
       userComment,
       client,
+      workspaceId,
     );
 
     // Create comprehensive text that matches the blocks content for conversation history
-    const messageText = createQAChannelPreview(
+    const messageText = await createQAChannelPreview(
       channelName,
       userId,
       question,
@@ -168,6 +175,7 @@ export const askToChannelSubmitCallback = async ({
       isAnonymous,
       userName,
       userComment,
+      workspaceId,
     );
 
     // Q&A 채널에 메시지 전달
@@ -177,19 +185,21 @@ export const askToChannelSubmitCallback = async ({
       messageText,
       messageBlocks,
       logger,
+      t,
     });
 
     // 사용자에게 성공 메시지 전송 (원본 채널이 있는 경우)
     if (sessionData.originalChannelId) {
+      const postedText = t('qa.channelSubmit.posted', { channel: `<#${qaChannelId}>` });
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,
-        text: `✅ Your Q&A has been posted to <#${qaChannelId}>`,
+        text: postedText,
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `✅ Your Q&A has been posted to <#${qaChannelId}>`,
+              text: postedText,
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
           },
@@ -204,7 +214,6 @@ export const askToChannelSubmitCallback = async ({
     });
 
     // 로그: 성공
-    const workspaceId = await getWorkspaceId(client);
     // originalChannelId에서 채널 정보 추출
     const actualChannelId = sessionData.originalChannelId || 'modal';
     let actualChannelType: 'public' | 'private' | 'dm' = 'dm';
@@ -252,9 +261,9 @@ export const askToChannelSubmitCallback = async ({
     await notifySubmitFailure(
       client,
       body.user.id,
-      `❌ I couldn't post your Q&A to the configured Q&A channel. ${
-        error instanceof Error ? error.message : 'Please check that I have access to the channel and try again.'
-      }`,
+      t('qa.channelSubmit.error', {
+        reason: error instanceof Error ? error.message : t('qa.channelSubmit.errorReason'),
+      }),
     );
 
     // 로그: 실패

@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { createQAChannelPreview, getQAChannel, getUserName, getWorkspaceId } from 'services/slack';
 
 /**
@@ -10,10 +11,15 @@ export const askToChannelModalCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // The person clicking is the only reader of this modal and of every error
+  // below it, so everything here is in their language.
+  const t = tForRequest(context);
 
   try {
     const sessionId = body.actions[0].value;
@@ -21,7 +27,7 @@ export const askToChannelModalCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || '',
         user: body.user.id,
-        text: '😅 Oops! Something went wrong. Could you try asking your question again?',
+        text: t('qa.error.missingSession'),
       });
       return;
     }
@@ -34,7 +40,7 @@ export const askToChannelModalCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || '',
         user: body.user.id,
-        text: '❌ No Q&A channel is configured. Please ask an admin to set up a Q&A channel.',
+        text: t('qa.error.noChannel'),
       });
       return;
     }
@@ -45,7 +51,7 @@ export const askToChannelModalCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || '',
         user: body.user.id,
-        text: "😅 I can't find the conversation details. Mind asking your question again?",
+        text: t('qa.error.noConversationDetails'),
       });
       return;
     }
@@ -63,14 +69,18 @@ export const askToChannelModalCallback = async ({
     const questionerName = await getUserName(body.user.id, client);
 
     // Preview 생성 (static preview with both options shown)
-    const previewText = createQAChannelPreview(
+    // The preview shows what the *channel* will see, so it is written in the
+    // workspace's language rather than the clicker's.
+    const previewText = await createQAChannelPreview(
       channelName,
       body.user.id,
       sessionData.originalQuestion,
       sessionData.botResponse,
       true, // canAnswer - assume true for preview
       false, // not anonymous for preview
-      `(*${questionerName}* OR *a team member*)`,
+      t('qa.share.preview.senderPlaceholder', { name: questionerName }),
+      undefined, // userComment - not typed yet at preview time
+      workspaceId,
     );
 
     await client.views.open({
@@ -82,17 +92,17 @@ export const askToChannelModalCallback = async ({
         private_metadata: JSON.stringify({ sessionId, qaChannelId }), // Q&A 채널 ID 포함
         title: {
           type: 'plain_text',
-          text: '📢 Share with Q&A',
+          text: t('qa.channelModal.title'),
           emoji: true,
         },
         submit: {
           type: 'plain_text',
-          text: 'Post to Channel',
+          text: t('qa.channelModal.submit'),
           emoji: true,
         },
         close: {
           type: 'plain_text',
-          text: 'Cancel',
+          text: t('common.button.cancel'),
           emoji: true,
         },
         blocks: [
@@ -100,7 +110,7 @@ export const askToChannelModalCallback = async ({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `📢 *Ready to share this Q&A with #${channelName}?*\n_This will post the question and my response to help others in the channel. You can also add your own thoughts or context._`,
+              text: t('qa.channelModal.intro', { channelName }),
             },
           },
           {
@@ -112,12 +122,12 @@ export const askToChannelModalCallback = async ({
               multiline: true,
               placeholder: {
                 type: 'plain_text',
-                text: 'Add your thoughts or context about this question and answer (optional)',
+                text: t('qa.shareModal.comment.placeholder'),
               },
             },
             label: {
               type: 'plain_text',
-              text: '💭 Your Comment',
+              text: t('qa.shareModal.comment.label'),
               emoji: true,
             },
             optional: true,
@@ -132,7 +142,7 @@ export const askToChannelModalCallback = async ({
                 {
                   text: {
                     type: 'plain_text',
-                    text: "Share anonymously (show as 'A team member' instead of your name)",
+                    text: t('qa.channelModal.anonymous.option'),
                   },
                   value: 'anonymous',
                 },
@@ -140,7 +150,7 @@ export const askToChannelModalCallback = async ({
             },
             label: {
               type: 'plain_text',
-              text: '🎭 Privacy Options',
+              text: t('qa.shareModal.privacy.label'),
               emoji: true,
             },
             optional: true,
@@ -153,7 +163,7 @@ export const askToChannelModalCallback = async ({
             block_id: 'preview_section',
             text: {
               type: 'mrkdwn',
-              text: "👀 *Here's what will be shared:*",
+              text: t('qa.shareModal.previewHeading'),
             },
           },
           {
@@ -196,7 +206,7 @@ export const askToChannelModalCallback = async ({
     await client.chat.postEphemeral({
       channel: body.channel?.id || '',
       user: body.user.id,
-      text: '😔 Something went wrong opening the sharing options. Could you try again?',
+      text: t('qa.error.openShareModal'),
     });
 
     // 로그: 실패

@@ -4,6 +4,7 @@ import { recordQaEvent } from 'services/dashboard/qa-event-recorder';
 import { collectReplyImages } from 'services/document/image-captions/resolve-images';
 import { convertMarkdownToSlackText } from 'services/document/markdown';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
+import { type Locale, resolveLocaleForUserCached } from 'services/i18n';
 import { QuestionProcessor } from 'services/qa/question-processor';
 import {
   createGitbookSectionLink,
@@ -17,11 +18,24 @@ import type { SlackMessage } from 'services/slack';
 import { buildSectionBlocks } from 'services/slack/block-text';
 import { createEnhancedMessage } from 'services/slack/message-text-utils';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { DEFAULT_LOCALE, type T, createT } from '../../../src/i18n';
 
 /**
  * 질문 메시지 처리
+ *
+ * `locale` is optional because this is not a Bolt handler: the message router
+ * calls it directly, and the router is the only place that already knows the
+ * asker's language. When it is not passed, the asker's language is resolved
+ * here — off the network, from their stored setting or their cached Slack
+ * locale.
  */
-export async function handleQuestionMessage(client: any, event: any, userMessage: string, logger: any) {
+export async function handleQuestionMessage(
+  client: any,
+  event: any,
+  userMessage: string,
+  logger: any,
+  locale?: Locale,
+) {
   const startTime = Date.now();
   let loadingMessageTs: string | undefined;
   let longRunningNoticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -29,17 +43,24 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
   // Once the answer is on screen, a failure in a later step (share buttons,
   // logging, …) must NOT overwrite it with a generic error message.
   let answerDelivered = false;
+  // Everything this function posts is read by the person who asked. The
+  // translator is assigned inside the `try` (it needs the workspace id, which
+  // is a Slack call), so the `catch` below starts from a usable English one.
+  let t: T = createT(DEFAULT_LOCALE);
 
   try {
+    const workspaceId = await getWorkspaceId(client);
+    t = createT(locale ?? (await resolveLocaleForUserCached(workspaceId, event.user)));
+
     // 로딩 메시지 게시
     const loadingMessageData = createEnhancedMessage({
-      text: 'Searching relevant documents and generating response... :mag: :brain:',
+      text: t('qa.answer.loading.text'),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: ':mag: Searching relevant documents and analyzing context...',
+            text: t('qa.answer.loading'),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
         },
@@ -52,9 +73,6 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       ...loadingMessageData,
     });
     loadingMessageTs = loadingMessage.ts;
-
-    // Get workspace info - skip conversation history to avoid API rate limits
-    const workspaceId = await getWorkspaceId(client);
 
     // Conversation history is intentionally not fetched here (conversations.* is heavily rate-limited).
     const historyResult = { messages: [] };
@@ -70,13 +88,13 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         .update({
           channel: event.channel,
           ts: loadingMessageTs,
-          text: 'Building the Q&A index and preparing your answer...',
+          text: t('qa.answer.indexing.text'),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: ':hourglass_flowing_sand: The Q&A index is still being built, so this first answer may take a little longer. I’ll update this message when it’s ready.',
+                text: t('qa.answer.indexing'),
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
             },
@@ -229,8 +247,8 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
           {
             type: 'mrkdwn',
             text: answerResult.canAnswer
-              ? `Answered ${questionerName}'s question`
-              : `Responded to ${questionerName}'s question`,
+              ? t('qa.answer.context.answered', { name: questionerName })
+              : t('qa.answer.context.responded', { name: questionerName }),
           },
         ],
       },
@@ -246,7 +264,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: "If you'd like to read the original document, please refer to the sources linked in the reply.",
+          text: t('qa.answer.sourcesHint'),
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
       });
@@ -317,7 +335,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         type: 'button',
         text: {
           type: 'plain_text',
-          text: 'Ask the Q&A Channel',
+          text: t('qa.answer.askChannel.button'),
           emoji: true,
         },
         style: 'primary',
@@ -331,7 +349,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       type: 'button',
       text: {
         type: 'plain_text',
-        text: 'Ask in Private',
+        text: t('qa.answer.askPrivate.button'),
         emoji: true,
       },
       action_id: 'ask_to_others_modal',
@@ -341,9 +359,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
     // 버튼이 있는 경우에만 공유 메시지 표시
     if (actionElements.length > 0) {
       // 답변 가능 여부에 따라 다른 메시지 제공
-      const ephemeralText = answerResult.canAnswer
-        ? '💡 Want to discuss this further or get additional insights from your team?'
-        : "💬 I couldn't find this information in our documentation. Would you like to ask your team directly?";
+      const ephemeralText = answerResult.canAnswer ? t('qa.answer.share.answered') : t('qa.answer.share.unanswered');
 
       // Create enhanced message with button information
       const ephemeralMessageData = createEnhancedMessage(
@@ -448,7 +464,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
             }
 
             if (parts.length > 0) {
-              sourceInfo = `*Source:* ${parts.join(' > ')}\n`;
+              sourceInfo = t('qa.answer.reference.source', { sources: parts.join(' > ') });
             }
           }
 
@@ -459,7 +475,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
             contentPreview = `${contentPreview.substring(0, 500)}...`;
           }
 
-          return `*Reference ${index + 1}*\n${sourceInfo}\n\`\`\`${contentPreview}\`\`\`\n`;
+          return t('qa.answer.reference', { index: index + 1, source: sourceInfo, content: contentPreview });
         }),
       );
 
@@ -571,7 +587,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: 'Sorry, I encountered an error while processing your question. Please try again later.',
+          text: t('qa.answer.error'),
         },
         block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
       },
@@ -582,7 +598,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         await client.chat.update({
           channel: event.channel,
           ts: loadingMessageTs,
-          text: 'Sorry, I encountered an error while processing your question. Please try again later.',
+          text: t('qa.answer.error'),
           blocks: errorBlocks,
         });
         logger.info(`Successfully updated loading message ${loadingMessageTs} to error message`);
@@ -594,7 +610,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
         await client.chat.postMessage({
           channel: event.channel,
           ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
-          text: 'Sorry, I encountered an error while processing your question. Please try again later.',
+          text: t('qa.answer.error'),
           blocks: errorBlocks,
         });
       }
@@ -604,7 +620,7 @@ export async function handleQuestionMessage(client: any, event: any, userMessage
       await client.chat.postMessage({
         channel: event.channel,
         ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
-        text: 'Sorry, I encountered an error while processing your question. Please try again later.',
+        text: t('qa.answer.error'),
         blocks: errorBlocks,
       });
     }

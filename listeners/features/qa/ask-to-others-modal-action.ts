@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { createPrivateMessagePreview, getManagers, getUserName, getWorkspaceId } from 'services/slack';
 
 /**
@@ -10,10 +11,15 @@ export const askToOthersModalCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // Only the person who clicked sees this modal, the ephemeral it replaces and
+  // every error below, so the whole handler speaks their language.
+  const t = tForRequest(context);
 
   // response_url로 기존 ephemeral 메시지를 업데이트
   try {
@@ -25,13 +31,13 @@ export const askToOthersModalCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: '✅ Setting up private discussion...',
+          text: t('qa.othersModal.setup.text'),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '✅ *Setting up private discussion...*\nOpening participant selection modal.',
+                text: t('qa.othersModal.setup'),
               },
             },
           ],
@@ -48,7 +54,7 @@ export const askToOthersModalCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || '',
         user: body.user.id,
-        text: '😅 Oops! Something went wrong. Could you try asking your question again?',
+        text: t('qa.error.missingSession'),
       });
       return;
     }
@@ -62,7 +68,7 @@ export const askToOthersModalCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || '',
         user: body.user.id,
-        text: "😅 I can't find the conversation details. Mind asking your question again?",
+        text: t('qa.error.noConversationDetails'),
       });
       return;
     }
@@ -71,13 +77,17 @@ export const askToOthersModalCallback = async ({
     const questionerName = await getUserName(body.user.id, client);
 
     // Preview 생성 (static preview with both options shown)
-    const previewText = createPrivateMessagePreview(
+    // Nobody has been picked yet, so the mock-up is written for the one person
+    // who can see it: the clicker.
+    const previewText = await createPrivateMessagePreview(
       'Selected person(s)',
-      `(*${questionerName}* OR *a team member*)`,
+      t('qa.share.preview.senderPlaceholder', { name: questionerName }),
       sessionData.originalQuestion,
       sessionData.botResponse,
       true, // canAnswer - assume true for preview
       false, // not anonymous for preview
+      undefined, // userComment - not typed yet at preview time
+      { workspaceId, userId: body.user.id, client },
     );
 
     await client.views.open({
@@ -89,17 +99,17 @@ export const askToOthersModalCallback = async ({
         private_metadata: sessionId,
         title: {
           type: 'plain_text',
-          text: '🔒 Ask in Private',
+          text: t('qa.othersModal.title'),
           emoji: true,
         },
         submit: {
           type: 'plain_text',
-          text: 'Send Privately',
+          text: t('qa.othersModal.submit'),
           emoji: true,
         },
         close: {
           type: 'plain_text',
-          text: 'Cancel',
+          text: t('common.button.cancel'),
           emoji: true,
         },
         blocks: [
@@ -107,7 +117,7 @@ export const askToOthersModalCallback = async ({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: "🔒 *Who would you like to ask privately?*\n_They'll receive this Q&A as a direct message for private discussion. You can also add your own thoughts or context._",
+              text: t('qa.othersModal.intro'),
             },
           },
           {
@@ -119,12 +129,12 @@ export const askToOthersModalCallback = async ({
               multiline: true,
               placeholder: {
                 type: 'plain_text',
-                text: 'Add your thoughts or context about this question and answer (optional)',
+                text: t('qa.shareModal.comment.placeholder'),
               },
             },
             label: {
               type: 'plain_text',
-              text: '💭 Your Comment',
+              text: t('qa.shareModal.comment.label'),
               emoji: true,
             },
             optional: true,
@@ -137,13 +147,13 @@ export const askToOthersModalCallback = async ({
               action_id: 'users',
               placeholder: {
                 type: 'plain_text',
-                text: 'Choose people to share with...',
+                text: t('qa.othersModal.people.placeholder'),
               },
               ...(managers.length > 0 && { initial_users: managers }),
             },
             label: {
               type: 'plain_text',
-              text: '👤 People',
+              text: t('qa.othersModal.people.label'),
               emoji: true,
             },
           },
@@ -157,7 +167,7 @@ export const askToOthersModalCallback = async ({
                 {
                   text: {
                     type: 'plain_text',
-                    text: "Share anonymously (show as 'A team member' and exclude me from the DM)",
+                    text: t('qa.othersModal.anonymous.option'),
                   },
                   value: 'anonymous',
                 },
@@ -165,7 +175,7 @@ export const askToOthersModalCallback = async ({
             },
             label: {
               type: 'plain_text',
-              text: '🎭 Privacy Options',
+              text: t('qa.shareModal.privacy.label'),
               emoji: true,
             },
             optional: true,
@@ -178,7 +188,7 @@ export const askToOthersModalCallback = async ({
             block_id: 'preview_section',
             text: {
               type: 'mrkdwn',
-              text: "👀 *Here's what will be shared:*",
+              text: t('qa.shareModal.previewHeading'),
             },
           },
           {
@@ -231,7 +241,7 @@ export const askToOthersModalCallback = async ({
     await client.chat.postEphemeral({
       channel: body.channel?.id || '',
       user: body.user.id,
-      text: '😔 Something went wrong opening the sharing options. Could you try again?',
+      text: t('qa.error.openShareModal'),
     });
 
     // 로그: 실패

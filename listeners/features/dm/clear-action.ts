@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -10,10 +11,14 @@ export const confirmClearDMCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // A DM with one person in it: the clicker is the only reader.
+  const t = tForRequest(context);
 
   try {
     const actionValue = JSON.parse(body.actions[0].value || '{}');
@@ -29,13 +34,13 @@ export const confirmClearDMCallback = async ({
     await client.chat.update({
       channel: body.channel?.id || '',
       ts: body.message?.ts || '',
-      text: '🗑️ Clearing recent messages...',
+      text: t('dm.clear.progress.text'),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `🗑️ *Clearing ${messageCount} recent messages...*\nPlease wait while I delete the messages.`,
+            text: t('dm.clear.progress', { count: messageCount }),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
         },
@@ -101,13 +106,13 @@ export const confirmClearDMCallback = async ({
       await client.chat.update({
         channel: body.channel?.id || '',
         ts: body.message?.ts || '',
-        text: '❌ Failed to clear messages',
+        text: t('dm.clear.failed.text'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ *Failed to clear messages*\nSorry, I encountered an error while clearing the chat. Please try again.',
+              text: t('dm.clear.failed'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },

@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { suggestUpdatesCallback } from '../document-update/suggestions/suggest-updates-handler';
@@ -12,10 +13,14 @@ export const suggestUpdatesFromManagerReplyCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // The card being rewritten sits in the manager's own DM with CHOIR.
+  const t = tForRequest(context);
 
   try {
     const actionValue = body.actions[0].value;
@@ -36,7 +41,7 @@ export const suggestUpdatesFromManagerReplyCallback = async ({
       await client.chat.postEphemeral({
         channel: channelId,
         user: body.user.id,
-        text: "😅 I can't find the original conversation details. The session may have expired.",
+        text: t('qa.error.sessionExpired'),
       });
       return;
     }
@@ -76,13 +81,13 @@ ${replies.map((reply: string, index: number) => `- ${replyAuthors[index]}: ${rep
       await client.chat.update({
         channel: channelId,
         ts: currentMessageTs,
-        text: '✅ Analysis Complete • 📊 10 messages analyzed',
+        text: t('qa.managerReply.analysis.text'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: "✅ *Analysis Complete* • 📊 10 messages analyzed\nSure! I'll suggest the following update to you.",
+              text: t('qa.managerReply.analysis'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
           },
@@ -142,7 +147,7 @@ ${replies.map((reply: string, index: number) => `- ${replyAuthors[index]}: ${rep
     await client.chat.postEphemeral({
       channel: body.channel?.id || '',
       user: body.user.id,
-      text: '😔 Something went wrong starting the document update. Please try again.',
+      text: t('qa.error.startUpdate'),
     });
 
     // 에러 로깅

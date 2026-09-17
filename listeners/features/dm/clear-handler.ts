@@ -1,18 +1,30 @@
 import { logMessageProcessing } from 'services/common/interaction-tracker';
+import { type Locale, resolveLocaleForUserCached } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { DEFAULT_LOCALE, type T, createT } from '../../../src/i18n';
 
 /**
  * DM에서 CHOIR 메시지 clear 처리
+ *
+ * Like `handleQuestionMessage`, this is called straight from the message
+ * router rather than registered with Bolt, so it takes the asker's language as
+ * an optional argument and resolves it itself when the router has none.
  */
-export async function handleDMClearCommand(client: any, event: any, logger: any) {
+export async function handleDMClearCommand(client: any, event: any, logger: any, locale?: Locale) {
   const startTime = Date.now();
+  // Assigned once the workspace is known; the catch below needs a translator
+  // even if that lookup is what failed.
+  let t: T = createT(DEFAULT_LOCALE);
 
   try {
     // DM이 아닌 경우 처리하지 않음
     if (event.channel_type !== 'im') {
       return false;
     }
+
+    const workspaceId = await getWorkspaceId(client);
+    t = createT(locale ?? (await resolveLocaleForUserCached(workspaceId, event.user)));
 
     logger.info(`Clear command initiated by user ${event.user} in DM ${event.channel}`);
 
@@ -29,13 +41,13 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
     if (!historyResponse.messages) {
       await client.chat.postMessage({
         channel: event.channel,
-        text: '💬 No messages found to clear.',
+        text: t('dm.clear.noMessages'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '💬 No messages found to clear.',
+              text: t('dm.clear.noMessages'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
           },
@@ -99,13 +111,13 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
     if (messagesToClear.length === 0) {
       await client.chat.postMessage({
         channel: event.channel,
-        text: '💬 No CHOIR messages found to clear.',
+        text: t('dm.clear.noChoirMessages.text'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '💬 No CHOIR messages found to clear.\n\n_Note: Only CHOIR messages can be deleted. User messages cannot be removed by the bot._',
+              text: t('dm.clear.noChoirMessages'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
           },
@@ -117,13 +129,16 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
     // 확인 메시지 전송
     const confirmMessage = await client.chat.postMessage({
       channel: event.channel,
-      text: `🗑️ Are you sure you want to clear ${messagesToClear.length} recent CHOIR messages?`,
+      text: t('dm.clear.confirm.text', { count: messagesToClear.length }),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `🗑️ *Clear Recent CHOIR Messages*\n\nI found ${allChoirMessages.length} total CHOIR messages in this conversation. I will delete the ${messagesToClear.length} most recent ones.\n\nAre you sure you want to delete them? This action cannot be undone.`,
+            text: t('dm.clear.confirm', {
+              total: allChoirMessages.length,
+              count: messagesToClear.length,
+            }),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
         },
@@ -134,7 +149,7 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: `Yes, Clear ${messagesToClear.length} Recent`,
+                text: t('dm.clear.confirm.button', { count: messagesToClear.length }),
                 emoji: true,
               },
               style: 'danger',
@@ -148,7 +163,7 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: 'Cancel',
+                text: t('common.button.cancel'),
                 emoji: true,
               },
               action_id: 'cancel_clear_dm',
@@ -159,7 +174,6 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
     });
 
     // 로그 기록
-    const workspaceId = await getWorkspaceId(client);
     await logMessageProcessing(
       event.user,
       workspaceId,
@@ -210,13 +224,13 @@ export async function handleDMClearCommand(client: any, event: any, logger: any)
 
     await client.chat.postMessage({
       channel: event.channel,
-      text: '❌ Sorry, I encountered an error while trying to clear the chat. Please try again.',
+      text: t('dm.clear.error'),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '❌ Sorry, I encountered an error while trying to clear the chat. Please try again.',
+            text: t('dm.clear.error'),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
         },
