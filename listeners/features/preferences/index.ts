@@ -4,9 +4,11 @@ import {
   rebuildQmdIndexAction,
   reloadFromGithubAction,
 } from '../index-management/qmd-index-management';
+import { registerLanguageHandlers } from './language-handlers';
 
 export const registerPreferencesFeature = (app: App) => {
   app.action('reload_from_github', reloadFromGithubAction);
   app.action('rebuild_qmd_index', rebuildQmdIndexAction);
   app.action('normalize_markdown_files', normalizeMarkdownFilesAction);
+  registerLanguageHandlers(app);
 };

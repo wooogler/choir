@@ -1,6 +1,7 @@
 import type { App } from '@slack/bolt';
 import { registerChoirUsersHandlers } from './choir-users-handlers';
 import { registerContextKeyHandlers } from './context-key-handlers';
+import { registerLanguageHandlers } from './language-handlers';
 import { registerLoggingHandlers } from './logging-handlers';
 import { registerManagerPromotionHandlers } from './manager-promotion-handlers';
 import { registerManagersHandlers } from './managers-handlers';
@@ -19,4 +20,5 @@ export const registerManagementHandlers = (app: App) => {
   registerReadonlyFilesHandlers(app);
   registerUrlActionHandlers(app);
   registerContextKeyHandlers(app);
+  registerLanguageHandlers(app);
 };

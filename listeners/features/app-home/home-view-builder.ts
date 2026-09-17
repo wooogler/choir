@@ -1,5 +1,6 @@
 import type { Logger } from '@slack/bolt';
 import type { WebClient } from '@slack/web-api';
+import { resolveLocaleForUser } from 'services/i18n';
 import {
   getCHOIRUsers,
   getGithubRepo,
@@ -10,6 +11,7 @@ import {
   isWorkspaceOwner,
 } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
+import { type Locale, type T, createT } from '../../../src/i18n';
 
 export const buildHomeView = async (
   client: WebClient,
@@ -59,6 +61,24 @@ export const buildHomeView = async (
 
   const loggingEnabled = await workspaceStore.getLoggingEnabled(workspaceId);
   const loggingToggleBlocks = buildLoggingToggleBlocks(isUserManager, isOwner, loggingEnabled);
+
+  // The network-resolving variant is deliberate here: rendering Home already
+  // costs a `users.info`, and resolving now warms the locale cache for every
+  // cheap (`...Cached`) lookup this person's next interactions will do.
+  const t = createT(await resolveLocaleForUser(workspaceId, userId, client));
+  const [userLanguage, workspaceLanguage, contentLanguage] = await Promise.all([
+    workspaceStore.getUserLanguage(workspaceId, userId),
+    workspaceStore.getWorkspaceLanguage(workspaceId),
+    workspaceStore.getContentLanguage(workspaceId),
+  ]);
+  const myLanguageBlocks = buildMyLanguageBlocks(t, userLanguage);
+  const languageSettingsBlocks = buildLanguageSettingsBlocks(
+    t,
+    isUserManager,
+    isOwner,
+    workspaceLanguage,
+    contentLanguage,
+  );
 
   const readOnlyFilesBlocks = await buildReadOnlyFilesBlocks(workspaceId, isUserManager, isOwner);
 
@@ -125,6 +145,7 @@ export const buildHomeView = async (
 
   return [
     ...homeBlocks,
+    ...myLanguageBlocks,
     ...insightsBlocks,
     ...documentConnectionBlocks,
     ...choirManagementBlocks,
@@ -133,6 +154,7 @@ export const buildHomeView = async (
     ...becomeManagerBlocks,
     ...organizationNameBlocks,
     ...readOnlyFilesBlocks,
+    ...languageSettingsBlocks,
     ...loggingToggleBlocks,
     ...logDownloadBlocks,
   ];
@@ -878,6 +900,134 @@ const buildLogDownloadBlocks = (isUserManager: boolean, isOwner: boolean) => {
     {
       type: 'divider',
     },
+  ];
+};
+
+/** A Block Kit option; `value` is what the handler receives, `text` what a human reads. */
+const languageOption = (label: string, value: string) => ({
+  text: { type: 'plain_text', text: label, emoji: true },
+  value,
+});
+
+/**
+ * The picker every CHOIR user gets, whatever their role: which language CHOIR
+ * speaks *to them*. `null` (no stored preference) shows as Automatic, which is
+ * the truth — CHOIR then follows their Slack language, then the workspace
+ * default.
+ *
+ * Exported so the blocks can be tested without standing up the whole home view.
+ */
+export const buildMyLanguageBlocks = (t: T, userLanguage: Locale | null): any[] => {
+  const options = [
+    languageOption(t('appHome.language.option.auto'), 'auto'),
+    languageOption(t('appHome.language.option.english'), 'en'),
+    languageOption(t('appHome.language.option.korean'), 'ko'),
+  ];
+  const selected = userLanguage ?? 'auto';
+
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: t('appHome.language.mine.label'),
+      },
+      accessory: {
+        type: 'static_select',
+        action_id: 'set_my_language',
+        placeholder: {
+          type: 'plain_text',
+          text: t('appHome.language.mine.placeholder'),
+          emoji: true,
+        },
+        options,
+        initial_option: options.find((option) => option.value === selected) ?? options[0],
+      },
+    },
+    { type: 'divider' },
+  ];
+};
+
+/**
+ * The manager-only half: the workspace default for CHOIR's own strings, and the
+ * separate policy for what language CHOIR *writes documents* in. They are two
+ * settings because a team can want CHOIR speaking Korean in Slack while the
+ * repository stays English.
+ */
+export const buildLanguageSettingsBlocks = (
+  t: T,
+  isUserManager: boolean,
+  isOwner: boolean,
+  workspaceLanguage: Locale,
+  contentLanguage: 'follow-conversation' | Locale,
+): any[] => {
+  if (!isUserManager && !isOwner) {
+    return [];
+  }
+
+  const workspaceOptions = [
+    languageOption(t('appHome.language.option.english'), 'en'),
+    languageOption(t('appHome.language.option.korean'), 'ko'),
+  ];
+  const contentOptions = [
+    languageOption(t('appHome.language.option.followConversation'), 'follow-conversation'),
+    ...workspaceOptions,
+  ];
+
+  return [
+    {
+      type: 'header',
+      text: {
+        type: 'plain_text',
+        text: `🌐 ${t('appHome.language.title')}`,
+        emoji: true,
+      },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: t('appHome.language.workspace.label'),
+      },
+      accessory: {
+        type: 'static_select',
+        action_id: 'set_workspace_language',
+        placeholder: {
+          type: 'plain_text',
+          text: t('appHome.language.workspace.placeholder'),
+          emoji: true,
+        },
+        options: workspaceOptions,
+        initial_option: workspaceOptions.find((option) => option.value === workspaceLanguage) ?? workspaceOptions[0],
+      },
+    },
+    {
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: t('appHome.language.workspace.context') }],
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: t('appHome.language.content.label'),
+      },
+      accessory: {
+        type: 'static_select',
+        action_id: 'set_content_language',
+        placeholder: {
+          type: 'plain_text',
+          text: t('appHome.language.content.placeholder'),
+          emoji: true,
+        },
+        options: contentOptions,
+        initial_option: contentOptions.find((option) => option.value === contentLanguage) ?? contentOptions[0],
+      },
+    },
+    {
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: t('appHome.language.content.context') }],
+    },
+    { type: 'divider' },
   ];
 };
 
