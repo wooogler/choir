@@ -5,6 +5,7 @@
  * for the schema.
  */
 import { getDatabase } from 'services/db/connection';
+import { type Locale, isSupportedLocale } from '../../src/i18n/supported-locales';
 
 export interface QaEventChunkInput {
   fileName: string;
@@ -167,11 +168,50 @@ export function setEventTopic(eventId: number, topicId: number): void {
   getDatabase().prepare('UPDATE qa_events SET topic_id = ? WHERE id = ?').run(topicId, eventId);
 }
 
+/** One topic's label + representative question in a single language. */
+export interface LocalizedLabel {
+  label: string;
+  representative: string;
+}
+
+/**
+ * Translations of a topic's English label, keyed by locale. English is never a
+ * key here — it lives in the `label`/`representative` columns, which stay the
+ * clustering key. A locale that is missing (translation failed, or was added
+ * after this topic was last labeled) simply falls back to English.
+ */
+export type TopicLabels = Partial<Record<Locale, LocalizedLabel>>;
+
 export interface TopicRow {
   id: number;
   label: string;
   representative: string;
+  labels: TopicLabels;
 }
+
+/** Tolerates NULL, malformed JSON and unexpected shapes — labels are decoration. */
+function decodeLabels(raw: string | null): TopicLabels {
+  if (!raw) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== 'object') return {};
+  const out: TopicLabels = {};
+  for (const [locale, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!isSupportedLocale(locale) || locale === 'en') continue;
+    const entry = value as Partial<LocalizedLabel> | null;
+    if (!entry || typeof entry.label !== 'string' || typeof entry.representative !== 'string') continue;
+    if (!entry.label.trim() || !entry.representative.trim()) continue;
+    out[locale] = { label: entry.label, representative: entry.representative };
+  }
+  return out;
+}
+
+const encodeLabels = (labels: TopicLabels): string | null =>
+  Object.keys(labels).length > 0 ? JSON.stringify(labels) : null;
 
 export function insertTopic(workspaceId: string, label: string, representative: string, updatedAt: number): number {
   const res = getDatabase()
@@ -180,14 +220,47 @@ export function insertTopic(workspaceId: string, label: string, representative: 
   return Number(res.lastInsertRowid);
 }
 
-export function updateTopic(id: number, label: string, representative: string, updatedAt: number): void {
-  getDatabase()
-    .prepare('UPDATE qa_topics SET label = ?, representative = ?, updated_at = ? WHERE id = ?')
-    .run(label, representative, updatedAt, id);
+/**
+ * Updates a topic's English label. Pass `labels` to rewrite the localized
+ * display labels in the same statement (so a changed English label never sits
+ * next to a stale translation); omit it to leave them untouched.
+ */
+export function updateTopic(
+  id: number,
+  label: string,
+  representative: string,
+  updatedAt: number,
+  labels?: TopicLabels,
+): void {
+  const db = getDatabase();
+  if (labels === undefined) {
+    db.prepare('UPDATE qa_topics SET label = ?, representative = ?, updated_at = ? WHERE id = ?').run(
+      label,
+      representative,
+      updatedAt,
+      id,
+    );
+    return;
+  }
+  db.prepare('UPDATE qa_topics SET label = ?, representative = ?, labels_json = ?, updated_at = ? WHERE id = ?').run(
+    label,
+    representative,
+    encodeLabels(labels),
+    updatedAt,
+    id,
+  );
+}
+
+/** Replaces only the localized labels (used by the backfill script). */
+export function setTopicLabels(id: number, labels: TopicLabels): void {
+  getDatabase().prepare('UPDATE qa_topics SET labels_json = ? WHERE id = ?').run(encodeLabels(labels), id);
 }
 
 export function getTopics(workspaceId: string): TopicRow[] {
-  return getDatabase()
-    .prepare('SELECT id, label, representative FROM qa_topics WHERE workspace_id = ? ORDER BY id')
-    .all(workspaceId) as TopicRow[];
+  const rows = getDatabase()
+    .prepare(
+      'SELECT id, label, representative, labels_json AS labelsJson FROM qa_topics WHERE workspace_id = ? ORDER BY id',
+    )
+    .all(workspaceId) as Array<Omit<TopicRow, 'labels'> & { labelsJson: string | null }>;
+  return rows.map(({ labelsJson, ...topic }) => ({ ...topic, labels: decodeLabels(labelsJson) }));
 }

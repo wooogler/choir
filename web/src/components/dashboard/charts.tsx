@@ -63,6 +63,8 @@ export interface HBarItem {
   /** If set, the bar splits into answered (green) + unanswered (amber) summing to `value`. */
   answered?: number;
   title?: string;
+  /** Language of `label`, when it differs from the page's (an untranslated topic label). */
+  lang?: string;
 }
 
 /** Horizontal bars for topics / documents. Length encodes magnitude. */
@@ -92,7 +94,9 @@ export function HBars({ items, legend }: { items: HBarItem[]; legend?: boolean }
               className="dash-hbar-row"
               title={it.title ?? t('dashboard.hbars.tooltip', { label: it.label, value: it.value })}
             >
-              <div className="dash-hbar-label">{it.label}</div>
+              <div className="dash-hbar-label" lang={it.lang}>
+                {it.label}
+              </div>
               <div className="dash-hbar-track">
                 {it.answered != null ? (
                   <>
@@ -121,10 +125,14 @@ export function GapCards({ gaps }: { gaps: GapView[] }) {
       {gaps.map((g) => (
         <li key={g.topicId} className="dash-gap-card">
           <div className="dash-gap-head">
-            <span className="dash-gap-title">{g.label}</span>
+            <span className="dash-gap-title" lang={g.labelLocale}>
+              {g.label}
+            </span>
             <span className="dash-gap-badge">{t('dashboard.gaps.badge', { count: g.unanswered })}</span>
           </div>
-          <p className="dash-gap-rep">{g.representative}</p>
+          <p className="dash-gap-rep" lang={g.labelLocale}>
+            {g.representative}
+          </p>
           {g.relatedDocs.length > 0 && (
             <div className="dash-gap-docs">
               <span className="dash-gap-docs-label">{t('dashboard.gaps.searched')}</span>

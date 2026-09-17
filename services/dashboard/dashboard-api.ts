@@ -7,7 +7,8 @@
  * — never rely on the client to filter.
  */
 import { getDatabase } from 'services/db/connection';
-import { getTopics as getTopicRows } from './qa-event-store';
+import { DEFAULT_LOCALE, type Locale, normalizeLocale } from '../../src/i18n/supported-locales';
+import { type TopicRow, getTopics as getTopicRows } from './qa-event-store';
 
 export const K_MIN_DISTINCT_USERS = 2;
 
@@ -29,6 +30,10 @@ export interface DashboardSummary {
   totals: { questions: number; answered: number; answeredRatio: number; activeTopics: number };
 }
 
+/**
+ * Counts only — no topic text — so unlike `getTopics`/`getGaps` this takes no
+ * `lang`. The SPA still sends one; it is simply ignored here.
+ */
 export function getSummary(workspaceId: string, weeks = 12, now = Date.now()): DashboardSummary {
   const db = getDatabase();
   const cutoff = cutoffFor(weeks, now);
@@ -80,10 +85,35 @@ function topicAggregate(db: ReturnType<typeof getDatabase>, workspaceId: string,
     .all(workspaceId, cutoff) as TopicAggRow[];
 }
 
+/**
+ * The label/representative to show a reader of `lang`, plus the language they
+ * are actually in. Topics are clustered and labeled in English and translated
+ * at relabel time; a locale with no stored translation (it failed, or the topic
+ * predates the locale) falls back to English rather than showing nothing.
+ */
+function localizeTopic(topic: TopicRow, lang: Locale): { label: string; representative: string; labelLocale: Locale } {
+  const translated = lang === DEFAULT_LOCALE ? undefined : topic.labels[lang];
+  return translated
+    ? { label: translated.label, representative: translated.representative, labelLocale: lang }
+    : { label: topic.label, representative: topic.representative, labelLocale: DEFAULT_LOCALE };
+}
+
+/**
+ * Accepts a raw query value (`ko`, `ko-KR`, undefined — or the array Express
+ * hands back for a repeated `?lang=`) and lands on a supported locale. Anything
+ * unrecognized is English rather than an error: a bad query string should not
+ * fail a dashboard read.
+ */
+function resolveLang(lang?: unknown): Locale {
+  return (typeof lang === 'string' ? normalizeLocale(lang) : undefined) ?? DEFAULT_LOCALE;
+}
+
 export interface TopicView {
   topicId: number;
   label: string;
   representative: string;
+  /** Which language `label`/`representative` came back in — `en` means a fallback. */
+  labelLocale: Locale;
   total: number;
   answered: number;
   answeredRatio: number;
@@ -95,7 +125,8 @@ export interface TopicsResponse {
   other: { count: number };
 }
 
-export function getTopics(workspaceId: string, weeks = 12, now = Date.now()): TopicsResponse {
+export function getTopics(workspaceId: string, weeks = 12, now = Date.now(), lang?: unknown): TopicsResponse {
+  const locale = resolveLang(lang);
   const db = getDatabase();
   const cutoff = cutoffFor(weeks, now);
   const agg = topicAggregate(db, workspaceId, cutoff);
@@ -126,8 +157,7 @@ export function getTopics(workspaceId: string, weeks = 12, now = Date.now()): To
     }
     topics.push({
       topicId: row.topicId,
-      label: topicMeta.label,
-      representative: topicMeta.representative,
+      ...localizeTopic(topicMeta, locale),
       total: row.total,
       answered: row.answered,
       answeredRatio: ratio(row.answered, row.total),
@@ -142,6 +172,8 @@ export interface GapView {
   topicId: number;
   label: string;
   representative: string;
+  /** Which language `label`/`representative` came back in — `en` means a fallback. */
+  labelLocale: Locale;
   total: number;
   unanswered: number;
   answeredRatio: number;
@@ -153,7 +185,8 @@ export interface GapsResponse {
   other: { unanswered: number };
 }
 
-export function getGaps(workspaceId: string, weeks = 12, now = Date.now()): GapsResponse {
+export function getGaps(workspaceId: string, weeks = 12, now = Date.now(), lang?: unknown): GapsResponse {
+  const locale = resolveLang(lang);
   const db = getDatabase();
   const cutoff = cutoffFor(weeks, now);
   const agg = topicAggregate(db, workspaceId, cutoff);
@@ -191,8 +224,7 @@ export function getGaps(workspaceId: string, weeks = 12, now = Date.now()): Gaps
     }
     gaps.push({
       topicId: row.topicId,
-      label: topicMeta.label,
-      representative: topicMeta.representative,
+      ...localizeTopic(topicMeta, locale),
       total: row.total,
       unanswered,
       answeredRatio: ratio(row.answered, row.total),

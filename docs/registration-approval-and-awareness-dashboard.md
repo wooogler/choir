@@ -353,3 +353,27 @@ Example: "I'm the second author on a CHI paper, can I still get travel funding?"
 - `data/`, `dist/`, 실제 `.env`는 커밋 금지.
 - Part A와 B0는 독립적으로 PR 분리 가능. B1은 B0 데이터 필요.
 - 기존 문구·코드에 남은 연구 시절 잔재(개발자 이메일 등)는 Part A 범위에서 정리하되, `CHOIR_CONSENT_FORM_URL` 지원은 유지(설정된 워크스페이스에서만 표시).
+
+---
+
+## 현지화된 토픽 라벨 (Localized topic labels)
+
+대시보드의 토픽 라벨은 **영어로 생성**된다. 질문은 익명화 후 영어로 패러프레이즈되고(`services/dashboard/paraphrase.ts`), 그 영어 문장이 임베딩·클러스터링의 키이므로 라벨도 영어가 기준이다. 한국어 사용자를 위해서는 이 영어 라벨을 **표시용으로 번역**해 함께 저장한다.
+
+**저장.** `qa_topics.labels_json` (TEXT, nullable) — 비영어 로케일만 담는 JSON 객체다.
+
+```json
+{ "ko": { "label": "출장 지원금", "representative": "출장 지원금을 받을 수 있나요?" } }
+```
+
+영어는 기존 `label` / `representative` 컬럼에 그대로 남는다(클러스터링 키). 로케일별 컬럼 대신 JSON 한 칸이라 로케일이 추가돼도 마이그레이션이 없다. 컬럼 추가는 `services/db/connection.ts`의 `addColumnIfMissing()`이 `PRAGMA table_info`로 확인 후 `ALTER TABLE`을 실행하므로, 기존 배포 DB에서도 앱을 열기만 하면 자동으로 붙고 재실행해도 안전하다.
+
+**생성 시점.** 클러스터링 배치(`topic-clusterer.ts`)가 영어 라벨을 (재)생성한 직후, 지원 로케일 중 `en`을 제외한 각 로케일마다 `createStructuredResponse` 한 번(`purpose: 'classification'`, `temperature: 0`, `skipAnonymization: true` — 입력이 이미 익명화된 텍스트라 역익명화로 실명이 복원되면 안 된다). 영어 라벨/대표질문이 **바뀌었을 때만** 다시 번역하고, 바뀌지 않았으면 저장된 `labels_json`을 그대로 재사용한다. 따라서 안정된 토픽은 매 실행마다 추가 LLM 호출이 없다.
+
+**폴백.** 번역 호출이 실패하면 해당 로케일 항목을 비워 두고 영어가 그대로 노출된다. API(`dashboard-api.ts`)는 `?lang=` (없으면 `en`, `ko-KR` 같은 지역 태그는 `normalizeLocale`로 정규화)에 해당하는 번역이 있으면 기존 `label`/`representative` 필드에 번역을 담아 주고, 없으면 영어를 담는다. 응답 스키마는 그대로이고 `labelLocale: 'en' | 'ko'` 필드만 추가돼 UI가 실제 언어를 알 수 있다(`lang` 속성에 사용). SPA는 세 엔드포인트 요청에 `?lang=`을 붙이고 언어가 바뀌면 다시 가져온다.
+
+**백필.** 번역 단계 이전에 만들어진 토픽(혹은 새로 추가된 로케일)은 다음 명령으로 채운다. 이미 해당 로케일이 있는 토픽은 건너뛰므로 여러 번 실행해도 안전하다.
+
+```bash
+pnpm backfill:dashboard:labels --workspace <workspaceId> [--locale ko] [--dry-run]
+```

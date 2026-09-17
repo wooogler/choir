@@ -23,7 +23,7 @@ type DashboardProps = { workspaceId: string; fromFilePath?: string };
 
 export function Dashboard({ workspaceId, fromFilePath }: DashboardProps) {
   const t = useT();
-  const { applySessionLanguage } = useLocale();
+  const { locale, applySessionLanguage } = useLocale();
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [topics, setTopics] = useState<TopicsResponse | null>(null);
@@ -55,10 +55,13 @@ export function Dashboard({ workspaceId, fromFilePath }: DashboardProps) {
     let cancelled = false;
     (async () => {
       try {
+        // Topic labels are localized server-side, so the reader's language is
+        // part of the request — and moving it has to refetch, not just re-render.
+        const lang = `?lang=${encodeURIComponent(locale)}`;
         const [s, t, g, d] = await Promise.all([
-          fetchJson<DashboardSummary>(`/api/dashboard/${workspaceId}/summary`, workspaceId),
-          fetchJson<TopicsResponse>(`/api/dashboard/${workspaceId}/topics`, workspaceId),
-          fetchJson<GapsResponse>(`/api/dashboard/${workspaceId}/gaps`, workspaceId),
+          fetchJson<DashboardSummary>(`/api/dashboard/${workspaceId}/summary${lang}`, workspaceId),
+          fetchJson<TopicsResponse>(`/api/dashboard/${workspaceId}/topics${lang}`, workspaceId),
+          fetchJson<GapsResponse>(`/api/dashboard/${workspaceId}/gaps${lang}`, workspaceId),
           fetchJson<DocUsageResponse>(`/api/dashboard/${workspaceId}/doc-usage`, workspaceId),
         ]);
         if (cancelled) return;
@@ -73,7 +76,7 @@ export function Dashboard({ workspaceId, fromFilePath }: DashboardProps) {
     return () => {
       cancelled = true;
     };
-  }, [canView, workspaceId, t]);
+  }, [canView, workspaceId, locale, t]);
 
   const goDocs = () => {
     if (fromFilePath) navigate(docsPath(workspaceId, fromFilePath));
@@ -85,6 +88,8 @@ export function Dashboard({ workspaceId, fromFilePath }: DashboardProps) {
       (topics?.topics ?? []).slice(0, 12).map((topic) => ({
         key: topic.topicId,
         label: topic.label,
+        // Marks an English label sitting in a Korean page (no translation stored).
+        lang: topic.labelLocale,
         value: topic.total,
         answered: topic.answered,
         title: t('dashboard.topic.tooltip', {

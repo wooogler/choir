@@ -86,6 +86,71 @@ describe('clusterWorkspace', () => {
     expect(getTopics(WS)).toHaveLength(1);
   });
 
+  describe('localized display labels', () => {
+    const fakeTranslate = jest.fn(async (english: { label: string; representative: string }, locale: string) => ({
+      label: `${locale}:${english.label}`,
+      representative: `${locale}:${english.representative}`,
+    }));
+
+    beforeEach(() => fakeTranslate.mockClear());
+
+    it('translates a new topic once per non-English locale', async () => {
+      seed('A one');
+      seed('B one');
+      await clusterWorkspace(WS, {
+        embed: fakeEmbed,
+        label: fakeLabel,
+        translate: fakeTranslate,
+        threshold: 0.8,
+        now: 1,
+      });
+
+      // Two topics x one non-English locale (ko).
+      expect(fakeTranslate).toHaveBeenCalledTimes(2);
+      expect(fakeTranslate).toHaveBeenCalledWith({ label: 'L:A', representative: 'A one' }, 'ko');
+      const topics = getTopics(WS);
+      expect(topics.map((t) => t.labels.ko?.label).sort()).toEqual(['ko:L:A', 'ko:L:B']);
+    });
+
+    it('does not re-translate a topic whose English label is unchanged', async () => {
+      seed('A one');
+      await clusterWorkspace(WS, { embed: fakeEmbed, label: fakeLabel, translate: fakeTranslate, threshold: 0.8 });
+      expect(fakeTranslate).toHaveBeenCalledTimes(1);
+
+      fakeTranslate.mockClear();
+      seed('A two'); // joins the same topic, so it is relabeled — to the same label
+      await clusterWorkspace(WS, { embed: fakeEmbed, label: fakeLabel, translate: fakeTranslate, threshold: 0.8 });
+      expect(fakeTranslate).not.toHaveBeenCalled();
+      expect(getTopics(WS)[0].labels.ko?.label).toBe('ko:L:A');
+    });
+
+    it('re-translates when the English label changes', async () => {
+      seed('A one');
+      await clusterWorkspace(WS, { embed: fakeEmbed, label: fakeLabel, translate: fakeTranslate, threshold: 0.8 });
+
+      fakeTranslate.mockClear();
+      seed('A two');
+      const renamed = async () => ({ label: 'Renamed topic', representative: 'A new question?' });
+      await clusterWorkspace(WS, { embed: fakeEmbed, label: renamed, translate: fakeTranslate, threshold: 0.8 });
+      expect(fakeTranslate).toHaveBeenCalledTimes(1);
+      expect(getTopics(WS)[0].labels.ko).toEqual({
+        label: 'ko:Renamed topic',
+        representative: 'ko:A new question?',
+      });
+    });
+
+    it('leaves the topic English-only when translation fails', async () => {
+      seed('A one');
+      const failing = jest.fn(async () => null);
+      await clusterWorkspace(WS, { embed: fakeEmbed, label: fakeLabel, translate: failing, threshold: 0.8 });
+
+      const [topic] = getTopics(WS);
+      expect(failing).toHaveBeenCalledTimes(1);
+      expect(topic.label).toBe('L:A'); // the English label is still written
+      expect(topic.labels).toEqual({}); // and nothing masquerades as Korean
+    });
+  });
+
   it('assigns a new event to an existing topic on a later run', async () => {
     seed('A one');
     await clusterWorkspace(WS, { embed: fakeEmbed, label: fakeLabel, threshold: 0.8, now: 1 });

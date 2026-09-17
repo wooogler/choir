@@ -29,6 +29,19 @@ function resolveDatabasePath(): string {
   return toSqlitePath(process.env.SQLITE_DATABASE_PATH || 'file:data/choir.db');
 }
 
+/**
+ * SQLite has no `ALTER TABLE … ADD COLUMN IF NOT EXISTS`, so a column added to a
+ * table that already exists in the wild has to be guarded by hand. Checking
+ * `PRAGMA table_info` keeps `initializeSchema` idempotent (it runs on every
+ * open) without needing a `schema_migrations` row per column.
+ */
+function addColumnIfMissing(db: Database.Database, table: string, column: string, definition: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  Logger.info('SQLite column added.', { table, column });
+}
+
 function initializeSchema(db: Database.Database): void {
   db.exec(`
     PRAGMA foreign_keys = ON;
@@ -117,6 +130,14 @@ function initializeSchema(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_qa_event_chunks_event ON qa_event_chunks (event_id);
   `);
+
+  // Localized display labels for a topic: a JSON object keyed by locale,
+  // `{"ko":{"label":…,"representative":…}}`, holding only the non-English
+  // translations (the columns above stay the English clustering key). One JSON
+  // column instead of a column per language, so adding a locale needs no
+  // migration. Added here rather than in the CREATE above because qa_topics
+  // already exists on deployed databases.
+  addColumnIfMissing(db, 'qa_topics', 'labels_json', 'TEXT');
 }
 
 export function getDatabase(): Database.Database {

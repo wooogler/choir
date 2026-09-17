@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getDocUsage, getGaps, getSummary, getTopics } from 'services/dashboard/dashboard-api';
-import { insertQaEvent, insertTopic, setEventTopic } from 'services/dashboard/qa-event-store';
+import { insertQaEvent, insertTopic, setEventTopic, setTopicLabels } from 'services/dashboard/qa-event-store';
 import { closeDatabase } from 'services/db/connection';
 
 const WS = 'T-api';
@@ -78,6 +78,57 @@ describe('dashboard-api', () => {
       seed({ topicId: t, userHash: 'a', isoWeek: '2026-W11' });
       const { topics } = getTopics(WS);
       expect(topics[0].weeklyCounts).toEqual({ '2026-W10': 2, '2026-W11': 1 });
+    });
+  });
+
+  describe('localized topic labels', () => {
+    /** A k-anonymous topic (2 distinct users) with a Korean translation stored. */
+    function seedTranslatedTopic(): number {
+      const topicId = insertTopic(WS, 'Travel funding', 'Is travel funding available?', 1);
+      setTopicLabels(topicId, { ko: { label: '출장 지원금', representative: '출장 지원금을 받을 수 있나요?' } });
+      seed({ topicId, userHash: 'alice', canAnswer: false });
+      seed({ topicId, userHash: 'bob', canAnswer: false });
+      return topicId;
+    }
+
+    it('returns the Korean label for lang=ko when one is stored', () => {
+      seedTranslatedTopic();
+      const { topics } = getTopics(WS, 12, Date.now(), 'ko');
+      expect(topics[0].label).toBe('출장 지원금');
+      expect(topics[0].representative).toBe('출장 지원금을 받을 수 있나요?');
+      expect(topics[0].labelLocale).toBe('ko');
+    });
+
+    it('falls back to English (labelLocale "en") when the locale is missing', () => {
+      const topicId = insertTopic(WS, 'Reimbursement', 'How do I get reimbursed?', 1);
+      seed({ topicId, userHash: 'alice' });
+      seed({ topicId, userHash: 'bob' });
+
+      const { topics } = getTopics(WS, 12, Date.now(), 'ko');
+      expect(topics[0].label).toBe('Reimbursement');
+      expect(topics[0].labelLocale).toBe('en');
+    });
+
+    it('serves English by default and for an unsupported language', () => {
+      seedTranslatedTopic();
+      for (const lang of [undefined, 'en', 'fr', 'not-a-locale']) {
+        const { topics } = getTopics(WS, 12, Date.now(), lang);
+        expect(topics[0].label).toBe('Travel funding');
+        expect(topics[0].labelLocale).toBe('en');
+      }
+    });
+
+    it('accepts a regional tag (ko-KR) the browser may send', () => {
+      seedTranslatedTopic();
+      expect(getTopics(WS, 12, Date.now(), 'ko-KR').topics[0].label).toBe('출장 지원금');
+    });
+
+    it('localizes gaps the same way', () => {
+      seedTranslatedTopic(); // both events are unanswered
+      const { gaps } = getGaps(WS, 12, Date.now(), 'ko');
+      expect(gaps[0].label).toBe('출장 지원금');
+      expect(gaps[0].labelLocale).toBe('ko');
+      expect(getGaps(WS).gaps[0].label).toBe('Travel funding');
     });
   });
 

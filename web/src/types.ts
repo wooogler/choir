@@ -85,10 +85,17 @@ export type DashboardSummary = {
   totals: { questions: number; answered: number; answeredRatio: number; activeTopics: number };
 };
 
+/**
+ * `labelLocale` is the language `label`/`representative` actually came back in.
+ * Topic labels are generated in English and translated for display, so a topic
+ * with no translation for the reader's locale falls back to `en`. Optional
+ * because an older server does not send it.
+ */
 export type TopicView = {
   topicId: number;
   label: string;
   representative: string;
+  labelLocale?: Locale;
   total: number;
   answered: number;
   answeredRatio: number;
@@ -101,6 +108,8 @@ export type GapView = {
   topicId: number;
   label: string;
   representative: string;
+  /** See `TopicView.labelLocale`. */
+  labelLocale?: Locale;
   total: number;
   unanswered: number;
   answeredRatio: number;

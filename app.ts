@@ -360,7 +360,7 @@ function setupPublicSite(): void {
     try {
       const workspaceId = String(req.params.workspaceId);
       if (!(await requireDashboardAccess(req, res, workspaceId))) return;
-      return res.json(getTopics(workspaceId, parseWeeks(req)));
+      return res.json(getTopics(workspaceId, parseWeeks(req), Date.now(), req.query?.lang));
     } catch (err) {
       app.logger.error('GET /api/dashboard/:workspaceId/topics failed', err as Error);
       return res.status(500).json({ error: 'Internal server error' });
@@ -371,7 +371,7 @@ function setupPublicSite(): void {
     try {
       const workspaceId = String(req.params.workspaceId);
       if (!(await requireDashboardAccess(req, res, workspaceId))) return;
-      return res.json(getGaps(workspaceId, parseWeeks(req)));
+      return res.json(getGaps(workspaceId, parseWeeks(req), Date.now(), req.query?.lang));
     } catch (err) {
       app.logger.error('GET /api/dashboard/:workspaceId/gaps failed', err as Error);
       return res.status(500).json({ error: 'Internal server error' });
