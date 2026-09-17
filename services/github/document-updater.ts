@@ -2,6 +2,7 @@ import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
 import type { DocumentUpdate } from 'services/document';
 import { DocumentUpdateService } from 'services/document/document-update-service';
+import { type NodeSplice, applyNodeSplices } from 'services/document/node-splice';
 import { type ProvenanceRecord, buildContextFile, persistContextToMirror } from 'services/document/provenance';
 import { applyAnchorReplacement } from 'services/document/update-anchor';
 import { VectorStoreService } from 'services/file-registry/main-service';
@@ -80,17 +81,39 @@ export async function applyDocumentUpdatesToGithub({
         currentMarkdownFile.content = updatedMarkdownForGithub;
         currentMarkdownFile.tree = parseMarkdownToTree(updatedMarkdownForGithub, currentMarkdownFile.name);
       } else {
-        // 통일된 처리: 모든 업데이트를 parseAndSplitContent 방식으로 처리
+        // Every offset below indexes `originalFileContent`, so they are all
+        // collected against the untouched text and applied together afterwards.
+        const { toString: nodeToText } = await import('mdast-util-to-string');
+        const splices: NodeSplice[] = [];
+
         for (const update of fileUpdates) {
           if (update.updatedNodeContent !== undefined && update.updatedNodeContent !== null) {
             // 기존 노드 내용과 비교하여 실제 변경사항이 있는지 확인
             const currentNode = currentMarkdownFile.tree.nodeMap.get(update.nodeId);
             if (currentNode) {
-              const { toString: nodeToText } = await import('mdast-util-to-string');
               const currentContent = nodeToText(currentNode);
 
               // 내용이 다른 경우에만 업데이트 처리
               if (currentContent.trim() !== update.updatedNodeContent.trim()) {
+                // Recorded before the tree is mutated below: the offsets have to
+                // describe the document this splice will be applied to.
+                const start = currentNode.position?.start?.offset;
+                const end = currentNode.position?.end?.offset;
+                if (typeof start === 'number' && typeof end === 'number') {
+                  splices.push({
+                    start,
+                    end,
+                    // The model's own text, spliced verbatim. Re-serializing the
+                    // replacement nodes instead would put it through
+                    // parseAndSplitContent, which trims every line and joins
+                    // multi-line paragraphs with a space.
+                    replacement: update.updatedNodeContent.trim(),
+                    label: update.nodeId,
+                  });
+                } else {
+                  Logger.warn(`Node ${update.nodeId} in ${fileName} has no source position; skipping its edit`);
+                }
+
                 const success = await vectorStore.replaceNodeWithEnhancedContent(
                   fileName,
                   update.nodeId,
@@ -118,9 +141,24 @@ export async function applyDocumentUpdatesToGithub({
           throw new Error(`File not found in vector store after updates: ${fileName}`);
         }
 
-        // 최종 마크다운 생성
-        const { treeToMarkdown } = await import('services/document/markdown');
-        updatedMarkdownForGithub = treeToMarkdown(currentMarkdownFile.tree);
+        // Splice the changed nodes into the original text rather than
+        // re-serializing the tree. Re-serializing rewrites the whole file in the
+        // serializer's dialect — ordered lists become bullets, nested lists
+        // collapse onto one line, frontmatter and setext headings are destroyed,
+        // the trailing newline is stripped — so a one-paragraph edit arrived at
+        // GitHub as a diff touching nearly every line.
+        const spliced = applyNodeSplices(originalFileContent, splices);
+        for (const { splice, reason } of spliced.skipped) {
+          Logger.warn(`Skipped an update to ${fileName} (${reason}): node ${splice.label ?? 'unknown'}`);
+        }
+        updatedMarkdownForGithub = spliced.markdown;
+
+        // The vector store's copy is what the next update computes offsets
+        // against, so it has to describe the text we are about to commit. The
+        // anchored path does the same thing for the same reason.
+        const { parseMarkdownToTree } = await import('services/document/markdown');
+        currentMarkdownFile.content = updatedMarkdownForGithub;
+        currentMarkdownFile.tree = parseMarkdownToTree(updatedMarkdownForGithub, currentMarkdownFile.name);
       }
 
       Logger.debug(`Generated final markdown length: ${updatedMarkdownForGithub.length}`);
