@@ -4,13 +4,13 @@ import { GithubService } from 'services/github';
 import { getGithubRepo } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
-import { LINK_DESCRIPTION, stripBanner } from './banner';
+import { linkDescription, stripBanner } from './banner';
 import { exportDocMarkdown, getDocMeta } from './drive-client';
 import { type RejectedAsset, assetRepoPath, extractImportable } from './gdocs-delta';
 import { getWorkspaceClient } from './google-auth-service';
 import { normalizeImportPath } from './import-path';
 import { type ImportProgress, makeProgressReporter } from './import-steps';
-import { seedReplica } from './replica-publisher';
+import { bannerLanguage, seedReplica } from './replica-publisher';
 
 export { IMPORT_STEPS, type ImportProgress, type ImportStep } from './import-steps';
 
@@ -161,7 +161,7 @@ export async function importGoogleDoc(params: {
         githubPath,
         markdown: extraction.markdown,
         baseline: rawExport,
-        description: LINK_DESCRIPTION,
+        description: linkDescription(await bannerLanguage(workspaceId, extraction.markdown)),
       });
       // 'seeded-drifted' counts as linked: the bookkeeping is in place and the
       // difference is a human edit the poller will raise for review.

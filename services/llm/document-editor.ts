@@ -2,6 +2,7 @@ import type { WebClient } from '@slack/web-api';
 import { anonymizeText } from 'services/common/name-cache';
 import { processMessageHistory } from 'services/slack/conversation-history';
 import { createChatCompletion, createStructuredResponse } from './completions';
+import { contentLanguageDirective, getContentLanguagePolicy } from './content-language';
 
 export async function editMarkdownWithKnowledge(
   markdown: string,
@@ -29,6 +30,11 @@ async function createContentForEmptySection(
 ) {
   const contextInfo = context?.headingPath || context?.sectionName || 'Unknown section';
 
+  const languageDirective = contentLanguageDirective(await getContentLanguagePolicy(workspaceId), {
+    source: 'knowledge',
+    followSuffix: ', unless the FILE/SECTION context is clearly in another language, in which case match the document',
+  });
+
   const response = await createChatCompletion(
     [
       {
@@ -37,7 +43,7 @@ async function createContentForEmptySection(
 
 Rules:
 - Use only information from the knowledge (no external details)
-- Write in the same language as the knowledge, unless the FILE/SECTION context is clearly in another language, in which case match the document
+${languageDirective}
 - Write as paragraphs or simple list items (no headings)
 - Keep content concise and relevant to the section
 - Preserve all URLs from the knowledge
@@ -81,6 +87,10 @@ async function enhanceExistingContent(
   // 기존 markdown 내용을 분석해서 타입 감지
   const contentType = markdown.trim().match(/^(\s*[-*+]|\s*\d+\.)\s/) ? 'list' : 'paragraph';
 
+  const languageDirective = contentLanguageDirective(await getContentLanguagePolicy(workspaceId), {
+    source: 'existing-content',
+  });
+
   const response = await createChatCompletion(
     [
       {
@@ -90,7 +100,7 @@ async function enhanceExistingContent(
 Existing content type: ${contentType}
 
 Rules:
-- Write the result in the language of the EXISTING content. If the knowledge is in a different language, translate it faithfully into the existing content's language; never leave mixed-language output
+${languageDirective}
 - PRIORITIZE updating/replacing existing content when knowledge provides better, more accurate, or more comprehensive information
 - If knowledge contradicts existing content, prefer the knowledge (assume it's more current/accurate)
 - If knowledge complements existing content without contradiction, add it in matching format: ${contentType === 'list' ? 'as additional list items (- format)' : 'as additional paragraphs'}

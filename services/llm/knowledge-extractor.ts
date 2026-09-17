@@ -4,6 +4,7 @@ import type { SlackMessage } from 'services/slack';
 import { processMessageHistory } from 'services/slack/conversation-history';
 import { CHOIRMessageType, getCHOIRMessageTypeFromBlocks } from 'types/message-types';
 import { type ChatCompletionOptions, createChatCompletion } from './completions';
+import { contentLanguageDirective, getContentLanguagePolicy } from './content-language';
 
 interface KnowledgeExtractionResult {
   cleanContent: string;
@@ -229,6 +230,10 @@ ${formattedMessages}
 
 What information is shared in the conversation that should be documented?`;
 
+    const languageDirective = contentLanguageDirective(await getContentLanguagePolicy(workspaceId), {
+      source: 'conversation',
+    });
+
     const extractedKnowledge = await createChatCompletion(
       [
         {
@@ -252,7 +257,7 @@ TIME
 - The conversation date is given in the Organizational Context. Convert every relative time expression (for example "next Monday", "next week", "next month", "tomorrow") into an absolute date in YYYY-MM-DD form based on that date. Keep genuinely recurring expressions (for example "the 5th of each month") as recurring. Do not leave relative time expressions in the output.
 
 OUTPUT
-- Write in the SAME language as the conversation. If the conversation is in Korean, write the output in Korean.
+${languageDirective}
 - Start with a descriptive markdown title (# [Topic]), then write the information as natural short paragraphs. Do not use bullet or numbered lists.
 - Do not add explanations, interpretations, or implications. Do not attribute information to specific people. Always preserve any URLs.`,
         },

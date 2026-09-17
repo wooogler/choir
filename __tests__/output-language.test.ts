@@ -22,6 +22,13 @@ jest.mock('services/llm/llm-config', () => ({
   resolveLLMConfig: async () => ({ apiKey: 'sk-test', model: 'vision-test' }),
 }));
 
+// The workspace's content-language policy; unset workspaces (most of this file)
+// never reach it.
+const mockContentLanguage = jest.fn();
+jest.mock('services/i18n/resolve-locale', () => ({
+  resolveContentLanguage: (...args: any[]) => mockContentLanguage(...args),
+}));
+
 import { detectDocumentLanguage, detectLanguage } from 'services/common/language';
 import { respondToGeneralConversation } from 'services/llm/chat-responder';
 import { createNewSectionFromKnowledge, generateNewFileDefaults } from 'services/llm/content-generator';
@@ -36,6 +43,8 @@ beforeEach(() => {
   mockChat.mockReset();
   mockStructured.mockReset();
   mockVisionCreate.mockReset();
+  mockContentLanguage.mockReset();
+  mockContentLanguage.mockResolvedValue('follow-conversation');
 });
 
 describe('detectLanguage', () => {
@@ -141,6 +150,58 @@ describe('document-editor prompts pin the output language', () => {
 
     expect(systemPrompt()).toContain(
       "- Write the result in the language of the EXISTING content. If the knowledge is in a different language, translate it faithfully into the existing content's language; never leave mixed-language output",
+    );
+  });
+});
+
+describe('a configured content language overrides the input language', () => {
+  const systemPrompt = () => mockChat.mock.calls[0][0][0].content as string;
+  const structuredPrompt = () => mockStructured.mock.calls[0][0][0].content as string;
+
+  beforeEach(() => {
+    mockContentLanguage.mockResolvedValue('ko');
+  });
+
+  it('pins an empty section to the configured language', async () => {
+    mockChat.mockResolvedValue('생성된 내용');
+    await editMarkdownWithKnowledge('', 'Vacation is 15 days', { fileName: 'hr.md' }, 'T1');
+
+    expect(mockContentLanguage).toHaveBeenCalledWith('T1');
+    expect(systemPrompt()).toContain(
+      '- Write the output in Korean, regardless of the language of the knowledge. Keep quoted names, URLs and code verbatim.',
+    );
+    expect(systemPrompt()).not.toContain('FILE/SECTION context is clearly in another language');
+  });
+
+  it('keeps matching existing content, and converts content in another language when merging', async () => {
+    mockChat.mockResolvedValue('merged');
+    await editMarkdownWithKnowledge('- Vacation is 14 days', '연차는 15일입니다', { fileName: 'hr.md' }, 'T1');
+
+    expect(systemPrompt()).toContain('If the EXISTING content is already in Korean, keep its wording and style');
+    expect(systemPrompt()).toContain('write the merged result in Korean');
+  });
+
+  it('pins a new file to the configured language while the file name stays English', async () => {
+    mockStructured.mockResolvedValue({ fileName: 'vacation-policy.md', initialContent: '# 연차' });
+    await generateNewFileDefaults('Vacation is 15 days', [], 'T1');
+
+    expect(structuredPrompt()).toContain(
+      '- Write the initial content in Korean, regardless of the language of the knowledge.',
+    );
+    expect(structuredPrompt()).toContain('the file name stays in English');
+  });
+
+  it('pins a new section to the configured language', async () => {
+    mockStructured.mockResolvedValue({
+      sectionTitle: '연차',
+      sectionContent: '- 15일',
+      recommendedFile: 'hr.md',
+      reasoning: 'why',
+    });
+    await createNewSectionFromKnowledge('Vacation is 15 days', [], 'T1');
+
+    expect(structuredPrompt()).toContain(
+      '- Write the section title and content in Korean, regardless of the language of the knowledge.',
     );
   });
 });

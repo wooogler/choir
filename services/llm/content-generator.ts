@@ -1,4 +1,5 @@
 import { createStructuredResponse } from './completions';
+import { contentLanguageDirective, getContentLanguagePolicy } from './content-language';
 import { fallbackMessageFor } from './fallback-messages';
 
 export interface NewSectionSuggestion {
@@ -19,6 +20,13 @@ export async function generateNewFileDefaults(
   workspaceId?: string,
 ): Promise<NewFileDefaults> {
   const existingFileNames = existingFiles.map((file) => file.name).join('\n');
+  // The file name is pinned to English by its own rule below, whatever the
+  // content language turns out to be.
+  const languageDirective = contentLanguageDirective(await getContentLanguagePolicy(workspaceId), {
+    source: 'knowledge',
+    subject: 'the initial content',
+    followSuffix: '.',
+  });
 
   try {
     return await createStructuredResponse<NewFileDefaults>(
@@ -31,7 +39,7 @@ Rules:
 - File name: descriptive, concise, kebab-case, ending with .md (the file name stays in English). Avoid conflicts with existing files.
 - Initial content: start with a markdown title (#), then present the knowledge as a markdown bullet list (one "-" item per fact).
 - Use ONLY information from the provided knowledge. Do NOT invent overviews, summaries, examples, checklists, extra sections, or any detail not explicitly stated in the knowledge.
-- Write the initial content in the same language as the knowledge.
+${languageDirective}
 - Keep it concise and do not pad. If the knowledge is short, the document is short.`,
         },
         {
@@ -89,6 +97,10 @@ export async function createNewSectionFromKnowledge(
   const filesDescription = availableFiles
     .map((file) => `- ${file.fileName}: ${file.description || 'No description'}`)
     .join('\n');
+  const languageDirective = contentLanguageDirective(await getContentLanguagePolicy(workspaceId), {
+    source: 'knowledge',
+    subject: 'the section title and content',
+  });
 
   try {
     return await createStructuredResponse<NewSectionSuggestion>(
@@ -99,7 +111,7 @@ export async function createNewSectionFromKnowledge(
 
 Rules:
 - Use ONLY information from the provided knowledge — no external details or assumptions
-- Write the section title and content in the same language as the knowledge
+${languageDirective}
 - Section title: clear, general (e.g., "Online Meeting Platform" not "Using Microsoft Teams for Online Meetings"), without # symbol
 - Section content: a markdown bullet list — one "-" item per fact (no headings or nested structure)
 - Never include user names or identifiers

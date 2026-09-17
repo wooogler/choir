@@ -1,5 +1,8 @@
+import { detectDocumentLanguage } from 'services/common/language';
 import { Logger } from 'services/common/logger';
+import { resolveContentLanguage } from 'services/i18n/resolve-locale';
 import { type GoogleDocMapping, WorkspaceStore } from 'services/workspace/workspace-store';
+import type { Locale } from '../../src/i18n/supported-locales';
 import { stripBanner, withBanner } from './banner';
 import { exportDocMarkdown, getDocMeta, replaceDocContent, setDocDescription } from './drive-client';
 import { extractImportable, sameAfterDialect } from './gdocs-delta';
@@ -126,6 +129,28 @@ export interface SeedParams {
  * the difference is exactly their edit, so the document is left `drifted` for
  * the ordinary review path rather than being quietly adopted.
  */
+/**
+ * The language of the notice CHOIR writes into (or about) someone's Google Doc.
+ *
+ * It follows the workspace's content-language policy, because the banner is
+ * content: it sits in the document body a reader opens, not in CHOIR's own UI.
+ * Under `follow-conversation` there is no configured answer, so the document
+ * speaks for itself and the banner matches the markdown being published.
+ * `detectDocumentLanguage` can return a language CHOIR has no banner for, which
+ * falls back to English the same way an unset policy does.
+ */
+export async function bannerLanguage(workspaceId: string, markdown: string): Promise<Locale> {
+  let policy: 'follow-conversation' | Locale;
+  try {
+    policy = await resolveContentLanguage(workspaceId);
+  } catch {
+    policy = 'follow-conversation';
+  }
+
+  if (policy !== 'follow-conversation') return policy;
+  return detectDocumentLanguage(markdown) === 'ko' ? 'ko' : 'en';
+}
+
 export async function seedReplica(params: SeedParams): Promise<SeedResult> {
   const { workspaceId, githubPath } = params;
 
@@ -363,7 +388,10 @@ export async function publishReplica(params: PublishParams): Promise<PublishResu
       }
     }
 
-    const body = withBanner(rewriteImagesForDrive(workspaceId, githubPath, params.markdown));
+    const body = withBanner(
+      rewriteImagesForDrive(workspaceId, githubPath, params.markdown),
+      await bannerLanguage(workspaceId, params.markdown),
+    );
 
     try {
       const fenced = await pushWithVersionFence(auth, mapping.fileId, body);

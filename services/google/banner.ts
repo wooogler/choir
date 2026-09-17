@@ -13,6 +13,8 @@
  * addition and can be committed to the repository.
  */
 
+import type { Locale } from '../../src/i18n/supported-locales';
+
 /**
  * The `preserve` counterpart to the banner, written to the file's Drive
  * `description` instead of into the body.
@@ -25,9 +27,16 @@
 export const LINK_DESCRIPTION =
   'Linked to CHOIR. Edits made here are reviewed by a manager before they reach the repository.';
 
+export const LINK_DESCRIPTION_KO =
+  'CHOIR에 연결된 문서입니다. 여기서 수정한 내용은 관리자 검토를 거쳐 저장소에 반영됩니다.';
+
 export const REPLICA_BANNER =
   '*This document is a read-only replica of a GitHub document, synced by CHOIR. ' +
   'Edits made here are not applied directly — they are sent to a manager for review.*';
+
+export const REPLICA_BANNER_KO =
+  '*이 문서는 CHOIR가 동기화하는 GitHub 문서의 읽기 전용 사본입니다. ' +
+  '여기서 수정한 내용은 바로 반영되지 않고, 관리자 검토로 전달됩니다.*';
 
 /**
  * Anything that has ever been used as the banner's opening. Matching the opening
@@ -38,6 +47,7 @@ const BANNER_OPENINGS = [
   'This document is a read-only replica',
   // Pre-release Korean wording, kept so early baselines still strip cleanly.
   '이 문서는 GitHub에서 자동 생성된 복제본입니다',
+  '이 문서는 CHOIR가 동기화하는 GitHub 문서의 읽기 전용 사본입니다',
 ];
 
 /**
@@ -79,8 +89,25 @@ export function stripBanner(markdown: string): StrippedBanner {
   return { body: lines.slice(index).join('\n'), hadBanner: true };
 }
 
-/** Prepends the banner, replacing any banner already present. */
-export function withBanner(markdown: string): string {
+/**
+ * Prepends the banner, replacing any banner already present.
+ *
+ * The banner is written into someone's document, so it follows the workspace's
+ * content language rather than CHOIR's UI language. A language with no banner of
+ * its own falls back to English; switching a workspace's language rewrites the
+ * banner on the next publish, which `stripBanner` absorbs because every opening
+ * ever shipped is still matched.
+ */
+export function withBanner(markdown: string, language: Locale = 'en'): string {
   const { body } = stripBanner(markdown);
-  return `${REPLICA_BANNER}\n\n${body}`;
+  return `${bannerFor(language)}\n\n${body}`;
+}
+
+function bannerFor(language: Locale): string {
+  return language === 'ko' ? REPLICA_BANNER_KO : REPLICA_BANNER;
+}
+
+/** The `preserve` counterpart to {@link withBanner}, for the Drive description. */
+export function linkDescription(language: Locale = 'en'): string {
+  return language === 'ko' ? LINK_DESCRIPTION_KO : LINK_DESCRIPTION;
 }

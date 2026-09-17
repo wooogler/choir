@@ -1,4 +1,12 @@
-import { REPLICA_BANNER, stripBanner, withBanner } from 'services/google/banner';
+import {
+  LINK_DESCRIPTION,
+  LINK_DESCRIPTION_KO,
+  REPLICA_BANNER,
+  REPLICA_BANNER_KO,
+  linkDescription,
+  stripBanner,
+  withBanner,
+} from 'services/google/banner';
 
 describe('replica banner', () => {
   it('prepends the banner with a blank line after it', () => {
@@ -65,5 +73,36 @@ describe('replica banner', () => {
   it('handles an empty document', () => {
     expect(stripBanner('')).toEqual({ body: '', hadBanner: false });
     expect(withBanner('')).toBe(`${REPLICA_BANNER}\n\n`);
+  });
+});
+
+describe('the banner follows the content language', () => {
+  it('writes the Korean banner when asked, and English by default', () => {
+    expect(withBanner('# 제목', 'ko')).toBe(`${REPLICA_BANNER_KO}\n\n# 제목`);
+    expect(withBanner('# Title', 'en')).toBe(`${REPLICA_BANNER}\n\n# Title`);
+    expect(withBanner('# Title')).toBe(`${REPLICA_BANNER}\n\n# Title`);
+  });
+
+  it('strips both banners, and the legacy opening still strips', () => {
+    for (const banner of [
+      REPLICA_BANNER,
+      REPLICA_BANNER_KO,
+      '*이 문서는 GitHub에서 자동 생성된 복제본입니다. 여기서 편집한 내용은 반영되지 않습니다.*',
+    ]) {
+      const result = stripBanner(`${banner}\n\n# Title\n\nBody`);
+      expect(result.hadBanner).toBe(true);
+      expect(result.body).toBe('# Title\n\nBody');
+    }
+  });
+
+  it('replaces rather than stacks when the workspace switches language', () => {
+    expect(withBanner(withBanner('# Title', 'en'), 'ko')).toBe(`${REPLICA_BANNER_KO}\n\n# Title`);
+    expect(withBanner(withBanner('# Title', 'ko'), 'en')).toBe(`${REPLICA_BANNER}\n\n# Title`);
+  });
+
+  it('picks the Drive description in the same language', () => {
+    expect(linkDescription('ko')).toBe(LINK_DESCRIPTION_KO);
+    expect(linkDescription('en')).toBe(LINK_DESCRIPTION);
+    expect(linkDescription()).toBe(LINK_DESCRIPTION);
   });
 });
