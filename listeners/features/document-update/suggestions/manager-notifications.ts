@@ -1,3 +1,4 @@
+import { tForUser, tForWorkspace } from 'services/i18n';
 import { getManagers, getWorkspaceId } from 'services/slack';
 
 export async function notifyOtherManagersAboutUpdate(
@@ -21,15 +22,18 @@ export async function notifyOtherManagersAboutUpdate(
 
     const notificationPromises = otherManagers.map(async (managerId) => {
       try {
+        // One translator per recipient, not per message part: this DM is read by
+        // `managerId`, not by the manager who made the update.
+        const t = await tForUser(workspaceId, managerId, client);
         await client.chat.postMessage({
           channel: managerId,
-          text: `📝 Document Update by ${updatedBy}`,
+          text: t('notifications.manager.update.fallback', { updatedBy }),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `📝 *Document Update Notification*\n\n${updatedBy} has updated a document that you were also reviewing.`,
+                text: t('notifications.manager.update.body', { updatedBy }),
               },
             },
             {
@@ -66,23 +70,30 @@ export async function updateOtherManagerMessages(
     return;
   }
 
+  const workspaceId = await getWorkspaceId(client);
+
   const updatePromises = Object.entries(sessionData.managerMessageInfo)
     .filter(([managerId]) => managerId !== currentManagerId)
     .map(async ([managerId, messageInfo]: [string, any]) => {
       try {
+        // Rewriting a card that was sent to `managerId`, so it stays in the
+        // language that card was written in — not the claiming manager's.
+        const t = await tForUser(workspaceId, managerId, client);
         const blocks: any[] = [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `Hi! I'm CHOIR, your documentation assistant.\n*${sessionData.userName || 'A team member'}* has a document update suggestion:`,
+              text: t('notifications.manager.suggestion.intro', {
+                userName: sessionData.userName || t('notifications.manager.suggestion.anonymousUser'),
+              }),
             },
           },
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
+              text: `\`\`\`${sessionData.extractedKnowledge || t('notifications.manager.suggestion.noContent')}\`\`\``,
             },
           },
         ];
@@ -92,7 +103,9 @@ export async function updateOtherManagerMessages(
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+              text: t('notifications.manager.suggestion.context', {
+                discussionLink: `<${sessionData.originalMessageLink}|${t('notifications.link.viewDiscussion')}>`,
+              }),
             },
           });
         }
@@ -101,14 +114,14 @@ export async function updateOtherManagerMessages(
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `✅ *Processing started by ${currentManagerName}*`,
+            text: t('notifications.manager.suggestion.claimed', { managerName: currentManagerName }),
           },
         });
 
         await client.chat.update({
           channel: messageInfo.channel,
           ts: messageInfo.ts,
-          text: `✅ Processing started by ${currentManagerName}`,
+          text: t('notifications.manager.suggestion.claimed.fallback', { managerName: currentManagerName }),
           blocks,
         });
         logger.info(`Updated message for manager ${managerId} - processing started by ${currentManagerName}`);
@@ -132,16 +145,19 @@ export async function notifyOriginalChannel(
   }
 
   try {
+    // A post back into the channel the suggestion came from: everyone there
+    // reads it, so it follows the workspace default rather than one person.
+    const t = await tForWorkspace(await getWorkspaceId(client));
     await client.chat.postMessage({
       channel: sessionData.originalChannelId,
       thread_ts: sessionData.originalThreadTs,
-      text: `🔄 ${managerName} started processing your document update suggestion.`,
+      text: t('notifications.channel.processingStarted.fallback', { managerName }),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `🔄 *${managerName}* started processing your document update suggestion. You'll receive the document suggestions in your DM shortly! 📝`,
+            text: t('notifications.channel.processingStarted', { managerName }),
           },
         },
       ],

@@ -1,3 +1,4 @@
+import type { Locale } from 'services/i18n';
 import { classifyMessageIntent } from 'services/llm/document-editor';
 import {
   ensureWorkspaceAnonymizationMigrated,
@@ -23,13 +24,19 @@ import { isBotMentioned } from './mention-detection';
  * `options.wasMention` is set by the app_mention handler, which strips the
  * `<@bot>` markup from `message` before routing — without it, a mentioned reply
  * in an anonymous thread would look un-mentioned and be misrouted to the asker.
+ *
+ * `options.locale` is the asker's language, read off Bolt's `context` by the
+ * two event handlers that call this. Routing itself does not use it; it is
+ * threaded through so the downstream handlers can answer in the language the
+ * request arrived in without re-resolving it (and without reaching for Bolt's
+ * context, which they do not receive).
  */
 export async function handleIncomingMessage(
   client: any,
   event: any,
   message: string,
   logger: any,
-  options: { wasMention?: boolean } = {},
+  options: { wasMention?: boolean; locale?: Locale } = {},
 ) {
   const startTime = Date.now();
   let messageIntent = 'unknown';

@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
+import { getRequestLocale } from 'services/i18n';
 import { getWorkspaceId, isCHOIRUser } from 'services/slack';
 import { getOrInitBotUserId } from 'services/slack/user-management';
 // import { rejectUpdateCallback } from "../features/document-update/reject-update"; // 삭제: document-update feature에서 중앙 관리
@@ -14,6 +15,7 @@ import { handleIncomingMessage } from './message-router';
  */
 const appMentionCallback = async ({
   client,
+  context,
   event,
   logger,
 }: AllMiddlewareArgs & SlackEventMiddlewareArgs<'app_mention'>) => {
@@ -91,7 +93,10 @@ const appMentionCallback = async ({
 
     // 공유 메시지 핸들러를 사용하여 메시지 처리 (mention markup already stripped
     // above, so signal wasMention explicitly).
-    await handleIncomingMessage(client, event, userMessage, logger, { wasMention: true });
+    await handleIncomingMessage(client, event, userMessage, logger, {
+      wasMention: true,
+      locale: getRequestLocale(context),
+    });
   } catch (error) {
     logger.error('Error processing app mention:', error);
     await client.chat.postMessage({

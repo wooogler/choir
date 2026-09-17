@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, App, SlackEventMiddlewareArgs } from '@slack/bolt';
+import { getRequestLocale } from 'services/i18n';
 import { getWorkspaceId, isCHOIRUser } from 'services/slack';
 import { getOrInitBotUserId } from 'services/slack/user-management';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
@@ -11,6 +12,7 @@ import { handleIncomingMessage } from './message-router';
  */
 const dmMessageCallback = async ({
   client,
+  context,
   event,
   logger,
 }: AllMiddlewareArgs & SlackEventMiddlewareArgs<'message'>) => {
@@ -105,7 +107,7 @@ const dmMessageCallback = async ({
     if (!userMessage) return;
 
     // 공유 메시지 핸들러를 사용하여 메시지 처리
-    await handleIncomingMessage(client, event, userMessage, logger);
+    await handleIncomingMessage(client, event, userMessage, logger, { locale: getRequestLocale(context) });
   } catch (error) {
     logger.error('Error processing DM message:', error);
     await client.chat.postMessage({

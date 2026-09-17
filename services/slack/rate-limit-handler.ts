@@ -1,4 +1,5 @@
 import { Logger } from 'services/common/logger';
+import type { T } from '../../src/i18n';
 
 export interface RateLimitError extends Error {
   code?: string;
@@ -63,6 +64,11 @@ export async function safeSlackCall<T>(operation: () => Promise<T>, description:
   }
 }
 
-export function createRateLimitNotificationText(context: string): string {
-  return `⏳ I'm experiencing high traffic and need to slow down a bit. Your ${context} request is being processed but may take a moment longer than usual. Thank you for your patience!`;
+/**
+ * The apology shown to whoever is waiting on a throttled call. It takes a bound
+ * translator rather than resolving one itself: the reader is whoever the
+ * throttled request belongs to, and only the call site knows who that is.
+ */
+export function createRateLimitNotificationText(t: T, context: string): string {
+  return t('notifications.rateLimit.notice', { context });
 }
