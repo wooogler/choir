@@ -2,6 +2,7 @@ import type { WebClient } from '@slack/web-api';
 import { getUserName } from 'services/slack';
 import { processMessageHistory } from 'services/slack/conversation-history';
 import { createStructuredResponse } from './completions';
+import { fallbackMessageFor } from './fallback-messages';
 
 // Format context from references. The retrieval metadata carries the source's
 // identity in sectionName/headingPath/fileName (not `title`/`source`), so read
@@ -130,10 +131,10 @@ Rules:
   } catch (parseError) {
     console.warn('Failed to parse structured response from answerQuestion:', parseError);
 
+    // Answer in the asker's language even when the model call failed.
     return {
       canAnswer: false,
-      response:
-        "I couldn't find this information in our current documentation. Could you help by asking others or starting a discussion about this topic?",
+      response: fallbackMessageFor('qa.noAnswer', userMessage),
     };
   }
 };

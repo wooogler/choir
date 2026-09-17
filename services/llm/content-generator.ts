@@ -1,4 +1,5 @@
 import { createStructuredResponse } from './completions';
+import { fallbackMessageFor } from './fallback-messages';
 
 export interface NewSectionSuggestion {
   sectionTitle: string;
@@ -71,9 +72,11 @@ Generate a suitable file name and initial markdown content.`,
     );
   } catch (error) {
     console.error('Failed to parse new file defaults:', error);
+    // The file name stays in English (see the rule above); only the title follows
+    // the knowledge's language.
     return {
       fileName: 'new-document.md',
-      initialContent: `# New Document\n\n${knowledgeContent}`,
+      initialContent: `# ${fallbackMessageFor('doc.newDocumentTitle', knowledgeContent)}\n\n${knowledgeContent}`,
     };
   }
 }
@@ -150,7 +153,7 @@ Analyze the knowledge and suggest a new section with appropriate title, content,
   } catch (error) {
     console.error('Failed to parse new section suggestion:', error);
     return {
-      sectionTitle: 'New Section',
+      sectionTitle: fallbackMessageFor('doc.newSectionTitle', knowledgeContent),
       sectionContent: knowledgeContent,
       recommendedFile: availableFiles[0]?.fileName || 'Unknown',
       reasoning: 'Failed to parse AI response, using defaults',

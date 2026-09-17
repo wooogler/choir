@@ -1,3 +1,4 @@
+import { type LanguageCode, languageName } from 'services/common/language';
 import { resolveLLMConfig } from './llm-config';
 import { getOpenAIClient } from './openai-client-factory';
 
@@ -10,6 +11,14 @@ Respond in plain text with exactly this structure:
 - A blank line.
 - A fuller description, and if the image contains legible text, transcribe it verbatim after a line starting with "Text:".
 Be specific and factual; do not speculate beyond what is visible.`;
+
+/**
+ * The caption is committed into the document as visible alt text, so it must be
+ * written in the document's language rather than always in English.
+ */
+function languageDirective(language: LanguageCode): string {
+  return `\n\nWrite the caption and the description in ${languageName(language)}, to match the language of the document this image appears in. Text you transcribe from the image stays verbatim in its original language.`;
+}
 
 export interface ImageCaptionResult {
   /** One concise line for the visible figure caption / image alt text. */
@@ -33,16 +42,21 @@ function toShortCaption(firstLine: string): string {
  * (for the visible figure caption / alt text) plus the full text (description +
  * transcription) used for search indexing. The image is passed inline as a
  * base64 data URL. Throws on failure so callers can decide how to degrade.
+ *
+ * `documentLanguage` is the language of the document the image lives in; it
+ * defaults to English when the caller has no hint to give.
  */
 export async function generateImageCaption(params: {
   workspaceId: string;
   dataUrl: string;
   alt?: string;
+  documentLanguage?: LanguageCode;
 }): Promise<ImageCaptionResult> {
   const resolved = await resolveLLMConfig(params.workspaceId, 'qa');
   const client = getOpenAIClient(resolved.apiKey);
 
   const altHint = params.alt?.trim() ? `\n\nThe author's alt text for this image is: "${params.alt.trim()}".` : '';
+  const language = languageDirective(params.documentLanguage ?? 'en');
 
   const response = await client.responses.create({
     model: resolved.model,
@@ -51,7 +65,7 @@ export async function generateImageCaption(params: {
         type: 'message',
         role: 'user',
         content: [
-          { type: 'input_text', text: CAPTION_PROMPT + altHint },
+          { type: 'input_text', text: CAPTION_PROMPT + language + altHint },
           { type: 'input_image', image_url: params.dataUrl, detail: 'auto' },
         ],
       },

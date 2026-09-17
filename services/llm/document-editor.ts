@@ -37,6 +37,7 @@ async function createContentForEmptySection(
 
 Rules:
 - Use only information from the knowledge (no external details)
+- Write in the same language as the knowledge, unless the FILE/SECTION context is clearly in another language, in which case match the document
 - Write as paragraphs or simple list items (no headings)
 - Keep content concise and relevant to the section
 - Preserve all URLs from the knowledge
@@ -89,6 +90,7 @@ async function enhanceExistingContent(
 Existing content type: ${contentType}
 
 Rules:
+- Write the result in the language of the EXISTING content. If the knowledge is in a different language, translate it faithfully into the existing content's language; never leave mixed-language output
 - PRIORITIZE updating/replacing existing content when knowledge provides better, more accurate, or more comprehensive information
 - If knowledge contradicts existing content, prefer the knowledge (assume it's more current/accurate)
 - If knowledge complements existing content without contradiction, add it in matching format: ${contentType === 'list' ? 'as additional list items (- format)' : 'as additional paragraphs'}

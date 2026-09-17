@@ -1,4 +1,6 @@
+import { detectLanguage } from 'services/common/language';
 import { createChatCompletion } from './completions'; // Corrected import path
+import { fallbackMessage } from './fallback-messages';
 
 export async function respondToGeneralConversation(
   message: string,
@@ -9,16 +11,23 @@ export async function respondToGeneralConversation(
   workspaceId?: string,
 ): Promise<string> {
   // 기본 응답 목록 또는 간단한 규칙 기반 응답
-  const greetings = ['hello', 'hi', 'hey'];
+  // Korean triggers sit alongside the English ones so a Korean greeting takes the
+  // same canned fast path instead of falling through to the model.
+  const greetings = ['hello', 'hi', 'hey', '안녕'];
+  const thanks = ['thank', '감사', '고마'];
   const lowerCaseMessage = message.toLowerCase();
 
+  // These canned replies bypass the model, so they have to pick the language themselves.
+  const lang = detectLanguage(message);
+  const vars = { userName, organizationName };
+
   if (greetings.some((greeting) => lowerCaseMessage.startsWith(greeting))) {
-    return `Hi *${userName}*! 👋 I'm CHOIR, your friendly documentation assistant. Is there a specific document you're looking for about ${organizationName}, or perhaps some information you'd like to update or add?`;
+    return fallbackMessage('chat.greeting', lang, vars);
   }
 
-  if (lowerCaseMessage.includes('thank')) {
-    // thanks, thank you, etc.
-    return `You're very welcome, *${userName}*! 😊 Is there anything else I can help you find or update in our ${organizationName} documents today?`;
+  if (thanks.some((token) => lowerCaseMessage.includes(token))) {
+    // thanks, thank you, 감사합니다, 고마워요, etc.
+    return fallbackMessage('chat.thanks', lang, vars);
   }
 
   // LLM을 사용한 보다 동적인 응답
@@ -48,12 +57,9 @@ Organization: ${organizationName}${descOrg ? `\nAbout: ${descOrg}` : ''}`,
       },
     );
 
-    return (
-      result ||
-      `That's interesting, *${userName}*! Is there anything specific about ${organizationName} documents I can help you with, or perhaps an update you'd like to suggest?`
-    );
+    return result || fallbackMessage('chat.offTopic', lang, vars);
   } catch (error) {
     console.error('[ChatResponder] Error in respondToGeneralConversation:', error);
-    return `I'm not sure how to respond to that, *${userName}*, but I'm here to help with any questions about ${organizationName} documents or if you have updates to suggest!`;
+    return fallbackMessage('chat.error', lang, vars);
   }
 }

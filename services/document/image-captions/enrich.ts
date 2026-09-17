@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { type LanguageCode, detectDocumentLanguage } from 'services/common/language';
 import { Logger } from 'services/common/logger';
 import {
   type ImageRef,
@@ -125,8 +126,9 @@ async function captionDocumentImages(params: {
   refs: ImageRef[];
   cache: ImageCaptionCache;
   result: EnrichResult;
+  documentLanguage: LanguageCode;
 }): Promise<boolean> {
-  const { workspaceId, repoRoot, docRelPath, refs, cache, result } = params;
+  const { workspaceId, repoRoot, docRelPath, refs, cache, result, documentLanguage } = params;
   let cacheChanged = false;
 
   for (const ref of refs) {
@@ -167,7 +169,12 @@ async function captionDocumentImages(params: {
 
     try {
       const dataUrl = `data:${acquired.contentType};base64,${acquired.bytes.toString('base64')}`;
-      const { shortCaption, indexText, model } = await generateImageCaption({ workspaceId, dataUrl, alt: ref.alt });
+      const { shortCaption, indexText, model } = await generateImageCaption({
+        workspaceId,
+        dataUrl,
+        alt: ref.alt,
+        documentLanguage,
+      });
       cache.put(key, hash, {
         caption: indexText,
         shortCaption,
@@ -367,7 +374,19 @@ async function enrichWorkspaceImageCaptionsImpl(workspaceId: string, opts: Enric
     const refs = extractImageRefs(content);
 
     const imagesChanged =
-      refs.length > 0 ? await captionDocumentImages({ workspaceId, repoRoot, docRelPath, refs, cache, result }) : false;
+      refs.length > 0
+        ? await captionDocumentImages({
+            workspaceId,
+            repoRoot,
+            docRelPath,
+            refs,
+            cache,
+            result,
+            // Captions are written back as visible alt text, so they follow the
+            // language the document is written in.
+            documentLanguage: detectDocumentLanguage(content),
+          })
+        : false;
     const urlsChanged = await summarizeDocumentUrls({ workspaceId, docRelPath, content, cache, result });
 
     if (imagesChanged || urlsChanged) {
