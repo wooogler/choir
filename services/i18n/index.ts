@@ -20,3 +20,5 @@ export {
   isSupportedLocale,
   normalizeLocale,
 } from '../../src/i18n/supported-locales';
+
+export { tForRequest, tForUser, tForWorkspace } from './t';
