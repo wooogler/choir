@@ -47,5 +47,6 @@ Service modules should not depend on Slack payload shapes unless they are explic
 - `services/llm/`: model calls, prompts, response generation, and content generation.
 - `services/workspace/`: persisted workspace configuration, runtime mirrors, and cleanup.
 - `services/common/`: logging, sessions, timestamps, names, data paths, and shared error helpers.
+- `services/i18n/`: locale resolution, the Bolt locale middleware, and per-reader translators; catalogs live in `src/i18n/` (see [i18n.md](i18n.md)).
 
 When adding a feature, prefer a thin listener that validates Slack payloads and delegates domain work to a service. When a listener grows beyond one clear Slack interaction, split it by action, view, or flow step.
