@@ -1,0 +1,105 @@
+{
+  "knowledge_edit_modal": {
+    "type": "modal",
+    "callback_id": "knowledge_edit_modal",
+    "notify_on_close": true,
+    "private_metadata": "sess-1",
+    "title": {
+      "type": "plain_text",
+      "text": "Edit Knowledge",
+      "emoji": true
+    },
+    "submit": {
+      "type": "plain_text",
+      "text": "Update Knowledge",
+      "emoji": true
+    },
+    "close": {
+      "type": "plain_text",
+      "text": "Cancel",
+      "emoji": true
+    },
+    "blocks": [
+      {
+        "type": "section",
+        "text": {
+          "type": "mrkdwn",
+          "text": "*Edit the extracted knowledge before applying updates:* "
+        }
+      },
+      {
+        "type": "input",
+        "block_id": "knowledge_input",
+        "element": {
+          "type": "plain_text_input",
+          "action_id": "knowledge_text",
+          "multiline": true,
+          "initial_value": "Travel is reimbursed within 30 days.",
+          "placeholder": {
+            "type": "plain_text",
+            "text": "Enter the knowledge to be documented..."
+          }
+        },
+        "label": {
+          "type": "plain_text",
+          "text": "Knowledge Content",
+          "emoji": true
+        }
+      },
+      {
+        "type": "context",
+        "elements": [
+          {
+            "type": "mrkdwn",
+            "text": "📊 *Source:* 3 messages analyzed"
+          }
+        ]
+      }
+    ]
+  },
+  "knowledge_edit_manager_modal": {
+    "type": "modal",
+    "callback_id": "knowledge_edit_manager_modal",
+    "notify_on_close": true,
+    "private_metadata": "sess-1",
+    "title": {
+      "type": "plain_text",
+      "text": "Edit Submitted Knowledge",
+      "emoji": true
+    },
+    "submit": {
+      "type": "plain_text",
+      "text": "Update Knowledge",
+      "emoji": true
+    },
+    "close": {
+      "type": "plain_text",
+      "text": "Cancel",
+      "emoji": true
+    },
+    "blocks": [
+      {
+        "type": "section",
+        "text": {
+          "type": "mrkdwn",
+          "text": "*Edit the knowledge submitted by the user:*"
+        }
+      },
+      {
+        "type": "input",
+        "block_id": "knowledge_input",
+        "element": {
+          "type": "plain_text_input",
+          "action_id": "knowledge_text",
+          "multiline": true,
+          "initial_value": "Travel is reimbursed within 30 days."
+        },
+        "label": {
+          "type": "plain_text",
+          "text": "Knowledge Content",
+          "emoji": true
+        }
+      }
+    ]
+  }
+}

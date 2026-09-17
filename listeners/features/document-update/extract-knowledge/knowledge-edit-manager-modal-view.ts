@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, SlackViewAction, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/interaction-tracker';
+import { tForRequest, tForWorkspace } from 'services/i18n';
 import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
@@ -16,11 +17,16 @@ export async function handleKnowledgeEditManagerModal({
   view,
   client,
   logger,
+  context,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs<SlackViewAction>) {
   const startTime = Date.now();
   let workspaceId: string | undefined;
   await ack();
   const userId = body.user.id; // Manager's ID
+
+  // The card this handler rewrites is the acting manager's own DM card, and so
+  // is every notice below it, so the request's translator is the reader's too.
+  const t = tForRequest(context);
 
   try {
     workspaceId = await getWorkspaceId(client);
@@ -34,7 +40,7 @@ export async function handleKnowledgeEditManagerModal({
     if (!sessionData) {
       await client.chat.postMessage({
         channel: userId,
-        text: '❌ Session data not found. Please try again or ask the user to resubmit.',
+        text: t('docUpdate.extract.error.sessionMissingManager'),
       });
 
       // 로그: 세션 데이터 없음
@@ -98,13 +104,13 @@ export async function handleKnowledgeEditManagerModal({
     // card instead of leaving the manager with a deleted (permanently lost) card.
     let repostFailed = false;
 
-    if (managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel) {
+    if (managerMessageInfo?.ts && managerMessageInfo.channel) {
       const blocks: any[] = [
         {
           type: 'header',
           text: {
             type: 'plain_text',
-            text: '📝 Document Update Suggestion', // Title remains same or can indicate edit
+            text: t('docUpdate.extract.card.header'), // Title remains same or can indicate edit
             emoji: true,
           },
         },
@@ -112,7 +118,11 @@ export async function handleKnowledgeEditManagerModal({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `*From:* <@${sessionData.userId}> (Original requester: ${sessionData.userName || 'Unknown User'})\n*Content:*\n\`\`\`${editedKnowledge.trim()}\`\`\``,
+            text: t('docUpdate.extract.card.fromWithContent', {
+              user: `<@${sessionData.userId}>`,
+              userName: sessionData.userName || t('docUpdate.extract.card.unknownUser'),
+              content: editedKnowledge.trim(),
+            }),
           },
         },
       ];
@@ -122,7 +132,9 @@ export async function handleKnowledgeEditManagerModal({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+            text: t('notifications.manager.suggestion.context', {
+              discussionLink: `<${sessionData.originalMessageLink}|${t('notifications.link.viewDiscussion')}>`,
+            }),
           },
         });
       }
@@ -134,7 +146,7 @@ export async function handleKnowledgeEditManagerModal({
             type: 'button',
             text: {
               type: 'plain_text',
-              text: 'Edit Knowledge',
+              text: t('docUpdate.extract.card.editKnowledge.button'),
               emoji: true,
             },
             action_id: 'open_knowledge_edit_manager_modal',
@@ -144,7 +156,7 @@ export async function handleKnowledgeEditManagerModal({
             type: 'button',
             text: {
               type: 'plain_text',
-              text: 'Start Document Update',
+              text: t('docUpdate.extract.card.startUpdate.button'),
               emoji: true,
             },
             style: 'primary',
@@ -159,7 +171,7 @@ export async function handleKnowledgeEditManagerModal({
             type: 'button',
             text: {
               type: 'plain_text',
-              text: 'Dismiss',
+              text: t('docUpdate.extract.card.dismiss.button'),
               emoji: true,
             },
             style: 'danger',
@@ -180,11 +192,13 @@ export async function handleKnowledgeEditManagerModal({
           'delete old message',
           2, // Max 2 retries for delete operation
         ).catch((deleteError) => {
-          logger.warn(`Failed to delete old message, proceeding with recreation:`, deleteError);
+          logger.warn('Failed to delete old message, proceeding with recreation:', deleteError);
         });
 
         // Step 2: Create new message with updated content (complete message with greeting and buttons)
-        const choirGreeting = `Hi! I'm CHOIR, your documentation assistant.\n \n \n*${sessionData.userName || 'Unknown User'}* has a document update suggestion:`;
+        const choirGreeting = t('docUpdate.extract.card.intro', {
+          userName: sessionData.userName || t('docUpdate.extract.card.unknownUser'),
+        });
 
         // Create intro block with user profile image
         const introBlock: any = {
@@ -203,14 +217,14 @@ export async function handleKnowledgeEditManagerModal({
               introBlock.accessory = {
                 type: 'image',
                 image_url: userInfo.user.profile.image_192,
-                alt_text: sessionData.userName || 'User profile',
+                alt_text: sessionData.userName || t('docUpdate.extract.card.profileAlt'),
               };
             } else {
               // Fallback to default profile image
               introBlock.accessory = {
                 type: 'image',
                 image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-                alt_text: sessionData.userName || 'User profile',
+                alt_text: sessionData.userName || t('docUpdate.extract.card.profileAlt'),
               };
             }
           } catch (error) {
@@ -219,7 +233,7 @@ export async function handleKnowledgeEditManagerModal({
             introBlock.accessory = {
               type: 'image',
               image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-              alt_text: sessionData.userName || 'User profile',
+              alt_text: sessionData.userName || t('docUpdate.extract.card.profileAlt'),
             };
           }
         }
@@ -230,7 +244,7 @@ export async function handleKnowledgeEditManagerModal({
             type: 'header',
             text: {
               type: 'plain_text',
-              text: '📝 Document Update Suggestion (Edited by Manager)',
+              text: t('docUpdate.extract.card.header.editedByManager'),
               emoji: true,
             },
           },
@@ -238,7 +252,9 @@ export async function handleKnowledgeEditManagerModal({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*From:* *${sessionData.userName || 'Unknown User'}*`,
+              text: t('docUpdate.extract.card.fromName', {
+                userName: sessionData.userName || t('docUpdate.extract.card.unknownUser'),
+              }),
             },
           },
           {
@@ -255,7 +271,9 @@ export async function handleKnowledgeEditManagerModal({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+              text: t('notifications.manager.suggestion.context', {
+                discussionLink: `<${sessionData.originalMessageLink}|${t('notifications.link.viewDiscussion')}>`,
+              }),
             },
           });
         }
@@ -267,7 +285,7 @@ export async function handleKnowledgeEditManagerModal({
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: '✏️ Edit Suggestion',
+                text: t('docUpdate.extract.card.editSuggestion.button'),
                 emoji: true,
               },
               action_id: 'open_knowledge_edit_manager_modal',
@@ -277,7 +295,7 @@ export async function handleKnowledgeEditManagerModal({
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: '🚀 Start Update Process',
+                text: t('docUpdate.extract.card.startProcess.button'),
                 emoji: true,
               },
               style: 'primary',
@@ -292,7 +310,7 @@ export async function handleKnowledgeEditManagerModal({
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: 'Dismiss',
+                text: t('docUpdate.extract.card.dismiss.button'),
                 emoji: true,
               },
               style: 'danger',
@@ -306,7 +324,7 @@ export async function handleKnowledgeEditManagerModal({
           () =>
             client.chat.postMessage({
               channel: managerMessageInfo.channel,
-              text: `📝 Document update suggestion updated by manager for session ${sessionId}.`,
+              text: t('docUpdate.extract.card.updatedByManager.fallback', { sessionId }),
               blocks: completeBlocks,
               unfurl_links: false,
               unfurl_media: false,
@@ -341,7 +359,7 @@ export async function handleKnowledgeEditManagerModal({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `*Knowledge Updated (Original Message Not Found):*\n\`\`\`${editedKnowledge.trim()}\`\`\``,
+            text: t('docUpdate.extract.card.knowledgeUpdated', { content: editedKnowledge.trim() }),
           },
         },
         {
@@ -351,7 +369,7 @@ export async function handleKnowledgeEditManagerModal({
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: 'Edit Knowledge',
+                text: t('docUpdate.extract.card.editKnowledge.button'),
                 emoji: true,
               },
               action_id: 'open_knowledge_edit_manager_modal',
@@ -361,7 +379,7 @@ export async function handleKnowledgeEditManagerModal({
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: 'Start Document Update',
+                text: t('docUpdate.extract.card.startUpdate.button'),
                 emoji: true,
               },
               style: 'primary',
@@ -376,7 +394,7 @@ export async function handleKnowledgeEditManagerModal({
               type: 'button',
               text: {
                 type: 'plain_text',
-                text: 'Dismiss',
+                text: t('docUpdate.extract.card.dismiss.button'),
                 emoji: true,
               },
               style: 'danger',
@@ -392,7 +410,9 @@ export async function handleKnowledgeEditManagerModal({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+            text: t('notifications.manager.suggestion.context', {
+              discussionLink: `<${sessionData.originalMessageLink}|${t('notifications.link.viewDiscussion')}>`,
+            }),
           },
         });
       }
@@ -400,7 +420,7 @@ export async function handleKnowledgeEditManagerModal({
         type: 'header',
         text: {
           type: 'plain_text',
-          text: '📝 Document Update Suggestion',
+          text: t('docUpdate.extract.card.header'),
           emoji: true,
         },
       });
@@ -408,7 +428,10 @@ export async function handleKnowledgeEditManagerModal({
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*From:* <@${sessionData.userId}> (Original requester: ${sessionData.userName || 'Unknown User'})`,
+          text: t('docUpdate.extract.card.from', {
+            user: `<@${sessionData.userId}>`,
+            userName: sessionData.userName || t('docUpdate.extract.card.unknownUser'),
+          }),
         },
       });
 
@@ -416,7 +439,7 @@ export async function handleKnowledgeEditManagerModal({
         () =>
           client.chat.postMessage({
             channel: userId,
-            text: 'Knowledge updated. You can now start the document update process.',
+            text: t('docUpdate.extract.card.knowledgeUpdated.fallback'),
             blocks: fallbackBlocks,
             unfurl_links: false,
             unfurl_media: false,
@@ -428,12 +451,18 @@ export async function handleKnowledgeEditManagerModal({
     // Update the original preview message in the channel/thread (similar to regular edit modal)
     try {
       // Get managers for the message
+      // The preview lives in the channel the request came from, so it follows
+      // the workspace language rather than the editing manager's.
+      const tChannel = await tForWorkspace(workspaceId);
       const managers = await getManagers(workspaceId);
-      let managerText = 'managers';
+      let managerText = tChannel('docUpdate.extract.managers.fallback');
       if (managers.length > 0) {
         // Get first manager's name as example
         const firstManagerName = await getUserName(managers[0], client);
-        managerText = managers.length === 1 ? firstManagerName : `${firstManagerName} and other managers`;
+        managerText =
+          managers.length === 1
+            ? firstManagerName
+            : tChannel('docUpdate.extract.managers.andOthers', { name: firstManagerName });
       }
 
       // Find the original public message to update
@@ -443,13 +472,13 @@ export async function handleKnowledgeEditManagerModal({
             client.chat.update({
               channel: sessionData.originalChannelId,
               ts: sessionData.publicMessageTs,
-              text: `Sure! I'll suggest the following update to ${managerText}. (Edited by Manager)`,
+              text: tChannel('docUpdate.extract.preview.editedByManager.fallback', { managerText }),
               blocks: [
                 {
                   type: 'section',
                   text: {
                     type: 'mrkdwn',
-                    text: `Sure! I'll suggest the following update to ${managerText}. *(Edited by Manager)*`,
+                    text: tChannel('docUpdate.extract.preview.editedByManager', { managerText }),
                   },
                   block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
                 },
@@ -457,7 +486,7 @@ export async function handleKnowledgeEditManagerModal({
                   type: 'section',
                   text: {
                     type: 'mrkdwn',
-                    text: `*Suggested Update*\n\`\`\`${editedKnowledge.trim()}\`\`\``,
+                    text: `*${tChannel('docUpdate.extract.preview.heading')}*\n\`\`\`${editedKnowledge.trim()}\`\`\``,
                   },
                 },
               ],
@@ -509,8 +538,8 @@ export async function handleKnowledgeEditManagerModal({
         editedKnowledge: editedKnowledge.trim(),
         originalKnowledgeLength: originalKnowledge.length,
         editedKnowledgeLength: editedKnowledge.trim().length,
-        messageUpdated: !!(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),
-        fallbackMessageSent: !(managerMessageInfo && managerMessageInfo.ts && managerMessageInfo.channel),
+        messageUpdated: !!(managerMessageInfo?.ts && managerMessageInfo.channel),
+        fallbackMessageSent: !(managerMessageInfo?.ts && managerMessageInfo.channel),
       },
       client,
       actualChannelId,
@@ -522,7 +551,9 @@ export async function handleKnowledgeEditManagerModal({
       () =>
         client.chat.postMessage({
           channel: userId, // Use manager's ID for error message
-          text: `❌ Error processing knowledge edit: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          text: t('docUpdate.extract.error.editFailed', {
+            reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+          }),
         }),
       'send error message',
     ).catch((errorMessageError) => {

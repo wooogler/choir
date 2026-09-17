@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest, tForUser, tForWorkspace } from 'services/i18n';
 import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -12,9 +13,15 @@ export const cancelKnowledgeExtractionCallback = async ({
   body,
   client,
   logger,
+  context,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // The ephemeral, the card being struck through and the failure notice are all
+  // read by whoever clicked; the channel post and the other managers' DMs are
+  // not, and get their own translators below.
+  const t = tForRequest(context);
 
   //response_url을 통해 ephemeral 메시지를 "취소됨" 상태로 업데이트
   try {
@@ -26,13 +33,13 @@ export const cancelKnowledgeExtractionCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: '✅ Got it!',
+          text: t('docUpdate.extract.cancel.ephemeral.fallback'),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '✅ *Processing your decision...*',
+                text: t('docUpdate.extract.cancel.ephemeral'),
               },
             },
           ],
@@ -58,6 +65,7 @@ export const cancelKnowledgeExtractionCallback = async ({
     }
 
     const { originalChannelId, originalThreadTs, publicMessageTs } = sessionData as any;
+    const workspaceId = await getWorkspaceId(client);
 
     // Determine if this is a user cancellation (ephemeral message) or manager decline (DM message)
     const channelId = body.container?.channel_id || userId;
@@ -89,7 +97,7 @@ export const cancelKnowledgeExtractionCallback = async ({
             : [];
 
           // Get manager name for declined status
-          let managerName = 'manager';
+          let managerName = t('docUpdate.extract.decline.unknownManager');
           try {
             const managerUserInfo = await getUserName(userId, client);
             managerName = managerUserInfo;
@@ -102,7 +110,7 @@ export const cancelKnowledgeExtractionCallback = async ({
             type: 'section' as const,
             text: {
               type: 'mrkdwn' as const,
-              text: `❌ *Declined by ${managerName}* - No further action will be taken.`,
+              text: t('docUpdate.extract.decline.declinedBy', { managerName }),
             },
           };
 
@@ -110,11 +118,11 @@ export const cancelKnowledgeExtractionCallback = async ({
           await client.chat.update({
             channel: channelId,
             ts: messageTs,
-            text: message.text || 'Document Update Suggestion',
+            text: message.text || t('docUpdate.extract.card.fallback'),
             blocks: [...blocksWithoutActions, declinedBlock] as any,
           });
 
-          logger.info(`Successfully updated manager message to show declined status`);
+          logger.info('Successfully updated manager message to show declined status');
         }
       } catch (messageError) {
         logger.warn('Failed to update manager message:', messageError);
@@ -125,26 +133,30 @@ export const cancelKnowledgeExtractionCallback = async ({
     if (originalChannelId && originalChannelId !== 'unknown') {
       try {
         const sessionDataTyped = sessionData as any;
-        const userName = sessionDataTyped.userName || 'A team member';
+        // Posted where the request was made, so the whole channel reads it: the
+        // workspace default, not the cancelling person's language.
+        const tChannel = await tForWorkspace(workspaceId);
+        const userName = sessionDataTyped.userName || tChannel('notifications.manager.suggestion.anonymousUser');
 
-        let notificationText, notificationBlocks;
+        let notificationText: string;
+        let notificationBlocks: { type: 'section'; text: { type: 'mrkdwn'; text: string }; block_id: string }[];
 
         if (isUserCancellation) {
           // User cancelled their own request
-          notificationText = '❌ Update suggestion cancelled';
+          notificationText = tChannel('docUpdate.extract.cancel.channel.fallback');
           notificationBlocks = [
             {
               type: 'section' as const,
               text: {
                 type: 'mrkdwn' as const,
-                text: '❌ The update suggestion has been *cancelled*.',
+                text: tChannel('docUpdate.extract.cancel.channel'),
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
             },
           ];
         } else {
           // Manager declined the request - get manager name
-          let managerName = 'A manager';
+          let managerName = tChannel('docUpdate.extract.decline.anonymousManager');
           try {
             const managerUserInfo = await getUserName(userId, client);
             managerName = managerUserInfo;
@@ -152,13 +164,13 @@ export const cancelKnowledgeExtractionCallback = async ({
             logger.warn('Failed to get manager name for decline notification:', error);
           }
 
-          notificationText = `❌ Update suggestion declined by ${managerName}`;
+          notificationText = tChannel('docUpdate.extract.decline.channel.fallback', { managerName });
           notificationBlocks = [
             {
               type: 'section' as const,
               text: {
                 type: 'mrkdwn' as const,
-                text: `❌ *${userName}*, your document update suggestion was *declined by ${managerName}*. No changes will be made to the documentation at this time.`,
+                text: tChannel('docUpdate.extract.decline.channel', { userName, managerName }),
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
             },
@@ -192,7 +204,6 @@ export const cancelKnowledgeExtractionCallback = async ({
     }
 
     // Log successful cancellation
-    const workspaceId = await getWorkspaceId(client);
     await logButtonClick(
       userId,
       workspaceId,
@@ -257,13 +268,17 @@ export const cancelKnowledgeExtractionCallback = async ({
       const ephemeralParams: any = {
         channel: originalChannelId,
         user: body.user.id,
-        text: `❌ Failed to cancel: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        text: t('docUpdate.extract.error.cancelFailed.fallback', {
+          reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+        }),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `❌ *Error occurred while cancelling*\n${error instanceof Error ? error.message : 'Unknown error'}`,
+              text: t('docUpdate.extract.error.cancelFailed', {
+                reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+              }),
             },
           },
         ],
@@ -305,12 +320,18 @@ async function notifyOtherManagersAboutDecline(
 
     // Get declining manager name
     const decliningManagerName = await getUserName(decliningManagerId, client);
-    const userName = sessionData.userName || 'A team member';
 
     // Send decline notification to each other manager via DM
     const notificationPromises = otherManagers.map(async (managerId) => {
       try {
-        const simpleMessage = `${decliningManagerName} declined the document update suggestion from *${userName}*. You can still review this suggestion if you think it has merit.`;
+        // One translator per recipient: this DM is read by `managerId`, not by
+        // the manager who declined.
+        const t = await tForUser(workspaceId, managerId, client);
+        const userName = sessionData.userName || t('notifications.manager.suggestion.anonymousUser');
+        const simpleMessage = t('docUpdate.extract.decline.otherManagers', {
+          decliningManagerName,
+          userName,
+        });
 
         await client.chat.postMessage({
           channel: managerId, // DM to manager

@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 
 /**
@@ -11,10 +12,15 @@ export const editExtractedKnowledgeCallback = async ({
   body,
   client,
   logger,
+  context,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   let workspaceId: string | undefined;
   await ack();
+
+  // Everything this handler sends — the modal and both failure DMs — is read by
+  // the person who clicked, so one translator covers the whole callback.
+  const t = tForRequest(context);
 
   try {
     const sessionId = body.actions[0].value;
@@ -29,7 +35,7 @@ export const editExtractedKnowledgeCallback = async ({
 
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ Invalid session. Please try the knowledge extraction again.',
+        text: t('docUpdate.extract.error.invalidSession'),
       });
 
       // 로그: 세션 ID 없음
@@ -55,7 +61,7 @@ export const editExtractedKnowledgeCallback = async ({
     if (!sessionData) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ Session data not found. Please try the knowledge extraction again.',
+        text: t('docUpdate.extract.error.sessionMissing'),
       });
 
       // 로그: 세션 데이터 없음
@@ -85,17 +91,17 @@ export const editExtractedKnowledgeCallback = async ({
         private_metadata: sessionId,
         title: {
           type: 'plain_text',
-          text: 'Edit Knowledge',
+          text: t('docUpdate.extract.edit.modal.title'),
           emoji: true,
         },
         submit: {
           type: 'plain_text',
-          text: 'Update Knowledge',
+          text: t('docUpdate.extract.edit.modal.submit'),
           emoji: true,
         },
         close: {
           type: 'plain_text',
-          text: 'Cancel',
+          text: t('common.button.cancel'),
           emoji: true,
         },
         blocks: [
@@ -103,7 +109,7 @@ export const editExtractedKnowledgeCallback = async ({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '*Edit the extracted knowledge before applying updates:* ',
+              text: t('docUpdate.extract.edit.modal.intro'),
             },
           },
           {
@@ -116,12 +122,12 @@ export const editExtractedKnowledgeCallback = async ({
               initial_value: sessionData.extractedKnowledge || '',
               placeholder: {
                 type: 'plain_text',
-                text: 'Enter the knowledge to be documented...',
+                text: t('docUpdate.extract.edit.modal.placeholder'),
               },
             },
             label: {
               type: 'plain_text',
-              text: 'Knowledge Content',
+              text: t('docUpdate.extract.edit.modal.label'),
               emoji: true,
             },
           },
@@ -130,7 +136,7 @@ export const editExtractedKnowledgeCallback = async ({
             elements: [
               {
                 type: 'mrkdwn',
-                text: `📊 *Source:* ${sessionData.messages?.length || 0} messages analyzed`,
+                text: t('docUpdate.extract.edit.modal.source', { count: sessionData.messages?.length || 0 }),
               },
             ],
           },
@@ -163,7 +169,7 @@ export const editExtractedKnowledgeCallback = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: '❌ Failed to open edit modal. Please try again.',
+      text: t('docUpdate.extract.error.modalOpenFailed'),
     });
 
     // 로그: 실패

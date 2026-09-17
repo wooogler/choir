@@ -3,7 +3,8 @@ import type { Logger } from '@slack/bolt';
 import type { WebClient } from '@slack/web-api';
 import type { Block, KnownBlock } from '@slack/web-api';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
-import { getUserName } from 'services/slack';
+import { tForRequest, tForUser, tForWorkspace } from 'services/i18n';
+import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import suggestUpdatesCallback from '../suggestions/suggest-updates-handler';
 
@@ -20,13 +21,19 @@ export const applyExtractedKnowledgeCallback = async ({
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   await ack();
 
+  // Everything this handler sends directly — the two response_url rewrites and
+  // the failure DMs — is read by the manager who clicked. The other managers'
+  // cards and the channel notice are handled by the helpers below, which bind
+  // their own translators.
+  const t = tForRequest(context);
+
   try {
     const sessionId = body.actions[0].value;
 
     if (!sessionId) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ Invalid session. Please try the knowledge extraction again.',
+        text: t('docUpdate.extract.error.invalidSession'),
       });
       return;
     }
@@ -36,7 +43,7 @@ export const applyExtractedKnowledgeCallback = async ({
     if (!sessionData) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ Session data not found. Please try the knowledge extraction again.',
+        text: t('docUpdate.extract.error.sessionMissing'),
       });
       return;
     }
@@ -46,7 +53,7 @@ export const applyExtractedKnowledgeCallback = async ({
 
     // 1. Check if already being processed by another manager
     if (sessionData.status === 'processing') {
-      const processingManagerName = sessionData.processingManagerName || 'Another manager';
+      const processingManagerName = sessionData.processingManagerName || t('docUpdate.extract.conflict.anotherManager');
 
       // Use response_url to immediately show conflict message
       try {
@@ -58,13 +65,13 @@ export const applyExtractedKnowledgeCallback = async ({
             },
             body: JSON.stringify({
               replace_original: true,
-              text: `❌ Already being processed by ${processingManagerName}`,
+              text: t('docUpdate.extract.conflict.fallback', { managerName: processingManagerName }),
               blocks: [
                 {
                   type: 'section',
                   text: {
                     type: 'mrkdwn',
-                    text: `❌ *Already being processed*\n\n${processingManagerName} is currently handling this suggestion. Please wait for them to complete the process.`,
+                    text: t('docUpdate.extract.conflict.body', { managerName: processingManagerName }),
                   },
                 },
               ],
@@ -100,11 +107,11 @@ export const applyExtractedKnowledgeCallback = async ({
 
     if (!isManagerOwnWork && !isThreadInteraction) {
       await notifyOriginalChannel(sessionData, managerName, client, logger);
-      logger.info(`[DEBUG] Sent notification to original channel - channel-level interaction`);
+      logger.info('[DEBUG] Sent notification to original channel - channel-level interaction');
     } else if (isManagerOwnWork) {
-      logger.info(`[DEBUG] Skipping notification - manager processing their own suggestion`);
+      logger.info('[DEBUG] Skipping notification - manager processing their own suggestion');
     } else if (isThreadInteraction) {
-      logger.info(`[DEBUG] Skipping notification - thread interaction (notification already sent via response_url)`);
+      logger.info('[DEBUG] Skipping notification - thread interaction (notification already sent via response_url)');
     }
     // ========== END CONCURRENCY CONTROL ==========
 
@@ -124,7 +131,7 @@ export const applyExtractedKnowledgeCallback = async ({
       });
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ Could not create a link to DM. Please try again or contact support.',
+        text: t('docUpdate.extract.error.dmLinkFailed'),
       });
       return;
     }
@@ -161,13 +168,13 @@ export const applyExtractedKnowledgeCallback = async ({
           },
           body: JSON.stringify({
             replace_original: true,
-            text: '✅ Processing started!',
+            text: t('docUpdate.extract.processing.fallback'),
             blocks: [
               {
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
-                  text: '✅ *Processing started!*\n🔄 Generating document suggestions...\nDocument suggestions will be sent to your DM.',
+                  text: t('docUpdate.extract.processing.body'),
                 },
               },
               {
@@ -177,7 +184,7 @@ export const applyExtractedKnowledgeCallback = async ({
                     type: 'button',
                     text: {
                       type: 'plain_text',
-                      text: 'Open DM',
+                      text: t('docUpdate.extract.processing.openDm.button'),
                       emoji: true,
                     },
                     style: 'primary',
@@ -199,26 +206,28 @@ export const applyExtractedKnowledgeCallback = async ({
 
     // Only send processing messages if this is NOT a DM conversation AND NOT a thread interaction
     if (!isDMConversation && !isThreadInteraction) {
+      // Everyone in the channel sees this, so it follows the workspace default.
+      const tChannel = await tForWorkspace(await getWorkspaceId(client));
       // Send public notification to channel (only for top-level channel interactions)
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,
-        text: '🔄 Processing knowledge and generating document updates...',
+        text: tChannel('docUpdate.extract.processing.channel.fallback'),
         blocks: [
           {
             block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '🔄 Manager is processing the knowledge and generating document updates...',
+              text: tChannel('docUpdate.extract.processing.channel'),
             },
           },
         ],
       });
-      logger.info(`[DEBUG] Sent channel notification - top-level channel interaction`);
+      logger.info('[DEBUG] Sent channel notification - top-level channel interaction');
     } else if (isDMConversation) {
-      logger.info(`[DEBUG] Skipping channel notification - DM conversation`);
+      logger.info('[DEBUG] Skipping channel notification - DM conversation');
     } else if (isThreadInteraction) {
-      logger.info(`[DEBUG] Skipping channel notification - thread interaction (handled via response_url)`);
+      logger.info('[DEBUG] Skipping channel notification - thread interaction (handled via response_url)');
     }
 
     // Use all messages as source messages
@@ -263,7 +272,9 @@ export const applyExtractedKnowledgeCallback = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ Failed to apply knowledge: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      text: t('docUpdate.extract.error.applyFailed', {
+        reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+      }),
     });
   }
 };
@@ -283,16 +294,23 @@ async function updateOtherManagerMessages(
     return;
   }
 
+  const workspaceId = await getWorkspaceId(client);
+
   const updatePromises = Object.entries(sessionData.managerMessageInfo)
     .filter(([managerId]) => managerId !== currentManagerId)
     .map(async ([managerId, messageInfo]: [string, any]) => {
       try {
+        // Rewriting a card that was sent to `managerId`, so it stays in the
+        // language that card was written in — not the claiming manager's.
+        const t = await tForUser(workspaceId, managerId, client);
         // Create intro block with user profile image
         const introBlock: any = {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `Hi! I'm CHOIR, your documentation assistant.\n \n \n*${sessionData.userName || 'A team member'}* has a document update suggestion:`,
+            text: t('docUpdate.extract.card.intro', {
+              userName: sessionData.userName || t('notifications.manager.suggestion.anonymousUser'),
+            }),
           },
         };
 
@@ -304,14 +322,14 @@ async function updateOtherManagerMessages(
               introBlock.accessory = {
                 type: 'image',
                 image_url: userInfo.user.profile.image_192,
-                alt_text: sessionData.userName || 'User profile',
+                alt_text: sessionData.userName || t('docUpdate.extract.card.profileAlt'),
               };
             } else {
               // Fallback to default profile image
               introBlock.accessory = {
                 type: 'image',
                 image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-                alt_text: sessionData.userName || 'User profile',
+                alt_text: sessionData.userName || t('docUpdate.extract.card.profileAlt'),
               };
             }
           } catch (error) {
@@ -320,7 +338,7 @@ async function updateOtherManagerMessages(
             introBlock.accessory = {
               type: 'image',
               image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-              alt_text: sessionData.userName || 'User profile',
+              alt_text: sessionData.userName || t('docUpdate.extract.card.profileAlt'),
             };
           }
         }
@@ -331,7 +349,7 @@ async function updateOtherManagerMessages(
             type: 'header',
             text: {
               type: 'plain_text',
-              text: '📝 Document Update Suggestion',
+              text: t('docUpdate.extract.card.header'),
               emoji: true,
             },
           },
@@ -339,14 +357,16 @@ async function updateOtherManagerMessages(
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*From:* *${sessionData.userName || 'Unknown User'}*`,
+              text: t('docUpdate.extract.card.fromName', {
+                userName: sessionData.userName || t('docUpdate.extract.card.unknownUser'),
+              }),
             },
           },
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
+              text: `\`\`\`${sessionData.extractedKnowledge || t('notifications.manager.suggestion.noContent')}\`\`\``,
             },
           },
         ];
@@ -356,7 +376,9 @@ async function updateOtherManagerMessages(
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+              text: t('notifications.manager.suggestion.context', {
+                discussionLink: `<${sessionData.originalMessageLink}|${t('notifications.link.viewDiscussion')}>`,
+              }),
             },
           });
         }
@@ -365,14 +387,14 @@ async function updateOtherManagerMessages(
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `✅ *Processing started by ${currentManagerName}*\n~~This suggestion is now being processed.~~`,
+            text: t('docUpdate.extract.card.claimed', { managerName: currentManagerName }),
           },
         });
 
         await client.chat.update({
           channel: messageInfo.channel,
           ts: messageInfo.ts,
-          text: `✅ Processing started by ${currentManagerName}`,
+          text: t('notifications.manager.suggestion.claimed.fallback', { managerName: currentManagerName }),
           blocks,
         });
         logger.info(`Updated message for manager ${managerId} - processing started by ${currentManagerName}`);
@@ -399,16 +421,19 @@ async function notifyOriginalChannel(
   }
 
   try {
+    // A post into the channel the suggestion came from: everyone there reads
+    // it, so it follows the workspace default rather than one person.
+    const t = await tForWorkspace(await getWorkspaceId(client));
     await client.chat.postMessage({
       channel: sessionData.originalChannelId,
       thread_ts: sessionData.originalThreadTs,
-      text: `🔄 ${managerName} started processing your document update suggestion.`,
+      text: t('notifications.channel.processingStarted.fallback', { managerName }),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `🔄 *${managerName}* started processing your document update suggestion. You'll receive the document suggestions in your DM shortly! 📝`,
+            text: t('notifications.channel.processingStarted', { managerName }),
           },
         },
       ],

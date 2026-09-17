@@ -3,6 +3,7 @@ import { Logger } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest, tForUser, tForWorkspace } from 'services/i18n';
 import { getChannelName, getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { createMessageLink } from '../suggestions/suggest-updates-handler';
 
@@ -14,10 +15,15 @@ export const sendUpdateSuggestionToManagerCallback = async ({
   body,
   client,
   logger,
+  context,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   let workspaceId: string;
   await ack();
+
+  // The requester's own ephemeral and every failure notice; the manager cards
+  // and the channel confirmation get their own translators.
+  const t = tForRequest(context);
 
   //response_url을 통해 ephemeral 메시지를 "제안됨" 상태로 업데이트
   try {
@@ -29,13 +35,13 @@ export const sendUpdateSuggestionToManagerCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: '✅ Update suggestion sent!',
+          text: t('docUpdate.extract.sent.ephemeral.fallback'),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '✅ *Update suggestion sent!*\nYour suggestion has been forwarded to the managers for review.',
+                text: t('docUpdate.extract.sent.ephemeral'),
               },
             },
           ],
@@ -52,7 +58,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
     if (!sessionId) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ Invalid session. Please try submitting your suggestion again.',
+        text: t('docUpdate.extract.error.invalidSessionSubmit'),
       });
       return;
     }
@@ -61,7 +67,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
     if (!sessionData) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ Session data not found. Please try submitting your suggestion again.',
+        text: t('docUpdate.extract.error.sessionMissingSubmit'),
       });
       return;
     }
@@ -72,7 +78,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
     if (managers.length === 0) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ No managers found in this workspace. Please contact an administrator.',
+        text: t('docUpdate.extract.error.noManagers'),
       });
       return;
     }
@@ -80,7 +86,10 @@ export const sendUpdateSuggestionToManagerCallback = async ({
     const userInfo = await client.users.info({ user: body.user.id });
     // Ensure userName is fetched correctly, fallback to a generic term if needed.
     const userName =
-      userInfo.user?.profile?.display_name || userInfo.user?.real_name || userInfo.user?.name || 'A team member';
+      userInfo.user?.profile?.display_name ||
+      userInfo.user?.real_name ||
+      userInfo.user?.name ||
+      t('notifications.manager.suggestion.anonymousUser');
 
     sessionData.userId = body.user.id;
     sessionData.userName = userName; // 세션 데이터에도 사용자 이름 저장 (취소 등 다른 액션에서 사용 가능)
@@ -89,11 +98,14 @@ export const sendUpdateSuggestionToManagerCallback = async ({
       sessionData.managerMessageInfo = {};
     }
 
-    // CHOIR의 메시지 템플릿
-    const choirGreeting = `Hi! I'm CHOIR, your documentation assistant.\n \n \n*${userName}* has a document update suggestion:`;
-
     for (const managerId of managers) {
       try {
+        // One translator per recipient: each manager gets the card in their own
+        // language, not in the language of whoever sent the suggestion.
+        const tManager = await tForUser(workspaceId, managerId, client);
+        // CHOIR의 메시지 템플릿
+        const choirGreeting = tManager('docUpdate.extract.card.intro', { userName });
+
         let originalMessageLinkBlock = null;
         let messageLink = '';
         try {
@@ -116,7 +128,9 @@ export const sendUpdateSuggestionToManagerCallback = async ({
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
-                  text: `📍 <${messageLink}|View original discussion> for context`,
+                  text: tManager('notifications.manager.suggestion.context', {
+                    discussionLink: `<${messageLink}|${tManager('notifications.link.viewDiscussion')}>`,
+                  }),
                 },
               };
             }
@@ -149,14 +163,14 @@ export const sendUpdateSuggestionToManagerCallback = async ({
               introBlock.accessory = {
                 type: 'image',
                 image_url: userInfo.user.profile.image_192,
-                alt_text: userName || 'User profile',
+                alt_text: userName || tManager('docUpdate.extract.card.profileAlt'),
               };
             } else {
               // Fallback to default profile image
               introBlock.accessory = {
                 type: 'image',
                 image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-                alt_text: userName || 'User profile',
+                alt_text: userName || tManager('docUpdate.extract.card.profileAlt'),
               };
             }
           } catch (error) {
@@ -165,7 +179,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
             introBlock.accessory = {
               type: 'image',
               image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-              alt_text: userName || 'User profile',
+              alt_text: userName || tManager('docUpdate.extract.card.profileAlt'),
             };
           }
         }
@@ -193,7 +207,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
               type: 'button' as const,
               text: {
                 type: 'plain_text' as const,
-                text: '✏️ Edit Suggestion',
+                text: tManager('docUpdate.extract.card.editSuggestion.button'),
                 emoji: true,
               },
               action_id: 'open_knowledge_edit_manager_modal',
@@ -203,7 +217,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
               type: 'button' as const,
               text: {
                 type: 'plain_text' as const,
-                text: '🚀 Start Update Process',
+                text: tManager('docUpdate.extract.card.startProcess.button'),
                 emoji: true,
               },
               style: 'primary' as const,
@@ -219,7 +233,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
               type: 'button' as const,
               text: {
                 type: 'plain_text' as const,
-                text: 'Decline',
+                text: tManager('docUpdate.extract.card.decline.button'),
                 emoji: false,
               },
               style: 'danger' as const,
@@ -231,7 +245,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
 
         const postedMessage = await client.chat.postMessage({
           channel: managerId,
-          text: `📝 New document update suggestion from *${userName}* for your review.`,
+          text: tManager('docUpdate.extract.card.new.fallback', { userName }),
           blocks: blocks,
           unfurl_links: false,
           unfurl_media: false,
@@ -283,16 +297,29 @@ export const sendUpdateSuggestionToManagerCallback = async ({
       const managerNames = await Promise.all(managers.map((id: string) => getUserName(id, client)));
       const managerNamesBold = managerNames.map((name: string) => `*${name}*`).join(', ');
 
+      // Posted back into the channel the request came from, so it follows the
+      // workspace default rather than the requester's own language.
+      const tChannel = await tForWorkspace(workspaceId);
+
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,
-        text: `✅ Great news, *${userName}*! Your document update suggestion has been successfully sent to our manager(s): ${managerNamesBold}. They'll review it soon! (Sent from channel: #${originalChannelName})`,
+        text: tChannel('docUpdate.extract.sent.channel.fallback', {
+          count: managers.length,
+          userName,
+          managerNames: managerNamesBold,
+          channelName: originalChannelName,
+        }),
         thread_ts: sessionData.originalThreadTs,
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `✅ Great news, *${userName}*! Your document update suggestion has been successfully sent to our manager(s): ${managerNamesBold}. They'll review it soon!`,
+              text: tChannel('docUpdate.extract.sent.channel', {
+                count: managers.length,
+                userName,
+                managerNames: managerNamesBold,
+              }),
             },
           },
         ],
@@ -302,7 +329,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: `✅ Your update suggestion has been passed to ${managers.length} manager(s) for review. They will be able to apply the suggestion to update documents or provide feedback.`,
+        text: t('docUpdate.extract.sent.dm', { count: managers.length }),
       });
     }
 
@@ -334,7 +361,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: '❌ Failed to send your suggestion to managers. Please try again later.',
+      text: t('docUpdate.extract.error.sendFailed'),
     });
   }
 };

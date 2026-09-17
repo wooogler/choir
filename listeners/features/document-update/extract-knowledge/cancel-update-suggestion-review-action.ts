@@ -3,6 +3,7 @@ import { Logger } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest, tForUser, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -14,10 +15,15 @@ export const cancelUpdateSuggestionReviewCallback = async ({
   body,
   client,
   logger,
+  context,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   let workspaceId: string | undefined;
   await ack();
+
+  // The two ephemerals and the rewrite of the clicker's own message; the
+  // channel post and the managers' cards bind their own translators.
+  const t = tForRequest(context);
 
   try {
     const sessionId = body.actions[0].value;
@@ -35,7 +41,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
         await client.chat.postEphemeral({
           channel: body.channel.id,
           user: userId,
-          text: "Sorry, I couldn't process the cancellation because the session ID was missing. Please try again or contact support if this continues.",
+          text: t('docUpdate.extract.error.reviewCancelNoSession'),
         });
       }
 
@@ -64,23 +70,33 @@ export const cancelUpdateSuggestionReviewCallback = async ({
     const shortSessionId = sessionId.substring(sessionId.length - 6);
 
     if (sessionData?.originalChannelId) {
-      let cancelledByText = sessionData.userId === userId ? '*You* (the suggester)' : `*${userName}*`;
+      // Posted where the suggestion started, so the whole channel reads it.
+      const tChannel = await tForWorkspace(workspaceId);
+      let cancelledByText =
+        sessionData.userId === userId
+          ? tChannel('docUpdate.extract.reviewCancel.by.self')
+          : tChannel('docUpdate.extract.reviewCancel.by.other', { userName });
       if (sessionData.userId && sessionData.userId !== userId) {
         const suggesterName =
-          sessionData.userName || (await getUserName(sessionData.userId, client)) || 'the original suggester';
-        cancelledByText = `*${userName}* (reviewer). The original suggestion was from *${suggesterName}*.`;
+          sessionData.userName ||
+          (await getUserName(sessionData.userId, client)) ||
+          tChannel('docUpdate.extract.reviewCancel.anonymousSuggester');
+        cancelledByText = tChannel('docUpdate.extract.reviewCancel.by.reviewer', { userName, suggesterName });
       }
 
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,
         ...(sessionData.originalThreadTs ? { thread_ts: sessionData.originalThreadTs } : {}),
-        text: `Update suggestion review (ID: ${shortSessionId}) has been cancelled.`,
+        text: tChannel('docUpdate.extract.reviewCancel.channel.fallback', { sessionId: shortSessionId }),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `🙅‍♀️ Okay, the document update suggestion (ID: ${shortSessionId}) has been cancelled by ${cancelledByText}. No further action will be taken on this one for now. If you change your mind, you can always start a new suggestion!`,
+              text: tChannel('docUpdate.extract.reviewCancel.channel', {
+                sessionId: shortSessionId,
+                cancelledBy: cancelledByText,
+              }),
             },
           },
         ],
@@ -89,15 +105,29 @@ export const cancelUpdateSuggestionReviewCallback = async ({
 
     if (sessionData?.managerMessageInfo) {
       for (const managerId in sessionData.managerMessageInfo) {
-        if (sessionData.managerMessageInfo.hasOwnProperty(managerId)) {
+        if (Object.prototype.hasOwnProperty.call(sessionData.managerMessageInfo, managerId)) {
           const messageDetail = sessionData.managerMessageInfo[managerId];
           if (messageDetail.ts && messageDetail.channel) {
             try {
-              let managerCancellationText = `🙅‍♀️ The document update suggestion (ID: ${shortSessionId}) was cancelled by *${userName}*.`;
+              // Rewriting the card that was sent to this manager, so it stays
+              // in the language that card was written in.
+              const tManager = await tForUser(workspaceId, managerId, client);
+              const suggesterName = sessionData.userName || tManager('docUpdate.extract.reviewCancel.anonymousUser');
+              let managerCancellationText = tManager('docUpdate.extract.reviewCancel.manager.byUser', {
+                sessionId: shortSessionId,
+                userName,
+              });
               if (sessionData.userId && sessionData.userId !== userId) {
-                managerCancellationText = `🙅‍♀️ The document update suggestion (ID: ${shortSessionId}), originally from *${sessionData.userName || 'User'}*, was cancelled by another reviewer (*${userName}*).`;
+                managerCancellationText = tManager('docUpdate.extract.reviewCancel.manager.byReviewer', {
+                  sessionId: shortSessionId,
+                  suggesterName,
+                  userName,
+                });
               } else if (sessionData.userId && sessionData.userId === userId) {
-                managerCancellationText = `🙅‍♀️ The document update suggestion (ID: ${shortSessionId}) from *${sessionData.userName || 'User'}* was cancelled by them.`;
+                managerCancellationText = tManager('docUpdate.extract.reviewCancel.manager.bySuggester', {
+                  sessionId: shortSessionId,
+                  suggesterName,
+                });
               }
 
               await client.chat.update({
@@ -108,13 +138,12 @@ export const cancelUpdateSuggestionReviewCallback = async ({
                     type: 'section',
                     text: {
                       type: 'mrkdwn',
-                      text:
-                        managerCancellationText + ' No further action is needed from your side for this one. Thanks!',
+                      text: managerCancellationText,
                     },
                     block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
                   },
                 ],
-                text: 'Suggestion review cancelled.',
+                text: tManager('docUpdate.extract.reviewCancel.manager.fallback'),
               });
             } catch (updateError) {
               logger.error(
@@ -129,17 +158,25 @@ export const cancelUpdateSuggestionReviewCallback = async ({
 
     if (body.container?.message_ts && body.channel?.id) {
       try {
-        let userCancellationText = `Got it! I've cancelled this update suggestion (ID: ${shortSessionId}). Feel free to start a new one anytime!`;
+        let userCancellationText = t('docUpdate.extract.reviewCancel.own.default', { sessionId: shortSessionId });
         if (
-          sessionData?.managerMessageInfo &&
-          sessionData.managerMessageInfo[userId] &&
+          sessionData?.managerMessageInfo?.[userId] &&
           sessionData.managerMessageInfo[userId].ts === body.container.message_ts
         ) {
-          userCancellationText = `Okay, I've marked the suggestion (ID: ${shortSessionId}) from *${sessionData.userName || 'the user'}* as cancelled. No further action from you is needed on this.`;
+          userCancellationText = t('docUpdate.extract.reviewCancel.own.manager', {
+            sessionId: shortSessionId,
+            suggesterName: sessionData.userName || t('docUpdate.extract.reviewCancel.anonymousUserShort'),
+          });
         } else if (sessionData?.userId === userId) {
-          userCancellationText = `Okay, *${userName}*, I've cancelled your update suggestion (ID: ${shortSessionId}). If you want to suggest something else, just let me know.`;
+          userCancellationText = t('docUpdate.extract.reviewCancel.own.suggester', {
+            sessionId: shortSessionId,
+            userName,
+          });
         } else {
-          userCancellationText = `The update suggestion (ID: ${shortSessionId}) has been cancelled by *${userName}*.`;
+          userCancellationText = t('docUpdate.extract.reviewCancel.own.other', {
+            sessionId: shortSessionId,
+            userName,
+          });
         }
 
         await client.chat.update({
@@ -154,7 +191,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
               },
             },
           ],
-          text: 'Update suggestion cancelled.',
+          text: t('docUpdate.extract.reviewCancel.own.fallback'),
         });
       } catch (e) {
         logger.error("Failed to update user's own message for cancellation: ", e);
@@ -191,7 +228,9 @@ export const cancelUpdateSuggestionReviewCallback = async ({
       await client.chat.postEphemeral({
         channel: body.channel.id,
         user: body.user.id,
-        text: `😥 Oops! I couldn't cancel the suggestion review right now. Error: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again!`,
+        text: t('docUpdate.extract.error.reviewCancelFailed', {
+          reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+        }),
       });
     }
 

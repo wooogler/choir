@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 
 /**
@@ -11,10 +12,15 @@ export const openKnowledgeEditManagerModalCallback = async ({
   body,
   client,
   logger,
+  context,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   let workspaceId: string | undefined;
   await ack();
+
+  // The modal and the failure DM both go to the manager who clicked.
+  const t = tForRequest(context);
+
   try {
     workspaceId = await getWorkspaceId(client);
     const sessionId = body.actions[0].value;
@@ -36,17 +42,17 @@ export const openKnowledgeEditManagerModalCallback = async ({
         private_metadata: sessionId,
         title: {
           type: 'plain_text',
-          text: 'Edit Submitted Knowledge',
+          text: t('docUpdate.extract.managerEdit.modal.title'),
           emoji: true,
         },
         submit: {
           type: 'plain_text',
-          text: 'Update Knowledge',
+          text: t('docUpdate.extract.edit.modal.submit'),
           emoji: true,
         },
         close: {
           type: 'plain_text',
-          text: 'Cancel',
+          text: t('common.button.cancel'),
           emoji: true,
         },
         blocks: [
@@ -54,7 +60,7 @@ export const openKnowledgeEditManagerModalCallback = async ({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '*Edit the knowledge submitted by the user:*',
+              text: t('docUpdate.extract.managerEdit.modal.intro'),
             },
           },
           {
@@ -68,7 +74,7 @@ export const openKnowledgeEditManagerModalCallback = async ({
             },
             label: {
               type: 'plain_text',
-              text: 'Knowledge Content',
+              text: t('docUpdate.extract.edit.modal.label'),
               emoji: true,
             },
           },
@@ -101,7 +107,9 @@ export const openKnowledgeEditManagerModalCallback = async ({
     logger.error('Error opening manager knowledge edit modal:', error);
     await client.chat.postMessage({
       channel: body.user.id, // Send error to the manager who clicked
-      text: `❌ Failed to open knowledge edit modal: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      text: t('docUpdate.extract.error.managerModalOpenFailed', {
+        reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+      }),
     });
 
     // 로그: 실패

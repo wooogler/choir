@@ -1,6 +1,7 @@
 import type { WebClient } from '@slack/web-api';
 import { SessionType, generateSessionId, storeSessionData } from 'services/common';
 import { logKnowledgeExtraction, logUpdateRequestProcessing } from 'services/common/interaction-tracker';
+import { tForUser, tForWorkspace } from 'services/i18n';
 import { extractKnowledgeFromMessages } from 'services/llm/knowledge-extractor';
 import {
   type SlackMessage,
@@ -29,17 +30,23 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
   const isThreadMention = !!event.thread_ts;
 
   try {
+    // Resolved before the first post: everything this handler writes into the
+    // channel is read by everyone in it, so it follows the workspace language
+    // rather than the requester's.
+    const workspaceId = await getWorkspaceId(client);
+    const tChannel = await tForWorkspace(workspaceId);
+
     // Show loading message in the original channel/thread
     const loadingMessage = await client.chat.postMessage({
       channel: originalChannelId,
       ...(isThreadMention && { thread_ts: event.thread_ts }),
-      text: '🔍 Analyzing recent messages to extract knowledge...',
+      text: tChannel('docUpdate.extract.progress.analyzing'),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '🔍 Analyzing recent messages to extract knowledge...',
+            text: tChannel('docUpdate.extract.progress.analyzing'),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
         },
@@ -50,8 +57,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       throw new Error('Failed to post loading message');
     }
 
-    // Get workspace info and CHOIR users for filtering
-    const workspaceId = await getWorkspaceId(client);
+    // Get CHOIR users for filtering
     const choirUsers = await getCHOIRUsers(workspaceId);
 
     // Classify channel type to determine timeLimit and context
@@ -76,13 +82,13 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       await client.chat.update({
         channel: originalChannelId,
         ts: loadingMessage.ts,
-        text: '❌ No messages found to analyze.',
+        text: tChannel('docUpdate.extract.error.noMessages'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ No messages found to analyze.',
+              text: tChannel('docUpdate.extract.error.noMessages'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -113,13 +119,13 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       await client.chat.update({
         channel: originalChannelId,
         ts: loadingMessage.ts,
-        text: '❌ No messages found to analyze.',
+        text: tChannel('docUpdate.extract.error.noMessages'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ No messages found to analyze.',
+              text: tChannel('docUpdate.extract.error.noMessages'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -127,7 +133,6 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       });
 
       // 로그: 사용자 메시지가 없어서 실패한 경우
-      const workspaceId = await getWorkspaceId(client);
       logUpdateRequestProcessing(
         userId,
         workspaceId,
@@ -160,7 +165,6 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         'Unknown User';
 
       // Check if user is a manager
-      const workspaceId = await getWorkspaceId(client);
       const isUserManager = await isManager(workspaceId, userId);
 
       // Get managers for the message
@@ -226,13 +230,13 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
           channel: originalChannelId,
           ts: loadingMessage.ts,
           ...createEnhancedMessage({
-            text: 'I couldn’t find documentable knowledge in the recent conversation.',
+            text: tChannel('docUpdate.extract.empty'),
             blocks: [
               {
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
-                  text: 'I couldn’t find documentable knowledge in the recent conversation.\n\nPlease include the specific policy, deadline, file, or process that should change, then try again.',
+                  text: tChannel('docUpdate.extract.empty.detail'),
                 },
                 block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
               },
@@ -270,11 +274,11 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
               elements: [
                 {
                   type: 'text',
-                  text: `Sure! I'll suggest the following update to ${managerText}.\n`,
+                  text: `${tChannel('docUpdate.extract.preview.intro', { managerText })}\n`,
                 },
                 {
                   type: 'text',
-                  text: 'Suggested Update',
+                  text: tChannel('docUpdate.extract.preview.heading'),
                   style: {
                     bold: true,
                   },
@@ -300,23 +304,25 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         channel: originalChannelId,
         ts: loadingMessage.ts,
         ...createEnhancedMessage({
-          text: `Sure! I'll suggest the following update to ${managerText}.`,
+          text: tChannel('docUpdate.extract.preview.intro', { managerText }),
           blocks: blocks,
         }),
       });
 
-      // Send ephemeral message with buttons for the requester only
+      // Send ephemeral message with buttons for the requester only. Only the
+      // requester ever sees it, so it is written in their language.
+      const tRequester = await tForUser(workspaceId, userId, client);
       await client.chat.postEphemeral({
         channel: originalChannelId,
         ...(event.thread_ts ? { thread_ts: event.thread_ts } : {}),
         user: userId,
-        text: 'You can edit the suggested update if needed.',
+        text: tRequester('docUpdate.extract.actions.editHint'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: 'You can edit the suggested update if needed.',
+              text: tRequester('docUpdate.extract.actions.editHint'),
             },
           },
           {
@@ -326,7 +332,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
                 type: 'button',
                 text: {
                   type: 'plain_text',
-                  text: 'Edit',
+                  text: tRequester('docUpdate.extract.actions.edit.button'),
                   emoji: true,
                 },
                 action_id: 'edit_extracted_knowledge',
@@ -338,7 +344,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: "When you're ready, click Suggest Update to confirm.",
+              text: tRequester('docUpdate.extract.actions.confirmHint'),
             },
           },
           {
@@ -348,7 +354,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
                 type: 'button',
                 text: {
                   type: 'plain_text',
-                  text: 'Suggest Update',
+                  text: tRequester('docUpdate.extract.actions.suggest.button'),
                   emoji: true,
                 },
                 style: 'primary',
@@ -359,7 +365,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
                 type: 'button',
                 text: {
                   type: 'plain_text',
-                  text: 'Cancel',
+                  text: tRequester('common.button.cancel'),
                   emoji: true,
                 },
                 style: 'danger',
@@ -433,20 +439,24 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
       await client.chat.update({
         channel: originalChannelId,
         ts: loadingMessage.ts,
-        text: '❌ Failed to extract knowledge from messages.',
+        text: tChannel('docUpdate.extract.error.extractionFailed.fallback'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `❌ Failed to extract knowledge from messages: ${extractionError instanceof Error ? extractionError.message : 'Unknown error'}`,
+              text: tChannel('docUpdate.extract.error.extractionFailed', {
+                reason:
+                  extractionError instanceof Error
+                    ? extractionError.message
+                    : tChannel('docUpdate.extract.error.unknown'),
+              }),
             },
           },
         ],
       });
 
       // 로그: 지식 추출 실패
-      const workspaceId = await getWorkspaceId(client);
       logUpdateRequestProcessing(
         userId,
         workspaceId,

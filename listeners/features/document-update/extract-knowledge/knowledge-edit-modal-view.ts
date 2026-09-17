@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, SlackViewAction, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/interaction-tracker';
+import { tForRequest, tForWorkspace } from 'services/i18n';
 import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -12,10 +13,15 @@ export async function handleKnowledgeEditModal({
   body,
   client,
   logger,
+  context,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs<SlackViewAction>) {
   const startTime = Date.now();
   let workspaceId: string | undefined;
   await ack();
+
+  // The DMs below go to whoever submitted the modal; the rewritten preview in
+  // the channel does not, and picks up its own translator further down.
+  const t = tForRequest(context);
 
   try {
     workspaceId = await getWorkspaceId(client);
@@ -30,13 +36,13 @@ export async function handleKnowledgeEditModal({
     if (!sessionData) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ Session data not found. Please try the knowledge extraction again.',
+        text: t('docUpdate.extract.error.sessionMissing'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ Session data not found. Please try the knowledge extraction again.',
+              text: t('docUpdate.extract.error.sessionMissing'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -68,13 +74,13 @@ export async function handleKnowledgeEditModal({
     if (!editedKnowledge || editedKnowledge.trim() === '') {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ Please provide some knowledge content before proceeding.',
+        text: t('docUpdate.extract.error.emptyContent'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ Please provide some knowledge content before proceeding.',
+              text: t('docUpdate.extract.error.emptyContent'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -111,12 +117,18 @@ export async function handleKnowledgeEditModal({
     try {
       // Get managers for the message
       const workspaceId = await getWorkspaceId(client);
+      // The preview sits in the channel the request came from, so it follows
+      // the workspace language rather than the editor's.
+      const tChannel = await tForWorkspace(workspaceId);
       const managers = await getManagers(workspaceId);
-      let managerText = 'managers';
+      let managerText = tChannel('docUpdate.extract.managers.fallback');
       if (managers.length > 0) {
         // Get first manager's name as example
         const firstManagerName = await getUserName(managers[0], client);
-        managerText = managers.length === 1 ? firstManagerName : `${firstManagerName} and other managers`;
+        managerText =
+          managers.length === 1
+            ? firstManagerName
+            : tChannel('docUpdate.extract.managers.andOthers', { name: firstManagerName });
       }
 
       // Find the original public message to update
@@ -124,13 +136,13 @@ export async function handleKnowledgeEditModal({
         await client.chat.update({
           channel: sessionData.originalChannelId,
           ts: sessionData.publicMessageTs,
-          text: `Sure! I'll suggest the following update to ${managerText}. (Edited)`,
+          text: tChannel('docUpdate.extract.preview.edited.fallback', { managerText }),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `Sure! I'll suggest the following update to ${managerText}. *(Edited)*`,
+                text: tChannel('docUpdate.extract.preview.edited', { managerText }),
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
             },
@@ -138,7 +150,7 @@ export async function handleKnowledgeEditModal({
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `*Suggested Update*\n\`\`\`${editedKnowledge.trim()}\`\`\``,
+                text: `*${tChannel('docUpdate.extract.preview.heading')}*\n\`\`\`${editedKnowledge.trim()}\`\`\``,
               },
             },
           ],
@@ -192,13 +204,17 @@ export async function handleKnowledgeEditModal({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ Error processing knowledge edit: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      text: t('docUpdate.extract.error.editFailed', {
+        reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+      }),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `❌ Error processing knowledge edit: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            text: t('docUpdate.extract.error.editFailed', {
+              reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+            }),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
         },
