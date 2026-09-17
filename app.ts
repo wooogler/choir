@@ -27,6 +27,8 @@ import {
   getSlackOidcConfig,
   issueOAuthState,
   issueSessionCookieValue,
+  needsManager,
+  parseLanguageUpdate,
   parseSessionCookie,
   sanitizeNextPath,
   saveEditedDocument,
@@ -273,26 +275,50 @@ function setupPublicSite(): void {
     return undefined;
   };
 
+  // Shared by every JSON-bodied route below; declared here because the first of
+  // them is registered a few lines down.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const expressForBodyParser = require('express');
+
+  /**
+   * The language a reader is served, plus the three settings behind it so the
+   * viewer's settings dialog can show what is actually stored — "Automatic" is
+   * a different answer from "English", and the resolved language alone cannot
+   * tell them apart.
+   */
+  const readLanguageState = async (workspaceId: string, userId: string, req: any) => {
+    const store = new WorkspaceStore();
+    const [personal, mine, workspace, content] = await Promise.all([
+      // Their own setting or their Slack locale. When neither exists the
+      // browser knows better than the workspace default does: the viewer is
+      // running in that browser.
+      resolvePersonalLocaleCached(workspaceId, userId),
+      store.getUserLanguage(workspaceId, userId),
+      store.getWorkspaceLanguage(workspaceId),
+      store.getContentLanguage(workspaceId),
+    ]);
+    const acceptLanguage = negotiateAcceptLanguage(req.headers?.['accept-language']);
+    return {
+      language: personal ?? acceptLanguage ?? workspace,
+      languageSettings: { mine, workspace, content },
+    };
+  };
+
   // Read session identity for the frontend to show edit affordances.
   // IMPORTANT: declared before /api/docs/:workspaceId so the parameterized
   // route does not shadow this static path.
   router.get('/api/docs/session', async (req: any, res: any) => {
     try {
       const payload = await readSession(req);
-      const acceptLanguage = negotiateAcceptLanguage(req.headers?.['accept-language']);
       if (!payload) {
+        const acceptLanguage = negotiateAcceptLanguage(req.headers?.['accept-language']);
         return res.json({ authenticated: false, language: acceptLanguage ?? DEFAULT_LOCALE });
       }
-      const [manager, choirUser, personalLanguage] = await Promise.all([
+      const [manager, choirUser, languageState] = await Promise.all([
         isManager(payload.workspaceId, payload.userId),
         isCHOIRUser(payload.workspaceId, payload.userId),
-        // Their own setting or their Slack locale. When neither exists the
-        // browser knows better than the workspace default does: the viewer is
-        // running in that browser.
-        resolvePersonalLocaleCached(payload.workspaceId, payload.userId),
+        readLanguageState(payload.workspaceId, payload.userId, req),
       ]);
-      const language =
-        personalLanguage ?? acceptLanguage ?? (await new WorkspaceStore().getWorkspaceLanguage(payload.workspaceId));
       // Being a CHOIR manager is not enough to commit — the linked GitHub
       // account needs write access to the repo. Resolve it here so the viewer
       // can withhold the Edit button instead of failing at save time. Only
@@ -311,13 +337,71 @@ function setupPublicSite(): void {
         isManager: manager,
         isChoirUser: choirUser,
         github,
-        language,
+        ...languageState,
       });
     } catch (err) {
       app.logger.error('GET /api/docs/session failed', err as Error);
       return apiError(res, 500, 'internal_error');
     }
   });
+
+  /**
+   * Change a language setting from the viewer's settings dialog. The same
+   * settings the App Home pickers write, so a choice made in either place holds
+   * in both.
+   *
+   * `mine` is anyone's to set for themselves ('auto' clears it back to the
+   * Slack locale); `workspace` and `content` are the workspace's and need a
+   * manager. Declared here, before `/api/docs/:workspaceId/*splat`, or that
+   * route would swallow it.
+   */
+  router.put(
+    '/api/docs/:workspaceId/language',
+    expressForBodyParser.json({ limit: '4kb' }),
+    async (req: any, res: any) => {
+      try {
+        const workspaceId = String(req.params.workspaceId);
+        const session = await readSession(req);
+        if (!session) {
+          return apiError(res, 401, 'not_signed_in');
+        }
+        if (session.workspaceId !== workspaceId) {
+          return apiError(res, 403, 'workspace_mismatch');
+        }
+
+        // Validate everything before writing anything: a body asking for one
+        // good and one bad value must not leave half of it applied.
+        const parsed = parseLanguageUpdate(req.body);
+        if (!parsed.ok) {
+          return apiError(res, 400, parsed.code);
+        }
+        const { update } = parsed;
+
+        if (needsManager(update) && !(await isManager(workspaceId, session.userId))) {
+          return apiError(res, 403, 'not_a_manager');
+        }
+
+        const store = new WorkspaceStore();
+        if (update.mine !== undefined) {
+          await store.setUserLanguage(workspaceId, session.userId, update.mine === 'auto' ? null : update.mine);
+        }
+        if (update.workspace !== undefined) {
+          await store.setWorkspaceLanguage(workspaceId, update.workspace);
+        }
+        if (update.content !== undefined) {
+          await store.setContentLanguage(workspaceId, update.content);
+        }
+
+        // Read back rather than echo: 'auto' resolves to whatever the Slack
+        // locale or the workspace default now says, which is what the dialog
+        // has to show.
+        return res.json(await readLanguageState(workspaceId, session.userId, req));
+      } catch (err) {
+        app.logger.error('PUT /api/docs/:workspaceId/language failed', err as Error);
+        return apiError(res, 500, 'internal_error');
+      }
+    },
+  );
 
   // Clear session cookie
   router.post('/api/docs/logout', async (_req: any, res: any) => {
@@ -682,8 +766,6 @@ function setupPublicSite(): void {
 
   // API: save edited markdown back to the workspace mirror and GitHub.
   // Auth: signed session cookie + manager check.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const expressForBodyParser = require('express');
   router.put(
     '/api/docs/:workspaceId/*splat',
     expressForBodyParser.json({ limit: '5mb' }),

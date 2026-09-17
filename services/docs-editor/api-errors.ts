@@ -45,6 +45,7 @@ export const DOCS_API_ERROR_MESSAGES = {
   confirm_path_mismatch: 'The typed path does not match this document',
   not_markdown_document: 'Only markdown documents can be deleted',
   expected_image_body: 'Expected a binary image body',
+  invalid_language: 'Unsupported language',
 
   // ── Documents ───────────────────────────────────────────────────────────
   document_not_found: 'File not found',

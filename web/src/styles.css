@@ -823,6 +823,34 @@ a {
   margin-top: 8px;
 }
 
+/* Settings dialog: a per-control explanation and a save failure. */
+.commit-dialog-hint {
+  margin: -6px 0 0;
+  color: #6e6e69;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.commit-dialog-error {
+  margin: 0;
+  color: #b3261e;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.settings-divider {
+  border: none;
+  border-top: 1px solid #e7e7e3;
+  margin: 8px 0 0;
+  width: 100%;
+}
+
+/* A <select> needs the arrow the shared input style does not draw. */
+select.commit-dialog-input {
+  appearance: auto;
+  background: #ffffff;
+}
+
 .doc-button-ghost.active {
   background: #e7e7e3;
   border-color: #cfcfca;

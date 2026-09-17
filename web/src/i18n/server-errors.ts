@@ -66,6 +66,7 @@ export const SERVER_ERROR_KEY = {
   confirm_path_mismatch: 'serverError.confirm_path_mismatch',
   not_markdown_document: 'serverError.not_markdown_document',
   expected_image_body: 'serverError.expected_image_body',
+  invalid_language: 'serverError.invalid_language',
 
   document_not_found: 'serverError.document_not_found',
   record_not_found: 'serverError.record_not_found',

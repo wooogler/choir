@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { type ServerErrorPayload, describeServerError, useLocale, useT } from '../i18n';
-import type { DocFile, DocSectionUsage, RepoInfo, SessionInfo, TocItem } from '../types';
+import { type Locale, type ServerErrorPayload, describeServerError, useLocale, useT } from '../i18n';
+import type { DocFile, DocSectionUsage, LanguageSettings, RepoInfo, SessionInfo, TocItem } from '../types';
 import { docsPath, encodePath, extractToc, parseDocsUrl, scrollToAnchor, slugifyHeading } from '../utils/docs';
 import { inlineMarkdownToText } from '../utils/inline-markdown';
 import { CommitDialog } from './CommitDialog';
@@ -12,6 +12,7 @@ import { FloatingToc } from './FloatingToc';
 import { GoogleDocsReview } from './GoogleDocsReview';
 import { GoogleDocsSync } from './GoogleDocsSync';
 import { HistoryPanel } from './HistoryPanel';
+import { SettingsDialog } from './SettingsDialog';
 
 type DocViewerProps = {
   workspaceId: string;
@@ -100,7 +101,7 @@ function normalizeForLineMatch(text: string): string {
 
 export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const t = useT();
-  const { applySessionLanguage } = useLocale();
+  const { applySessionLanguage, setLocale } = useLocale();
   const [error, setError] = useState('');
   const [filePath, setFilePath] = useState(initialFilePath);
   const [files, setFiles] = useState<DocFile[]>([]);
@@ -112,6 +113,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -156,6 +158,10 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   // absent on older servers, which we read as "unknown" and allow.
   const isManager = session?.authenticated === true && session.isManager;
   const githubAccess = session?.authenticated === true ? session.github : undefined;
+  // Absent on an unauthenticated session, and on a server older than the
+  // settings endpoint — the button stays hidden rather than opening a dialog
+  // with nothing to show.
+  const languageSettings = session?.authenticated === true ? session.languageSettings : undefined;
   // `reason` is a `DocsApiErrorCode` for every answer CHOIR can give itself —
   // no repository connected, no linked account, archived, read-only, invisible
   // — with `detail` holding the repository slug its sentence names. An older
@@ -735,6 +741,21 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     redirectToSignIn(workspaceId);
   }, [workspaceId]);
 
+  /**
+   * Adopt what the server stored. The resolved language is applied straight
+   * away so the page switches without a reload, and the settings are kept so
+   * reopening the dialog shows the choice rather than the stale one.
+   */
+  const handleSettingsSaved = useCallback(
+    (language: Locale, settings: LanguageSettings) => {
+      setLocale(language);
+      setSession((current) =>
+        current?.authenticated === true ? { ...current, language, languageSettings: settings } : current,
+      );
+    },
+    [setLocale],
+  );
+
   const handleSignOut = useCallback(async () => {
     try {
       await fetch('/api/docs/logout', { method: 'POST', credentials: 'same-origin' });
@@ -844,6 +865,26 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           title={t('viewer.button.history.title')}
         >
           {t('viewer.button.history')}
+        </button>
+      )}
+      {languageSettings && !isEditing && (
+        <button
+          type="button"
+          className="doc-iconbutton"
+          aria-label={t('settings.aria.open')}
+          title={t('settings.aria.open')}
+          onClick={() => setShowSettingsDialog(true)}
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5ZM6.5 8a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Z"
+            />
+            <path
+              fill="currentColor"
+              d="M6.94.75a.75.75 0 0 0-.74.63l-.22 1.32a5.5 5.5 0 0 0-.97.56l-1.25-.47a.75.75 0 0 0-.91.33L1.79 5.13a.75.75 0 0 0 .17.95l1.03.85a5.6 5.6 0 0 0 0 1.13l-1.03.85a.75.75 0 0 0-.17.95l1.06 1.84c.19.32.57.46.91.33l1.25-.47c.3.22.63.41.97.56l.22 1.32c.06.36.38.63.74.63h2.12c.36 0 .68-.27.74-.63l.22-1.32c.34-.15.67-.34.97-.56l1.25.47c.34.13.72-.01.91-.33l1.06-1.84a.75.75 0 0 0-.17-.95l-1.03-.85a5.6 5.6 0 0 0 0-1.13l1.03-.85a.75.75 0 0 0 .17-.95l-1.06-1.84a.75.75 0 0 0-.91-.33l-1.25.47a5.5 5.5 0 0 0-.97-.56L9.8 1.38a.75.75 0 0 0-.74-.63H6.94Zm.63 1.5h.86l.19 1.13c.04.27.24.49.5.57.42.13.8.35 1.14.65.2.18.5.23.75.13l1.07-.4.43.74-.88.73c-.21.17-.31.45-.25.72.09.43.09.87 0 1.3-.06.27.04.55.25.72l.88.73-.43.74-1.07-.4a.75.75 0 0 0-.75.13c-.34.3-.72.52-1.14.65a.75.75 0 0 0-.5.57l-.19 1.13h-.86l-.19-1.13a.75.75 0 0 0-.5-.57 4 4 0 0 1-1.14-.65.75.75 0 0 0-.75-.13l-1.07.4-.43-.74.88-.73c.21-.17.31-.45.25-.72a3.1 3.1 0 0 1 0-1.3.75.75 0 0 0-.25-.72l-.88-.73.43-.74 1.07.4c.25.1.55.05.75-.13.34-.3.72-.52 1.14-.65a.75.75 0 0 0 .5-.57l.19-1.13Z"
+            />
+          </svg>
         </button>
       )}
       {canEdit && dirty && (
@@ -1030,6 +1071,15 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           submitting={saving}
           onCancel={() => setShowDeleteDialog(false)}
           onConfirm={handleDeleteDocument}
+        />
+      )}
+      {showSettingsDialog && languageSettings && session?.authenticated === true && (
+        <SettingsDialog
+          workspaceId={workspaceId}
+          isManager={isManager}
+          settings={languageSettings}
+          onClose={() => setShowSettingsDialog(false)}
+          onSaved={handleSettingsSaved}
         />
       )}
     </div>

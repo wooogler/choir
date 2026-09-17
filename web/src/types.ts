@@ -73,6 +73,17 @@ export type GithubWriteAccess = {
  * is optional because the SPA also builds this object locally when the session
  * request fails, and because an older server may not send it.
  */
+/**
+ * What is actually stored behind the language a reader is served. `mine` is
+ * null when they have made no choice, which the dialog shows as Automatic —
+ * the resolved `language` alone cannot tell that apart from picking English.
+ */
+export type LanguageSettings = {
+  mine: Locale | null;
+  workspace: Locale;
+  content: 'follow-conversation' | Locale;
+};
+
 export type SessionInfo =
   | { authenticated: false; language?: Locale }
   | {
@@ -83,6 +94,7 @@ export type SessionInfo =
       isChoirUser: boolean;
       github?: GithubWriteAccess;
       language?: Locale;
+      languageSettings?: LanguageSettings;
     };
 
 // ── Awareness dashboard API response shapes (mirror services/dashboard/dashboard-api.ts) ──

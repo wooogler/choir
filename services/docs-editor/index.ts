@@ -29,3 +29,10 @@ export {
   writeAccessErrorBody,
 } from './api-errors';
 export type { DocsApiErrorCode, DocsApiErrorDetail, DocsApiErrorBody } from './api-errors';
+export { needsManager, parseLanguageUpdate } from './language-settings';
+export type {
+  ContentLanguageChoice,
+  LanguageUpdate,
+  ParsedLanguageUpdate,
+  PersonalLanguageChoice,
+} from './language-settings';
