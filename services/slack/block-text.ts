@@ -48,11 +48,16 @@ export interface MrkdwnSectionBlock {
  * blocks than Slack allows in a single surface (100 in a modal, 50 in a message),
  * failing the whole view with invalid_blocks. When the text needs more blocks than
  * the cap, the last block is replaced with a truncation notice.
+ *
+ * `truncationNotice` lets a caller that knows who is reading write that notice in
+ * their language; it receives the omitted-character count already grouped for
+ * display. Callers that do not pass one keep the English notice this function has
+ * always produced.
  */
 export function buildSectionBlocks(
   text: string,
   blockId?: string,
-  options?: { maxBlocks?: number },
+  options?: { maxBlocks?: number; truncationNotice?: (characters: string) => string },
 ): MrkdwnSectionBlock[] {
   const chunks = chunkTextForBlocks(text);
   if (chunks.length === 0) return [];
@@ -74,12 +79,14 @@ export function buildSectionBlocks(
 
   if (truncated) {
     const shownChars = rendered.reduce((sum, chunk) => sum + chunk.length, 0);
-    const omittedChars = text.length - shownChars;
+    const omittedChars = (text.length - shownChars).toLocaleString();
     blocks.push({
       type: 'section' as const,
       text: {
         type: 'mrkdwn' as const,
-        text: `_… preview truncated (${omittedChars.toLocaleString()} more characters not shown)_`,
+        text:
+          options?.truncationNotice?.(omittedChars) ??
+          `_… preview truncated (${omittedChars} more characters not shown)_`,
       },
     });
   }

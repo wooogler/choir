@@ -3,6 +3,7 @@ import { SessionType, getSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/interaction-tracker';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
+import { tForRequest, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId, parseGithubUrl } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -13,10 +14,15 @@ export const handleNewSectionModalSubmission = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs<ViewSubmitAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // Refusals and the rewritten success card are read by the submitter; the
+  // channel announcement near the end is resolved for the channel instead.
+  const t = tForRequest(context);
 
   try {
     const { user } = body;
@@ -65,12 +71,12 @@ export const handleNewSectionModalSubmission = async ({
     if (!sectionTitle || !sectionBody) {
       await client.chat.postMessage({
         channel: user.id,
-        text: '❌ Section title and body are required.',
+        text: t('docUpdate.apply.newSection.error.missingFields'),
         blocks: [
           {
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-            text: { type: 'mrkdwn', text: '❌ Section title and body are required.' },
+            text: { type: 'mrkdwn', text: t('docUpdate.apply.newSection.error.missingFields') },
           },
         ],
       });
@@ -99,12 +105,12 @@ export const handleNewSectionModalSubmission = async ({
     if (!targetFile) {
       await client.chat.postMessage({
         channel: user.id,
-        text: '❌ No target file found. Please try again.',
+        text: t('docUpdate.apply.newSection.error.noTargetFile'),
         blocks: [
           {
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-            text: { type: 'mrkdwn', text: '❌ No target file found. Please try again.' },
+            text: { type: 'mrkdwn', text: t('docUpdate.apply.newSection.error.noTargetFile') },
           },
         ],
       });
@@ -139,12 +145,12 @@ export const handleNewSectionModalSubmission = async ({
     if (!success) {
       await client.chat.postMessage({
         channel: user.id,
-        text: `❌ Failed to add new section to vector store for file: ${targetFile}`,
+        text: t('docUpdate.apply.newSection.error.vectorStore', { fileName: targetFile }),
         blocks: [
           {
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-            text: { type: 'mrkdwn', text: `❌ Failed to add new section to vector store for file: ${targetFile}` },
+            text: { type: 'mrkdwn', text: t('docUpdate.apply.newSection.error.vectorStore', { fileName: targetFile }) },
           },
         ],
       });
@@ -174,12 +180,15 @@ export const handleNewSectionModalSubmission = async ({
     if (!markdownFile) {
       await client.chat.postMessage({
         channel: user.id,
-        text: `❌ Updated markdown file not found: ${targetFile}`,
+        text: t('docUpdate.apply.newSection.error.fileNotFound', { fileName: targetFile }),
         blocks: [
           {
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-            text: { type: 'mrkdwn', text: `❌ Updated markdown file not found: ${targetFile}` },
+            text: {
+              type: 'mrkdwn',
+              text: t('docUpdate.apply.newSection.error.fileNotFound', { fileName: targetFile }),
+            },
           },
         ],
       });
@@ -214,12 +223,12 @@ export const handleNewSectionModalSubmission = async ({
     if (!parsedUrl) {
       await client.chat.postMessage({
         channel: user.id,
-        text: `❌ Invalid GitHub URL: ${githubUrl}`,
+        text: t('docUpdate.apply.newSection.error.invalidUrl', { githubUrl }),
         blocks: [
           {
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-            text: { type: 'mrkdwn', text: `❌ Invalid GitHub URL: ${githubUrl}` },
+            text: { type: 'mrkdwn', text: t('docUpdate.apply.newSection.error.invalidUrl', { githubUrl }) },
           },
         ],
       });
@@ -315,22 +324,27 @@ Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''
         ? `https://github.com/${owner}/${repo}/commit/${updateResult.commitSha}`
         : '';
 
-      // Use the same UI format as the success message (lines 448-458)
-      let successText = `✅ New section "${sectionTitle}" added successfully to GitHub!
-
-📁 *File:* <${githubUrl}|${targetFile}>
-📝 *Added by:* ${userName}`;
+      // One sentence per slot instead of a `+=` chain, so a translator can
+      // reorder the links and the preview without touching this handler.
+      let successText = t('docUpdate.apply.newSection.success', {
+        sectionTitle,
+        fileLink: `<${githubUrl}|${targetFile}>`,
+        userName,
+      });
 
       // Add URL options if available
-      if (commitDiffUrl && editUrl) {
-        successText += `\n\n📝 You can <${commitDiffUrl}|view the changes> or <${editUrl}|edit the file> directly on GitHub.`;
-      } else if (editUrl) {
-        successText += `\n\n📝 You can <${editUrl}|edit the file> directly on GitHub.`;
+      const viewLink = commitDiffUrl ? `<${commitDiffUrl}|${t('docUpdate.apply.link.viewChanges')}>` : '';
+      const editLinkText = editUrl ? `<${editUrl}|${t('docUpdate.apply.link.editFile')}>` : '';
+      if (viewLink && editLinkText) {
+        successText += t('docUpdate.apply.links', {
+          links: t('docUpdate.apply.links.pair', { viewLink, editLink: editLinkText }),
+        });
+      } else if (editLinkText) {
+        successText += t('docUpdate.apply.links', { links: editLinkText });
       }
 
-      successText += `\n\n🔍 *Preview:*
-\`\`\`# ${sectionTitle}
-${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
+      const sectionPreview = `${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}`;
+      successText += t('docUpdate.apply.newSection.preview', { sectionTitle, sectionBody: sectionPreview });
 
       // First try to update the button message directly (for cases where we have button info)
       if (buttonMessageTs && buttonChannelId) {
@@ -396,12 +410,15 @@ ${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``;
     // Only notify if original channel is different from current DM
     if (originalChannelId && originalChannelId !== currentDmChannelId) {
       try {
-        const channelUpdateText = `🎉 Good news, everyone! *${userName}* just added a new section to our documentation!
-
-📁 *File:* <${githubUrl}|${targetFile}>
-📝 *Section:* ${sectionTitle}
-
-I've added the new content. Knowledge grows stronger! ✨`;
+        // A channel post has no single reader, so it follows the workspace's
+        // language rather than the submitter's.
+        const tChannel = await tForWorkspace(currentWorkspaceId);
+        const channelPreview = `${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}`;
+        const channelUpdateText = tChannel('docUpdate.apply.newSection.channel', {
+          userName,
+          fileLink: `<${githubUrl}|${targetFile}>`,
+          sectionTitle,
+        });
 
         const updateBlocks = [
           {
@@ -415,7 +432,10 @@ I've added the new content. Knowledge grows stronger! ✨`;
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `🔍 *Preview of new section:*\n\`\`\`# ${sectionTitle}\n${sectionBody.substring(0, 200)}${sectionBody.length > 200 ? '...' : ''}\`\`\``,
+              text: tChannel('docUpdate.apply.newSection.channel.preview', {
+                sectionTitle,
+                sectionBody: channelPreview,
+              }),
             },
           },
         ];
@@ -423,7 +443,11 @@ I've added the new content. Knowledge grows stronger! ✨`;
         await client.chat.postMessage({
           channel: originalChannelId,
           ...(originalThreadTs ? { thread_ts: originalThreadTs } : {}),
-          text: `✅ New Section Added: ${sectionTitle} in ${targetFile} by *${userName}* (with CHOIR)`,
+          text: tChannel('docUpdate.apply.newSection.channel.fallback', {
+            sectionTitle,
+            fileName: targetFile,
+            userName,
+          }),
           blocks: [
             {
               type: 'section',
@@ -473,16 +497,19 @@ I've added the new content. Knowledge grows stronger! ✨`;
   } catch (error) {
     logger.error('Error handling new section modal submission:', error);
 
+    const submitErrorText = t('docUpdate.apply.newSection.error.submit', {
+      reason: error instanceof Error ? error.message : 'Unknown error',
+    });
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ Failed to process new section submission: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      text: submitErrorText,
       blocks: [
         {
           type: 'section',
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           text: {
             type: 'mrkdwn',
-            text: `❌ Failed to process new section submission: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            text: submitErrorText,
           },
         },
       ],

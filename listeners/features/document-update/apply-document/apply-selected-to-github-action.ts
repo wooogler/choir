@@ -3,9 +3,11 @@ import { logButtonClick } from 'services/common/interaction-tracker';
 import { getStoredDocumentUpdates } from 'services/document';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { GithubService, applyDocumentUpdatesToGithub } from 'services/github';
+import { tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { createDocumentUpdateText } from 'services/slack/message-text-utils';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { tForReviewer } from '../suggestions/shared';
 
 export interface ApplyToGithubResult {
   success: boolean;
@@ -18,12 +20,18 @@ export const applySelectedToGithubAction = async ({
   ack,
   body,
   client,
+  context,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>): Promise<ApplyToGithubResult> => {
   const startTime = Date.now();
   await ack();
 
   let dmResult: any = null;
   let loadingMessage: any = null;
+
+  // keep-flow calls this handler with a synthesised payload that carries no
+  // `context`, so the reviewer's own locale is the fallback; every message below
+  // but the channel announcement lands in their DM.
+  const t = await tForReviewer(context, await getWorkspaceId(client), body.user.id, client);
 
   try {
     const rawValue = body.actions[0].value;
@@ -49,7 +57,7 @@ export const applySelectedToGithubAction = async ({
       await client.chat.postEphemeral({
         channel: channelId,
         user: userId,
-        text: 'No document updates found. Please try suggesting updates first.',
+        text: t('docUpdate.apply.error.noUpdates'),
       });
       return { success: false, successfulFileNames: [], failedFileNames: [] };
     }
@@ -80,14 +88,14 @@ export const applySelectedToGithubAction = async ({
     // 로딩 메시지 먼저 보내기
     loadingMessage = await client.chat.postMessage({
       channel: dmResult.channel.id,
-      text: '⚙️ Applying changes to GitHub...',
+      text: t('docUpdate.apply.applying'),
       blocks: [
         {
           type: 'section',
           block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
           text: {
             type: 'mrkdwn',
-            text: '⚙️ Applying changes to GitHub...',
+            text: t('docUpdate.apply.applying'),
           },
         },
       ],
@@ -106,7 +114,7 @@ export const applySelectedToGithubAction = async ({
     const failedUpdates = results.filter((r) => !r.success).map((r) => r.fileName);
 
     // 결과 메시지 생성 - CHOIR 페르소나 적용 및 githubUrl 수정
-    let resultMessage = "I've finished processing the document updates!"; // 기본 메시지
+    let resultMessage = t('docUpdate.apply.result.default'); // 기본 메시지
     if (successfulUpdates.length > 0) {
       const successfulUpdate = successfulUpdates[0]; // 단일 파일 처리 가정
       const fileName = successfulUpdate.fileName;
@@ -139,19 +147,23 @@ export const applySelectedToGithubAction = async ({
         }
       }
 
-      resultMessage = `✅ Great news! I've successfully updated the document: <${actualGithubUrl}|*${fileName}*>`;
-      if (commitDiffUrl && editUrl) {
-        resultMessage += `\n\n📝 You can <${commitDiffUrl}|view the changes> or <${editUrl}|edit the file> directly on GitHub.`;
-      } else if (editUrl) {
-        resultMessage += `\n\n📝 You can <${editUrl}|edit the file> directly on GitHub.`;
+      resultMessage = t('docUpdate.apply.result.success', { fileLink: `<${actualGithubUrl}|*${fileName}*>` });
+      // One sentence with a `{links}` slot rather than a `+=` chain, so the
+      // wording and the order stay the translator's to decide.
+      const viewLink = commitDiffUrl ? `<${commitDiffUrl}|${t('docUpdate.apply.link.viewChanges')}>` : '';
+      const editLink = editUrl ? `<${editUrl}|${t('docUpdate.apply.link.editFile')}>` : '';
+      if (viewLink && editLink) {
+        resultMessage += t('docUpdate.apply.links', { links: t('docUpdate.apply.links.pair', { viewLink, editLink }) });
+      } else if (editLink) {
+        resultMessage += t('docUpdate.apply.links', { links: editLink });
       }
     }
     if (failedUpdates.length > 0) {
       const fileName = failedUpdates[0]; // 단일 파일 처리 가정
       if (successfulUpdates.length > 0) {
-        resultMessage += `\nHowever, I ran into a little trouble updating *${fileName}*. You might want to check that one manually.`;
+        resultMessage += t('docUpdate.apply.result.partialFailure', { fileName });
       } else {
-        resultMessage = `Hm, it looks like I couldn't update *${fileName}*. 😕 You might need to take a look and see what went wrong.`;
+        resultMessage = t('docUpdate.apply.result.failure', { fileName });
       }
     }
 
@@ -160,15 +172,14 @@ export const applySelectedToGithubAction = async ({
       await client.chat.update({
         channel: dmResult.channel.id,
         ts: loadingMessage.ts,
-        text: resultMessage || "Document update process completed! If there were any issues, I've noted them above.",
+        text: resultMessage || t('docUpdate.apply.result.fallback'),
         blocks: [
           {
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
             text: {
               type: 'mrkdwn',
-              text:
-                resultMessage || "Document update process completed! If there were any issues, I've noted them above.",
+              text: resultMessage || t('docUpdate.apply.result.fallback'),
             },
           },
         ],
@@ -187,7 +198,14 @@ export const applySelectedToGithubAction = async ({
             githubUrl: actualGithubUrl,
           } as any);
 
-          const channelUpdateText = `🎉 Good news, everyone! *${userName}* just helped me update a document!\n\n*File:* <${actualGithubUrl}|${updatedFileName}>\n*Section:* ${sectionInfo}\n\nI've incorporated the latest insights. Teamwork makes the dream work! ✨`;
+          // Read by the whole channel the suggestion came from, so it follows
+          // the workspace default rather than the applying manager's language.
+          const tChannel = await tForWorkspace(workspaceId);
+          const channelUpdateText = tChannel('docUpdate.apply.channel.updated', {
+            userName,
+            fileLink: `<${actualGithubUrl}|${updatedFileName}>`,
+            sectionInfo,
+          });
 
           const updateBlocks = [
             {
@@ -211,8 +229,8 @@ export const applySelectedToGithubAction = async ({
             actualGithubUrl,
             diffContent,
             [
-              { text: 'View Changes', style: 'primary' },
-              { text: 'View File', url: actualGithubUrl },
+              { text: tChannel('docUpdate.apply.button.viewChanges'), style: 'primary' },
+              { text: tChannel('docUpdate.apply.button.viewFile'), url: actualGithubUrl },
             ],
           );
 
@@ -312,7 +330,9 @@ export const applySelectedToGithubAction = async ({
 
     // 에러 메시지를 DM으로 전송 - 기존 채널 사용
     try {
-      const errorMessage = `😥 Oops! It seems I ran into a problem while trying to update the document on GitHub. \nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nCould you please check the details or try again? If the problem persists, an administrator might need to look into it.`;
+      const errorMessage = t('docUpdate.apply.error.github', {
+        reason: error instanceof Error ? error.message : 'Unknown error',
+      });
 
       // 이미 연 DM 채널이 있으면 재사용, 없으면 새로 열기
       if (dmResult?.ok && dmResult.channel?.id) {

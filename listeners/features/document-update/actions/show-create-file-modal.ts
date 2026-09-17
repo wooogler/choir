@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 
 /**
@@ -10,10 +11,15 @@ export const showCreateFileModalCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // The receipt that replaces the button and the modal itself are both read by
+  // the manager who clicked.
+  const t = tForRequest(context);
 
   // Immediately update the message via response_url to remove the button
   const responseUrl = (body as any).response_url;
@@ -26,13 +32,13 @@ export const showCreateFileModalCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: '📄 Selected: Create New File',
+          text: t('docUpdate.actions.createFile.selected.fallback'),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '📄 *Selected: Create New File*',
+                text: t('docUpdate.actions.createFile.selected'),
               },
             },
           ],
@@ -64,22 +70,22 @@ export const showCreateFileModalCallback = async ({
       notify_on_close: true,
       title: {
         type: 'plain_text' as const,
-        text: 'Create New File',
+        text: t('docUpdate.actions.createFile.title'),
       },
       submit: {
         type: 'plain_text' as const,
-        text: 'Create File',
+        text: t('docUpdate.actions.createFile.submit'),
       },
       close: {
         type: 'plain_text' as const,
-        text: 'Cancel',
+        text: t('common.button.cancel'),
       },
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '📄 *Create a new markdown file in your repository*\n\nThis will create a new .md file in your GitHub repository and make it available for documentation updates.',
+            text: t('docUpdate.actions.createFile.intro'),
           },
         },
         {
@@ -93,13 +99,13 @@ export const showCreateFileModalCallback = async ({
             action_id: 'file_name',
             placeholder: {
               type: 'plain_text',
-              text: 'e.g., new-documentation.md',
+              text: t('docUpdate.actions.createFile.name.placeholder'),
             },
             initial_value: defaultFileName || '',
           },
           label: {
             type: 'plain_text',
-            text: 'File Name (must end with .md)',
+            text: t('docUpdate.actions.createFile.name.label'),
           },
         },
         {
@@ -111,13 +117,13 @@ export const showCreateFileModalCallback = async ({
             multiline: true,
             placeholder: {
               type: 'plain_text',
-              text: '# New Documentation\n\nAdd your initial content here...',
+              text: t('docUpdate.actions.createFile.content.placeholder'),
             },
-            initial_value: defaultInitialContent || '# New Documentation\n\nAdd your initial content here...',
+            initial_value: defaultInitialContent || t('docUpdate.actions.createFile.content.placeholder'),
           },
           label: {
             type: 'plain_text',
-            text: 'Initial Content (Markdown)',
+            text: t('docUpdate.actions.createFile.content.label'),
           },
         },
       ],

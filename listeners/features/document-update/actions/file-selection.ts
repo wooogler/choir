@@ -12,6 +12,7 @@ export const switchFileForReviewAction = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs) => {
   const startTime = Date.now();
@@ -50,6 +51,9 @@ export const switchFileForReviewAction = async ({
       ack: async () => {}, // Already acked
       body: modifiedBody,
       client,
+      // Forwarded so the re-entered review keeps the language the middleware
+      // resolved for this click.
+      context,
       logger,
     } as any);
 

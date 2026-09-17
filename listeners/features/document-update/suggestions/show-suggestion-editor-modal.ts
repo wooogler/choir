@@ -4,6 +4,7 @@ import { logButtonClick } from 'services/common/interaction-tracker';
 import { getStoredDocumentUpdates } from 'services/document/document-store';
 import { getWorkspaceId } from 'services/slack';
 import { buildSectionBlocks } from 'services/slack/block-text';
+import { tForReviewer } from './shared';
 
 /**
  * 문서 업데이트 제안 편집 모달을 표시합니다.
@@ -12,8 +13,12 @@ export const showSuggestionEditorModal = async ({
   ack,
   body,
   client,
+  context,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
+  // Resolved before the try so the failure DM at the bottom speaks the same
+  // language the modal would have.
+  const t = await tForReviewer(context, await getWorkspaceId(client), body.user.id, client);
 
   try {
     // 액션 확인
@@ -41,9 +46,9 @@ export const showSuggestionEditorModal = async ({
 
     let nodeContent = '';
     let editableContent = '';
-    const modalTitle = 'Edit Update Suggestion';
-    const originalLabel = '*Original Content:*';
-    const editableLabel = 'Updated Content';
+    const modalTitle = t('docUpdate.suggestions.editor.title');
+    const originalLabel = t('docUpdate.suggestions.editor.originalLabel');
+    const editableLabel = t('docUpdate.suggestions.editor.updatedLabel');
 
     // 통일된 UPDATE 방식으로 처리
     nodeContent = currentUpdate.nodeContent || '';
@@ -97,9 +102,12 @@ export const showSuggestionEditorModal = async ({
           // huge section's preview can't blow past Slack's 100-block modal limit
           // (the editable copy is still fully available in the input below).
           ...buildSectionBlocks(
-            nodeContent?.trim() ? nodeContent : '*Empty section - content will be generated*',
+            nodeContent?.trim() ? nodeContent : t('docUpdate.suggestions.editor.emptySection'),
             undefined,
-            { maxBlocks: 20 },
+            {
+              maxBlocks: 20,
+              truncationNotice: (characters) => t('docUpdate.suggestions.preview.truncated', { characters }),
+            },
           ),
           {
             type: 'input',
@@ -118,11 +126,11 @@ export const showSuggestionEditorModal = async ({
         ],
         submit: {
           type: 'plain_text',
-          text: 'Save Changes',
+          text: t('docUpdate.suggestions.editor.submit'),
         },
         close: {
           type: 'plain_text',
-          text: 'Cancel',
+          text: t('common.button.cancel'),
         },
       },
     });
@@ -160,7 +168,9 @@ export const showSuggestionEditorModal = async ({
       if (dmResult.ok && dmResult.channel?.id) {
         await client.chat.postMessage({
           channel: dmResult.channel.id,
-          text: `Cannot open update editor: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          text: t('docUpdate.suggestions.editor.error.open', {
+            reason: error instanceof Error ? error.message : 'Unknown error',
+          }),
         });
       }
     } catch (dmError) {

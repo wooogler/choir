@@ -1,5 +1,6 @@
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { getUserName } from 'services/slack';
+import type { T } from '../../../../../src/i18n';
 import { notifyOriginalChannel, updateOtherManagerMessages } from '../manager-notifications';
 import { MANAGER_SESSION_EXPIRY } from '../shared';
 
@@ -26,8 +27,14 @@ export async function runConcurrencyControl(params: {
   body: any;
   client: any;
   logger: any;
+  /**
+   * The clicking manager's translator. The conflict notice replaces the card in
+   * *their* DM via response_url, so it is written for them, not for the manager
+   * who got there first.
+   */
+  t: T;
 }): Promise<boolean> {
-  const { userId, currentDmChannelId, body, client, logger } = params;
+  const { userId, currentDmChannelId, body, client, logger, t } = params;
 
   const value = body.actions?.[0]?.value;
   if (!value) return false;
@@ -55,7 +62,8 @@ export async function runConcurrencyControl(params: {
     }
 
     if (sessionData.status === 'processing') {
-      const processingManagerName = sessionData.processingManagerName || 'Another manager';
+      const processingManagerName =
+        sessionData.processingManagerName || t('docUpdate.suggestions.conflict.anotherManager');
 
       try {
         if (body.response_url) {
@@ -63,7 +71,9 @@ export async function runConcurrencyControl(params: {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `Hi! I'm CHOIR, your documentation assistant.\n*${sessionData.userName || 'A team member'}* has a document update suggestion:`,
+              text: t('notifications.manager.suggestion.intro', {
+                userName: sessionData.userName || t('notifications.manager.suggestion.anonymousUser'),
+              }),
             },
           };
 
@@ -74,13 +84,13 @@ export async function runConcurrencyControl(params: {
                 type: 'image',
                 image_url:
                   userInfo.user?.profile?.image_192 || 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-                alt_text: sessionData.userName || 'User profile',
+                alt_text: sessionData.userName || t('docUpdate.suggestions.image.alt.profile'),
               };
             } catch {
               introBlock.accessory = {
                 type: 'image',
                 image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-                alt_text: sessionData.userName || 'User profile',
+                alt_text: sessionData.userName || t('docUpdate.suggestions.image.alt.profile'),
               };
             }
           }
@@ -91,7 +101,7 @@ export async function runConcurrencyControl(params: {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `\`\`\`${sessionData.extractedKnowledge || 'No content available'}\`\`\``,
+                text: `\`\`\`${sessionData.extractedKnowledge || t('notifications.manager.suggestion.noContent')}\`\`\``,
               },
             },
           ];
@@ -101,14 +111,19 @@ export async function runConcurrencyControl(params: {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context`,
+                text: t('notifications.manager.suggestion.context', {
+                  discussionLink: `<${sessionData.originalMessageLink}|${t('notifications.link.viewDiscussion')}>`,
+                }),
               },
             });
           }
 
           originalBlocks.push({
             type: 'section',
-            text: { type: 'mrkdwn', text: `❌ *Already being processed by ${processingManagerName}*` },
+            text: {
+              type: 'mrkdwn',
+              text: t('docUpdate.suggestions.conflict.claimed', { managerName: processingManagerName }),
+            },
           });
 
           await fetch(body.response_url, {
@@ -116,7 +131,7 @@ export async function runConcurrencyControl(params: {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               replace_original: true,
-              text: `❌ Already being processed by ${processingManagerName}`,
+              text: t('docUpdate.suggestions.conflict.claimed.fallback', { managerName: processingManagerName }),
               blocks: originalBlocks,
             }),
           });

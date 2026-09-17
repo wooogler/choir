@@ -34,7 +34,7 @@ import { handleKeep } from './flows/keep-flow';
 import { showReviewScreen } from './flows/review-screen-flow';
 import { handleSkip } from './flows/skip-flow';
 import { stripStaleButtons } from './message-cleanup';
-import { MANAGER_SESSION_EXPIRY } from './shared';
+import { MANAGER_SESSION_EXPIRY, tForReviewer } from './shared';
 import { loadSourceContext } from './source-message-loader';
 
 export { createMessageLink } from './shared';
@@ -43,6 +43,7 @@ export const suggestUpdatesCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
@@ -54,7 +55,12 @@ export const suggestUpdatesCallback = async ({
   const vectorStore = VectorStoreService.getInstance();
   const currentWorkspaceId = await getWorkspaceId(client);
 
-  const isConflict = await runConcurrencyControl({ userId, currentDmChannelId, body, client, logger });
+  // Everything this handler and its flows send goes to the manager who clicked,
+  // in their DM, so one translator is bound here and threaded down rather than
+  // re-resolved per message.
+  const t = await tForReviewer(context, currentWorkspaceId, userId, client);
+
+  const isConflict = await runConcurrencyControl({ userId, currentDmChannelId, body, client, logger, t });
   if (isConflict) return;
 
   try {
@@ -145,6 +151,7 @@ export const suggestUpdatesCallback = async ({
           knowledgeContent,
           client,
           logger,
+          t,
         });
         if (result.shouldReturn) return;
         searchResults = result.searchResults;
@@ -179,6 +186,7 @@ export const suggestUpdatesCallback = async ({
           client,
           logger,
           onNextSuggestion: suggestUpdatesCallback,
+          t,
         });
         return;
       }
@@ -193,6 +201,7 @@ export const suggestUpdatesCallback = async ({
           body,
           client,
           logger,
+          t,
         });
       }
     } else {
@@ -209,19 +218,21 @@ export const suggestUpdatesCallback = async ({
         parsedValue,
         client,
         logger,
+        t,
       });
       if (reviewShown) return;
     }
 
     if (!knowledgeContent) {
+      const noKnowledgeText = t('docUpdate.suggestions.error.noKnowledge');
       await client.chat.postMessage({
         channel: currentDmChannelId,
-        text: 'No knowledge content found. Please try again.',
+        text: noKnowledgeText,
         blocks: [
           {
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-            text: { type: 'mrkdwn', text: 'No knowledge content found. Please try again.' },
+            text: { type: 'mrkdwn', text: noKnowledgeText },
           },
         ],
       });
@@ -232,10 +243,12 @@ export const suggestUpdatesCallback = async ({
     const loadingFileState = getFileSelectionState(userId, currentWorkspaceId);
     const loadingText =
       currentIndex === 0 && !isFileBasedReview
-        ? '🔍 Finding relevant documents across all files...'
+        ? t('docUpdate.suggestions.loading.searchingAll')
         : loadingFileState?.isFileSelected
-          ? `📝 Generating suggestions for ${loadingFileState.selectedFile}...`
-          : '📝 Generating update suggestions...';
+          ? // `String` keeps the pre-migration text for an unnamed file, which
+            // rendered the literal "undefined" rather than dropping the slot.
+            t('docUpdate.suggestions.loading.forFile', { fileName: String(loadingFileState.selectedFile) })
+          : t('docUpdate.suggestions.loading.generating');
 
     const progressMessage = await client.chat.postMessage({
       channel: currentDmChannelId,
@@ -271,6 +284,7 @@ export const suggestUpdatesCallback = async ({
         vectorStore,
         client,
         logger,
+        t,
       });
       if (init.shouldReturn) return;
       searchResults = init.searchResults;
@@ -300,6 +314,7 @@ export const suggestUpdatesCallback = async ({
         knowledgeSourceChannelId,
         knowledgeSourceThreadTs,
         sessionId,
+        t,
       });
       return;
     }
@@ -332,14 +347,15 @@ export const suggestUpdatesCallback = async ({
 
     // processedDoc이 null이거나 변경사항이 없어도 사용자에게 표시 (자동 스킵 방지)
     if (!processedDoc) {
+      const processingErrorText = t('docUpdate.suggestions.error.processingDocument');
       await client.chat.postMessage({
         channel: currentDmChannelId,
-        text: '❌ Error processing document. Skipping to next.',
+        text: processingErrorText,
         blocks: [
           {
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
-            text: { type: 'mrkdwn', text: '❌ Error processing document. Skipping to next.' },
+            text: { type: 'mrkdwn', text: processingErrorText },
           },
         ],
       });
@@ -390,6 +406,7 @@ export const suggestUpdatesCallback = async ({
       isFirstSuggestion,
       suggestionNumber: suggestionDisplayNumber,
       client,
+      t,
     });
 
     // Try to update the existing progress message with the suggestion
@@ -404,7 +421,7 @@ export const suggestUpdatesCallback = async ({
           channel: progressChannel,
           ts: progressTimestamp,
           blocks: blocks,
-          text: 'Document Update Suggestions',
+          text: t('docUpdate.suggestions.card.fallback'),
         });
         console.log(`Successfully updated progress message ${progressTimestamp} to suggestion`);
         suggestionMessageTs = progressTimestamp;
@@ -421,7 +438,7 @@ export const suggestUpdatesCallback = async ({
           blocks: blocks,
           unfurl_links: false,
           unfurl_media: false,
-          text: 'Document Update Suggestions',
+          text: t('docUpdate.suggestions.card.fallback'),
         });
         suggestionMessageTs = result.ts;
       }
@@ -433,7 +450,7 @@ export const suggestUpdatesCallback = async ({
         blocks: blocks,
         unfurl_links: false,
         unfurl_media: false,
-        text: 'Document Update Suggestions',
+        text: t('docUpdate.suggestions.card.fallback'),
       });
       suggestionMessageTs = result.ts;
     }
@@ -497,16 +514,19 @@ export const suggestUpdatesCallback = async ({
 
     if (currentDmChannelId) {
       try {
+        const genericErrorText = t('docUpdate.suggestions.error.generic', {
+          reason: error instanceof Error ? error.message : 'Unknown error',
+        });
         await client.chat.postMessage({
           channel: currentDmChannelId,
-          text: `An error occurred while suggesting document updates: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          text: genericErrorText,
           blocks: [
             {
               type: 'section',
               block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
               text: {
                 type: 'mrkdwn',
-                text: `An error occurred while suggesting document updates: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                text: genericErrorText,
               },
             },
           ],

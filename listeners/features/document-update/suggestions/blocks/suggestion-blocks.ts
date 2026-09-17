@@ -7,6 +7,7 @@ import { GithubService } from 'services/github';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import type { T } from '../../../../../src/i18n';
 import { CREATE_FILE_SESSION_EXPIRY, buildStartOverButton } from '../shared';
 
 export async function buildSuggestionBlocks(params: {
@@ -20,6 +21,8 @@ export async function buildSuggestionBlocks(params: {
   isFirstSuggestion: boolean;
   suggestionNumber: number;
   client: any;
+  /** The reviewer's translator: this card is a pure view, it resolves nothing. */
+  t: T;
 }): Promise<(KnownBlock | Block)[]> {
   const {
     processedDoc,
@@ -32,6 +35,7 @@ export async function buildSuggestionBlocks(params: {
     isFirstSuggestion,
     suggestionNumber,
     client,
+    t,
   } = params;
 
   const sectionInfo = formatSectionPathWithLinks({
@@ -42,12 +46,19 @@ export async function buildSuggestionBlocks(params: {
 
   const anchorLineText = processedDoc.updateAnchor?.startLine
     ? processedDoc.updateAnchor.endLine && processedDoc.updateAnchor.endLine !== processedDoc.updateAnchor.startLine
-      ? `\nAnchor: lines ${processedDoc.updateAnchor.startLine}-${processedDoc.updateAnchor.endLine}`
-      : `\nAnchor: line ${processedDoc.updateAnchor.startLine}`
+      ? t('docUpdate.suggestions.card.anchor.range', {
+          startLine: processedDoc.updateAnchor.startLine,
+          endLine: processedDoc.updateAnchor.endLine,
+        })
+      : t('docUpdate.suggestions.card.anchor.single', { startLine: processedDoc.updateAnchor.startLine })
     : '';
 
-  const suggestionTitleText = `📝 *Update Suggestion ${suggestionNumber}*`;
-  const fileInfoText = `File: <${processedDoc.githubUrl}|${processedDoc.fileName}>\nSection: ${sectionInfo}${anchorLineText}`;
+  const suggestionTitleText = t('docUpdate.suggestions.card.heading', { number: suggestionNumber });
+  const fileInfoText = t('docUpdate.suggestions.card.fileInfo', {
+    fileLink: `<${processedDoc.githubUrl}|${processedDoc.fileName}>`,
+    sectionInfo,
+    anchor: anchorLineText,
+  });
 
   const editButtonValue = {
     index: currentIndex,
@@ -86,7 +97,7 @@ export async function buildSuggestionBlocks(params: {
   const mainActionButtons = [
     {
       type: 'button' as const,
-      text: { type: 'plain_text' as const, text: 'Edit This', emoji: true },
+      text: { type: 'plain_text' as const, text: t('docUpdate.suggestions.button.edit'), emoji: true },
       action_id: 'edit_update',
       value: JSON.stringify(editButtonValue),
     },
@@ -94,7 +105,9 @@ export async function buildSuggestionBlocks(params: {
       type: 'button' as const,
       text: {
         type: 'plain_text' as const,
-        text: processedDoc.hasChanges ? '✅ Apply Changes' : '✅ Looks Good',
+        text: processedDoc.hasChanges
+          ? t('docUpdate.suggestions.button.apply')
+          : t('docUpdate.suggestions.button.looksGood'),
         emoji: true,
       },
       style: 'primary' as const,
@@ -103,13 +116,13 @@ export async function buildSuggestionBlocks(params: {
     },
     {
       type: 'button' as const,
-      text: { type: 'plain_text' as const, text: '⏭️ Skip This', emoji: true },
+      text: { type: 'plain_text' as const, text: t('docUpdate.suggestions.button.skip'), emoji: true },
       action_id: 'skip_suggestion',
       value: JSON.stringify(skipButtonValue),
     },
     {
       type: 'button' as const,
-      text: { type: 'plain_text' as const, text: 'Stop Review', emoji: false },
+      text: { type: 'plain_text' as const, text: t('docUpdate.suggestions.button.stop'), emoji: false },
       style: 'danger' as const,
       action_id: 'cancel_document_updates',
       value: JSON.stringify(cancelButtonValue),
@@ -120,7 +133,7 @@ export async function buildSuggestionBlocks(params: {
   const newSectionButton = newSectionSuggestion
     ? {
         type: 'button' as const,
-        text: { type: 'plain_text' as const, text: '💡 Create New Section', emoji: true },
+        text: { type: 'plain_text' as const, text: t('docUpdate.suggestions.button.newSection'), emoji: true },
         action_id: 'create_new_section',
         value: JSON.stringify(
           (() => {
@@ -145,12 +158,9 @@ export async function buildSuggestionBlocks(params: {
       }
     : null;
 
-  let explanationText = '';
-  if (processedDoc.hasChanges) {
-    explanationText = `📝 I found content that could be *updated* based on your knowledge. I'm showing you the specific changes I'd recommend - you can see exactly what would be modified or added.`;
-  } else {
-    explanationText = `✅ Great news! This section is already well-aligned with your knowledge. I'm showing you the current content so you can verify it covers what you intended.`;
-  }
+  const explanationText = processedDoc.hasChanges
+    ? t('docUpdate.suggestions.card.explain.changes')
+    : t('docUpdate.suggestions.card.explain.aligned');
 
   const workspaceStore = new WorkspaceStore();
   const workspaceId = await getWorkspaceId(client);
@@ -178,11 +188,11 @@ export async function buildSuggestionBlocks(params: {
       ? {
           type: 'section' as const,
           block_id: `file_switcher::${sessionId}`,
-          text: { type: 'mrkdwn' as const, text: '📁 *Updating this file* — pick another to switch:' },
+          text: { type: 'mrkdwn' as const, text: t('docUpdate.suggestions.fileSwitcher.prompt') },
           accessory: {
             type: 'static_select' as const,
             action_id: 'switch_file_for_review',
-            placeholder: { type: 'plain_text' as const, text: 'Choose a file...' },
+            placeholder: { type: 'plain_text' as const, text: t('docUpdate.suggestions.fileSwitcher.placeholder') },
             options: fileOptions,
             ...(currentFileOption && { initial_option: currentFileOption }),
           },
@@ -212,20 +222,19 @@ export async function buildSuggestionBlocks(params: {
   );
   const createFileButton = {
     type: 'button' as const,
-    text: { type: 'plain_text' as const, text: '📄 Create New File', emoji: true },
+    text: { type: 'plain_text' as const, text: t('docUpdate.suggestions.button.newFile'), emoji: true },
     action_id: 'show_create_file_modal',
     value: createFileSessionId,
   };
 
+  const editLink = `<${directEditUrl}|${t('docUpdate.suggestions.link.here')}>`;
   let bonusIdeaText = '';
   if (processedDoc.newSectionSuggestion) {
-    if (processedDoc.hasChanges) {
-      bonusIdeaText = `💡 *Other options:* You can create a new section instead of updating this one, or edit ${processedDoc.fileName} directly in GitHub <${directEditUrl}|here>.`;
-    } else {
-      bonusIdeaText = `💡 *But here's a thought:* Even though this section is already well-aligned, your knowledge might deserve its own dedicated section! I can suggest where and how to create a new section for your content. Check out the "Create New Section" option below!`;
-    }
+    bonusIdeaText = processedDoc.hasChanges
+      ? t('docUpdate.suggestions.bonus.newSectionOrEdit', { fileName: processedDoc.fileName, editLink })
+      : t('docUpdate.suggestions.bonus.newSectionOnly');
   } else if (processedDoc.hasChanges && directEditUrl) {
-    bonusIdeaText = `💡 *Alternative option:* You can edit ${processedDoc.fileName} document in GitHub directly <${directEditUrl}|here>.`;
+    bonusIdeaText = t('docUpdate.suggestions.bonus.editOnly', { fileName: processedDoc.fileName, editLink });
   }
 
   const blocks: (KnownBlock | Block)[] = [
@@ -255,7 +264,7 @@ export async function buildSuggestionBlocks(params: {
   const extraButtons = [
     ...(newSectionButton ? [newSectionButton] : []),
     createFileButton,
-    buildStartOverButton(sessionId, knowledgeSourceChannelId, knowledgeSourceThreadTs),
+    buildStartOverButton(sessionId, knowledgeSourceChannelId, knowledgeSourceThreadTs, t),
   ];
   blocks.push({ type: 'actions', elements: extraButtons });
 

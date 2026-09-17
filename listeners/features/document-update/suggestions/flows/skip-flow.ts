@@ -2,6 +2,7 @@ import type { Document } from '@langchain/core/documents';
 import { getFileSelectionState } from 'services/document/document-store';
 import type { DocumentMetadata } from 'services/file-registry/types';
 import { getWorkspaceId } from 'services/slack';
+import type { T } from '../../../../../src/i18n';
 
 export async function handleSkip(params: {
   parsedValue: any;
@@ -18,6 +19,8 @@ export async function handleSkip(params: {
   client: any;
   logger: any;
   onNextSuggestion: (args: any) => Promise<void>;
+  /** The reviewing manager's translator: the confirmation replaces their card. */
+  t: T;
 }): Promise<void> {
   const {
     parsedValue,
@@ -34,16 +37,17 @@ export async function handleSkip(params: {
     client,
     logger,
     onNextSuggestion,
+    t,
   } = params;
 
   logger.info(`User skipped suggestion ${currentIndex} for nodeId: ${parsedValue.currentNodeId}`);
 
   const currentFileState = getFileSelectionState(userId, currentWorkspaceId);
   const suggestionNumber = currentFileState?.currentSuggestionCount || 1;
+  const unknownFile = t('docUpdate.suggestions.skip.unknownFile');
   const fileName = parsedValue.currentNodeId
-    ? searchResults.find((doc) => doc.metadata?.nodeId === parsedValue.currentNodeId)?.metadata?.fileName ||
-      'Unknown file'
-    : 'Unknown file';
+    ? searchResults.find((doc) => doc.metadata?.nodeId === parsedValue.currentNodeId)?.metadata?.fileName || unknownFile
+    : unknownFile;
 
   try {
     const workspaceId = await getWorkspaceId(client);
@@ -82,11 +86,14 @@ export async function handleSkip(params: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           replace_original: true,
-          text: `⏭️ Skipped suggestion ${suggestionNumber} for ${fileName}`,
+          text: t('docUpdate.suggestions.skip.confirmed.fallback', { number: suggestionNumber, fileName }),
           blocks: [
             {
               type: 'section',
-              text: { type: 'mrkdwn', text: `⏭️ *Skipped* suggestion ${suggestionNumber} for ${fileName}` },
+              text: {
+                type: 'mrkdwn',
+                text: t('docUpdate.suggestions.skip.confirmed', { number: suggestionNumber, fileName }),
+              },
             },
           ],
         }),

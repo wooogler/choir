@@ -5,6 +5,7 @@ import { DocumentUpdateService } from 'services/document/document-update-service
 import { type ProvenanceRecord, buildContextFile, persistContextToMirror } from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
+import { tForRequest, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId, resolveUserNames } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
@@ -16,9 +17,13 @@ export const createFileSubmissionCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs<ViewSubmitAction>) => {
   const startTime = Date.now();
+  // The progress, validation and result messages are all for the submitter; the
+  // announcement further down goes to a whole channel and is resolved there.
+  const t = tForRequest(context);
   // Several steps below (metadata parse, session lookup) can throw before the
   // success ack. Without this guard the catch would notify the user but never
   // acknowledge the submission, leaving the modal hung on a Slack error.
@@ -37,7 +42,7 @@ export const createFileSubmissionCallback = async ({
       await client.chat
         .postMessage({
           channel: channelId || userId,
-          text: '⏳ This create-file form has expired. Please start again from the document update flow.',
+          text: t('docUpdate.actions.createFile.expired'),
         })
         .catch((dmError) => logger.error('Failed to notify expired create-file session:', dmError));
       return;
@@ -54,8 +59,8 @@ export const createFileSubmissionCallback = async ({
       await ack({
         response_action: 'errors',
         errors: {
-          ...(fileName ? {} : { file_name_input: 'File name is required' }),
-          ...(fileContent ? {} : { file_content_input: 'File content is required' }),
+          ...(fileName ? {} : { file_name_input: t('docUpdate.actions.createFile.error.nameRequired') }),
+          ...(fileContent ? {} : { file_content_input: t('docUpdate.actions.createFile.error.contentRequired') }),
         },
       });
       acked = true;
@@ -67,7 +72,7 @@ export const createFileSubmissionCallback = async ({
       await ack({
         response_action: 'errors',
         errors: {
-          file_name_input: 'File name must end with .md extension',
+          file_name_input: t('docUpdate.actions.createFile.error.extension'),
         },
       });
       acked = true;
@@ -80,8 +85,7 @@ export const createFileSubmissionCallback = async ({
       await ack({
         response_action: 'errors',
         errors: {
-          file_name_input:
-            'File name contains invalid characters. Use only letters, numbers, dots, hyphens, and underscores.',
+          file_name_input: t('docUpdate.actions.createFile.error.invalidName'),
         },
       });
       acked = true;
@@ -94,14 +98,14 @@ export const createFileSubmissionCallback = async ({
     // Show processing message
     const processingMessage = await client.chat.postMessage({
       channel: channelId,
-      text: '📄 Creating new file...',
+      text: t('docUpdate.actions.createFile.creating.fallback'),
       blocks: [
         {
           type: 'section',
           block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
           text: {
             type: 'mrkdwn',
-            text: `📄 *Creating new file: ${fileName}*\nPlease wait while I create the file in your GitHub repository...`,
+            text: t('docUpdate.actions.createFile.creating', { fileName }),
           },
         },
       ],
@@ -152,14 +156,14 @@ export const createFileSubmissionCallback = async ({
     });
     if (existingFile) {
       await updateProcessingMessage({
-        text: '❌ File creation failed',
+        text: t('docUpdate.actions.createFile.failed.fallback'),
         blocks: [
           {
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
             text: {
               type: 'mrkdwn',
-              text: `❌ *File creation failed*\n\nA file named \`${fileName}\` already exists in the repository. Please choose a different file name.`,
+              text: t('docUpdate.actions.createFile.failed.exists', { fileName }),
             },
           },
         ],
@@ -274,22 +278,24 @@ export const createFileSubmissionCallback = async ({
     }
 
     // Update processing message to success (without Start Review button - process ends here)
+    const fileUrl = `https://github.com/${owner}/${repo}/blob/${branchName}/${filePath}`;
+    const contentPreview = `${fileContent.substring(0, 300)}${fileContent.length > 300 ? '...' : ''}`;
     await updateProcessingMessage({
-      text: '✅ File created successfully!',
+      text: t('docUpdate.actions.createFile.created.fallback'),
       blocks: [
         {
           type: 'section',
           block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
           text: {
             type: 'mrkdwn',
-            text: `✅ *File created successfully!*\n\n📄 <https://github.com/${owner}/${repo}/blob/${branchName}/${filePath}|*${fileName}*> has been created in your GitHub repository.`,
+            text: t('docUpdate.actions.createFile.created', { fileLink: `<${fileUrl}|*${fileName}*>` }),
           },
         },
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `*Initial Content:*\n\`\`\`${fileContent.substring(0, 300)}${fileContent.length > 300 ? '...' : ''}\`\`\``,
+            text: t('docUpdate.actions.createFile.initialContent', { content: contentPreview }),
           },
         },
         {
@@ -299,7 +305,7 @@ export const createFileSubmissionCallback = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '🎉 *Document update process complete!*\nYour new file has been created and is ready for use. You can mention me anytime with new knowledge to review and update docs!',
+            text: t('docUpdate.actions.createFile.done'),
           },
         },
       ],
@@ -308,16 +314,24 @@ export const createFileSubmissionCallback = async ({
     // Send notification to original channel if available (and different from current DM)
     if (knowledgeSourceChannelId && knowledgeSourceChannelId !== channelId) {
       try {
+        // A whole channel reads this one, so it follows the workspace default
+        // rather than the submitter's own language.
+        const tChannel = await tForWorkspace(workspaceId);
+
         // Get user name for notification
-        let createdBy = 'User';
+        const unknownName = tChannel('docUpdate.user.fallbackName');
+        let createdBy = unknownName;
         try {
           const userInfo = await client.users.info({ user: userId });
-          createdBy = userInfo.user?.real_name || userInfo.user?.name || 'User';
+          createdBy = userInfo.user?.real_name || userInfo.user?.name || unknownName;
         } catch (error) {
           logger.warn('Failed to get user info for notification:', error);
         }
 
-        const notificationText = `📄 New File Created by ${createdBy}: <https://github.com/${owner}/${repo}/blob/${branchName}/${filePath}|${fileName}>`;
+        const notificationText = tChannel('docUpdate.actions.createFile.channelNotice', {
+          createdBy,
+          fileLink: `<${fileUrl}|${fileName}>`,
+        });
 
         await client.chat.postMessage({
           channel: knowledgeSourceChannelId,
@@ -333,7 +347,7 @@ export const createFileSubmissionCallback = async ({
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `*Initial Content:*\n\`\`\`${fileContent.substring(0, 300)}${fileContent.length > 300 ? '...' : ''}\`\`\``,
+                text: tChannel('docUpdate.actions.createFile.initialContent', { content: contentPreview }),
               },
             },
           ],
@@ -418,14 +432,16 @@ export const createFileSubmissionCallback = async ({
       try {
         await client.chat.postMessage({
           channel: metadata.channelId,
-          text: '❌ File creation failed',
+          text: t('docUpdate.actions.createFile.failed.fallback'),
           blocks: [
             {
               type: 'section',
               block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
               text: {
                 type: 'mrkdwn',
-                text: `❌ *File creation failed*\n\nSorry, I encountered an error while creating the file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                text: t('docUpdate.actions.createFile.failed.error', {
+                  reason: error instanceof Error ? error.message : 'Unknown error',
+                }),
               },
             },
           ],

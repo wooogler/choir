@@ -3,6 +3,7 @@ import type { ModalView } from '@slack/web-api';
 import { SessionType, generateSessionId, getSessionData, storeSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
 import { GithubService } from 'services/github';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 
@@ -10,10 +11,14 @@ export const createNewSectionAction = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // The modal and its two refusals all go back to the manager who clicked.
+  const t = tForRequest(context);
 
   // Variables that need to be accessible in catch block
   let workspaceId: string | undefined;
@@ -62,15 +67,16 @@ export const createNewSectionAction = async ({
 
     // 지식이 불충분해 빈 본문이 들어온 경우(프롬프트가 빈 sectionContent를 반환) 모달을 열지 않음
     if (!sectionContent || !sectionContent.trim()) {
+      const notEnoughInfoText = t('docUpdate.actions.newSection.notEnoughInfo');
       await client.chat.postMessage({
         channel: userId,
-        text: 'ℹ️ There isn’t enough information to draft a new section. Try sharing a bit more detail.',
+        text: notEnoughInfoText,
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: 'ℹ️ There isn’t enough information to draft a new section. Try sharing a bit more detail.',
+              text: notEnoughInfoText,
             },
           },
         ],
@@ -93,7 +99,7 @@ export const createNewSectionAction = async ({
       await client.chat.postEphemeral({
         channel: userId, // Use DM channel
         user: userId,
-        text: '❌ No writable files available for new sections. All files are marked as read-only.',
+        text: t('docUpdate.actions.newSection.noWritableFiles'),
       });
       return;
     }
@@ -164,15 +170,15 @@ export const createNewSectionAction = async ({
       notify_on_close: true,
       title: {
         type: 'plain_text' as const,
-        text: 'Create a New Section',
+        text: t('docUpdate.actions.newSection.title'),
       },
       close: {
         type: 'plain_text' as const,
-        text: 'Cancel',
+        text: t('common.button.cancel'),
       },
       submit: {
         type: 'plain_text' as const,
-        text: 'Submit',
+        text: t('common.button.submit'),
         emoji: true,
       },
       private_metadata: modalSessionId, // Just store the session ID
@@ -181,7 +187,7 @@ export const createNewSectionAction = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `👋 I've prepared a new section for your documentation. Review and edit the content below, then click *Submit* to automatically add it to your selected file.\n\n`,
+            text: t('docUpdate.actions.newSection.intro'),
           },
         },
         {
@@ -192,7 +198,7 @@ export const createNewSectionAction = async ({
           block_id: 'file_selection_input',
           label: {
             type: 'plain_text',
-            text: 'Select Target File',
+            text: t('docUpdate.actions.newSection.file.label'),
             emoji: true,
           },
           element: {
@@ -200,7 +206,7 @@ export const createNewSectionAction = async ({
             action_id: 'file_selection',
             placeholder: {
               type: 'plain_text',
-              text: 'Choose a file...',
+              text: t('docUpdate.actions.newSection.file.placeholder'),
             },
             initial_option: recommendedFileOption || fileOptions[0],
             options: fileOptions,
@@ -210,7 +216,7 @@ export const createNewSectionAction = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: "*🎯 Here's the section I've prepared for you:*",
+            text: t('docUpdate.actions.newSection.prepared'),
           },
         },
         {
@@ -218,7 +224,7 @@ export const createNewSectionAction = async ({
           block_id: 'section_title_input',
           label: {
             type: 'plain_text',
-            text: 'Section Title',
+            text: t('docUpdate.actions.newSection.sectionTitle.label'),
             emoji: true,
           },
           element: {
@@ -227,7 +233,7 @@ export const createNewSectionAction = async ({
             initial_value: sectionTitleForEdit,
             placeholder: {
               type: 'plain_text',
-              text: 'Enter section title...',
+              text: t('docUpdate.actions.newSection.sectionTitle.placeholder'),
             },
           },
         },
@@ -236,7 +242,7 @@ export const createNewSectionAction = async ({
           block_id: 'section_body_input',
           label: {
             type: 'plain_text',
-            text: 'Section Content',
+            text: t('docUpdate.actions.newSection.body.label'),
             emoji: true,
           },
           element: {
@@ -246,7 +252,7 @@ export const createNewSectionAction = async ({
             multiline: true,
             placeholder: {
               type: 'plain_text',
-              text: 'Enter section content...',
+              text: t('docUpdate.actions.newSection.body.placeholder'),
             },
           },
         },
@@ -254,13 +260,13 @@ export const createNewSectionAction = async ({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `📝 *Alternatively, you can edit the selected file manually in GitHub:*`,
+            text: t('docUpdate.actions.newSection.manualEdit'),
           },
           accessory: {
             type: 'button',
             text: {
               type: 'plain_text',
-              text: '🔗 Get Edit Link',
+              text: t('docUpdate.actions.newSection.button.getEditLink'),
               emoji: true,
             },
             action_id: 'get_edit_link_for_selected_file',
@@ -308,7 +314,9 @@ export const createNewSectionAction = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ Failed to open new section modal: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      text: t('docUpdate.actions.newSection.error.open', {
+        reason: error instanceof Error ? error.message : 'Unknown error',
+      }),
     });
 
     // 로그: 실패

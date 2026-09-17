@@ -1,4 +1,5 @@
 import { SessionType, getSessionData } from 'services/common';
+import type { T } from '../../../../../src/i18n';
 
 export async function showReviewScreen(params: {
   sessionId: string;
@@ -8,8 +9,10 @@ export async function showReviewScreen(params: {
   parsedValue: any;
   client: any;
   logger: any;
+  /** The reviewing manager's translator: this screen is posted into their DM. */
+  t: T;
 }): Promise<boolean> {
-  const { sessionId, userId, currentDmChannelId, knowledgeContent, parsedValue, client, logger } = params;
+  const { sessionId, userId, currentDmChannelId, knowledgeContent, parsedValue, client, logger, t } = params;
 
   if (!sessionId || parsedValue.continueToFileSelection) return false;
 
@@ -25,15 +28,15 @@ export async function showReviewScreen(params: {
   logger.info(`Showing suggestion review for channel suggestion from ${sessionData.originalChannelId}`);
 
   const isManagerOwnSuggestion = sessionData.userId === userId;
-  const userName = sessionData.userName || 'A team member';
+  const userName = sessionData.userName || t('notifications.manager.suggestion.anonymousUser');
 
   const introBlock: any = {
     type: 'section',
     text: {
       type: 'mrkdwn',
       text: isManagerOwnSuggestion
-        ? `Hi! I'm CHOIR, your documentation assistant.\n\nYou have a document update suggestion:`
-        : `Hi! I'm CHOIR, your documentation assistant.\n\n*${userName}* has a document update suggestion:`,
+        ? t('docUpdate.suggestions.review.intro.own')
+        : t('docUpdate.suggestions.review.intro.other', { userName }),
     },
   };
 
@@ -43,13 +46,13 @@ export async function showReviewScreen(params: {
       introBlock.accessory = {
         type: 'image',
         image_url: userInfo.user?.profile?.image_192 || 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-        alt_text: userName || 'User profile',
+        alt_text: userName || t('docUpdate.suggestions.image.alt.profile'),
       };
     } catch {
       introBlock.accessory = {
         type: 'image',
         image_url: 'https://a.slack-edge.com/df10d/img/avatars/ava_0016-192.png',
-        alt_text: userName || 'User profile',
+        alt_text: userName || t('docUpdate.suggestions.image.alt.profile'),
       };
     }
   }
@@ -62,7 +65,12 @@ export async function showReviewScreen(params: {
   if (sessionData.originalMessageLink) {
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: `📍 <${sessionData.originalMessageLink}|View original discussion> for context` },
+      text: {
+        type: 'mrkdwn',
+        text: t('notifications.manager.suggestion.context', {
+          discussionLink: `<${sessionData.originalMessageLink}|${t('notifications.link.viewDiscussion')}>`,
+        }),
+      },
     });
   }
 
@@ -71,8 +79,8 @@ export async function showReviewScreen(params: {
     text: {
       type: 'mrkdwn',
       text: isManagerOwnSuggestion
-        ? 'Please review your suggestion above and choose how to proceed:'
-        : 'You requested this document update suggestion. Please review the content above and choose how to proceed:',
+        ? t('docUpdate.suggestions.review.prompt.own')
+        : t('docUpdate.suggestions.review.prompt.other'),
     },
   });
 
@@ -81,13 +89,13 @@ export async function showReviewScreen(params: {
     elements: [
       {
         type: 'button',
-        text: { type: 'plain_text', text: '✏️ Edit Suggestion', emoji: true },
+        text: { type: 'plain_text', text: t('docUpdate.suggestions.button.editSuggestion'), emoji: true },
         action_id: 'open_knowledge_edit_manager_modal',
         value: sessionId,
       },
       {
         type: 'button',
-        text: { type: 'plain_text', text: '🚀 Start Update Process', emoji: true },
+        text: { type: 'plain_text', text: t('docUpdate.suggestions.button.startProcess'), emoji: true },
         style: 'primary',
         action_id: 'suggest_updates',
         value: JSON.stringify({
@@ -102,7 +110,7 @@ export async function showReviewScreen(params: {
 
   await client.chat.postMessage({
     channel: currentDmChannelId,
-    text: `📝 Document update suggestion from *${userName}*`,
+    text: t('docUpdate.suggestions.review.fallback', { userName }),
     blocks,
     unfurl_links: false,
     unfurl_media: false,

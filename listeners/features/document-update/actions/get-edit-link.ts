@@ -1,16 +1,22 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 
 export const getEditLinkAction = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // Everything here — the modal, the DM, the failure notice — is read by the
+  // person who pressed the button.
+  const t = tForRequest(context);
 
   try {
     const modalSessionId = body.actions?.[0]?.value;
@@ -41,7 +47,7 @@ export const getEditLinkAction = async ({
       await client.chat.postEphemeral({
         channel: body.user.id,
         user: body.user.id,
-        text: '⚠️ Please select a file from the dropdown first.',
+        text: t('docUpdate.actions.editLink.selectFirst'),
       });
       return;
     }
@@ -58,18 +64,18 @@ export const getEditLinkAction = async ({
           type: 'modal',
           title: {
             type: 'plain_text',
-            text: 'Edit Link Sent',
+            text: t('docUpdate.actions.editLink.title'),
           },
           close: {
             type: 'plain_text',
-            text: 'Close',
+            text: t('common.button.close'),
           },
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: 'The GitHub edit link has been sent to you via Direct Messages.',
+                text: t('docUpdate.actions.editLink.sent'),
               },
             },
           ],
@@ -83,13 +89,16 @@ export const getEditLinkAction = async ({
     // the IM and delivers a persistent message.)
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `🔗 *GitHub Edit Link for ${selectedFileName}*`,
+      text: t('docUpdate.actions.editLink.dm.fallback', { fileName: selectedFileName }),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `🔗 *GitHub Edit Link*\n\n📁 *File:* ${selectedFileName}\n🌐 *Link:* <${editUrl}|Open in GitHub>\n\n💡 *Tip:* Click the link above to edit the file directly in GitHub.`,
+            text: t('docUpdate.actions.editLink.dm.body', {
+              fileName: selectedFileName,
+              editLink: `<${editUrl}|${t('docUpdate.actions.editLink.label.open')}>`,
+            }),
           },
         },
       ],
@@ -125,7 +134,9 @@ export const getEditLinkAction = async ({
     await client.chat.postEphemeral({
       channel: body.user.id,
       user: body.user.id,
-      text: `❌ Failed to generate edit link: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      text: t('docUpdate.actions.editLink.error', {
+        reason: error instanceof Error ? error.message : 'Unknown error',
+      }),
     });
 
     // 로그: 실패

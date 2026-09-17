@@ -125,16 +125,23 @@ export async function getQAChannel(workspaceId: string, client?: WebClient): Pro
 
 /**
  * 채널 ID로부터 클릭 가능한 채널 멘션을 생성합니다.
+ *
+ * A named channel comes back as a mention, which needs no translation. The two
+ * fallbacks are words in a sentence, so a caller that knows who is reading can
+ * pass their translator; callers that do not keep the English they always got.
  */
-export async function getChannelName(channelId: string, client: WebClient): Promise<string> {
+export async function getChannelName(channelId: string, client: WebClient, t?: T): Promise<string> {
+  const dm = () => (t ? t('docUpdate.channel.dm') : 'DM');
+  const thisChannel = () => (t ? t('docUpdate.channel.this') : 'this channel');
+
   try {
     // Handle DM channels (channel IDs starting with 'D')
     if (channelId.startsWith('D')) {
-      return 'DM';
+      return dm();
     }
 
     const channelInfo = await client.conversations.info({ channel: channelId });
-    return channelInfo.channel?.name ? `<#${channelId}|${channelInfo.channel.name}>` : 'this channel';
+    return channelInfo.channel?.name ? `<#${channelId}|${channelInfo.channel.name}>` : thisChannel();
   } catch (error) {
     Logger.error('Error getting channel name', error as Error, { channelId });
 
@@ -143,11 +150,11 @@ export async function getChannelName(channelId: string, client: WebClient): Prom
       const slackError = error as any;
       if (slackError.data?.error === 'channel_not_found' || slackError.data?.error === 'missing_scope') {
         // This might be a group DM with C-prefix that we can't access
-        return 'DM';
+        return dm();
       }
     }
 
-    return 'this channel';
+    return thisChannel();
   }
 }
 
@@ -293,7 +300,7 @@ export async function createQAChannelMessage(
   }
 
   // Add user comment if provided
-  if (userComment && userComment.trim()) {
+  if (userComment?.trim()) {
     blocks.push(
       {
         type: 'divider',
@@ -347,7 +354,7 @@ export async function createQAChannelPreview(
   }
 
   // Add user comment if provided
-  if (userComment && userComment.trim()) {
+  if (userComment?.trim()) {
     preview += `\n\n${t('qa.share.comment', { author: senderIdentity, comment: userComment })}`;
   }
 
@@ -435,7 +442,7 @@ export async function createPrivateMessage(
   }
 
   // Add user comment if provided
-  if (userComment && userComment.trim()) {
+  if (userComment?.trim()) {
     blocks.push(
       {
         type: 'divider',
@@ -497,7 +504,7 @@ export async function createPrivateMessagePreview(
   }
 
   // Add user comment if provided
-  if (userComment && userComment.trim()) {
+  if (userComment?.trim()) {
     preview += `\n\n${t('qa.share.comment', { author: senderIdentity, comment: userComment })}`;
   }
 

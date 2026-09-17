@@ -10,6 +10,7 @@ import { GithubService } from 'services/github';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import type { T } from '../../../../../src/i18n';
 import { CREATE_FILE_SESSION_EXPIRY } from '../shared';
 
 export async function handleCompletion(params: {
@@ -22,6 +23,8 @@ export async function handleCompletion(params: {
   knowledgeSourceChannelId: string | undefined;
   knowledgeSourceThreadTs: string | undefined;
   sessionId: string;
+  /** The reviewing manager's translator: this lands in their DM. */
+  t: T;
 }): Promise<void> {
   const {
     userId,
@@ -33,6 +36,7 @@ export async function handleCompletion(params: {
     knowledgeSourceChannelId,
     knowledgeSourceThreadTs,
     sessionId,
+    t,
   } = params;
 
   const progressTimestamp = getProgressMessageTimestamp(userId);
@@ -98,11 +102,7 @@ export async function handleCompletion(params: {
       }));
 
       if (availableFiles.length > 0) {
-        const newSectionSuggestion = await createNewSectionFromKnowledge(
-          knowledgeContent,
-          availableFiles,
-          workspaceId,
-        );
+        const newSectionSuggestion = await createNewSectionFromKnowledge(knowledgeContent, availableFiles, workspaceId);
 
         if (newSectionSuggestion) {
           newSectionSessionId = `new_section_${userId}_${Date.now()}`;
@@ -140,7 +140,7 @@ export async function handleCompletion(params: {
         block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
         text: {
           type: 'mrkdwn',
-          text: "🎉 *Review Complete!* We've gone through all relevant documents. \n\nWould you like to create new content instead?",
+          text: t('docUpdate.suggestions.complete.prompt'),
         },
       },
       {
@@ -150,7 +150,7 @@ export async function handleCompletion(params: {
             ? [
                 {
                   type: 'button',
-                  text: { type: 'plain_text', text: '💡 Create New Section', emoji: true },
+                  text: { type: 'plain_text', text: t('docUpdate.suggestions.button.newSection'), emoji: true },
                   action_id: 'create_new_section',
                   value: JSON.stringify({ newSectionSessionId, userId }),
                 },
@@ -158,7 +158,7 @@ export async function handleCompletion(params: {
             : []),
           {
             type: 'button',
-            text: { type: 'plain_text', text: '📄 Create New File', emoji: true },
+            text: { type: 'plain_text', text: t('docUpdate.suggestions.button.newFile'), emoji: true },
             action_id: 'show_create_file_modal',
             value: (() => {
               const createFileSessionId = generateSessionId('create_file');
@@ -184,13 +184,13 @@ export async function handleCompletion(params: {
       },
       {
         type: 'context',
-        elements: [{ type: 'mrkdwn', text: 'Or mention me anytime with new knowledge to review and update docs! 👋' }],
+        elements: [{ type: 'mrkdwn', text: t('docUpdate.suggestions.complete.hint') }],
       },
     ];
 
     await client.chat.postMessage({
       channel: currentDmChannelId,
-      text: '🎉 Review Complete! Create new content?',
+      text: t('docUpdate.suggestions.complete.fallback'),
       blocks: completionBlocks,
       unfurl_links: false,
       unfurl_media: false,
@@ -200,16 +200,17 @@ export async function handleCompletion(params: {
   } catch (error) {
     logger.error('Error creating completion message:', error);
 
+    const simpleCompletionText = t('docUpdate.suggestions.complete.simple');
     await client.chat.postMessage({
       channel: currentDmChannelId,
-      text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
+      text: simpleCompletionText,
       blocks: [
         {
           type: 'section',
           block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
           text: {
             type: 'mrkdwn',
-            text: "🎉 Perfect! We've reviewed all the relevant documents. Thanks for working with me to keep your documentation up-to-date! \n\nIf you have more knowledge to share later, just mention me and I'll be happy to help review and update the docs again. Have a great day! 👋",
+            text: simpleCompletionText,
           },
         },
       ],

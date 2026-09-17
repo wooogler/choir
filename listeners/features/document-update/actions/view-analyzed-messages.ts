@@ -2,16 +2,21 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
 import { deAnonymizeText } from 'services/common/name-cache';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 
 export const viewAnalyzedMessagesAction = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // A modal only its opener sees.
+  const t = tForRequest(context);
 
   try {
     const value = body.actions?.[0]?.value;
@@ -40,18 +45,18 @@ export const viewAnalyzedMessagesAction = async ({
       callback_id: 'view_analyzed_messages_modal',
       title: {
         type: 'plain_text' as const,
-        text: 'Analyzed Messages',
+        text: t('docUpdate.actions.analyzed.title'),
       },
       close: {
         type: 'plain_text' as const,
-        text: 'Close',
+        text: t('common.button.close'),
       },
       blocks: [
         {
           type: 'section' as const,
           text: {
             type: 'mrkdwn' as const,
-            text: `📊 *Analysis Summary*\n• Session ID: \`${sessionId}\`\n• Total messages: ${messageCount}`,
+            text: t('docUpdate.actions.analyzed.summary', { sessionId, messageCount }),
           },
         },
         {
@@ -61,13 +66,13 @@ export const viewAnalyzedMessagesAction = async ({
           type: 'section' as const,
           text: {
             type: 'mrkdwn' as const,
-            text: '*📝 Messages analyzed for knowledge extraction:*',
+            text: t('docUpdate.actions.analyzed.listHeading'),
           },
         },
         ...messages.map((msg: any, index: number) => {
           // Handle both processedMessages format and original messages format
-          let username = 'Unknown User';
-          let text = 'No text';
+          let username = t('docUpdate.actions.analyzed.unknownUser');
+          let text = t('docUpdate.actions.analyzed.noText');
 
           if (msg.role && msg.content) {
             // processedMessages format: { role: 'CHOIR' | 'user', content: 'Username: message' }
@@ -86,8 +91,8 @@ export const viewAnalyzedMessagesAction = async ({
             }
           } else {
             // Original messages format: { username: 'User', text: 'message' }
-            username = msg.username || 'Unknown User';
-            text = msg.text || 'No text';
+            username = msg.username || t('docUpdate.actions.analyzed.unknownUser');
+            text = msg.text || t('docUpdate.actions.analyzed.noText');
           }
 
           const deAnonymizedUsername = deAnonymizeText(username, workspaceId);
@@ -97,7 +102,12 @@ export const viewAnalyzedMessagesAction = async ({
             type: 'section' as const,
             text: {
               type: 'mrkdwn' as const,
-              text: `*${index + 1}. ${deAnonymizedUsername}*\n${deAnonymizedText}${deAnonymizedText.length >= 200 ? '...' : ''}`,
+              text: t('docUpdate.actions.analyzed.item', {
+                number: index + 1,
+                username: deAnonymizedUsername,
+                text: deAnonymizedText,
+                ellipsis: deAnonymizedText.length >= 200 ? '...' : '',
+              }),
             },
           };
         }),
@@ -158,7 +168,9 @@ export const viewAnalyzedMessagesAction = async ({
       await client.chat.postEphemeral({
         channel: body.channel?.id || 'unknown',
         user: body.user.id,
-        text: `❌ Failed to show analyzed messages: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        text: t('docUpdate.actions.analyzed.error', {
+          reason: error instanceof Error ? error.message : 'Unknown error',
+        }),
       });
     } catch (ephemeralError) {
       logger.error('Failed to send ephemeral error message:', ephemeralError);

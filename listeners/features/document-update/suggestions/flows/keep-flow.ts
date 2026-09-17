@@ -6,7 +6,9 @@ import {
   resetFileSelectionAfterApply,
 } from 'services/document/document-store';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
+import { tForWorkspace } from 'services/i18n';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import type { T } from '../../../../../src/i18n';
 import { applySelectedToGithubAction } from '../../apply-document/apply-selected-to-github-action';
 import { notifyOtherManagersAboutUpdate } from '../manager-notifications';
 
@@ -19,24 +21,27 @@ export async function handleKeep(params: {
   body: any;
   client: any;
   logger: any;
+  /** The reviewing manager's translator, for the one message that stays in their DM. */
+  t: T;
 }): Promise<void> {
-  const { parsedValue, userId, currentWorkspaceId, currentDmChannelId, sessionId, body, client, logger } = params;
+  const { parsedValue, userId, currentWorkspaceId, currentDmChannelId, sessionId, body, client, logger, t } = params;
 
   const storedUpdates = getStoredDocumentUpdates(userId, currentWorkspaceId);
   const currentUpdate = storedUpdates.find((update) => update.nodeId === parsedValue.currentNodeId);
 
   if (!currentUpdate) {
     logger.error(`Could not find stored document update for nodeId ${parsedValue.currentNodeId}`);
+    const missingUpdateText = t('docUpdate.suggestions.error.missingUpdate');
     await client.chat.postMessage({
       channel: currentDmChannelId,
-      text: '❌ Error: Could not retrieve the details for this update. Please try again or skip.',
+      text: missingUpdateText,
       blocks: [
         {
           type: 'section',
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           text: {
             type: 'mrkdwn',
-            text: '❌ Error: Could not retrieve the details for this update. Please try again or skip.',
+            text: missingUpdateText,
           },
         },
       ],
@@ -81,6 +86,10 @@ export async function handleKeep(params: {
     const originalChannelId = currentUpdate.originalChannelId;
     if (originalChannelId && currentUpdate.nodeId) {
       try {
+        // Everything from here is read in the source channel, and then re-used
+        // by the manager fan-out, so it follows the workspace's language rather
+        // than the manager's who applied it.
+        const tChannel = await tForWorkspace(currentWorkspaceId);
         const blocks: any[] = [];
         const sectionInfo = formatSectionPathWithLinks({
           headingPath: currentUpdate.headingPath,
@@ -88,19 +97,24 @@ export async function handleKeep(params: {
           githubUrl: currentUpdate.githubUrl,
         } as any);
 
-        let updatedBy = 'User';
+        const unknownName = tChannel('docUpdate.user.fallbackName');
+        let updatedBy = unknownName;
         try {
           const userInfo = await client.users.info({ user: userId });
-          updatedBy = userInfo.user?.real_name || userInfo.user?.name || 'User';
+          updatedBy = userInfo.user?.real_name || userInfo.user?.name || unknownName;
         } catch (error) {
           console.error('Failed to get manager user info:', error);
           if (currentUpdate.messages && currentUpdate.messages.length > 0) {
             const lastMessage = currentUpdate.messages[currentUpdate.messages.length - 1];
-            updatedBy = lastMessage.username || 'User';
+            updatedBy = lastMessage.username || unknownName;
           }
         }
 
-        const notificationText = `✅ Document Updated by ${updatedBy}: <${currentUpdate.githubUrl}|${currentUpdate.fileName}> - ${sectionInfo}`;
+        const notificationText = tChannel('docUpdate.suggestions.applied.channel', {
+          updatedBy,
+          fileLink: `<${currentUpdate.githubUrl}|${currentUpdate.fileName}>`,
+          sectionInfo,
+        });
         blocks.push({ type: 'section', text: { type: 'mrkdwn', text: notificationText } });
 
         try {
@@ -113,7 +127,12 @@ export async function handleKeep(params: {
           console.error('Failed to create updated diff block:', diffError);
           blocks.push({
             type: 'section',
-            text: { type: 'mrkdwn', text: `*Updated Content:*\n\`\`\`${currentUpdate.updatedNodeContent}\`\`\`` },
+            text: {
+              type: 'mrkdwn',
+              text: tChannel('docUpdate.suggestions.applied.updatedContent', {
+                content: currentUpdate.updatedNodeContent,
+              }),
+            },
           });
         }
 

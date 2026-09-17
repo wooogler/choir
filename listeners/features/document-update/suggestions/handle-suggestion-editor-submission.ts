@@ -4,6 +4,7 @@ import { logModalSubmit } from 'services/common/interaction-tracker';
 import { convertMarkdownToSlackText, updateDocumentContent } from 'services/document';
 import { createAppendSuggestionBlock } from 'services/document/update-processor';
 import { createDiffBlock, getWorkspaceId } from 'services/slack';
+import { tForReviewer } from './shared';
 
 /**
  * 모달에서 제출된 내용을 처리합니다.
@@ -13,8 +14,11 @@ export const handleSuggestionEditorSubmission = async ({
   body,
   view,
   client,
+  context,
 }: AllMiddlewareArgs & SlackViewMiddlewareArgs) => {
   const startTime = Date.now();
+  // The submitter is the only reader of anything this handler sends.
+  const t = await tForReviewer(context, await getWorkspaceId(client), body.user.id, client);
 
   try {
     // 제출 확인
@@ -108,7 +112,7 @@ export const handleSuggestionEditorSubmission = async ({
         channel: channelId,
         ts: messageTs,
         blocks: blocks,
-        text: message.text || 'Document Update Suggestion',
+        text: message.text || t('docUpdate.suggestions.editor.fallback'),
       });
 
       // 문서 업데이트 저장
@@ -170,7 +174,9 @@ export const handleSuggestionEditorSubmission = async ({
       if (dmResult.ok && dmResult.channel?.id) {
         await client.chat.postMessage({
           channel: dmResult.channel.id,
-          text: `Cannot save changes: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          text: t('docUpdate.suggestions.editor.error.save', {
+            reason: error instanceof Error ? error.message : 'Unknown error',
+          }),
         });
       }
     } catch (dmError) {

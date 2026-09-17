@@ -8,6 +8,7 @@ import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-serv
 import type { DocumentMetadata } from 'services/file-registry/types';
 import { getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import type { T } from '../../../../../src/i18n';
 
 export interface FileBasedSearchResult {
   shouldReturn: boolean;
@@ -23,8 +24,10 @@ export async function runFileBasedSearch(params: {
   knowledgeContent: string;
   client: any;
   logger: any;
+  /** The reviewing manager's translator: the "nothing here" notice is their DM. */
+  t: T;
 }): Promise<FileBasedSearchResult> {
-  const { parsedValue, userId, currentWorkspaceId, currentDmChannelId, knowledgeContent, client, logger } = params;
+  const { parsedValue, userId, currentWorkspaceId, currentDmChannelId, knowledgeContent, client, logger, t } = params;
 
   logger.info(
     `Performing file-based search for file: ${parsedValue.selectedFile}, isFileBasedReview: ${parsedValue.isFileBasedReview}, isDefaultFile: ${parsedValue.isDefaultFile}`,
@@ -68,16 +71,17 @@ export async function runFileBasedSearch(params: {
   logger.info(`Dynamic order calculated: ${searchResults.length} total documents available`);
 
   if (searchResults.length === 0) {
+    const noContentText = t('docUpdate.suggestions.error.noContentInFile', { fileName: parsedValue.selectedFile });
     await client.chat.postMessage({
       channel: currentDmChannelId,
-      text: `No relevant content found in the selected file: ${parsedValue.selectedFile}. Please try selecting a different file or choose "All Files" option.`,
+      text: noContentText,
       blocks: [
         {
           type: 'section',
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           text: {
             type: 'mrkdwn',
-            text: `No relevant content found in the selected file: ${parsedValue.selectedFile}. Please try selecting a different file or choose "All Files" option.`,
+            text: noContentText,
           },
         },
       ],

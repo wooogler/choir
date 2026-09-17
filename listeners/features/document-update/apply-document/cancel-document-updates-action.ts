@@ -2,6 +2,7 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import { deleteProgressMessageTimestamp, getLastMessageTimestamp, getProgressMessageTimestamp } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
 import { getFileSelectionState } from 'services/document/document-store';
+import { tForRequest, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -12,10 +13,15 @@ export const cancelDocumentUpdatesCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // The receipt replaces the card in the manager's own DM; the notice further
+  // down goes to the channel the review came from and is resolved there.
+  const t = tForRequest(context);
 
   try {
     const userId = body.user.id;
@@ -43,12 +49,8 @@ export const cancelDocumentUpdatesCallback = async ({
     const isCancel = appliedCount === 0;
 
     const cancelMessage = isCancel
-      ? '👋 Review cancelled'
-      : `✅ Review stopped! We've applied ${appliedCount} suggestion${appliedCount > 1 ? 's' : ''} to the documentation.`;
-
-    const notificationMessage = isCancel
-      ? 'cancelled their document update review'
-      : `stopped their document update review after applying ${appliedCount} suggestion${appliedCount > 1 ? 's' : ''}`;
+      ? t('docUpdate.apply.cancel.cancelled')
+      : t('docUpdate.apply.cancel.stopped', { count: appliedCount });
 
     // Use response_url to replace the current message with cancellation status
     if (responseUrl) {
@@ -166,17 +168,22 @@ export const cancelDocumentUpdatesCallback = async ({
       try {
         // Get user name for the notification
         const userName = await getUserName(userId, client);
+        const tChannel = await tForWorkspace(workspaceId);
+        const notice = isCancel
+          ? tChannel('docUpdate.apply.cancel.notice.cancelled')
+          : tChannel('docUpdate.apply.cancel.notice.stopped', { count: appliedCount });
+        const channelNoticeText = tChannel('docUpdate.apply.cancel.channel', { userName, notice });
 
         await client.chat.postMessage({
           channel: originalChannelId,
           ...(originalThreadTs ? { thread_ts: originalThreadTs } : {}),
-          text: `📋 *${userName}* ${notificationMessage}.`,
+          text: channelNoticeText,
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `📋 *${userName}* ${notificationMessage}.`,
+                text: channelNoticeText,
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
             },
@@ -223,13 +230,17 @@ export const cancelDocumentUpdatesCallback = async ({
       if (dmResult.ok && dmResult.channel?.id) {
         await client.chat.postMessage({
           channel: dmResult.channel.id,
-          text: `❌ Failed to cancel document updates: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          text: t('docUpdate.apply.cancel.error.fallback', {
+            reason: error instanceof Error ? error.message : 'Unknown error',
+          }),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `❌ *Error occurred while cancelling*\n${error instanceof Error ? error.message : 'Unknown error'}`,
+                text: t('docUpdate.apply.cancel.error', {
+                  reason: error instanceof Error ? error.message : 'Unknown error',
+                }),
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),
             },

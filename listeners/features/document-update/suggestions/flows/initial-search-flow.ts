@@ -7,6 +7,7 @@ import { getWorkspaceId } from 'services/slack';
 import { isReadOnlyFile } from 'services/workspace/read-only';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import type { T } from '../../../../../src/i18n';
 import { MANAGER_SESSION_EXPIRY } from '../shared';
 import { runFileBasedSearch } from './file-based-search-flow';
 
@@ -28,6 +29,8 @@ export async function runInitialSearch(params: {
   vectorStore: { getAllMarkdownFiles: (workspaceId: string) => any[] };
   client: any;
   logger: any;
+  /** The reviewing manager's translator: every message below is their DM. */
+  t: T;
 }): Promise<InitialSearchResult> {
   const {
     userId,
@@ -40,6 +43,7 @@ export async function runInitialSearch(params: {
     vectorStore,
     client,
     logger,
+    t,
   } = params;
 
   logger.info(`[SEARCH DEBUG] Query used for initial search: "${knowledgeContent}"`);
@@ -103,16 +107,17 @@ export async function runInitialSearch(params: {
   if (!searchResults || searchResults.length === 0) {
     const allMarkdownFiles = vectorStore.getAllMarkdownFiles(currentWorkspaceId);
     if (allMarkdownFiles.length === 0) {
+      const noDocumentsText = t('docUpdate.suggestions.error.noDocuments');
       await client.chat.postMessage({
         channel: currentDmChannelId,
-        text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.',
+        text: noDocumentsText,
         blocks: [
           {
             type: 'section',
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
             text: {
               type: 'mrkdwn',
-              text: '📝 No documents found in your repository. Please connect a GitHub repository with markdown files first, or add some markdown files to your repository.',
+              text: noDocumentsText,
             },
           },
         ],
@@ -162,14 +167,14 @@ export async function runInitialSearch(params: {
 
         await client.chat.postMessage({
           channel: currentDmChannelId,
-          text: `💡 Since you don't have any existing content in your vector store, I'll help you create a new section for this knowledge!`,
+          text: t('docUpdate.suggestions.empty.fallback'),
           blocks: [
             {
               type: 'section',
               block_id: createCHOIRBlockId(CHOIRMessageType.DOCUMENT_SUGGESTION),
               text: {
                 type: 'mrkdwn',
-                text: `💡 *No existing content found - Let's create something new!*\n\nI've prepared a new section for your knowledge. Click below to review and add it to your documentation.`,
+                text: t('docUpdate.suggestions.empty.body'),
               },
             },
             {
@@ -177,7 +182,7 @@ export async function runInitialSearch(params: {
               elements: [
                 {
                   type: 'button',
-                  text: { type: 'plain_text', text: '📝 Create New Section', emoji: true },
+                  text: { type: 'plain_text', text: t('docUpdate.suggestions.button.createSection'), emoji: true },
                   action_id: 'create_new_section',
                   value: JSON.stringify({ newSectionSessionId, userId }),
                 },
@@ -191,16 +196,17 @@ export async function runInitialSearch(params: {
       console.error('Error creating new section when no search results found:', error);
     }
 
+    const noRelevantText = t('docUpdate.suggestions.error.noRelevantDocuments');
     await client.chat.postMessage({
       channel: currentDmChannelId,
-      text: 'No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.',
+      text: noRelevantText,
       blocks: [
         {
           type: 'section',
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           text: {
             type: 'mrkdwn',
-            text: 'No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.',
+            text: noRelevantText,
           },
         },
       ],
@@ -223,6 +229,7 @@ export async function runInitialSearch(params: {
     knowledgeContent,
     client,
     logger,
+    t,
   });
 
   return { shouldReturn: fileBased.shouldReturn, searchResults: fileBased.searchResults };
