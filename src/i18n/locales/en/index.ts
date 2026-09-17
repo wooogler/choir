@@ -10,6 +10,7 @@
 import { appHome } from './app-home';
 import { common } from './common';
 import { conversation } from './conversation';
+import { dm } from './dm';
 import { notifications } from './notifications';
 import { qa } from './qa';
 import { registration } from './registration';
@@ -21,4 +22,5 @@ export const en = {
   ...registration,
   ...qa,
   ...conversation,
+  ...dm,
 } as const;

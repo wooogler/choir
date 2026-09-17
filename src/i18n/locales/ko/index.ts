@@ -11,6 +11,7 @@ import type { LocaleCatalog } from '../../types';
 import { appHome } from './app-home';
 import { common } from './common';
 import { conversation } from './conversation';
+import { dm } from './dm';
 import { notifications } from './notifications';
 import { qa } from './qa';
 import { registration } from './registration';
@@ -22,4 +23,5 @@ export const ko: LocaleCatalog = {
   ...registration,
   ...qa,
   ...conversation,
+  ...dm,
 };
