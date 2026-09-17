@@ -26,8 +26,13 @@ describe('image token (docs asset authorization)', () => {
   it('rejects a token whose payload was tampered with', () => {
     const token = signImageToken('T123', 'assets/diagram.png');
     const [payload, sig] = token.split('.');
-    // Flip a character in the signature; verification must fail.
-    const brokenSig = sig.slice(0, -1) + (sig.slice(-1) === 'A' ? 'B' : 'A');
+    // Flip a character in the middle of the signature; verification must fail.
+    // Do not touch the last character: a 32-byte HMAC encodes to 43 base64url
+    // chars, so the final char's low bits are discarded padding and 'A' <-> 'B'
+    // there can decode to the same bytes.
+    const index = 3;
+    const brokenSig = sig.slice(0, index) + (sig[index] === 'A' ? 'B' : 'A') + sig.slice(index + 1);
+    expect(brokenSig).not.toBe(sig);
     expect(verifyImageToken(`${payload}.${brokenSig}`, 'T123', 'assets/diagram.png')).toBe(false);
   });
 
