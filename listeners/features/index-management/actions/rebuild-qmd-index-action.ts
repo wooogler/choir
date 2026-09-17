@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logAppHomeButtonClick } from 'services/common/interaction-tracker';
 import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
+import { tForRequest } from 'services/i18n';
 import { getRetrievalProvider } from 'services/retrieval';
 import { QmdRetrievalProvider } from 'services/retrieval/qmd-provider';
 import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
@@ -12,10 +13,15 @@ export const rebuildQmdIndexAction = async ({
   ack,
   client,
   body,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<any>) => {
   const startTime = Date.now();
   await ack();
+
+  // A rebuild announces itself, then reports minutes later in the same DM; one
+  // translator covers both so the two halves cannot end up in two languages.
+  const t = tForRequest(context);
 
   try {
     const workspaceId = await getWorkspaceId(client);
@@ -25,13 +31,13 @@ export const rebuildQmdIndexAction = async ({
     if (!isUserManager && !isOwner) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ You don't have permission to rebuild the QMD index.",
+        text: t('indexManagement.rebuild.error.permission'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: "❌ You don't have permission to rebuild the QMD index.",
+              text: t('indexManagement.rebuild.error.permission'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.AUTHORIZATION),
           },
@@ -59,13 +65,13 @@ export const rebuildQmdIndexAction = async ({
     if (!repoInfo) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ No GitHub repository connected. Please connect a repository first.',
+        text: t('indexManagement.shared.error.noRepo'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ No GitHub repository connected. Please connect a repository first.',
+              text: t('indexManagement.shared.error.noRepo'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -79,13 +85,13 @@ export const rebuildQmdIndexAction = async ({
     if (!syncState) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ No synced markdown mirror found yet. Run Reload from GitHub first.',
+        text: t('indexManagement.rebuild.error.noMirror'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ No synced markdown mirror found yet. Run Reload from GitHub first.',
+              text: t('indexManagement.rebuild.error.noMirror'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -96,13 +102,13 @@ export const rebuildQmdIndexAction = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: '♻️ Rebuilding QMD index from the local markdown mirror...',
+      text: t('indexManagement.rebuild.progress.fallback'),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '♻️ *Rebuilding QMD index from the local markdown mirror...*\n\nThis may take a minute or two when QMD runs embeddings on CPU. I’ll send a success or error message when it finishes.',
+            text: t('indexManagement.rebuild.progress.start'),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
         },
@@ -126,13 +132,23 @@ export const rebuildQmdIndexAction = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `✅ QMD index rebuilt successfully. Indexed ${rebuildResult.updateResult.indexed} files and embedded ${embeddedChunks} chunks.`,
+      text: t('indexManagement.rebuild.success.fallback', {
+        indexed: t('common.count.files', { count: rebuildResult.updateResult.indexed }),
+        chunks: t('indexManagement.rebuild.count.chunks', { count: embeddedChunks }),
+      }),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `✅ *QMD index rebuilt successfully*\n*Indexed:* ${rebuildResult.updateResult.indexed}\n*Updated:* ${rebuildResult.updateResult.updated}\n*Unchanged:* ${rebuildResult.updateResult.unchanged}\n*Removed:* ${rebuildResult.updateResult.removed}\n*Docs embedded:* ${processedDocs}\n*Chunks embedded:* ${embeddedChunks}`,
+            text: t('indexManagement.rebuild.success', {
+              indexed: rebuildResult.updateResult.indexed,
+              updated: rebuildResult.updateResult.updated,
+              unchanged: rebuildResult.updateResult.unchanged,
+              removed: rebuildResult.updateResult.removed,
+              docs: processedDocs,
+              chunks: embeddedChunks,
+            }),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
         },
@@ -165,13 +181,13 @@ export const rebuildQmdIndexAction = async ({
     logger.error('Error rebuilding QMD index:', error);
     await client.chat.postMessage({
       channel: body.user.id,
-      text: '❌ Error occurred while rebuilding the QMD index.',
+      text: t('indexManagement.rebuild.error.generic'),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '❌ Error occurred while rebuilding the QMD index.',
+            text: t('indexManagement.rebuild.error.generic'),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
         },

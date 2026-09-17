@@ -1,35 +1,51 @@
-export function formatRepositoryOptionText(repo: {
-  full_name: string;
-  markdownStats?: {
-    markdownFiles: number;
-  };
-}): string {
-  const markdownFiles = repo.markdownStats?.markdownFiles || 0;
-  const suffix = markdownFiles > 0 ? ` (${markdownFiles} md)` : '';
-  const text = `${repo.full_name}${suffix}`;
+import type { T } from '../../../../src/i18n';
 
+/**
+ * The example in the URL field's placeholder. It lives here rather than in the
+ * catalog because it is a URL: nothing about it is translatable, and a
+ * translator who "localised" the host would break the hint.
+ */
+const REPOSITORY_URL_EXAMPLE = 'https://github.com/owner/repo';
+
+export function formatRepositoryOptionText(
+  t: T,
+  repo: {
+    full_name: string;
+    markdownStats?: {
+      markdownFiles: number;
+    };
+  },
+): string {
+  const markdownFiles = repo.markdownStats?.markdownFiles || 0;
+  const text =
+    markdownFiles > 0
+      ? t('appHome.github.repoPicker.option.label', { name: repo.full_name, files: markdownFiles })
+      : repo.full_name;
+
+  // Slack rejects the whole view over 75 characters, and a translated suffix is
+  // longer than the English one, so the cap is enforced after interpolation.
   return text.length > 75 ? `${text.slice(0, 72)}...` : text;
 }
 
-export function buildRepositoryLoadingView(metadata: { userId: string; workspaceId: string }) {
+export function buildRepositoryLoadingView(t: T, metadata: { userId: string; workspaceId: string }) {
   return {
     type: 'modal' as const,
     callback_id: 'select_repository_loading_modal',
     notify_on_close: true,
     title: {
       type: 'plain_text' as const,
-      text: 'Select Repository',
+      text: t('appHome.github.repoPicker.title'),
     },
     close: {
       type: 'plain_text' as const,
-      text: 'Cancel',
+      text: t('common.button.cancel'),
     },
     blocks: [
       {
         type: 'section' as const,
         text: {
           type: 'mrkdwn' as const,
-          text: '⏳ *Loading repositories*\n\nChecking which repositories you can write to and which ones already contain `.md` files...',
+          text: t('appHome.github.repoPicker.loading'),
         },
       },
     ],
@@ -38,6 +54,7 @@ export function buildRepositoryLoadingView(metadata: { userId: string; workspace
 }
 
 export function buildRepositorySelectionView(
+  t: T,
   metadata: { userId: string; workspaceId: string },
   repoOptions: Array<{
     text: {
@@ -59,22 +76,22 @@ export function buildRepositorySelectionView(
     notify_on_close: true,
     title: {
       type: 'plain_text' as const,
-      text: 'Select Repository',
+      text: t('appHome.github.repoPicker.title'),
     },
     submit: {
       type: 'plain_text' as const,
-      text: 'Connect Repository',
+      text: t('appHome.github.repoPicker.submit'),
     },
     close: {
       type: 'plain_text' as const,
-      text: 'Cancel',
+      text: t('common.button.cancel'),
     },
     blocks: [
       {
         type: 'section' as const,
         text: {
           type: 'mrkdwn' as const,
-          text: '📂 *Select a GitHub repository to connect*\n\nChoose a public repository you can write to, or paste a public GitHub repository URL below. Private repositories are not supported.',
+          text: t('appHome.github.repoPicker.intro'),
         },
       },
       {
@@ -85,13 +102,13 @@ export function buildRepositorySelectionView(
           action_id: 'repository_select',
           placeholder: {
             type: 'plain_text' as const,
-            text: 'Choose a repository...',
+            text: t('appHome.github.repoPicker.select.placeholder'),
           },
           options: repoOptions,
         },
         label: {
           type: 'plain_text' as const,
-          text: 'Repository',
+          text: t('appHome.github.repoPicker.select.label'),
         },
         optional: true,
       },
@@ -103,12 +120,12 @@ export function buildRepositorySelectionView(
           action_id: 'repository_url',
           placeholder: {
             type: 'plain_text' as const,
-            text: 'https://github.com/owner/repo or /tree/branch/docs',
+            text: t('appHome.github.repoPicker.url.placeholder', { example: REPOSITORY_URL_EXAMPLE }),
           },
         },
         label: {
           type: 'plain_text' as const,
-          text: 'Repository URL',
+          text: t('appHome.github.repoPicker.url.label'),
         },
         optional: true,
       },
@@ -120,12 +137,12 @@ export function buildRepositorySelectionView(
           action_id: 'path_input',
           placeholder: {
             type: 'plain_text' as const,
-            text: 'docs/ (optional - leave empty for root)',
+            text: t('appHome.github.repoPicker.path.placeholder'),
           },
         },
         label: {
           type: 'plain_text' as const,
-          text: 'Path in Repository',
+          text: t('appHome.github.repoPicker.path.label'),
         },
         optional: true,
       },
@@ -134,25 +151,25 @@ export function buildRepositorySelectionView(
   };
 }
 
-export function buildRepositoryEmptyView(metadata: { userId: string; workspaceId: string }) {
+export function buildRepositoryEmptyView(t: T, metadata: { userId: string; workspaceId: string }) {
   return {
     type: 'modal' as const,
     callback_id: 'select_repository_empty_modal',
     notify_on_close: true,
     title: {
       type: 'plain_text' as const,
-      text: 'Select Repository',
+      text: t('appHome.github.repoPicker.title'),
     },
     close: {
       type: 'plain_text' as const,
-      text: 'Close',
+      text: t('common.button.close'),
     },
     blocks: [
       {
         type: 'section' as const,
         text: {
           type: 'mrkdwn' as const,
-          text: '❌ No public writable repositories with markdown files were found.',
+          text: t('appHome.github.repoPicker.empty'),
         },
       },
     ],

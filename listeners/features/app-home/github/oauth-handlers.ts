@@ -1,12 +1,18 @@
 import type { App } from '@slack/bolt';
 import { GitHubOAuthDeviceFlow } from 'services/github/oauth-device-flow';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { refreshAppHome } from './shared';
 
 export const registerGitHubOAuthHandlers = (app: App) => {
-  app.action('connect_personal_github', async ({ ack, body, client, logger }) => {
+  app.action('connect_personal_github', async ({ ack, body, client, context, logger }) => {
     await ack();
+
+    // The device flow keeps talking to the same person for minutes after the
+    // click — through the modal, then the DM — so the translator is bound once
+    // here and captured by the poll below, rather than re-resolved per message.
+    const t = tForRequest(context);
 
     try {
       const workspaceId = await getWorkspaceId(client);
@@ -24,32 +30,37 @@ export const registerGitHubOAuthHandlers = (app: App) => {
           notify_on_close: true,
           title: {
             type: 'plain_text',
-            text: 'Connect GitHub',
+            text: t('appHome.github.connect.title'),
           },
           close: {
             type: 'plain_text',
-            text: 'Cancel',
+            text: t('common.button.cancel'),
           },
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '🔐 *Connect your GitHub account*\n\nTo connect your GitHub account, please follow these steps:',
+                text: t('appHome.github.connect.intro'),
               },
             },
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `1. Go to: *<${deviceCode.verification_uri}|${deviceCode.verification_uri}>*\n2. Enter this code: \`${deviceCode.user_code}\`\n3. Authorize CHOIR to access your GitHub account`,
+                // The verification URL is GitHub's, not ours to translate: it is
+                // pre-formatted as a link here and handed over as one opaque param.
+                text: t('appHome.github.connect.steps', {
+                  link: `<${deviceCode.verification_uri}|${deviceCode.verification_uri}>`,
+                  code: deviceCode.user_code,
+                }),
               },
             },
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `⏰ *Code expires in ${Math.floor(deviceCode.expires_in / 60)} minutes*`,
+                text: t('appHome.github.connect.expiry', { count: Math.floor(deviceCode.expires_in / 60) }),
               },
             },
             {
@@ -57,7 +68,7 @@ export const registerGitHubOAuthHandlers = (app: App) => {
               elements: [
                 {
                   type: 'mrkdwn',
-                  text: '💡 This window will update once you complete the authorization on GitHub — you can then close it.',
+                  text: t('appHome.github.connect.hint'),
                 },
               ],
             },
@@ -81,8 +92,8 @@ export const registerGitHubOAuthHandlers = (app: App) => {
             view: {
               type: 'modal',
               callback_id: 'github_device_code_modal',
-              title: { type: 'plain_text', text: 'Connect GitHub' },
-              close: { type: 'plain_text', text: 'Close' },
+              title: { type: 'plain_text', text: t('appHome.github.connect.title') },
+              close: { type: 'plain_text', text: t('common.button.close') },
               blocks: [{ type: 'section', text: { type: 'mrkdwn', text } }],
             },
           })
@@ -104,14 +115,12 @@ export const registerGitHubOAuthHandlers = (app: App) => {
               user,
             });
 
-            await setModalResult(
-              `✅ *GitHub account connected!*\nWelcome, ${user.name || user.login}. You can close this window.`,
-            );
+            await setModalResult(t('appHome.github.connect.success', { name: user.name || user.login }));
             await client.chat
               .postEphemeral({
                 user: userId,
                 channel: userId,
-                text: `✅ GitHub account connected successfully! Welcome, ${user.name || user.login}!`,
+                text: t('appHome.github.connect.successNotice', { name: user.name || user.login }),
               })
               .catch((notifyError) => logger.warn('Failed to send GitHub connection confirmation:', notifyError));
 
@@ -121,12 +130,12 @@ export const registerGitHubOAuthHandlers = (app: App) => {
             logger.info(`GitHub connected for user ${userId} in workspace ${workspaceId}`);
           } catch (error) {
             logger.error('Error during GitHub OAuth flow:', error);
-            await setModalResult('❌ *GitHub connection failed.*\nPlease close this window and try again.');
+            await setModalResult(t('appHome.github.connect.failure'));
             await client.chat
               .postEphemeral({
                 user: userId,
                 channel: userId,
-                text: '❌ GitHub connection failed. Please try again.',
+                text: t('appHome.github.connect.failureNotice'),
               })
               .catch((notifyError) => logger.warn('Failed to send GitHub connection failure notice:', notifyError));
           }
@@ -137,13 +146,15 @@ export const registerGitHubOAuthHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: '❌ Error starting GitHub connection. Please try again.',
+        text: t('appHome.github.connect.startError'),
       });
     }
   });
 
-  app.action('disconnect_personal_github', async ({ ack, body, client, logger }) => {
+  app.action('disconnect_personal_github', async ({ ack, body, client, context, logger }) => {
     await ack();
+
+    const t = tForRequest(context);
 
     try {
       const workspaceId = await getWorkspaceId(client);
@@ -155,7 +166,7 @@ export const registerGitHubOAuthHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: userId,
         channel: userId,
-        text: '✅ GitHub account disconnected successfully.',
+        text: t('appHome.github.disconnect.success'),
       });
 
       await refreshAppHome({ client, logger, userId, reason: 'GitHub disconnection' });
@@ -165,7 +176,7 @@ export const registerGitHubOAuthHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: '❌ Error disconnecting GitHub. Please try again.',
+        text: t('appHome.github.disconnect.error'),
       });
     }
   });

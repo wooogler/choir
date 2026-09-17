@@ -2,6 +2,7 @@ import type { AllMiddlewareArgs, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logAppHomeButtonClick } from 'services/common/interaction-tracker';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
+import { tForRequest } from 'services/i18n';
 import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { refreshAppHomeSoon } from '../../app-home/refresh';
@@ -13,10 +14,15 @@ export const reloadFromGithubAction = async ({
   ack,
   client,
   body,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<any>) => {
   const startTime = Date.now();
   await ack();
+
+  // The reload posts a progress message and then a result minutes later, both
+  // into the clicker's DM, so the translator is resolved once and reused.
+  const t = tForRequest(context);
 
   try {
     const workspaceId = await getWorkspaceId(client);
@@ -26,13 +32,13 @@ export const reloadFromGithubAction = async ({
     if (!isUserManager && !isOwner) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ You don't have permission to reload from GitHub.",
+        text: t('indexManagement.reload.error.permission'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: "❌ You don't have permission to reload from GitHub.",
+              text: t('indexManagement.reload.error.permission'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.AUTHORIZATION),
           },
@@ -59,13 +65,13 @@ export const reloadFromGithubAction = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: '🔄 Reloading files from GitHub...',
+      text: t('indexManagement.reload.progress.start'),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '🔄 Reloading files from GitHub...',
+            text: t('indexManagement.reload.progress.start'),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
         },
@@ -89,13 +95,13 @@ export const reloadFromGithubAction = async ({
     if (!repoInfo) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ No GitHub repository connected. Please connect a repository first.',
+        text: t('indexManagement.shared.error.noRepo'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ No GitHub repository connected. Please connect a repository first.',
+              text: t('indexManagement.shared.error.noRepo'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -132,13 +138,13 @@ export const reloadFromGithubAction = async ({
     if (markdownFiles.length === 0) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ No markdown files found in the repository.',
+        text: t('indexManagement.shared.error.noMarkdownFiles'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ No markdown files found in the repository.',
+              text: t('indexManagement.shared.error.noMarkdownFiles'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -171,13 +177,13 @@ export const reloadFromGithubAction = async ({
       await workspaceStore.setMarkdownFilesCache(workspaceId, fileList);
       await client.chat.postMessage({
         channel: body.user.id,
-        text: `✅ Successfully reloaded ${markdownFiles.length} files from GitHub and updated vector store!`,
+        text: t('indexManagement.reload.success', { count: markdownFiles.length }),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `✅ Successfully reloaded ${markdownFiles.length} files from GitHub and updated vector store!`,
+              text: t('indexManagement.reload.success', { count: markdownFiles.length }),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
           },
@@ -205,13 +211,13 @@ export const reloadFromGithubAction = async ({
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ Failed to update vector store with new files. Please check the logs.',
+        text: t('indexManagement.reload.error.vectorStore'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ Failed to update vector store with new files. Please check the logs.',
+              text: t('indexManagement.reload.error.vectorStore'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -240,13 +246,13 @@ export const reloadFromGithubAction = async ({
     logger.error('Error reloading from GitHub:', error);
     await client.chat.postMessage({
       channel: body.user.id,
-      text: '❌ Error occurred while reloading from GitHub.',
+      text: t('indexManagement.reload.error.generic'),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '❌ Error occurred while reloading from GitHub.',
+            text: t('indexManagement.reload.error.generic'),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
         },

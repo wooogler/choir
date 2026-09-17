@@ -4,6 +4,7 @@ import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
 import { GitHubOAuthDeviceFlow } from 'services/github/oauth-device-flow';
 import { getRepositoryAccessError, normalizeRepositoryPath } from 'services/github/repository-access';
+import { tForRequest } from 'services/i18n';
 import { getRetrievalProvider } from 'services/retrieval';
 import { QmdRetrievalProvider } from 'services/retrieval/qmd-provider';
 import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from 'services/slack';
@@ -18,8 +19,13 @@ import {
 import { refreshAppHome } from './shared';
 
 export const registerRepositorySelectionHandlers = (app: App) => {
-  app.action('browse_github_repositories', async ({ ack, body, client, logger }) => {
+  app.action('browse_github_repositories', async ({ ack, body, client, context, logger }) => {
     await ack();
+
+    // Browsing repositories replaces the same modal two or three times as the
+    // listing loads, so one translator is bound up front and reused for every
+    // one of those updates.
+    const t = tForRequest(context);
 
     let repositoryBrowseViewId: string | undefined;
 
@@ -35,7 +41,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
-          text: '❌ Please connect your GitHub account first.',
+          text: t('appHome.github.repoPicker.notConnected'),
         });
         return;
       }
@@ -44,7 +50,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
 
       const loadingViewResponse = await client.views.open({
         trigger_id: (body as any).trigger_id,
-        view: buildRepositoryLoadingView(modalMetadata),
+        view: buildRepositoryLoadingView(t, modalMetadata),
       });
       repositoryBrowseViewId = (loadingViewResponse as any).view?.id;
 
@@ -54,12 +60,16 @@ export const registerRepositorySelectionHandlers = (app: App) => {
       const repoOptions = repositories.slice(0, 10).map((repo) => ({
         text: {
           type: 'plain_text' as const,
-          text: formatRepositoryOptionText(repo),
+          text: formatRepositoryOptionText(t, repo),
         },
         description: repo.markdownStats
           ? {
               type: 'plain_text' as const,
-              text: `${repo.markdownStats.markdownFiles} markdown files · ${(repo.markdownStats.markdownRatio * 100).toFixed(1)}% of ${repo.markdownStats.totalFiles} files`,
+              text: t('appHome.github.repoPicker.option.description', {
+                count: repo.markdownStats.markdownFiles,
+                percent: (repo.markdownStats.markdownRatio * 100).toFixed(1),
+                total: repo.markdownStats.totalFiles,
+              }),
             }
           : undefined,
         value: JSON.stringify({
@@ -75,13 +85,13 @@ export const registerRepositorySelectionHandlers = (app: App) => {
         if (repositoryBrowseViewId) {
           await client.views.update({
             view_id: repositoryBrowseViewId,
-            view: buildRepositoryEmptyView(modalMetadata),
+            view: buildRepositoryEmptyView(t, modalMetadata),
           });
         } else {
           await client.chat.postEphemeral({
             user: userId,
             channel: userId,
-            text: '❌ No public writable repositories with markdown files were found.',
+            text: t('appHome.github.repoPicker.empty'),
           });
         }
         return;
@@ -90,7 +100,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
       if (repositoryBrowseViewId) {
         await client.views.update({
           view_id: repositoryBrowseViewId,
-          view: buildRepositorySelectionView(modalMetadata, repoOptions),
+          view: buildRepositorySelectionView(t, modalMetadata, repoOptions),
         });
       }
     } catch (error) {
@@ -106,18 +116,18 @@ export const registerRepositorySelectionHandlers = (app: App) => {
               notify_on_close: true,
               title: {
                 type: 'plain_text',
-                text: 'Select Repository',
+                text: t('appHome.github.repoPicker.title'),
               },
               close: {
                 type: 'plain_text',
-                text: 'Close',
+                text: t('common.button.close'),
               },
               blocks: [
                 {
                   type: 'section',
                   text: {
                     type: 'mrkdwn',
-                    text: '❌ Error loading repositories. Please try again.',
+                    text: t('appHome.github.repoPicker.error'),
                   },
                 },
               ],
@@ -132,21 +142,25 @@ export const registerRepositorySelectionHandlers = (app: App) => {
           await client.chat.postEphemeral({
             user: body.user.id,
             channel: body.user.id,
-            text: '❌ Error loading repositories. Please try again.',
+            text: t('appHome.github.repoPicker.error'),
           });
         }
       } else {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '❌ Error loading repositories. Please try again.',
+          text: t('appHome.github.repoPicker.error'),
         });
       }
     }
   });
 
-  app.view('select_repository_modal', async ({ ack, body, client, logger, view }) => {
+  app.view('select_repository_modal', async ({ ack, body, client, context, logger, view }) => {
     const startTime = Date.now();
+    // Connecting a repository narrates itself across several minutes of cloning
+    // and indexing; the submitter is the only reader, so their locale is bound
+    // once and every later message uses it.
+    const t = tForRequest(context);
     const metadata = JSON.parse(view.private_metadata || '{}');
     const { userId, workspaceId } = metadata;
     const selectedRepo = view.state.values.repository_select_block.repository_select.selected_option?.value;
@@ -174,7 +188,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
-          text: "❌ You don't have permission to connect a repository.",
+          text: t('appHome.github.connectRepo.error.permission'),
         });
         return;
       }
@@ -183,7 +197,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
         await acknowledge({
           response_action: 'errors',
           errors: {
-            repository_select_block: 'Choose a repository or paste a GitHub repository URL.',
+            repository_select_block: t('appHome.github.connectRepo.error.noSelection'),
           },
         });
 
@@ -208,7 +222,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
         await acknowledge({
           response_action: 'errors',
           errors: {
-            repository_url_block: 'Use either the repository picker or a URL, not both.',
+            repository_url_block: t('appHome.github.connectRepo.error.bothInputs'),
           },
         });
         return;
@@ -229,7 +243,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
           await acknowledge({
             response_action: 'errors',
             errors: {
-              repository_select_block: 'Private repositories are not supported. Please choose a public repository.',
+              repository_select_block: t('appHome.github.connectRepo.error.privateRepo'),
             },
           });
           return;
@@ -240,7 +254,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
           await acknowledge({
             response_action: 'errors',
             errors: {
-              repository_url_block: 'Enter a valid GitHub repository URL.',
+              repository_url_block: t('appHome.github.connectRepo.error.invalidUrl'),
             },
           });
           return;
@@ -263,7 +277,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
-          text: '❌ Please connect your GitHub account first.',
+          text: t('appHome.github.repoPicker.notConnected'),
         });
         return;
       }
@@ -275,7 +289,9 @@ export const registerRepositorySelectionHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
-          text: `❌ ${accessError}`,
+          // `accessError` is written by `services/github/repository-access`, which
+          // has no translator of its own, so it rides along as an opaque reason.
+          text: t('appHome.github.connectRepo.error.access', { reason: accessError }),
         });
         return;
       }
@@ -294,7 +310,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: userId,
         channel: userId,
-        text: '🔗 Connecting to repository and loading documents...',
+        text: t('appHome.github.connectRepo.progress.connecting'),
       });
 
       const githubService = GithubService.getInstance();
@@ -314,7 +330,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
-          text: '⚠️ Repository connected but no markdown files found.',
+          text: t('appHome.github.connectRepo.noFiles'),
         });
 
         // Log no files found
@@ -361,7 +377,10 @@ export const registerRepositorySelectionHandlers = (app: App) => {
           await client.chat.postEphemeral({
             user: userId,
             channel: userId,
-            text: `📚 Loaded ${markdownFiles.length} files from ${repoInfo.owner}/${repoInfo.repo}. Building the Q&A index now; this may take a minute or two on CPU.`,
+            text: t('appHome.github.connectRepo.progress.loaded', {
+              count: markdownFiles.length,
+              repository: `${repoInfo.owner}/${repoInfo.repo}`,
+            }),
           });
 
           let qmdIndexReady = false;
@@ -396,7 +415,10 @@ export const registerRepositorySelectionHandlers = (app: App) => {
             await client.chat.postEphemeral({
               user: userId,
               channel: userId,
-              text: `✅ Successfully connected to ${repoInfo.owner}/${repoInfo.repo}, loaded ${markdownFiles.length} files, and built the Q&A index. CHOIR is ready to answer questions.`,
+              text: t('appHome.github.connectRepo.success', {
+                count: markdownFiles.length,
+                repository: `${repoInfo.owner}/${repoInfo.repo}`,
+              }),
             });
           } catch (qmdError) {
             logger.error('Repository connected but QMD index build failed:', qmdError);
@@ -409,7 +431,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
             await client.chat.postEphemeral({
               user: userId,
               channel: userId,
-              text: `⚠️ Repository connected and ${markdownFiles.length} files were loaded, but the Q&A index failed to build. Q&A will not be ready until you rebuild the QMD index from App Home.`,
+              text: t('appHome.github.connectRepo.indexFailed', { count: markdownFiles.length }),
             });
           }
 
@@ -441,7 +463,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
           await client.chat.postEphemeral({
             user: userId,
             channel: userId,
-            text: '⚠️ Repository connected but failed to load documents. Please try refreshing.',
+            text: t('appHome.github.connectRepo.loadFailed'),
           });
 
           // Log vector store failure
@@ -482,7 +504,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
         await acknowledge({
           response_action: 'errors',
           errors: {
-            repository_select_block: 'Error connecting the repository. Please try again.',
+            repository_select_block: t('appHome.github.connectRepo.error.inline'),
           },
         });
         return;
@@ -491,7 +513,7 @@ export const registerRepositorySelectionHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: userId || body.user.id,
         channel: userId || body.user.id,
-        text: '❌ Error connecting the repository. Please try again.',
+        text: t('appHome.github.connectRepo.error.generic'),
       });
 
       // Log error

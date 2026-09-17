@@ -4,6 +4,7 @@ import { parseMarkdownToTree } from 'services/document';
 import { treeToMarkdown } from 'services/document/markdown';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
+import { tForRequest } from 'services/i18n';
 import { getGithubRepo, getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { refreshAppHomeSoon } from '../../app-home/refresh';
@@ -12,10 +13,15 @@ export const normalizeMarkdownFilesAction = async ({
   ack,
   client,
   body,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<any>) => {
   const startTime = Date.now();
   await ack();
+
+  // Normalization rewrites every file in the repository and reports four times
+  // along the way, all to the clicker; the translator is bound once up front.
+  const t = tForRequest(context);
 
   logger.info('Normalize markdown files action triggered by user:', body.user.id);
 
@@ -30,13 +36,13 @@ export const normalizeMarkdownFilesAction = async ({
       logger.warn('User does not have permission to normalize markdown files');
       await client.chat.postMessage({
         channel: body.user.id,
-        text: "❌ You don't have permission to normalize markdown files.",
+        text: t('indexManagement.normalize.error.permission'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: "❌ You don't have permission to normalize markdown files.",
+              text: t('indexManagement.normalize.error.permission'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.AUTHORIZATION),
           },
@@ -47,13 +53,13 @@ export const normalizeMarkdownFilesAction = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: '🔄 Starting markdown files normalization...\nThis may take a while depending on the number of files.',
+      text: t('indexManagement.normalize.progress.start'),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '🔄 Starting markdown files normalization...\nThis may take a while depending on the number of files.',
+            text: t('indexManagement.normalize.progress.start'),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.LOADING),
         },
@@ -83,13 +89,13 @@ export const normalizeMarkdownFilesAction = async ({
       logger.warn('No GitHub repository connected and cannot extract from vector store');
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ No GitHub repository connected. Please connect a repository first or ensure vector store has loaded files.',
+        text: t('indexManagement.normalize.error.noRepo'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ No GitHub repository connected. Please connect a repository first or ensure vector store has loaded files.',
+              text: t('indexManagement.normalize.error.noRepo'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -125,13 +131,13 @@ export const normalizeMarkdownFilesAction = async ({
     if (markdownFiles.length === 0) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: '❌ No markdown files found in the repository.',
+        text: t('indexManagement.shared.error.noMarkdownFiles'),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: '❌ No markdown files found in the repository.',
+              text: t('indexManagement.shared.error.noMarkdownFiles'),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -142,13 +148,13 @@ export const normalizeMarkdownFilesAction = async ({
 
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `📄 Found ${markdownFiles.length} markdown files. Starting normalization...`,
+      text: t('indexManagement.normalize.progress.found', { count: markdownFiles.length }),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `📄 Found ${markdownFiles.length} markdown files. Starting normalization...`,
+            text: t('indexManagement.normalize.progress.found', { count: markdownFiles.length }),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.STATUS_UPDATE),
         },
@@ -198,13 +204,13 @@ export const normalizeMarkdownFilesAction = async ({
     if (failCount === 0) {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: `✅ Successfully normalized ${successCount} markdown files!\n\n🔄 Rebuilding vector store to reflect changes...`,
+        text: t('indexManagement.normalize.success', { count: successCount }),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `✅ Successfully normalized ${successCount} markdown files!\n\n🔄 Rebuilding vector store to reflect changes...`,
+              text: t('indexManagement.normalize.success', { count: successCount }),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
           },
@@ -217,13 +223,13 @@ export const normalizeMarkdownFilesAction = async ({
         if (rebuildSuccess) {
           await client.chat.postMessage({
             channel: body.user.id,
-            text: '✅ Vector store successfully rebuilt with normalized files!',
+            text: t('indexManagement.normalize.rebuilt'),
             blocks: [
               {
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
-                  text: '✅ Vector store successfully rebuilt with normalized files!',
+                  text: t('indexManagement.normalize.rebuilt'),
                 },
                 block_id: createCHOIRBlockId(CHOIRMessageType.SUCCESS),
               },
@@ -250,13 +256,13 @@ export const normalizeMarkdownFilesAction = async ({
         } else {
           await client.chat.postMessage({
             channel: body.user.id,
-            text: '⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.',
+            text: t('indexManagement.normalize.rebuildFailed'),
             blocks: [
               {
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
-                  text: '⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.',
+                  text: t('indexManagement.normalize.rebuildFailed'),
                 },
                 block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
               },
@@ -267,13 +273,13 @@ export const normalizeMarkdownFilesAction = async ({
         logger.error('Error rebuilding vector store after normalization:', vectorError);
         await client.chat.postMessage({
           channel: body.user.id,
-          text: '⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.',
+          text: t('indexManagement.normalize.rebuildFailed'),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '⚠️ Markdown normalization completed, but vector store rebuild failed. Please rebuild manually.',
+                text: t('indexManagement.normalize.rebuildFailed'),
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
             },
@@ -283,13 +289,19 @@ export const normalizeMarkdownFilesAction = async ({
     } else {
       await client.chat.postMessage({
         channel: body.user.id,
-        text: `⚠️ Normalization completed with issues:\n✅ ${successCount} files normalized\n❌ ${failCount} files failed\n\nPlease check the logs for details.`,
+        text: t('indexManagement.normalize.partial', {
+          normalized: t('indexManagement.normalize.count.normalized', { count: successCount }),
+          failed: t('indexManagement.normalize.count.failed', { count: failCount }),
+        }),
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `⚠️ Normalization completed with issues:\n✅ ${successCount} files normalized\n❌ ${failCount} files failed\n\nPlease check the logs for details.`,
+              text: t('indexManagement.normalize.partial', {
+                normalized: t('indexManagement.normalize.count.normalized', { count: successCount }),
+                failed: t('indexManagement.normalize.count.failed', { count: failCount }),
+              }),
             },
             block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
           },
@@ -301,13 +313,13 @@ export const normalizeMarkdownFilesAction = async ({
     logger.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     await client.chat.postMessage({
       channel: body.user.id,
-      text: '❌ Error occurred while normalizing markdown files. Please check the logs.',
+      text: t('indexManagement.normalize.error.generic'),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '❌ Error occurred while normalizing markdown files. Please check the logs.',
+            text: t('indexManagement.normalize.error.generic'),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
         },
