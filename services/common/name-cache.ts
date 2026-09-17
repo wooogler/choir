@@ -7,6 +7,16 @@ import { getDataPath } from 'services/common/data-path';
 interface UserCache {
   [userId: string]: {
     name: string;
+    /**
+     * The raw Slack locale tag (`ko-KR`, `en-US`) from `users.info` with
+     * `include_locale: true`. Two absent-ish values, deliberately distinct:
+     * the key missing means we have never asked Slack (an entry written before
+     * locales were cached), and `''` means we asked and Slack had nothing for
+     * this user (locale is a workspace setting and can be off). The empty
+     * string survives a JSON round-trip where `undefined` would not, so a
+     * locale-less user costs exactly one `users.info` call, not one per lookup.
+     */
+    locale?: string;
     lastUpdated: string;
   };
 }
@@ -156,22 +166,70 @@ class NameCacheService {
 
     // Fetch from API
     try {
-      const result = await client.users.info({ user: userId });
-      const user = result.user as any;
-      const userName = user?.real_name || user?.display_name || user?.name || 'Unknown User';
-
-      // Update cache
-      this.cache.users[userId] = {
-        name: userName,
-        lastUpdated: new Date().toISOString(),
-      };
-      this.saveCache();
-
-      return userName;
+      const { name } = await this.refreshUser(userId, client);
+      return name;
     } catch (error) {
       console.warn(`Failed to fetch user name for ${userId}:`, error);
       return cached?.name || 'Unknown User';
     }
+  }
+
+  /**
+   * One `users.info` round-trip that fills both halves of the entry. Every
+   * lookup asks for the locale, so a name lookup back-fills the locale for free
+   * and vice versa — the language layer adds no Slack traffic of its own on a
+   * warm cache.
+   */
+  private async refreshUser(userId: string, client: WebClient): Promise<{ name: string; locale: string }> {
+    const result = await client.users.info({ user: userId, include_locale: true });
+    const user = result.user as any;
+    const name = user?.real_name || user?.display_name || user?.name || 'Unknown User';
+    const locale = typeof user?.locale === 'string' ? user.locale : '';
+
+    this.cache.users[userId] = {
+      name,
+      locale,
+      lastUpdated: new Date().toISOString(),
+    };
+    this.saveCache();
+
+    return { name, locale };
+  }
+
+  /**
+   * The user's Slack locale tag (`ko-KR`), or undefined when Slack has none or
+   * the lookup fails. Shares the entry and the 7-day TTL with `getUserName`.
+   */
+  async getUserLocale(userId: string, client: WebClient): Promise<string | undefined> {
+    if (!userId || userId === 'undefined' || userId === 'null') {
+      return undefined;
+    }
+
+    const cached = this.cache.users[userId];
+    // `locale === undefined` means "never asked", which is worth one call even
+    // on an otherwise fresh entry.
+    if (cached && cached.locale !== undefined && !this.isExpired(cached.lastUpdated)) {
+      return cached.locale || undefined;
+    }
+
+    try {
+      const { locale } = await this.refreshUser(userId, client);
+      return locale || undefined;
+    } catch (error) {
+      console.warn(`Failed to fetch user locale for ${userId}:`, error);
+      return cached?.locale || undefined;
+    }
+  }
+
+  /**
+   * The cached Slack locale tag, without ever touching the network. For hot
+   * paths (the Bolt middleware) that would rather fall through to the workspace
+   * default than pay for an API call.
+   */
+  getCachedUserLocale(userId: string): string | undefined {
+    const cached = this.cache.users[userId];
+    if (!cached || this.isExpired(cached.lastUpdated)) return undefined;
+    return cached.locale || undefined;
   }
 
   /**
@@ -378,6 +436,8 @@ export const nameCacheService = new NameCacheService();
 
 // Convenience functions
 export const getCachedUserName = nameCacheService.getUserName.bind(nameCacheService);
+export const getUserLocale = nameCacheService.getUserLocale.bind(nameCacheService);
+export const getCachedUserLocale = nameCacheService.getCachedUserLocale.bind(nameCacheService);
 export const getCachedWorkspaceName = nameCacheService.getWorkspaceName.bind(nameCacheService);
 export const getCachedChannelName = nameCacheService.getChannelName.bind(nameCacheService);
 export const getAllCachedNames = nameCacheService.getAllNames.bind(nameCacheService);

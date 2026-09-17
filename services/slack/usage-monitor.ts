@@ -195,7 +195,8 @@ export const usageMonitoringMiddleware = async ({ body, event, next }: any) => {
   });
 };
 
-function extractUserIdFromPayload(body: any, event: any): string | undefined {
+/** Best-effort actor id for a Slack request, across events, actions, views and shortcuts. */
+export function extractUserIdFromPayload(body: any, event: any): string | undefined {
   // Interactive (actions, views), shortcuts
   if (body?.user?.id) return body.user.id;
   if (typeof body?.user === 'string') return body.user;

@@ -7,6 +7,7 @@ import { Logger } from 'services/common/logger';
 import { getDatabase } from 'services/db/connection';
 import { decryptJson, encryptJson } from 'services/db/crypto';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
+import { DEFAULT_LOCALE, type Locale, isSupportedLocale } from '../../src/i18n/supported-locales';
 import { isReadOnlyFile } from './read-only';
 
 /**
@@ -119,6 +120,19 @@ export interface WorkspaceConfig {
     auth?: GoogleAuthRecord;
     docs?: { [githubPath: string]: GoogleDocMapping };
   };
+  // Language. `uiLanguage` is the workspace default for CHOIR's own strings —
+  // buttons, modals, error messages — used when a user has no preference of
+  // their own and Slack tells us nothing. `contentLanguage` is a different
+  // question: what language CHOIR writes *documents* in. Leaving it undefined
+  // keeps today's behaviour, where generated and updated content follows the
+  // language of the conversation that produced it; pinning it to a locale makes
+  // every document come out in that language regardless of who asked.
+  // `userLanguages` is the per-user override; a missing key means automatic
+  // (follow the user's Slack locale), which is why it is a sparse map rather
+  // than a value written for everyone.
+  uiLanguage?: Locale;
+  contentLanguage?: 'follow-conversation' | Locale;
+  userLanguages?: { [userId: string]: Locale };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -960,6 +974,73 @@ export class WorkspaceStore {
   public async getLoggingEnabled(workspaceId: string): Promise<boolean> {
     const config = await this.getWorkspaceConfig(workspaceId);
     return config?.loggingEnabled ?? true; // Default to enabled if not set
+  }
+
+  /** The workspace-wide default language for CHOIR's own UI strings. */
+  public async getWorkspaceLanguage(workspaceId: string): Promise<Locale> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.uiLanguage ?? DEFAULT_LOCALE;
+  }
+
+  public async setWorkspaceLanguage(workspaceId: string, locale: Locale): Promise<void> {
+    if (!isSupportedLocale(locale)) {
+      throw new Error(`Unsupported locale: ${locale}`);
+    }
+    if (
+      this.mutateConfigSync(workspaceId, (config) => {
+        config.uiLanguage = locale;
+      }) === null
+    ) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+  }
+
+  /**
+   * The language policy for generated/updated documents. Unset means
+   * `follow-conversation`, which is what CHOIR did before the setting existed.
+   */
+  public async getContentLanguage(workspaceId: string): Promise<'follow-conversation' | Locale> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.contentLanguage ?? 'follow-conversation';
+  }
+
+  public async setContentLanguage(workspaceId: string, value: 'follow-conversation' | Locale): Promise<void> {
+    if (value !== 'follow-conversation' && !isSupportedLocale(value)) {
+      throw new Error(`Unsupported content language: ${value}`);
+    }
+    if (
+      this.mutateConfigSync(workspaceId, (config) => {
+        config.contentLanguage = value;
+      }) === null
+    ) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+  }
+
+  /** A user's explicit UI language, or null when they are on automatic. */
+  public async getUserLanguage(workspaceId: string, userId: string): Promise<Locale | null> {
+    const config = await this.getWorkspaceConfig(workspaceId);
+    return config?.userLanguages?.[userId] ?? null;
+  }
+
+  /** Sets (or, with `null`, clears back to automatic) one user's UI language. */
+  public async setUserLanguage(workspaceId: string, userId: string, locale: Locale | null): Promise<void> {
+    if (locale !== null && !isSupportedLocale(locale)) {
+      throw new Error(`Unsupported locale: ${locale}`);
+    }
+    if (
+      this.mutateConfigSync(workspaceId, (config) => {
+        if (locale === null) {
+          if (!config.userLanguages?.[userId]) return false; // nothing to clear — no write
+          delete config.userLanguages[userId];
+          return;
+        }
+        if (!config.userLanguages) config.userLanguages = {};
+        config.userLanguages[userId] = locale;
+      }) === null
+    ) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
   }
 
   public async getOpenAISettings(workspaceId: string): Promise<WorkspaceOpenAISettings | undefined> {

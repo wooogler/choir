@@ -38,6 +38,13 @@ import { VectorStoreService } from 'services/file-registry/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
 import { startDriftPoller } from 'services/google/poller';
 import { registerGoogleDriveRoutes } from 'services/google/routes';
+import {
+  DEFAULT_LOCALE,
+  type Locale,
+  localeMiddleware,
+  normalizeLocale,
+  resolvePersonalLocaleCached,
+} from 'services/i18n';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { isCHOIRUser, isManager } from 'services/slack';
@@ -136,6 +143,8 @@ const app =
 SlackUsageMonitor.getInstance().initializeGlobalHook();
 // 모든 요청에 대해 행위자(userId) 컨텍스트를 주입
 app.use(usageMonitoringMiddleware);
+// 요청자의 언어를 context.locale 에 주입 (네트워크 호출 없음)
+app.use(localeMiddleware);
 
 const gitHubSyncService = GitHubSyncService.getInstance();
 const vectorStore = VectorStoreService.getInstance();
@@ -225,19 +234,42 @@ function setupPublicSite(): void {
     return verification.payload;
   };
 
+  /**
+   * The browser's language preference, in the order it listed them. A tag we
+   * have no strings for is skipped rather than answered with English, so
+   * `fr-FR,en;q=0.7` still gets English but `fr-FR` alone falls through to
+   * whatever the caller's next source is.
+   */
+  const negotiateAcceptLanguage = (header: unknown): Locale | undefined => {
+    if (typeof header !== 'string') return undefined;
+    for (const part of header.split(',')) {
+      const tag = part.split(';')[0]?.trim();
+      const locale = normalizeLocale(tag);
+      if (locale) return locale;
+    }
+    return undefined;
+  };
+
   // Read session identity for the frontend to show edit affordances.
   // IMPORTANT: declared before /api/docs/:workspaceId so the parameterized
   // route does not shadow this static path.
   router.get('/api/docs/session', async (req: any, res: any) => {
     try {
       const payload = await readSession(req);
+      const acceptLanguage = negotiateAcceptLanguage(req.headers?.['accept-language']);
       if (!payload) {
-        return res.json({ authenticated: false });
+        return res.json({ authenticated: false, language: acceptLanguage ?? DEFAULT_LOCALE });
       }
-      const [manager, choirUser] = await Promise.all([
+      const [manager, choirUser, personalLanguage] = await Promise.all([
         isManager(payload.workspaceId, payload.userId),
         isCHOIRUser(payload.workspaceId, payload.userId),
+        // Their own setting or their Slack locale. When neither exists the
+        // browser knows better than the workspace default does: the viewer is
+        // running in that browser.
+        resolvePersonalLocaleCached(payload.workspaceId, payload.userId),
       ]);
+      const language =
+        personalLanguage ?? acceptLanguage ?? (await new WorkspaceStore().getWorkspaceLanguage(payload.workspaceId));
       // Being a CHOIR manager is not enough to commit — the linked GitHub
       // account needs write access to the repo. Resolve it here so the viewer
       // can withhold the Edit button instead of failing at save time. Only
@@ -256,6 +288,7 @@ function setupPublicSite(): void {
         isManager: manager,
         isChoirUser: choirUser,
         github,
+        language,
       });
     } catch (err) {
       app.logger.error('GET /api/docs/session failed', err as Error);
