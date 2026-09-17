@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocale, useT } from '../i18n';
 import type { DashboardSummary, DocUsageResponse, GapsResponse, SessionInfo, TopicsResponse } from '../types';
 import { docsPath, navigate } from '../utils/docs';
 import { GapCards, HBars, Meter, StatTile, WeeklyBars } from './dashboard/charts';
@@ -21,6 +22,8 @@ async function fetchJson<T>(url: string, workspaceId: string): Promise<T> {
 type DashboardProps = { workspaceId: string; fromFilePath?: string };
 
 export function Dashboard({ workspaceId, fromFilePath }: DashboardProps) {
+  const t = useT();
+  const { applySessionLanguage } = useLocale();
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [topics, setTopics] = useState<TopicsResponse | null>(null);
@@ -32,12 +35,18 @@ export function Dashboard({ workspaceId, fromFilePath }: DashboardProps) {
     let cancelled = false;
     fetch('/api/docs/session', { credentials: 'same-origin' })
       .then((r) => (r.ok ? (r.json() as Promise<SessionInfo>) : Promise.reject(new Error(`${r.status}`))))
-      .then((data) => !cancelled && setSession(data))
+      .then((data) => {
+        if (cancelled) return;
+        setSession(data);
+        // The reader's CHOIR language setting, which outranks the browser's own
+        // preference the provider started with.
+        applySessionLanguage(data.language);
+      })
       .catch(() => !cancelled && setSession({ authenticated: false }));
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applySessionLanguage]);
 
   const canView = session?.authenticated === true && session.isChoirUser;
 
@@ -58,13 +67,13 @@ export function Dashboard({ workspaceId, fromFilePath }: DashboardProps) {
         setGaps(g);
         setDocUsage(d);
       } catch (err) {
-        if (!cancelled && (err as Error).message !== 'unauthorized') setError('Could not load dashboard data.');
+        if (!cancelled && (err as Error).message !== 'unauthorized') setError(t('dashboard.error.load'));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [canView, workspaceId]);
+  }, [canView, workspaceId, t]);
 
   const goDocs = () => {
     if (fromFilePath) navigate(docsPath(workspaceId, fromFilePath));
@@ -73,14 +82,19 @@ export function Dashboard({ workspaceId, fromFilePath }: DashboardProps) {
 
   const topicItems = useMemo(
     () =>
-      (topics?.topics ?? []).slice(0, 12).map((t) => ({
-        key: t.topicId,
-        label: t.label,
-        value: t.total,
-        answered: t.answered,
-        title: `${t.label}: ${t.total} question${t.total === 1 ? '' : 's'}, ${t.answered} answered — “${t.representative}”`,
+      (topics?.topics ?? []).slice(0, 12).map((topic) => ({
+        key: topic.topicId,
+        label: topic.label,
+        value: topic.total,
+        answered: topic.answered,
+        title: t('dashboard.topic.tooltip', {
+          label: topic.label,
+          count: topic.total,
+          answered: topic.answered,
+          representative: topic.representative,
+        }),
       })),
-    [topics],
+    [topics, t],
   );
 
   const docItems = useMemo(
@@ -89,87 +103,89 @@ export function Dashboard({ workspaceId, fromFilePath }: DashboardProps) {
         key: f.fileName,
         label: f.fileName,
         value: f.retrievals,
-        title: `${f.fileName}: retrieved ${f.retrievals} time${f.retrievals === 1 ? '' : 's'}, ${f.unanswered} when the answer fell short (last ${f.lastWeek})`,
+        title: t('dashboard.doc.tooltip', {
+          label: f.fileName,
+          count: f.retrievals,
+          unanswered: f.unanswered,
+          week: f.lastWeek,
+        }),
       })),
-    [docUsage],
+    [docUsage, t],
   );
 
   return (
     <div className="dashboard-shell">
       <header className="doc-topbar">
         <div className="doc-topbar-left">
-          <nav className="dash-tabs" aria-label="Views">
+          <nav className="dash-tabs" aria-label={t('dashboard.aria.views')}>
             <button type="button" className="dash-tab" onClick={goDocs}>
-              Docs
+              {t('dashboard.tab.docs')}
             </button>
             <button type="button" className="dash-tab active" aria-current="page">
-              Insights
+              {t('dashboard.tab.insights')}
             </button>
           </nav>
         </div>
       </header>
 
       <main className="dashboard">
-        {session === null && <p className="dash-empty">Loading…</p>}
+        {session === null && <p className="dash-empty">{t('common.loading')}</p>}
 
         {session?.authenticated === false && (
           <div className="doc-notice">
-            <p>Sign in to view team insights.</p>
+            <p>{t('dashboard.signIn.prompt')}</p>
             <button
               type="button"
               className="doc-button doc-button-primary"
               onClick={() => redirectToSignIn(workspaceId)}
             >
-              Sign in
+              {t('dashboard.signIn.button')}
             </button>
           </div>
         )}
 
         {session?.authenticated === true && !session.isChoirUser && (
-          <div className="doc-notice">Insights are available to registered CHOIR members.</div>
+          <div className="doc-notice">{t('dashboard.membersOnly')}</div>
         )}
 
         {error && <div className="doc-notice doc-notice-error">{error}</div>}
 
         {canView && summary && (
           <>
-            <h1 className="dash-h1">Team insights</h1>
+            <h1 className="dash-h1">{t('dashboard.title')}</h1>
 
             <section className="dash-stats">
-              <StatTile label="Questions asked" value={String(summary.totals.questions)} />
-              <StatTile label="Answered from docs" value={pctLabel(summary.totals.answeredRatio)}>
+              <StatTile label={t('dashboard.stat.questions')} value={String(summary.totals.questions)} />
+              <StatTile label={t('dashboard.stat.answered')} value={pctLabel(summary.totals.answeredRatio)}>
                 <Meter ratio={summary.totals.answeredRatio} />
               </StatTile>
-              <StatTile label="Active topics" value={String(summary.totals.activeTopics)} />
+              <StatTile label={t('dashboard.stat.topics')} value={String(summary.totals.activeTopics)} />
             </section>
 
             <section className="dash-section">
-              <h2 className="dash-h2">Questions per week</h2>
+              <h2 className="dash-h2">{t('dashboard.section.weekly')}</h2>
               <WeeklyBars weeks={summary.weeks} />
             </section>
 
             <section className="dash-section">
-              <h2 className="dash-h2">Top topics</h2>
-              <p className="dash-sub">What the team asks about most. Answered from the docs vs. still unanswered.</p>
+              <h2 className="dash-h2">{t('dashboard.section.topics')}</h2>
+              <p className="dash-sub">{t('dashboard.section.topics.sub')}</p>
               <HBars items={topicItems} legend />
             </section>
 
             <section className="dash-section">
-              <h2 className="dash-h2">Documentation gaps</h2>
-              <p className="dash-sub">Frequently asked topics the documentation could not answer.</p>
+              <h2 className="dash-h2">{t('dashboard.section.gaps')}</h2>
+              <p className="dash-sub">{t('dashboard.section.gaps.sub')}</p>
               <GapCards gaps={gaps?.gaps ?? []} />
             </section>
 
             <section className="dash-section">
-              <h2 className="dash-h2">Document usage</h2>
-              <p className="dash-sub">Which documents CHOIR draws on to answer questions.</p>
+              <h2 className="dash-h2">{t('dashboard.section.docUsage')}</h2>
+              <p className="dash-sub">{t('dashboard.section.docUsage.sub')}</p>
               <HBars items={docItems} />
             </section>
 
-            <footer className="dash-footnote">
-              Aggregated by topic and week. No individual activity is shown. Topics asked by fewer than 2 people are
-              grouped as “Other”.
-            </footer>
+            <footer className="dash-footnote">{t('dashboard.footnote')}</footer>
           </>
         )}
       </main>

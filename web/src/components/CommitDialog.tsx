@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useT } from '../i18n';
 
 type CommitDialogProps = {
   defaultMessage: string;
@@ -8,6 +9,7 @@ type CommitDialogProps = {
 };
 
 export function CommitDialog({ defaultMessage, submitting, onCancel, onSubmit }: CommitDialogProps) {
+  const t = useT();
   const [message, setMessage] = useState(defaultMessage);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -34,14 +36,12 @@ export function CommitDialog({ defaultMessage, submitting, onCancel, onSubmit }:
   };
 
   return (
-    <div className="commit-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Commit changes">
+    <div className="commit-dialog-backdrop" role="dialog" aria-modal="true" aria-label={t('commit.aria.dialog')}>
       <form className="commit-dialog" onSubmit={handleSubmit}>
-        <h2 className="commit-dialog-title">Commit changes</h2>
-        <p className="commit-dialog-subtitle">
-          A new commit will be pushed to your GitHub repository. Q&A retrieval and the QMD index refresh automatically.
-        </p>
+        <h2 className="commit-dialog-title">{t('commit.title')}</h2>
+        <p className="commit-dialog-subtitle">{t('commit.subtitle')}</p>
         <label className="commit-dialog-label" htmlFor="commit-message">
-          Commit message
+          {t('commit.label.message')}
         </label>
         <textarea
           ref={inputRef}
@@ -55,10 +55,10 @@ export function CommitDialog({ defaultMessage, submitting, onCancel, onSubmit }:
         />
         <div className="commit-dialog-actions">
           <button type="button" className="doc-button doc-button-ghost" onClick={onCancel} disabled={submitting}>
-            Cancel
+            {t('common.button.cancel')}
           </button>
           <button type="submit" className="doc-button doc-button-primary" disabled={submitting || !message.trim()}>
-            {submitting ? 'Committing…' : 'Commit & push'}
+            {submitting ? t('commit.button.submitting') : t('commit.button.submit')}
           </button>
         </div>
       </form>

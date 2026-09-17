@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { fillNodes, useT } from '../i18n';
 
 /**
  * Confirmation for deleting a document.
@@ -19,6 +20,7 @@ type DeleteDocumentDialogProps = {
 };
 
 export function DeleteDocumentDialog({ filePath, branch, submitting, onCancel, onConfirm }: DeleteDocumentDialogProps) {
+  const t = useT();
   const [typed, setTyped] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -46,22 +48,16 @@ export function DeleteDocumentDialog({ filePath, branch, submitting, onCancel, o
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: matches CommitDialog — a native <dialog> would need showModal()
-    <div className="commit-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Delete document">
+    <div className="commit-dialog-backdrop" role="dialog" aria-modal="true" aria-label={t('delete.aria.dialog')}>
       <form className="commit-dialog" onSubmit={handleSubmit}>
-        <h2 className="commit-dialog-title">Delete this document</h2>
+        <h2 className="commit-dialog-title">{t('delete.title')}</h2>
         <p className="commit-dialog-subtitle">
-          <code>{filePath}</code> will be removed from the repository
-          {branch ? (
-            <>
-              {' '}
-              on <code>{branch}</code>
-            </>
-          ) : null}{' '}
-          and will stop answering questions. If it has a Google Docs replica, that is unlinked and any pending review is
-          dropped. Nothing is lost from git — the commit history keeps every version, so it can be restored from there.
+          {branch
+            ? fillNodes(t('delete.body.onBranch'), { path: <code>{filePath}</code>, branch: <code>{branch}</code> })
+            : fillNodes(t('delete.body'), { path: <code>{filePath}</code> })}
         </p>
         <label className="commit-dialog-label" htmlFor="delete-confirm-path">
-          Type <code>{filePath}</code> to confirm
+          {fillNodes(t('delete.label.confirm'), { path: <code>{filePath}</code> })}
         </label>
         <input
           ref={inputRef}
@@ -76,10 +72,10 @@ export function DeleteDocumentDialog({ filePath, branch, submitting, onCancel, o
         />
         <div className="commit-dialog-actions">
           <button type="button" className="doc-button doc-button-ghost" onClick={onCancel} disabled={submitting}>
-            Cancel
+            {t('common.button.cancel')}
           </button>
           <button type="submit" className="doc-button doc-button-danger" disabled={submitting || !matches}>
-            {submitting ? 'Deleting…' : 'Delete document'}
+            {submitting ? t('delete.button.submitting') : t('delete.button.submit')}
           </button>
         </div>
       </form>

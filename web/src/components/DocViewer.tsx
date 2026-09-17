@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocale, useT } from '../i18n';
 import type { DocFile, DocSectionUsage, RepoInfo, SessionInfo, TocItem } from '../types';
 import { docsPath, encodePath, extractToc, parseDocsUrl, scrollToAnchor, slugifyHeading } from '../utils/docs';
 import { inlineMarkdownToText } from '../utils/inline-markdown';
@@ -98,6 +99,8 @@ function normalizeForLineMatch(text: string): string {
 }
 
 export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
+  const t = useT();
+  const { applySessionLanguage } = useLocale();
   const [error, setError] = useState('');
   const [filePath, setFilePath] = useState(initialFilePath);
   const [files, setFiles] = useState<DocFile[]>([]);
@@ -174,7 +177,11 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     fetch('/api/docs/session', { credentials: 'same-origin' })
       .then((r) => (r.ok ? (r.json() as Promise<SessionInfo>) : Promise.reject(new Error(`${r.status}`))))
       .then((data) => {
-        if (!cancelled) setSession(data);
+        if (cancelled) return;
+        setSession(data);
+        // The reader's CHOIR language setting, which outranks the browser's own
+        // preference the provider started with.
+        applySessionLanguage(data.language);
       })
       .catch(() => {
         if (!cancelled) setSession({ authenticated: false });
@@ -182,7 +189,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applySessionLanguage]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -192,7 +199,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       // Back/forward navigation, like an in-app link click, must not silently
       // discard unsaved edits. popstate can't be vetoed, so on cancel we re-push
       // the current document's URL to keep the address bar and content in sync.
-      if (dirty && !window.confirm('Unsaved changes will be lost. Continue?')) {
+      if (dirty && !window.confirm(t('viewer.confirm.unsavedChanges'))) {
         window.history.pushState(null, '', `/docs/${encodeURIComponent(workspaceId)}/${encodePath(filePath)}`);
         return;
       }
@@ -202,14 +209,14 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [dirty, filePath, workspaceId]);
+  }, [dirty, filePath, workspaceId, t]);
 
   useEffect(() => {
     fetch(`/api/docs/${encodeURIComponent(workspaceId)}`, { credentials: 'same-origin' })
       .then((r) => {
         if (r.status === 401) {
           redirectToSignIn(workspaceId);
-          throw new Error('Sign in required');
+          throw new Error(t('viewer.error.signInRequired'));
         }
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json() as Promise<{ files: DocFile[]; repo: RepoInfo | null }>;
@@ -222,7 +229,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         setFiles([]);
         setRepo(null);
       });
-  }, [workspaceId]);
+  }, [workspaceId, t]);
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -234,7 +241,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       if (!parsedPath) return;
 
       if (dirty) {
-        const proceed = window.confirm('Unsaved changes will be lost. Continue?');
+        const proceed = window.confirm(t('viewer.confirm.unsavedChanges'));
         if (!proceed) {
           event.preventDefault();
           return;
@@ -253,7 +260,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
 
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
-  }, [dirty]);
+  }, [dirty, t]);
 
   const clearChangedBlockMarks = useCallback(() => {
     for (const el of changedBlockElsRef.current) {
@@ -292,7 +299,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       .then((r) => {
         if (r.status === 401) {
           redirectToSignIn(workspaceId);
-          throw new Error('Sign in required');
+          throw new Error(t('viewer.error.signInRequired'));
         }
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json() as Promise<{ content: string; filePath: string }>;
@@ -306,13 +313,13 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : 'Failed to load document');
+        setError(e instanceof Error ? e.message : t('viewer.error.loadFailed'));
       });
 
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, filePath, clearChangedBlockMarks, clearEditSession]);
+  }, [workspaceId, filePath, clearChangedBlockMarks, clearEditSession, t]);
 
   // Line-level provenance (git blame → record) for the gutter markers. Members only.
   useEffect(() => {
@@ -449,7 +456,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
               const btn = document.createElement('button');
               btn.type = 'button';
               btn.className = 'doc-history-marker';
-              btn.title = 'View change history';
+              btn.title = t('viewer.marker.title');
               btn.textContent = '🕘';
               btn.style.top = `${top}px`;
               btn.addEventListener('click', (e) => {
@@ -514,6 +521,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     sidebarOpen,
     getHighlightBlocks,
     openHistoryAt,
+    t,
   ]);
 
   const toggleQaUsage = useCallback(() => {
@@ -618,7 +626,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
             const weak = answeredRatio < 0.5;
             if (weak) el.classList.add('doc-usage-warn');
             el.setAttribute('data-usage', `${weak ? '⚠ ' : ''}${usage.retrievals}×`);
-            el.title = `Retrieved in ${usage.retrievals} question${usage.retrievals === 1 ? '' : 's'} (last 12 weeks); ${usage.unanswered} unanswered`;
+            el.title = t('viewer.usage.tooltip', { count: usage.retrievals, unanswered: usage.unanswered });
             el.dataset.usageTitle = '1';
           } else if (current) {
             el.classList.add('doc-usage-hl', `doc-usage-${current.bucket}`); // deeper subheading in a used section
@@ -640,7 +648,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       clearHighlights();
       setUsageUnmatched(0);
     };
-  }, [qaUsageOn, usageSections, editorReady, isEditing, loadedMarkdown, editorKey]);
+  }, [qaUsageOn, usageSections, editorReady, isEditing, loadedMarkdown, editorKey, t]);
 
   const markDocumentChangedBlocks = useCallback(
     (forceFallback: boolean) => {
@@ -703,7 +711,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   }, [clearEditSession]);
 
   const handleDiscard = useCallback(() => {
-    if (dirty && !window.confirm('Discard all unsaved changes?')) return;
+    if (dirty && !window.confirm(t('viewer.confirm.discard'))) return;
     if (loadedMarkdown !== null) {
       setCurrentMarkdown(loadedMarkdown);
       setToc(extractToc(loadedMarkdown));
@@ -713,7 +721,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     clearChangedBlockMarks();
     clearEditSession();
     setSaveError(null);
-  }, [clearChangedBlockMarks, clearEditSession, dirty, loadedMarkdown]);
+  }, [clearChangedBlockMarks, clearEditSession, dirty, loadedMarkdown, t]);
 
   const handleSignIn = useCallback(() => {
     redirectToSignIn(workspaceId);
@@ -746,6 +754,8 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
 
       if (!response.ok) {
         const data = (await response.json().catch(() => ({}))) as { error?: string };
+        // TODO(i18n): server error codes — `data.error` is an English sentence
+        // built by the API and is rendered verbatim.
         throw new Error(data.error || `${response.status} ${response.statusText}`);
       }
 
@@ -761,13 +771,13 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       }
       // Nothing left to show, and /docs/:workspaceId alone does not render a
       // document, so stay put and say so.
-      setNotice('Document deleted. This repository has no markdown documents left.');
+      setNotice(t('viewer.notice.deletedLast'));
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'Failed to delete');
+      setSaveError(error instanceof Error ? error.message : t('viewer.error.deleteFailed'));
     } finally {
       setSaving(false);
     }
-  }, [filePath, workspaceId]);
+  }, [filePath, workspaceId, t]);
 
   const handleSubmitCommit = useCallback(
     async (commitMessage: string) => {
@@ -784,6 +794,8 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
 
         if (!response.ok) {
           const data = (await response.json().catch(() => ({}))) as { error?: string };
+          // TODO(i18n): server error codes — `data.error` is an English sentence
+          // built by the API and is rendered verbatim.
           throw new Error(data.error || `${response.status} ${response.statusText}`);
         }
 
@@ -796,14 +808,16 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         setShowCommitDialog(false);
         // Force editor remount so dirty-blocks baseline is reset to the new content
         setEditorKey((k) => k + 1);
-        setNotice(data.commitSha ? `Committed ${data.commitSha.slice(0, 7)} and refreshed the index.` : 'Saved.');
+        setNotice(
+          data.commitSha ? t('viewer.notice.committed', { sha: data.commitSha.slice(0, 7) }) : t('viewer.notice.saved'),
+        );
       } catch (error) {
-        setSaveError(error instanceof Error ? error.message : 'Failed to save');
+        setSaveError(error instanceof Error ? error.message : t('viewer.error.saveFailed'));
       } finally {
         setSaving(false);
       }
     },
-    [clearChangedBlockMarks, clearEditSession, currentMarkdown, filePath, workspaceId],
+    [clearChangedBlockMarks, clearEditSession, currentMarkdown, filePath, workspaceId, t],
   );
 
   const headerRight = (
@@ -813,9 +827,9 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           type="button"
           className={`doc-button doc-button-ghost${qaUsageOn ? ' active' : ''}`}
           onClick={toggleQaUsage}
-          title="Highlight the sections used to answer questions"
+          title={t('viewer.button.qaUsage.title')}
         >
-          Q&amp;A usage
+          {t('viewer.button.qaUsage')}
         </button>
       )}
       {sessionLoaded && !isEditing && (
@@ -823,29 +837,27 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           type="button"
           className={`doc-button doc-button-ghost${historyOpen ? ' active' : ''}`}
           onClick={() => setHistoryOpen((v) => !v)}
-          title="Change history"
+          title={t('viewer.button.history.title')}
         >
-          History
+          {t('viewer.button.history')}
         </button>
       )}
       {canEdit && dirty && (
-        <span className="doc-change-count">
-          {changedBlockCount} changed {changedBlockCount === 1 ? 'block' : 'blocks'}
-        </span>
+        <span className="doc-change-count">{t('viewer.changedBlocks', { count: changedBlockCount })}</span>
       )}
       {canEdit && isEditing && (
         <>
           <button type="button" className="doc-button doc-button-primary" onClick={handleFinishDocumentEdit}>
-            Done editing
+            {t('viewer.button.doneEditing')}
           </button>
           <button type="button" className="doc-button doc-button-ghost" onClick={handleCancelDocumentEdit}>
-            Cancel
+            {t('common.button.cancel')}
           </button>
         </>
       )}
       {canEdit && !isEditing && (
         <button type="button" className="doc-button doc-button-ghost" onClick={handleStartDocumentEdit}>
-          Edit document
+          {t('viewer.button.editDocument')}
         </button>
       )}
       {canEdit && !isEditing && !dirty && (
@@ -855,13 +867,13 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           onClick={() => setShowDeleteDialog(true)}
           disabled={saving}
         >
-          Delete…
+          {t('viewer.button.delete')}
         </button>
       )}
       {canEdit && dirty && (
         <>
           <button type="button" className="doc-button doc-button-ghost" onClick={handleDiscard} disabled={saving}>
-            Discard
+            {t('viewer.button.discard')}
           </button>
           <button
             type="button"
@@ -869,23 +881,25 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
             onClick={() => setShowCommitDialog(true)}
             disabled={!dirty || saving}
           >
-            {dirty ? 'Save…' : 'No changes'}
+            {dirty ? t('viewer.button.save') : t('viewer.button.noChanges')}
           </button>
         </>
       )}
+      {/* TODO(i18n): server error codes — `writeBlockedReason` is an English
+          sentence from the session endpoint, shown verbatim in the tooltip. */}
       {writeBlockedReason && !isEditing && (
         <span className="doc-change-count" title={writeBlockedReason}>
-          Read-only
+          {t('viewer.readOnly')}
         </span>
       )}
       {!isEditing && !dirty && sessionLoaded && isManager && (
         <button type="button" className="doc-button doc-button-ghost" onClick={handleSignOut}>
-          Sign out
+          {t('viewer.button.signOut')}
         </button>
       )}
       {!isEditing && sessionLoaded && !isManager && (
         <button type="button" className="doc-button doc-button-primary" onClick={handleSignIn}>
-          Edit as manager
+          {t('viewer.button.editAsManager')}
         </button>
       )}
       {!isEditing && sessionLoaded && (
@@ -911,7 +925,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         type="button"
         className={`sidebar-backdrop${sidebarOpen ? ' visible' : ''}`}
         onClick={closeSidebarFromBackdrop}
-        aria-label="Close sidebar"
+        aria-label={t('viewer.aria.closeSidebar')}
       />
       <FilesSidebar
         files={files}
@@ -930,18 +944,17 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         />
         {error ? (
           <main className="doc-page error-page">
-            <strong>Error:</strong> {error}
+            <strong>{t('viewer.error.prefix')}</strong> {error}
           </main>
         ) : (
           <main className="doc-page">
             {qaUsageOn && canSeeInsights && (
               <div className="doc-usage-legend">
-                <span className="doc-usage-legend-swatch" /> Shaded sections were retrieved to answer questions (darker
-                = more).
-                {usageUnmatched > 0 &&
-                  ` ${usageUnmatched} retrieval${usageUnmatched === 1 ? '' : 's'} refer to sections that have since changed.`}
+                <span className="doc-usage-legend-swatch" /> {t('viewer.usage.legend')}
+                {usageUnmatched > 0 && ` ${t('viewer.usage.unmatched', { count: usageUnmatched })}`}
               </div>
             )}
+            {/* TODO(i18n): server error codes — `writeBlockedReason` is rendered verbatim. */}
             {writeBlockedReason && !writeNoticeDismissed && (
               <output className="doc-notice doc-notice-error doc-notice-dismissible">
                 <span>{writeBlockedReason}</span>
@@ -949,20 +962,21 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
                   type="button"
                   className="doc-notice-close"
                   onClick={() => setWriteNoticeDismissed(true)}
-                  aria-label="Dismiss this notice"
-                  title="Dismiss"
+                  aria-label={t('viewer.notice.dismiss.aria')}
+                  title={t('viewer.notice.dismiss.title')}
                 >
                   ×
                 </button>
               </output>
             )}
             {notice && <output className="doc-notice">{notice}</output>}
+            {/* TODO(i18n): server error codes — a failed save surfaces the API's own message. */}
             {saveError && (
               <div className="doc-notice doc-notice-error" role="alert">
                 {saveError}
               </div>
             )}
-            {!editorReady && <div className="doc-loading">Loading document…</div>}
+            {!editorReady && <div className="doc-loading">{t('viewer.loadingDocument')}</div>}
             <div className="doc-editor-wrap" ref={editorContainerRef}>
               <div className="doc-history-gutter" ref={gutterRef} aria-hidden="true" />
               {editorReady && (
@@ -1001,7 +1015,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       />
       {showCommitDialog && (
         <CommitDialog
-          defaultMessage={`Update ${filePath}`}
+          defaultMessage={t('viewer.commit.defaultMessage', { path: filePath })}
           submitting={saving}
           onCancel={() => setShowCommitDialog(false)}
           onSubmit={handleSubmitCommit}

@@ -4,9 +4,11 @@ import './styles.css';
 import { useEffect, useState } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { DocViewer } from './components/DocViewer';
+import { fillNodes, useT } from './i18n';
 import { type Route, parseRoute } from './utils/docs';
 
 export default function App() {
+  const t = useT();
   const [route, setRoute] = useState<Route | null>(() => parseRoute());
 
   useEffect(() => {
@@ -18,7 +20,7 @@ export default function App() {
   if (!route) {
     return (
       <div className="invalid-url">
-        Invalid URL. Expected <code>/docs/:workspaceId/:filePath</code>
+        {fillNodes(t('app.invalidUrl'), { path: <code>/docs/:workspaceId/:filePath</code> })}
       </div>
     );
   }

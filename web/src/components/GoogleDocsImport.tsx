@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useT } from '../i18n';
 import { docsPath } from '../utils/docs';
 import { readNdjson } from '../utils/ndjson';
 import { pickGoogleDoc } from '../utils/picker';
@@ -55,6 +56,7 @@ function suggestPath(title: string): string {
 }
 
 export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
+  const t = useT();
   const [available, setAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,16 +99,16 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
     setError(null);
     setProgress(null);
     try {
-      const picked = await pickGoogleDoc(workspaceId);
+      const picked = await pickGoogleDoc(workspaceId, t);
       if (!picked) return;
 
       const target = window.prompt(
-        `Import "${picked.name || 'this document'}" into the repository as:`,
+        t('gdocs.import.prompt', { name: picked.name || t('gdocs.import.thisDocument') }),
         suggestPath(picked.name),
       );
       if (target === null) return;
       if (!looksLikeRepoPath(target)) {
-        setError('Give a repository-relative path ending in .md');
+        setError(t('gdocs.import.error.path'));
         return;
       }
 
@@ -135,33 +137,36 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
           if (event.type === 'progress') {
             setProgress({ label: event.label, index: event.index, total: event.total });
           } else if (event.type === 'error') {
-            throw new Error(event.error || 'Could not import that document');
+            // TODO(i18n): server error codes — `event.error` is the API's own English text.
+            throw new Error(event.error || t('gdocs.import.error.failed'));
           } else if (event.type === 'result') {
             result = event;
           }
         }
-        if (!result) throw new Error('The import stopped before it finished');
+        if (!result) throw new Error(t('gdocs.import.error.interrupted'));
       } else {
         result = (await response.json()) as ImportResponse;
-        if (!response.ok) throw new Error(result.error || 'Could not import that document');
+        // TODO(i18n): server error codes — `result.error` is the API's own English text.
+        if (!response.ok) throw new Error(result.error || t('gdocs.import.error.failed'));
       }
 
       if (result.rejectedAssets?.length) {
+        // TODO(i18n): server error codes — each `reason` is the API's own English text.
         const reasons = result.rejectedAssets.map((asset) => `• ${asset.reason}`).join('\n');
-        window.alert(`Imported, but ${result.rejectedAssets.length} image(s) were left out:\n${reasons}`);
+        window.alert(t('gdocs.import.rejectedAssets', { count: result.rejectedAssets.length, reasons }));
       }
       // A full load rather than a soft navigation: the file tree is fetched once
       // per workspace, so a pushState would land on a document the sidebar does
       // not yet know exists.
       window.location.href = docsPath(workspaceId, result.githubPath ?? target.trim());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not import that document');
+      setError(err instanceof Error ? err.message : t('gdocs.import.error.failed'));
     } finally {
       setBusy(false);
       setImporting(false);
       setProgress(null);
     }
-  }, [workspaceId]);
+  }, [workspaceId, t]);
 
   // Importing needs somewhere to read from; connecting a Google account is
   // offered on a document, where the consequences of linking are spelled out.
@@ -180,7 +185,9 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
             />
           </svg>
         </span>
-        <span className="file-label">{busy ? 'Importing…' : 'Import from Google Docs'}</span>
+        <span className="file-label">
+          {busy ? t('gdocs.import.button.importing') : t('gdocs.import.button.import')}
+        </span>
       </button>
       {importing && (
         // Until the first step arrives the bar has nothing true to show, so it
@@ -189,7 +196,7 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
           <div
             className={`import-progress-track${progress ? '' : ' indeterminate'}`}
             role="progressbar"
-            aria-label="Google Docs import"
+            aria-label={t('gdocs.import.aria.progress')}
             aria-valuemin={0}
             aria-valuemax={progress ? progress.total : undefined}
             aria-valuenow={progress ? progress.index : undefined}
@@ -201,10 +208,12 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
             <div className="import-progress-fill" style={progress ? { width: `${percent}%` } : undefined} />
           </div>
           <div className="import-progress-label" aria-live="polite">
-            {progress ? progress.label : 'Starting the import…'}
+            {/* TODO(i18n): server error codes — `progress.label` is the step name the API streams. */}
+            {progress ? progress.label : t('gdocs.import.starting')}
           </div>
         </div>
       )}
+      {/* TODO(i18n): server error codes — an import failure can carry the API's own message. */}
       {error && (
         <div className="sidebar-subtitle" role="alert">
           {error}

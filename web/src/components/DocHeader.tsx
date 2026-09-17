@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useT } from '../i18n';
 
 type DocHeaderProps = {
   breadcrumb: string;
@@ -9,13 +10,14 @@ type DocHeaderProps = {
 };
 
 export function DocHeader({ breadcrumb, onToggleSidebar, sidebarOpen, rightSlot, dirty }: DocHeaderProps) {
+  const t = useT();
   return (
     <header className={`doc-topbar${dirty ? ' dirty' : ''}`}>
       <div className="doc-topbar-left">
         <button
           type="button"
           className="doc-iconbutton"
-          aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+          aria-label={sidebarOpen ? t('header.sidebar.hide') : t('header.sidebar.show')}
           aria-pressed={sidebarOpen}
           onClick={onToggleSidebar}
         >

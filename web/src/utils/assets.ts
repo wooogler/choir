@@ -1,3 +1,4 @@
+import type { T } from '../i18n';
 import { encodePath } from './docs';
 
 const ABSOLUTE_URL = /^(?:[a-z][a-z0-9+.-]*:)?\/\//i; // http://, https://, protocol-relative //
@@ -7,8 +8,11 @@ const DATA_OR_BLOB = /^(?:data|blob):/i;
  * Uploads an image to the workspace and returns its repo-root-relative path
  * (e.g. `assets/<hash>.png`). The server stores the bytes in the mirror and
  * commits them to GitHub.
+ *
+ * Takes the caller's translator rather than reading context: this runs inside a
+ * Crepe upload callback, which is not a React render.
  */
-export async function uploadAsset(workspaceId: string, file: File): Promise<string> {
+export async function uploadAsset(workspaceId: string, file: File, t: T): Promise<string> {
   const response = await fetch(`/api/docs/${encodeURIComponent(workspaceId)}/assets`, {
     method: 'POST',
     credentials: 'same-origin',
@@ -18,12 +22,13 @@ export async function uploadAsset(workspaceId: string, file: File): Promise<stri
 
   if (!response.ok) {
     const data = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error || `Upload failed (${response.status})`);
+    // TODO(i18n): server error codes — `data.error` is the API's own English text.
+    throw new Error(data.error || t('assets.error.upload', { status: response.status }));
   }
 
   const data = (await response.json()) as { path?: string };
   if (!data.path) {
-    throw new Error('Upload response missing path');
+    throw new Error(t('assets.error.missingPath'));
   }
   return data.path;
 }

@@ -1,3 +1,4 @@
+import { useT } from '../i18n';
 import type { DocFile, FolderNode, RepoInfo } from '../types';
 import { buildFolderTree, dashboardPath, encodePath, folderContainsPath, formatTitle, navigate } from '../utils/docs';
 import { GoogleDocsImport } from './GoogleDocsImport';
@@ -11,8 +12,9 @@ type FilesSidebarProps = {
 };
 
 export function FilesSidebar({ files, currentPath, repo, workspaceId, canSeeInsights }: FilesSidebarProps) {
+  const t = useT();
   const tree = buildFolderTree(files);
-  const repoLabel = repo ? `${repo.owner}/${repo.name}` : 'Repository';
+  const repoLabel = repo ? `${repo.owner}/${repo.name}` : t('sidebar.repo.fallback');
   const repoInitial = repo?.name?.[0]?.toUpperCase() || 'R';
 
   const renderFile = (file: DocFile) => {
@@ -48,7 +50,7 @@ export function FilesSidebar({ files, currentPath, repo, workspaceId, canSeeInsi
   );
 
   return (
-    <aside className="docs-sidebar" aria-label="Documents">
+    <aside className="docs-sidebar" aria-label={t('sidebar.aria.documents')}>
       <div className="sidebar-header">
         <div className="workspace-mark">{repoInitial}</div>
         <div>
@@ -60,7 +62,9 @@ export function FilesSidebar({ files, currentPath, repo, workspaceId, canSeeInsi
             <div className="sidebar-title">{repoLabel}</div>
           )}
           <div className="sidebar-subtitle">
-            {files.length} files{repo?.branch ? ` on ${repo.branch}` : ''}
+            {repo?.branch
+              ? t('sidebar.filesOnBranch', { count: files.length, branch: repo.branch })
+              : t('sidebar.files', { count: files.length })}
           </div>
         </div>
       </div>
@@ -83,7 +87,7 @@ export function FilesSidebar({ files, currentPath, repo, workspaceId, canSeeInsi
                 />
               </svg>
             </span>
-            <span className="file-label">Insights</span>
+            <span className="file-label">{t('sidebar.insights')}</span>
           </button>
         )}
         <GoogleDocsImport workspaceId={workspaceId} />

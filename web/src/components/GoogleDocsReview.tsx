@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
+import { fillNodes, useT } from '../i18n';
+import type { T } from '../i18n';
 import { lineDiff } from '../utils/diff';
 
 /**
@@ -28,21 +30,22 @@ type Review = {
   editor?: string;
 };
 
-const CONFLICT_EXPLANATION: Record<Conflict['reason'], string> = {
-  'code-block':
-    'This edit touches a code block. Google Docs has no code blocks, so the export cannot say whether the change was meant for the code or the text around it.',
-  unmappable: 'This text has no counterpart in the repository document, so there is no safe place to put it.',
-  merge: 'The repository and Google Docs both changed this. The repository version is kept below.',
-};
+// The server's own codes, mapped to catalog keys. Keeping the map keyed by code
+// is what made this component easy to translate: the text was already separated
+// from the branch that chose it.
+const CONFLICT_KEY = {
+  'code-block': 'gdocs.review.conflict.codeBlock',
+  unmappable: 'gdocs.review.conflict.unmappable',
+  merge: 'gdocs.review.conflict.merge',
+} as const satisfies Record<Conflict['reason'], Parameters<T>[0]>;
 
-const STATUS_MESSAGE: Record<Exclude<Review['status'], 'ready'>, string> = {
-  'no-change': 'Nothing has changed in the Google Doc.',
-  'not-linked': 'This document is not linked to a Google Doc.',
-  'not-connected': 'The workspace Google account is not connected.',
-  'not-drifted': 'There is no pending Google Docs edit for this document.',
-  'baseline-lost':
-    'The comparison snapshot for this document is missing, so the edit cannot be worked out. Unlink and relink the document to start again.',
-};
+const STATUS_KEY = {
+  'no-change': 'gdocs.review.status.noChange',
+  'not-linked': 'gdocs.review.status.notLinked',
+  'not-connected': 'gdocs.review.status.notConnected',
+  'not-drifted': 'gdocs.review.status.notDrifted',
+  'baseline-lost': 'gdocs.review.status.baselineLost',
+} as const satisfies Record<Exclude<Review['status'], 'ready'>, Parameters<T>[0]>;
 
 export function GoogleDocsReview({
   workspaceId,
@@ -55,6 +58,7 @@ export function GoogleDocsReview({
   onClose: () => void;
   onApplied: () => void;
 }) {
+  const t = useT();
   const [review, setReview] = useState<Review | null>(null);
   const [content, setContent] = useState('');
   const [busy, setBusy] = useState(false);
@@ -68,15 +72,15 @@ export function GoogleDocsReview({
         { credentials: 'same-origin' },
       );
       if (!response.ok) {
-        throw new Error('Could not load the review');
+        throw new Error(t('gdocs.review.error.load'));
       }
       const body = (await response.json()) as Review;
       setReview(body);
       setContent(body.after ?? '');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load the review');
+      setError(err instanceof Error ? err.message : t('gdocs.review.error.load'));
     }
-  }, [workspaceId, filePath]);
+  }, [workspaceId, filePath, t]);
 
   useEffect(() => {
     void load();
@@ -84,6 +88,8 @@ export function GoogleDocsReview({
 
   const decide = useCallback(
     async (decision: 'approve' | 'reject') => {
+      // Declared outside the try so the catch can reach it.
+      const failure = decision === 'approve' ? 'gdocs.review.error.approve' : 'gdocs.review.error.reject';
       setBusy(true);
       setError(null);
       try {
@@ -97,27 +103,28 @@ export function GoogleDocsReview({
 
         if (body.outcome === 'stale') {
           // The server has already rebuilt the proposal against the newer state.
-          setError('Something changed while you were reviewing. The proposal below has been refreshed.');
+          setError(t('gdocs.review.error.stale'));
           await load();
           return;
         }
         if (!response.ok) {
-          throw new Error(body.detail || body.error || `Could not ${decision} the change`);
+          // TODO(i18n): server error codes — `body.detail`/`body.error` are the API's own English text.
+          throw new Error(body.detail || body.error || t(failure));
         }
 
         onApplied();
         onClose();
       } catch (err) {
-        setError(err instanceof Error ? err.message : `Could not ${decision} the change`);
+        setError(err instanceof Error ? err.message : t(failure));
       } finally {
         setBusy(false);
       }
     },
-    [workspaceId, filePath, content, load, onApplied, onClose],
+    [workspaceId, filePath, content, load, onApplied, onClose, t],
   );
 
   const rebaseline = useCallback(async () => {
-    if (!window.confirm('Replace the Google Doc with the GitHub version? Anything written in the Doc will be lost.')) {
+    if (!window.confirm(t('gdocs.review.confirm.rebaseline'))) {
       return;
     }
     setBusy(true);
@@ -131,27 +138,28 @@ export function GoogleDocsReview({
       });
       const body = (await response.json()) as { detail?: string; error?: string };
       if (!response.ok) {
-        throw new Error(body.detail || body.error || 'Could not republish');
+        // TODO(i18n): server error codes — `body.detail`/`body.error` are the API's own English text.
+        throw new Error(body.detail || body.error || t('gdocs.review.error.republish'));
       }
       onApplied();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not republish');
+      setError(err instanceof Error ? err.message : t('gdocs.review.error.republish'));
     } finally {
       setBusy(false);
     }
-  }, [workspaceId, filePath, onApplied, onClose]);
+  }, [workspaceId, filePath, onApplied, onClose, t]);
 
   if (!review) {
     return (
       <aside className="gdocs-review">
         <header className="gdocs-review-header">
-          <strong>Google Docs edit</strong>
+          <strong>{t('gdocs.review.heading')}</strong>
           <button type="button" className="doc-button doc-button-ghost" onClick={onClose}>
-            Close
+            {t('common.button.close')}
           </button>
         </header>
-        <p className="gdocs-review-note">{error ?? 'Loading…'}</p>
+        <p className="gdocs-review-note">{error ?? t('common.loading')}</p>
       </aside>
     );
   }
@@ -160,22 +168,22 @@ export function GoogleDocsReview({
     return (
       <aside className="gdocs-review">
         <header className="gdocs-review-header">
-          <strong>Google Docs edit</strong>
+          <strong>{t('gdocs.review.heading')}</strong>
           <button type="button" className="doc-button doc-button-ghost" onClick={onClose}>
-            Close
+            {t('common.button.close')}
           </button>
         </header>
-        <p className="gdocs-review-note">{STATUS_MESSAGE[review.status]}</p>
+        <p className="gdocs-review-note">{t(STATUS_KEY[review.status])}</p>
         {review.status === 'baseline-lost' && (
           <>
             <p className="gdocs-review-note">
-              Republishing from GitHub rebuilds the comparison snapshot and gets syncing going again.{' '}
-              <strong>Anything currently in the Google Doc will be replaced</strong>, so copy out whatever is worth
-              keeping first.
+              {fillNodes(t('gdocs.review.baselineLost.help'), {
+                warning: <strong>{t('gdocs.review.baselineLost.warning')}</strong>,
+              })}
             </p>
             <footer className="gdocs-review-actions">
               <button type="button" className="doc-button doc-button-ghost" onClick={rebaseline} disabled={busy}>
-                Republish from GitHub
+                {t('gdocs.review.button.republish')}
               </button>
             </footer>
           </>
@@ -190,53 +198,52 @@ export function GoogleDocsReview({
   return (
     <aside className="gdocs-review">
       <header className="gdocs-review-header">
-        <strong>Google Docs edit</strong>
+        <strong>{t('gdocs.review.heading')}</strong>
         <a href={review.docUrl} target="_blank" rel="noopener noreferrer" className="doc-button doc-button-ghost">
-          Open Doc
+          {t('gdocs.review.button.openDoc')}
         </a>
         <button type="button" className="doc-button doc-button-ghost" onClick={onClose}>
-          Close
+          {t('common.button.close')}
         </button>
       </header>
 
       <p className="gdocs-review-note">
-        {review.editor ? `Edited by ${review.editor}.` : 'The editor could not be identified.'} Approving commits this
-        to GitHub and republishes the replica; rejecting discards it and restores the replica.
+        {review.editor ? t('gdocs.review.editedBy', { editor: review.editor }) : t('gdocs.review.editorUnknown')}{' '}
+        {t('gdocs.review.approveHint')}
       </p>
 
+      {/* TODO(i18n): server error codes — a rejected decision can carry the API's own message. */}
       {error && <p className="gdocs-review-error">{error}</p>}
 
       {conflicts.length > 0 && (
         <section className="gdocs-review-conflicts">
-          <strong>
-            {conflicts.length} part{conflicts.length === 1 ? '' : 's'} could not be applied automatically
-          </strong>
+          <strong>{t('gdocs.review.conflicts.count', { count: conflicts.length })}</strong>
           {conflicts.map((conflict) => (
             <div className="gdocs-review-conflict" key={`${conflict.reason}-${conflict.incoming.join('')}`}>
-              <p>{CONFLICT_EXPLANATION[conflict.reason]}</p>
+              <p>{t(CONFLICT_KEY[conflict.reason])}</p>
               <pre>{conflict.incoming.join('\n')}</pre>
             </div>
           ))}
-          <p className="gdocs-review-note">Edit the proposal below to include anything worth keeping.</p>
+          <p className="gdocs-review-note">{t('gdocs.review.conflicts.hint')}</p>
         </section>
       )}
 
       {(review.newAssets?.length ?? 0) > 0 && (
-        <p className="gdocs-review-note">
-          {review.newAssets?.length} new image{review.newAssets?.length === 1 ? '' : 's'} will be committed alongside
-          this change.
-        </p>
+        <p className="gdocs-review-note">{t('gdocs.review.newAssets', { count: review.newAssets?.length ?? 0 })}</p>
       )}
       {(review.rejectedAssets?.length ?? 0) > 0 && (
         <p className="gdocs-review-note">
-          {review.rejectedAssets?.length} image{review.rejectedAssets?.length === 1 ? ' was' : 's were'} dropped:{' '}
-          {review.rejectedAssets?.map((asset) => asset.reason).join('; ')}.
+          {/* TODO(i18n): server error codes — each `reason` is the API's own English text. */}
+          {t('gdocs.review.rejectedAssets', {
+            count: review.rejectedAssets?.length ?? 0,
+            reasons: review.rejectedAssets?.map((asset) => asset.reason).join('; ') ?? '',
+          })}
         </p>
       )}
 
       <div className="history-diff gdocs-review-diff">
         {diff.length === 0 ? (
-          <p className="gdocs-review-note">The proposal matches the repository exactly.</p>
+          <p className="gdocs-review-note">{t('gdocs.review.diff.identical')}</p>
         ) : (
           diff.map((line, index) => (
             <div
@@ -252,7 +259,7 @@ export function GoogleDocsReview({
       </div>
 
       <label className="gdocs-review-label" htmlFor="gdocs-review-content">
-        Proposed document
+        {t('gdocs.review.label.proposal')}
       </label>
       <textarea
         id="gdocs-review-content"
@@ -269,10 +276,10 @@ export function GoogleDocsReview({
           onClick={() => decide('approve')}
           disabled={busy}
         >
-          Approve &amp; commit
+          {t('gdocs.review.button.approve')}
         </button>
         <button type="button" className="doc-button doc-button-ghost" onClick={() => decide('reject')} disabled={busy}>
-          Reject &amp; restore replica
+          {t('gdocs.review.button.reject')}
         </button>
       </footer>
     </aside>

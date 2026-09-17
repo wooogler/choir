@@ -1,6 +1,8 @@
 import { Crepe } from '@milkdown/crepe';
 import { replaceAll } from '@milkdown/kit/utils';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { useLocale, useT } from '../i18n';
+import { crepeFeatureConfigs } from '../i18n/crepe';
 import { resolveAssetDisplayUrl, toDocRelativeAssetPath, uploadAsset } from '../utils/assets';
 
 export interface CrepeEditorHandle {
@@ -22,6 +24,8 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, CrepeEditorProps>(funct
   { markdown, editable, workspaceId, filePath, onMarkdownChange },
   handleRef,
 ) {
+  const t = useT();
+  const { locale } = useLocale();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const crepeRef = useRef<Crepe | null>(null);
   const editableRef = useRef(editable);
@@ -30,10 +34,12 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, CrepeEditorProps>(funct
   // document context without forcing the editor to remount.
   const workspaceIdRef = useRef(workspaceId);
   const filePathRef = useRef(filePath);
+  const tRef = useRef(t);
   onChangeRef.current = onMarkdownChange;
   editableRef.current = editable;
   workspaceIdRef.current = workspaceId;
   filePathRef.current = filePath;
+  tRef.current = t;
 
   useImperativeHandle(
     handleRef,
@@ -58,13 +64,18 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, CrepeEditorProps>(funct
     if (!containerRef.current) return;
 
     let cancelled = false;
+    const localized = crepeFeatureConfigs(locale);
     const crepe = new Crepe({
       root: containerRef.current,
       defaultValue: markdown,
       featureConfigs: {
+        ...localized,
+        // Crepe takes one object per feature, so the image block's behaviour and
+        // its labels have to be merged here rather than passed separately.
         [Crepe.Feature.ImageBlock]: {
+          ...localized[Crepe.Feature.ImageBlock],
           onUpload: async (file: File) => {
-            const repoRelative = await uploadAsset(workspaceIdRef.current, file);
+            const repoRelative = await uploadAsset(workspaceIdRef.current, file, tRef.current);
             return toDocRelativeAssetPath(filePathRef.current, repoRelative);
           },
           proxyDomURL: (url: string) => resolveAssetDisplayUrl(workspaceIdRef.current, filePathRef.current, url),
@@ -105,7 +116,11 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, CrepeEditorProps>(funct
         });
       });
     };
-  }, [markdown]);
+    // `locale` rebuilds the editor: Crepe reads its labels once, at
+    // construction, so a locale that settles after the session responds cannot
+    // be applied to a live instance. It changes at most once per visit, and the
+    // editor is only mounted read-only until someone presses Edit.
+  }, [markdown, locale]);
 
   useEffect(() => {
     crepeRef.current?.setReadonly(!editable);

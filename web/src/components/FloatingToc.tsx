@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { useT } from '../i18n';
 import type { TocItem } from '../types';
 import { scrollToAnchor } from '../utils/docs';
 import type { InlineSegment } from '../utils/inline-markdown';
@@ -34,6 +35,7 @@ function renderSegments(segments: InlineSegment[], keyPrefix: string) {
 }
 
 export function FloatingToc({ activeSlug, items }: FloatingTocProps) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<number | null>(null);
 
@@ -65,7 +67,7 @@ export function FloatingToc({ activeSlug, items }: FloatingTocProps) {
   return (
     <aside
       className={`toc-rail${open ? ' open' : ''}`}
-      aria-label="Table of contents"
+      aria-label={t('toc.aria.label')}
       onMouseEnter={hold}
       onMouseLeave={release}
     >

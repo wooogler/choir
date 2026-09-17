@@ -5,7 +5,14 @@
  *
  * The Picker is loaded on demand from Google's script host; it is not bundled.
  * Its own typings are not published, so this is the minimum surface we use.
+ *
+ * Not a component, so it has no context to read: the caller passes its bound
+ * translator in. That is the smaller change of the two options — the
+ * alternative, returning error codes for the caller to translate, would mean a
+ * second switch at each of the two call sites for no extra flexibility.
  */
+
+import type { T } from '../i18n';
 
 type PickerDocsView = {
   setMimeTypes: (types: string) => unknown;
@@ -58,14 +65,14 @@ export interface PickedDocument {
 let pickerScriptPromise: Promise<void> | null = null;
 
 /** Loads Google's picker bundle once per page, whoever asks first. */
-function loadPicker(): Promise<void> {
+function loadPicker(t: T): Promise<void> {
   if (pickerScriptPromise) return pickerScriptPromise;
 
   pickerScriptPromise = new Promise<void>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>('script[data-choir-gapi]');
     const onLoad = () => {
       if (!window.gapi) {
-        reject(new Error('Google API script loaded without gapi'));
+        reject(new Error(t('picker.error.gapiMissing')));
         return;
       }
       window.gapi.load('picker', () => resolve());
@@ -84,7 +91,7 @@ function loadPicker(): Promise<void> {
     script.onerror = () => {
       // Let a later attempt retry rather than caching the failure forever.
       pickerScriptPromise = null;
-      reject(new Error('Could not load the Google file picker'));
+      reject(new Error(t('picker.error.scriptFailed')));
     };
     document.head.appendChild(script);
   });
@@ -97,19 +104,20 @@ function loadPicker(): Promise<void> {
  * dismissed. The access token is minted per call by the server and never stored
  * in the browser.
  */
-export async function pickGoogleDoc(workspaceId: string): Promise<PickedDocument | null> {
+export async function pickGoogleDoc(workspaceId: string, t: T): Promise<PickedDocument | null> {
   const response = await fetch(`/api/docs/${encodeURIComponent(workspaceId)}/google/picker-token`, {
     method: 'POST',
     credentials: 'same-origin',
   });
   const bootstrap = (await response.json()) as PickerBootstrap & { error?: string };
   if (!response.ok) {
-    throw new Error(bootstrap.error || 'Could not start the file picker');
+    // TODO(i18n): server error codes — `bootstrap.error` is the API's own English text.
+    throw new Error(bootstrap.error || t('picker.error.start'));
   }
 
-  await loadPicker();
+  await loadPicker(t);
   const picker = window.google?.picker;
-  if (!picker) throw new Error('The Google file picker is unavailable');
+  if (!picker) throw new Error(t('picker.error.unavailable'));
 
   const view = new picker.DocsView(picker.ViewId.DOCUMENTS);
   view.setMimeTypes('application/vnd.google-apps.document');

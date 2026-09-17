@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useT } from '../i18n';
 import { pickGoogleDoc } from '../utils/picker';
 
 /**
@@ -31,9 +32,6 @@ type GoogleStatus = {
   linkedCount: number;
 };
 
-const REPLACE_WARNING =
-  'The content of the Google Doc you pick will be replaced by this document, and kept in sync from GitHub. Continue?';
-
 export function GoogleDocsSync({
   workspaceId,
   filePath,
@@ -46,6 +44,7 @@ export function GoogleDocsSync({
   /** Opens the review panel; absent for people who cannot decide. */
   onReview?: () => void;
 }) {
+  const t = useT();
   const [status, setStatus] = useState<GoogleStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,35 +89,36 @@ export function GoogleDocsSync({
         });
         const body = (await response.json()) as { error?: string };
         if (!response.ok) {
-          throw new Error(body.error || 'Could not link the document');
+          // TODO(i18n): server error codes — `body.error` is the API's own English text.
+          throw new Error(body.error || t('gdocs.sync.error.link'));
         }
         await refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not link the document');
+        setError(err instanceof Error ? err.message : t('gdocs.sync.error.link'));
       } finally {
         setBusy(false);
       }
     },
-    [workspaceId, filePath, refresh],
+    [workspaceId, filePath, refresh, t],
   );
 
   const pick = useCallback(async () => {
-    if (!window.confirm(REPLACE_WARNING)) return;
+    if (!window.confirm(t('gdocs.sync.replaceWarning'))) return;
 
     setBusy(true);
     setError(null);
     try {
-      const picked = await pickGoogleDoc(workspaceId);
+      const picked = await pickGoogleDoc(workspaceId, t);
       if (picked) void link(picked.fileId, picked.pickerNonce);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start the file picker');
+      setError(err instanceof Error ? err.message : t('gdocs.sync.error.picker'));
     } finally {
       setBusy(false);
     }
-  }, [workspaceId, link]);
+  }, [workspaceId, link, t]);
 
   const unlink = useCallback(async () => {
-    if (!window.confirm('Stop syncing this document to Google Docs? The Google Doc itself is kept.')) return;
+    if (!window.confirm(t('gdocs.sync.confirm.unlink'))) return;
 
     setBusy(true);
     setError(null);
@@ -131,11 +131,11 @@ export function GoogleDocsSync({
       });
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not unlink the document');
+      setError(err instanceof Error ? err.message : t('gdocs.sync.error.unlink'));
     } finally {
       setBusy(false);
     }
-  }, [workspaceId, filePath, refresh]);
+  }, [workspaceId, filePath, refresh, t]);
 
   // Stay invisible unless the server offers the feature: a workspace without
   // Google credentials configured should see no trace of it.
@@ -154,7 +154,7 @@ export function GoogleDocsSync({
       <span className="doc-gdocs">
         {awaitingReview && onReview && (
           <button type="button" className="doc-button doc-button-primary" onClick={onReview}>
-            {status.document.status === 'baseline-lost' ? 'Fix Docs sync' : 'Review Docs edit'}
+            {status.document.status === 'baseline-lost' ? t('gdocs.sync.button.fix') : t('gdocs.sync.button.review')}
           </button>
         )}
         <a
@@ -164,15 +164,15 @@ export function GoogleDocsSync({
           rel="noopener noreferrer"
           title={
             status.document.awaitingManualApply
-              ? 'This document keeps its own formatting, so a change from CHOIR is waiting for someone to apply it in Google Docs'
+              ? t('gdocs.sync.title.awaitingManualApply')
               : status.document.status === 'drifted' || status.document.status === 'pending-review'
-                ? 'Someone edited the Google Doc; a manager is reviewing the change'
+                ? t('gdocs.sync.title.drifted')
                 : status.document.mode === 'preserve'
-                  ? 'Open the Google Doc. CHOIR does not write to this one'
-                  : 'Open the Google Docs replica'
+                  ? t('gdocs.sync.title.preserve')
+                  : t('gdocs.sync.title.replica')
           }
         >
-          Google Doc
+          {t('gdocs.sync.link.label')}
           {status.document.awaitingManualApply ||
           status.document.status === 'drifted' ||
           status.document.status === 'pending-review'
@@ -181,7 +181,7 @@ export function GoogleDocsSync({
         </a>
         {isManager && (
           <button type="button" className="doc-button doc-button-ghost" onClick={unlink} disabled={busy}>
-            Unlink
+            {t('gdocs.sync.button.unlink')}
           </button>
         )}
       </span>
@@ -197,14 +197,15 @@ export function GoogleDocsSync({
         className="doc-button doc-button-ghost"
         onClick={status.connected && !status.broken ? pick : connect}
         disabled={busy}
-        title={
-          status.broken
-            ? 'The Google connection expired — reconnect to resume syncing'
-            : 'Publish this document as a Google Doc, kept in sync from GitHub'
-        }
+        title={status.broken ? t('gdocs.sync.title.broken') : t('gdocs.sync.title.connect')}
       >
-        {busy ? 'Working…' : status.broken ? 'Reconnect Google' : 'Sync to Google Docs'}
+        {busy
+          ? t('gdocs.sync.button.busy')
+          : status.broken
+            ? t('gdocs.sync.button.reconnect')
+            : t('gdocs.sync.button.sync')}
       </button>
+      {/* TODO(i18n): server error codes — a linking failure can carry the API's own message. */}
       {error && (
         <span className="doc-change-count" title={error}>
           {error}

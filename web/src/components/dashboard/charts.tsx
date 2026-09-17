@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useT } from '../../i18n';
 import type { GapView } from '../../types';
 
 /** '2026-W29' -> 'W29' for compact axis labels. */
@@ -23,8 +24,9 @@ export function StatTile({ label, value, children }: { label: string; value: str
 
 /** Answered-ratio meter: green fill on a neutral track. Not color-alone — the % is shown. */
 export function Meter({ ratio }: { ratio: number }) {
+  const t = useT();
   return (
-    <div className="dash-meter" role="img" aria-label={`${pct(ratio)} answered`}>
+    <div className="dash-meter" role="img" aria-label={t('dashboard.meter.aria', { percent: pct(ratio) })}>
       <div className="dash-meter-fill" style={{ width: pct(ratio) }} />
     </div>
   );
@@ -32,15 +34,16 @@ export function Meter({ ratio }: { ratio: number }) {
 
 /** Vertical bars: questions per week (single hue). Value labels are always shown. */
 export function WeeklyBars({ weeks }: { weeks: Array<{ isoWeek: string; total: number; answered: number }> }) {
-  if (weeks.length === 0) return <p className="dash-empty">No questions in this period yet.</p>;
+  const t = useT();
+  if (weeks.length === 0) return <p className="dash-empty">{t('dashboard.weekly.empty')}</p>;
   const max = Math.max(1, ...weeks.map((w) => w.total));
   return (
-    <div className="dash-weekly" role="img" aria-label="Questions per week">
+    <div className="dash-weekly" role="img" aria-label={t('dashboard.weekly.aria')}>
       {weeks.map((w) => (
         <div
           key={w.isoWeek}
           className="dash-weekly-col"
-          title={`${w.isoWeek}: ${w.total} question${w.total === 1 ? '' : 's'}, ${w.answered} answered`}
+          title={t('dashboard.weekly.tooltip', { week: w.isoWeek, count: w.total, answered: w.answered })}
         >
           <div className="dash-weekly-value">{w.total}</div>
           <div className="dash-weekly-bar-wrap">
@@ -64,17 +67,18 @@ export interface HBarItem {
 
 /** Horizontal bars for topics / documents. Length encodes magnitude. */
 export function HBars({ items, legend }: { items: HBarItem[]; legend?: boolean }) {
-  if (items.length === 0) return <p className="dash-empty">Nothing to show yet.</p>;
+  const t = useT();
+  if (items.length === 0) return <p className="dash-empty">{t('dashboard.hbars.empty')}</p>;
   const max = Math.max(1, ...items.map((i) => i.value));
   return (
     <div>
       {legend && (
         <div className="dash-legend">
           <span className="dash-legend-item">
-            <span className="dash-swatch answered" /> answered
+            <span className="dash-swatch answered" /> {t('dashboard.legend.answered')}
           </span>
           <span className="dash-legend-item">
-            <span className="dash-swatch unanswered" /> unanswered
+            <span className="dash-swatch unanswered" /> {t('dashboard.legend.unanswered')}
           </span>
         </div>
       )}
@@ -83,7 +87,11 @@ export function HBars({ items, legend }: { items: HBarItem[]; legend?: boolean }
           const answered = it.answered ?? it.value;
           const unanswered = it.answered != null ? it.value - it.answered : 0;
           return (
-            <li key={it.key} className="dash-hbar-row" title={it.title ?? `${it.label}: ${it.value}`}>
+            <li
+              key={it.key}
+              className="dash-hbar-row"
+              title={it.title ?? t('dashboard.hbars.tooltip', { label: it.label, value: it.value })}
+            >
               <div className="dash-hbar-label">{it.label}</div>
               <div className="dash-hbar-track">
                 {it.answered != null ? (
@@ -106,19 +114,20 @@ export function HBars({ items, legend }: { items: HBarItem[]; legend?: boolean }
 
 /** Gap cards: topics students ask about that documentation doesn't answer. */
 export function GapCards({ gaps }: { gaps: GapView[] }) {
-  if (gaps.length === 0) return <p className="dash-empty">No documentation gaps surfaced in this period. 🎉</p>;
+  const t = useT();
+  if (gaps.length === 0) return <p className="dash-empty">{t('dashboard.gaps.empty')}</p>;
   return (
     <ul className="dash-gaps">
       {gaps.map((g) => (
         <li key={g.topicId} className="dash-gap-card">
           <div className="dash-gap-head">
             <span className="dash-gap-title">{g.label}</span>
-            <span className="dash-gap-badge">{g.unanswered} unanswered</span>
+            <span className="dash-gap-badge">{t('dashboard.gaps.badge', { count: g.unanswered })}</span>
           </div>
           <p className="dash-gap-rep">{g.representative}</p>
           {g.relatedDocs.length > 0 && (
             <div className="dash-gap-docs">
-              <span className="dash-gap-docs-label">Searched but insufficient:</span>
+              <span className="dash-gap-docs-label">{t('dashboard.gaps.searched')}</span>
               <ul>
                 {g.relatedDocs.map((d, i) => (
                   <li key={`${d.fileName}-${i}`}>

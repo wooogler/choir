@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { formatRelative, useLocale, useT } from '../i18n';
+import type { T } from '../i18n';
 import type { ProvenanceListItem, ProvenanceRecord, ProvenanceType } from '../types';
 import { changedLineCount, lineDiff } from '../utils/diff';
 import { encodePath } from '../utils/docs';
@@ -14,13 +16,25 @@ type HistoryPanelProps = {
   onSignIn: () => void;
 };
 
-const TYPE_LABEL: Record<ProvenanceType, string> = {
-  update: 'Update',
-  append: 'Append',
-  'new-file': 'New file',
-  'web-edit': 'Manual edit',
-  'gdocs-edit': 'Google Docs edit',
-};
+/**
+ * The record kinds, as catalog keys rather than labels: the badge, the search
+ * haystack and any future filter all go through `t` from here, so a kind is
+ * named once and translated everywhere it appears.
+ */
+const TYPE_KEY = {
+  update: 'history.type.update',
+  append: 'history.type.append',
+  'new-file': 'history.type.newFile',
+  'web-edit': 'history.type.webEdit',
+  'gdocs-edit': 'history.type.gdocsEdit',
+} as const satisfies Record<ProvenanceType, Parameters<T>[0]>;
+
+function typeLabel(t: T, type: ProvenanceType): string {
+  const key = TYPE_KEY[type];
+  // An unknown kind from a newer server has no key; show the raw value rather
+  // than an empty badge.
+  return key ? t(key) : type;
+}
 
 type SortKey = 'newest' | 'size';
 type DateKey = 'all' | '1d' | '7d' | '30d';
@@ -31,25 +45,12 @@ const DATE_MS: Record<Exclude<DateKey, 'all'>, number> = {
   '30d': 30 * 86_400_000,
 };
 
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const diff = Date.now() - then;
-  const min = Math.round(diff / 60000);
-  if (min < 1) return 'just now';
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.round(hr / 24);
-  if (day < 7) return `${day}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
-function speakerName(p: { username?: string; userId?: string }): string {
-  return p.username ?? p.userId ?? 'Unknown';
+function speakerName(t: T, p: { username?: string; userId?: string }): string {
+  return p.username ?? p.userId ?? t('common.unknownUser');
 }
 
 function HistoryDetail({ record }: { record: ProvenanceRecord }) {
+  const t = useT();
   const [view, setView] = useState<'diff' | 'before' | 'after'>('diff');
   const diff = useMemo(() => lineDiff(record.diff.before, record.diff.after), [record]);
 
@@ -57,18 +58,18 @@ function HistoryDetail({ record }: { record: ProvenanceRecord }) {
     <div className="history-detail">
       {record.knowledge.trim() && (
         <section className="history-section">
-          <h4 className="history-section-title">Extracted knowledge</h4>
+          <h4 className="history-section-title">{t('history.section.knowledge')}</h4>
           <p className="history-knowledge">{record.knowledge}</p>
         </section>
       )}
 
       {record.messages.length > 0 && (
         <section className="history-section">
-          <h4 className="history-section-title">Conversation</h4>
+          <h4 className="history-section-title">{t('history.section.conversation')}</h4>
           <ul className="history-conversation">
             {record.messages.map((m, idx) => (
               <li key={`${m.ts ?? idx}`} className="history-message">
-                <span className="history-speaker">{speakerName(m)}</span>
+                <span className="history-speaker">{speakerName(t, m)}</span>
                 <span className="history-text">{m.text ?? ''}</span>
               </li>
             ))}
@@ -78,8 +79,8 @@ function HistoryDetail({ record }: { record: ProvenanceRecord }) {
 
       <section className="history-section">
         <div className="history-section-head">
-          <h4 className="history-section-title">Changes</h4>
-          <fieldset className="history-toggle" aria-label="Change view mode">
+          <h4 className="history-section-title">{t('history.section.changes')}</h4>
+          <fieldset className="history-toggle" aria-label={t('history.aria.viewMode')}>
             {(['diff', 'before', 'after'] as const).map((k) => (
               <button
                 key={k}
@@ -87,7 +88,11 @@ function HistoryDetail({ record }: { record: ProvenanceRecord }) {
                 className={`history-toggle-btn${view === k ? ' active' : ''}`}
                 onClick={() => setView(k)}
               >
-                {k === 'diff' ? 'Diff' : k === 'before' ? 'Before' : 'After'}
+                {k === 'diff'
+                  ? t('history.view.diff')
+                  : k === 'before'
+                    ? t('history.view.before')
+                    : t('history.view.after')}
               </button>
             ))}
           </fieldset>
@@ -95,7 +100,7 @@ function HistoryDetail({ record }: { record: ProvenanceRecord }) {
 
         {view === 'diff' ? (
           diff.length === 0 ? (
-            <p className="history-empty-inline">No changes to show.</p>
+            <p className="history-empty-inline">{t('history.diff.empty')}</p>
           ) : (
             <pre className="history-diff">
               {diff.map((line, idx) => (
@@ -108,7 +113,7 @@ function HistoryDetail({ record }: { record: ProvenanceRecord }) {
           )
         ) : (
           <pre className="history-plain">
-            {view === 'before' ? record.diff.before || '(no previous content)' : record.diff.after}
+            {view === 'before' ? record.diff.before || t('history.diff.noPrevious') : record.diff.after}
           </pre>
         )}
       </section>
@@ -126,6 +131,8 @@ export function HistoryPanel({
   onClose,
   onSignIn,
 }: HistoryPanelProps) {
+  const t = useT();
+  const { locale } = useLocale();
   const [records, setRecords] = useState<ProvenanceListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -193,14 +200,15 @@ export function HistoryPanel({
     const list = records.filter((r) => {
       if (userFilter !== 'all' && (r.updatedBy?.userId ?? r.updatedBy?.name) !== userFilter) return false;
       if (cutoff) {
-        const t = new Date(r.createdAt).getTime();
-        if (!Number.isNaN(t) && t < cutoff) return false;
+        // Not `t`: that name now belongs to the translator this closure uses.
+        const created = new Date(r.createdAt).getTime();
+        if (!Number.isNaN(created) && created < cutoff) return false;
       }
       if (q) {
         const hay = [
           r.updatedBy?.name,
           r.updatedBy?.userId,
-          TYPE_LABEL[r.type],
+          typeLabel(t, r.type),
           r.knowledge,
           ...(r.messages?.map((m) => `${m.username ?? ''} ${m.text ?? ''}`) ?? []),
           r.diff?.before,
@@ -216,7 +224,7 @@ export function HistoryPanel({
     return [...list].sort((a, b) =>
       sort === 'size' ? (sizes[b.id] ?? 0) - (sizes[a.id] ?? 0) : (b.createdAt || '').localeCompare(a.createdAt || ''),
     );
-  }, [records, search, userFilter, dateRange, sort, sizes]);
+  }, [records, search, userFilter, dateRange, sort, sizes, t]);
 
   const toggle = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -255,10 +263,10 @@ export function HistoryPanel({
   const showToolbar = authenticated && !error && records !== null && records.length > 0;
 
   return (
-    <aside className="history-panel" aria-label="Change history">
+    <aside className="history-panel" aria-label={t('history.aria.panel')}>
       <header className="history-panel-head">
-        <span className="history-panel-title">Change history</span>
-        <button type="button" className="doc-iconbutton" onClick={onClose} aria-label="Close">
+        <span className="history-panel-title">{t('history.title')}</span>
+        <button type="button" className="doc-iconbutton" onClick={onClose} aria-label={t('history.aria.close')}>
           ✕
         </button>
       </header>
@@ -268,7 +276,7 @@ export function HistoryPanel({
           <input
             type="search"
             className="history-search"
-            placeholder="Search conversation, knowledge, changes"
+            placeholder={t('history.search.placeholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -277,9 +285,9 @@ export function HistoryPanel({
               className="history-select"
               value={userFilter}
               onChange={(e) => setUserFilter(e.target.value)}
-              aria-label="Filter by author"
+              aria-label={t('history.aria.filterAuthor')}
             >
-              <option value="all">All authors</option>
+              <option value="all">{t('history.filter.allAuthors')}</option>
               {userOptions.map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
@@ -290,21 +298,21 @@ export function HistoryPanel({
               className="history-select"
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value as DateKey)}
-              aria-label="Filter by date"
+              aria-label={t('history.aria.filterDate')}
             >
-              <option value="all">All time</option>
-              <option value="1d">Last 24 hours</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
+              <option value="all">{t('history.filter.allTime')}</option>
+              <option value="1d">{t('history.filter.last24h')}</option>
+              <option value="7d">{t('history.filter.last7d')}</option>
+              <option value="30d">{t('history.filter.last30d')}</option>
             </select>
             <select
               className="history-select"
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
-              aria-label="Sort"
+              aria-label={t('history.aria.sort')}
             >
-              <option value="newest">Newest</option>
-              <option value="size">Change size</option>
+              <option value="newest">{t('history.sort.newest')}</option>
+              <option value="size">{t('history.sort.size')}</option>
             </select>
           </div>
         </div>
@@ -313,26 +321,26 @@ export function HistoryPanel({
       <div className="history-panel-body">
         {!authenticated ? (
           <div className="history-empty">
-            <p>Change history is visible to workspace members only.</p>
+            <p>{t('history.empty.membersOnly')}</p>
             <button type="button" className="doc-button doc-button-primary" onClick={onSignIn}>
-              Sign in with Slack
+              {t('history.button.signIn')}
             </button>
           </div>
         ) : error === 'AUTH' ? (
           <div className="history-empty">
-            <p>Only members of this workspace can view the change history.</p>
+            <p>{t('history.empty.authRequired')}</p>
             <button type="button" className="doc-button doc-button-primary" onClick={onSignIn}>
-              Sign in again
+              {t('history.button.signInAgain')}
             </button>
           </div>
         ) : error === 'load' ? (
-          <p className="history-empty">Failed to load history.</p>
+          <p className="history-empty">{t('history.empty.loadFailed')}</p>
         ) : records === null ? (
-          <p className="history-empty">Loading…</p>
+          <p className="history-empty">{t('common.loading')}</p>
         ) : records.length === 0 ? (
-          <p className="history-empty">No change history yet.</p>
+          <p className="history-empty">{t('history.empty.none')}</p>
         ) : filtered.length === 0 ? (
-          <p className="history-empty">No history matches your filters.</p>
+          <p className="history-empty">{t('history.empty.noMatches')}</p>
         ) : (
           filtered.map((rec) => (
             <article
@@ -341,11 +349,13 @@ export function HistoryPanel({
               className={`history-item${expandedId === rec.id ? ' expanded' : ''}`}
             >
               <button type="button" className="history-item-head" onClick={() => toggle(rec.id)}>
-                <span className={`history-badge type-${rec.type}`}>{TYPE_LABEL[rec.type] ?? rec.type}</span>
+                <span className={`history-badge type-${rec.type}`}>{typeLabel(t, rec.type)}</span>
                 <span className="history-item-meta">
-                  <span className="history-item-who">{rec.updatedBy?.name ?? rec.updatedBy?.userId ?? 'Unknown'}</span>
+                  <span className="history-item-who">
+                    {rec.updatedBy?.name ?? rec.updatedBy?.userId ?? t('common.unknownUser')}
+                  </span>
                   <span className="history-item-sub">
-                    {relativeTime(rec.createdAt)} · {sizes[rec.id] ?? 0} lines changed
+                    {formatRelative(locale, rec.createdAt)} · {t('history.linesChanged', { count: sizes[rec.id] ?? 0 })}
                   </span>
                 </span>
                 <span className="history-item-caret">{expandedId === rec.id ? '▾' : '▸'}</span>

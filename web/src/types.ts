@@ -1,3 +1,4 @@
+import type { Locale } from './i18n/supported-locales';
 import type { InlineSegment } from './utils/inline-markdown';
 
 export type DocFile = {
@@ -57,8 +58,14 @@ export type ProvenanceListItem = ProvenanceRecord & { id: string };
  */
 export type GithubWriteAccess = { connected: boolean; canPush: boolean; repo?: string; reason?: string };
 
+/**
+ * `language` is the reader's own CHOIR language setting, resolved server-side
+ * (personal setting → Slack locale → Accept-Language → workspace default). It
+ * is optional because the SPA also builds this object locally when the session
+ * request fails, and because an older server may not send it.
+ */
 export type SessionInfo =
-  | { authenticated: false }
+  | { authenticated: false; language?: Locale }
   | {
       authenticated: true;
       workspaceId: string;
@@ -66,6 +73,7 @@ export type SessionInfo =
       isManager: boolean;
       isChoirUser: boolean;
       github?: GithubWriteAccess;
+      language?: Locale;
     };
 
 // ── Awareness dashboard API response shapes (mirror services/dashboard/dashboard-api.ts) ──
