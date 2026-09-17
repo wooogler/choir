@@ -275,6 +275,12 @@ export const ko: LocaleCatalog = {
   'serverError.read_only_document': '이 문서는 읽기 전용으로 표시돼 있어요. 삭제하려면 앱 홈에서 먼저 해제해 주세요.',
   'serverError.write_access_denied': '워크스페이스 저장소에 쓰기 권한이 없어요.',
   'serverError.no_github_repo': '이 워크스페이스에는 아직 연결된 GitHub 저장소가 없어요.',
+  'serverError.github_no_token': '{repo}를 편집하려면 CHOIR 앱 홈에서 GitHub 계정을 연결해 주세요.',
+  'serverError.github_repo_is_archived': '{repo} 저장소가 GitHub에서 보관 처리돼 있어서 편집할 수 없어요.',
+  'serverError.github_repo_read_only':
+    'GitHub 계정이 {repo}에 읽기 전용으로만 접근할 수 있어요. 저장소 관리자에게 Write 권한을 요청한 뒤 이 페이지를 새로고침해 주세요.',
+  'serverError.github_repo_not_visible':
+    'GitHub 계정이 {repo}를 볼 수 없어요. 저장소 관리자에게 접근 권한을 요청한 뒤 이 페이지를 새로고침해 주세요.',
   'serverError.github_credentials_rejected':
     '{target}에 {action} 작업을 하려는데 GitHub가 저장된 인증 정보를 거절했어요. CHOIR 앱 홈에서 GitHub 계정을 다시 연결한 뒤 시도해 주세요.',
   'serverError.github_rate_limited':

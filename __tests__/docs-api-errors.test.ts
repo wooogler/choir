@@ -91,6 +91,21 @@ describe('describeServerError', () => {
     );
   });
 
+  it('names the repository in a write-access refusal, in either language', () => {
+    // What `GET /api/docs/session` now puts in `github`: the probe's code plus
+    // the slug its sentence names, so the viewer's read-only banner is a
+    // finished sentence rather than a template with `{repo}` showing.
+    const blocked = { error: 'github_repo_read_only', detail: { repo: 'echo-lab/assets' } };
+    expect(describeServerError(t, blocked)).toBe(
+      'Your GitHub account has read-only access to echo-lab/assets. Ask a repository admin for Write access, then reload this page.',
+    );
+    expect(describeServerError(tKo, blocked)).toContain('echo-lab/assets');
+    expect(describeServerError(tKo, blocked)).not.toContain('{repo}');
+    expect(describeServerError(tKo, { error: 'github_no_token', detail: { repo: 'echo-lab/assets' } })).toBe(
+      'echo-lab/assets를 편집하려면 CHOIR 앱 홈에서 GitHub 계정을 연결해 주세요.',
+    );
+  });
+
   it('reads a free-text `detail` as the {message} a sentence wraps', () => {
     expect(describeServerError(t, { error: 'republish_failed', detail: 'quota exceeded' })).toBe(
       'Could not republish this document from GitHub: quota exceeded',

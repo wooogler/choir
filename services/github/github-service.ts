@@ -3,6 +3,7 @@ import { Octokit } from 'octokit';
 import type { ErrorCode } from 'services/common/choir-error';
 import { ErrorCodes, GitHubError } from 'services/common/error-handler';
 import { Logger } from 'services/common/logger';
+import type { DocsApiErrorCode, DocsApiErrorDetail } from 'services/docs-editor/api-errors';
 import { type DocumentTree, parseMarkdownToTree } from 'services/document';
 import type { SlackMessage } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
@@ -44,8 +45,23 @@ export interface RepoWriteAccess {
   connected: boolean;
   /** That account can push to the repository. */
   canPush: boolean;
-  /** Why not, phrased for the person who has to fix it. */
+  /**
+   * Why not, phrased for the person who has to fix it — in English.
+   *
+   * Kept as the finished sentence for the log and for any caller written
+   * against the old shape; what the viewer shows is built from `reasonCode`.
+   */
   reason?: string;
+  /**
+   * The catalog entry `reason` was written from.
+   *
+   * This answer is resolved when the session is read, which is not necessarily
+   * a request that carried a locale, so the sentence has to be picked in the
+   * browser. Every refusal here has one; a fail-open answer has neither.
+   */
+  reasonCode?: DocsApiErrorCode;
+  /** The holes in that entry — the repository slug, for all four. */
+  params?: DocsApiErrorDetail;
 }
 
 interface RepoWriteAccessCache {
@@ -831,6 +847,8 @@ class GithubService {
         connected: false,
         canPush: false,
         reason: `Connect your GitHub account from the CHOIR App Home to edit ${slug}.`,
+        reasonCode: 'github_no_token',
+        params: { repo: slug },
       };
     }
 
@@ -842,7 +860,13 @@ class GithubService {
       const data = (response as any).data;
 
       if (data?.archived) {
-        return { connected: true, canPush: false, reason: `${slug} is archived on GitHub, so it cannot be edited.` };
+        return {
+          connected: true,
+          canPush: false,
+          reason: `${slug} is archived on GitHub, so it cannot be edited.`,
+          reasonCode: 'github_repo_is_archived',
+          params: { repo: slug },
+        };
       }
 
       const permissions = data?.permissions ?? {};
@@ -851,6 +875,8 @@ class GithubService {
           connected: true,
           canPush: false,
           reason: `Your GitHub account has read-only access to ${slug}. Ask a repository admin for Write access, then reload this page.`,
+          reasonCode: 'github_repo_read_only',
+          params: { repo: slug },
         };
       }
 
@@ -861,6 +887,8 @@ class GithubService {
           connected: true,
           canPush: false,
           reason: `Your GitHub account cannot see ${slug}. Ask a repository admin to grant you access, then reload this page.`,
+          reasonCode: 'github_repo_not_visible',
+          params: { repo: slug },
         };
       }
 

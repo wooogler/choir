@@ -1,6 +1,6 @@
 import { GithubService } from 'services/github';
 import { getGithubRepo } from 'services/slack';
-import type { DocsApiErrorCode } from './api-errors';
+import type { DocsApiErrorCode, DocsApiErrorDetail } from './api-errors';
 
 /**
  * Whether a signed-in manager can actually commit to the workspace's repository.
@@ -21,14 +21,16 @@ export interface DocsWriteAccess {
   /**
    * Why not.
    *
-   * A `DocsApiErrorCode` when CHOIR itself knows the answer, so the viewer can
-   * say it in the reader's language — this is resolved at session time, which
-   * is not necessarily a request that carried a locale. GitHub's own answers
-   * come back as English sentences instead: they are assembled in
-   * `services/github` out of a repository slug, an org OAuth policy URL or an
-   * SSO prompt, and the viewer shows a `reason` it does not recognise verbatim.
+   * A `DocsApiErrorCode` whenever CHOIR knows the answer — no repository
+   * connected, or any of the four the write probe can give — so the viewer can
+   * say it in the reader's language; this is resolved at session time, which is
+   * not necessarily a request that carried a locale. Anything else arrives as
+   * an English sentence, and the viewer shows a `reason` it does not recognise
+   * verbatim.
    */
   reason?: string;
+  /** Fills that code's `{name}` holes — the repository slug, in practice. */
+  detail?: DocsApiErrorDetail;
 }
 
 export async function getDocsWriteAccess(workspaceId: string, userId: string): Promise<DocsWriteAccess> {
@@ -48,5 +50,18 @@ export async function getDocsWriteAccess(workspaceId: string, userId: string): P
     userId,
   });
 
-  return { ...access, repo: `${repoInfo.owner}/${repoInfo.repo}` };
+  // The probe keeps its English `reason` for the log; what goes out is the code
+  // it was written from, so the browser can say the same thing in the reader's
+  // language. A probe answer with no code (there is none today) still travels
+  // as its sentence rather than as nothing.
+  return {
+    connected: access.connected,
+    canPush: access.canPush,
+    repo: `${repoInfo.owner}/${repoInfo.repo}`,
+    ...(access.reasonCode
+      ? { reason: access.reasonCode, ...(access.params ? { detail: access.params } : {}) }
+      : access.reason
+        ? { reason: access.reason }
+        : {}),
+  };
 }

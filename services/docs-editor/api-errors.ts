@@ -52,8 +52,19 @@ export const DOCS_API_ERROR_MESSAGES = {
   read_only_document: 'This document is marked read-only. Clear that in App Home before deleting it.',
 
   // ── Write access ────────────────────────────────────────────────────────
+  // The four below are what `probeRepoWriteAccess` answers with before an edit
+  // is offered, as opposed to the write-failure vocabulary further down, which
+  // classifies a commit GitHub has already refused. `github_repo_is_archived`
+  // is not `github_repo_archived` because the two say different things: this
+  // one is "you cannot start editing", that one is "your commit was rejected".
   write_access_denied: 'No write access to the workspace repository',
   no_github_repo: 'No GitHub repository is connected to this workspace yet.',
+  github_no_token: 'Connect your GitHub account from the CHOIR App Home to edit {repo}.',
+  github_repo_is_archived: '{repo} is archived on GitHub, so it cannot be edited.',
+  github_repo_read_only:
+    'Your GitHub account has read-only access to {repo}. Ask a repository admin for Write access, then reload this page.',
+  github_repo_not_visible:
+    'Your GitHub account cannot see {repo}. Ask a repository admin to grant you access, then reload this page.',
 
   // ── GitHub write failures ───────────────────────────────────────────────
   // Classified in services/github/write-error.ts, which owns the mapping from
@@ -171,15 +182,15 @@ export function apiError(
 /**
  * The 403 body for a manager whose GitHub account cannot push.
  *
- * `reason` comes from `getDocsWriteAccess`, which answers with a code when
- * CHOIR itself knows why (no repository connected) and with GitHub's own
- * sentence when the answer depends on a repository slug, an org policy URL or
- * an SSO prompt. Those sentences are built in `services/github` and are passed
- * through verbatim — the viewer shows an unknown `error` as-is.
+ * `reason` comes from `getDocsWriteAccess`, which answers with a code whenever
+ * it knows why — no repository connected, or one of the four answers the write
+ * probe can give — and `detail` carries what that code's sentence names (the
+ * repository slug). An older caller that still passes a finished English
+ * sentence keeps working: the viewer shows an unknown `error` as-is.
  */
-export function writeAccessErrorBody(reason?: string): DocsApiErrorBody {
+export function writeAccessErrorBody(reason?: string, detail?: DocsApiErrorDetail): DocsApiErrorBody {
   const body: DocsApiErrorBody = isDocsApiErrorCode(reason)
-    ? apiErrorBodyFor(reason)
+    ? apiErrorBodyFor(reason, detail)
     : { error: reason ?? 'write_access_denied', message: reason ?? DOCS_API_ERROR_MESSAGES.write_access_denied };
   return { ...body, code: 'GITHUB_WRITE_FORBIDDEN' };
 }

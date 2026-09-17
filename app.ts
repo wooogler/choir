@@ -721,7 +721,7 @@ function setupPublicSite(): void {
         // only reveal a missing write permission mid-save, as a 404.
         const writeAccess = await getDocsWriteAccess(workspaceId, session.userId);
         if (!writeAccess.canPush) {
-          return res.status(403).json(writeAccessErrorBody(writeAccess.reason));
+          return res.status(403).json(writeAccessErrorBody(writeAccess.reason, writeAccess.detail));
         }
 
         const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
@@ -787,7 +787,7 @@ function setupPublicSite(): void {
 
         const writeAccess = await getDocsWriteAccess(workspaceId, session.userId);
         if (!writeAccess.canPush) {
-          return res.status(403).json(writeAccessErrorBody(writeAccess.reason));
+          return res.status(403).json(writeAccessErrorBody(writeAccess.reason, writeAccess.detail));
         }
 
         // The stricter containment form, with the trailing separator: for a
@@ -854,7 +854,7 @@ function setupPublicSite(): void {
         // Assets are committed to GitHub too, so the same write-access gate applies.
         const writeAccess = await getDocsWriteAccess(workspaceId, session.userId);
         if (!writeAccess.canPush) {
-          return res.status(403).json(writeAccessErrorBody(writeAccess.reason));
+          return res.status(403).json(writeAccessErrorBody(writeAccess.reason, writeAccess.detail));
         }
 
         const body = req.body;

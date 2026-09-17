@@ -314,6 +314,12 @@ export const en = {
   'serverError.read_only_document': 'This document is marked read-only. Clear that in App Home before deleting it.',
   'serverError.write_access_denied': 'No write access to the workspace repository',
   'serverError.no_github_repo': 'No GitHub repository is connected to this workspace yet.',
+  'serverError.github_no_token': 'Connect your GitHub account from the CHOIR App Home to edit {repo}.',
+  'serverError.github_repo_is_archived': '{repo} is archived on GitHub, so it cannot be edited.',
+  'serverError.github_repo_read_only':
+    'Your GitHub account has read-only access to {repo}. Ask a repository admin for Write access, then reload this page.',
+  'serverError.github_repo_not_visible':
+    'Your GitHub account cannot see {repo}. Ask a repository admin to grant you access, then reload this page.',
   'serverError.github_credentials_rejected':
     'GitHub rejected the stored credentials while trying to {action} {target}. Reconnect your GitHub account from the CHOIR App Home and try again.',
   'serverError.github_rate_limited':

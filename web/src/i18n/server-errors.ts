@@ -73,6 +73,10 @@ export const SERVER_ERROR_KEY = {
 
   write_access_denied: 'serverError.write_access_denied',
   no_github_repo: 'serverError.no_github_repo',
+  github_no_token: 'serverError.github_no_token',
+  github_repo_is_archived: 'serverError.github_repo_is_archived',
+  github_repo_read_only: 'serverError.github_repo_read_only',
+  github_repo_not_visible: 'serverError.github_repo_not_visible',
 
   github_credentials_rejected: 'serverError.github_credentials_rejected',
   github_rate_limited: 'serverError.github_rate_limited',

@@ -156,11 +156,15 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   // absent on older servers, which we read as "unknown" and allow.
   const isManager = session?.authenticated === true && session.isManager;
   const githubAccess = session?.authenticated === true ? session.github : undefined;
-  // `reason` is a `DocsApiErrorCode` when CHOIR knows why (no repository
-  // connected), and GitHub's own English when the answer is a repository slug,
-  // an org policy URL or an SSO prompt — `describeServerError` handles both.
+  // `reason` is a `DocsApiErrorCode` for every answer CHOIR can give itself —
+  // no repository connected, no linked account, archived, read-only, invisible
+  // — with `detail` holding the repository slug its sentence names. An older
+  // server sends a finished English sentence instead; `describeServerError`
+  // handles both.
   const writeBlockedReason =
-    (isManager && githubAccess?.canPush === false ? describeServerError(t, githubAccess.reason) : null) ?? null;
+    (isManager && githubAccess?.canPush === false
+      ? describeServerError(t, { error: githubAccess.reason, detail: githubAccess.detail })
+      : null) ?? null;
   const canEdit = isManager && !writeBlockedReason;
   const canSeeInsights = session?.authenticated === true && session.isChoirUser;
   const sessionLoaded = session !== null;

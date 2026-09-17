@@ -17,7 +17,8 @@ jest.mock('services/workspace/workspace-store', () => ({
   },
 }));
 
-import GithubService from '../services/github/github-service';
+import { type DocsApiErrorCode, apiErrorBodyFor } from '../services/docs-editor/api-errors';
+import GithubService, { type RepoWriteAccess } from '../services/github/github-service';
 
 const service = GithubService.getInstance() as any;
 
@@ -59,6 +60,8 @@ describe('getRepoWriteAccess', () => {
       connected: false,
       canPush: false,
       reason: expect.stringContaining('Connect your GitHub account'),
+      reasonCode: 'github_no_token',
+      params: { repo: 'echo-lab/assets' },
     });
   });
 
@@ -69,6 +72,7 @@ describe('getRepoWriteAccess', () => {
     expect(access.canPush).toBe(false);
     expect(access.reason).toContain('read-only access to echo-lab/assets');
     expect(access.reason).toContain('Write access');
+    expect(access.reasonCode).toBe('github_repo_read_only');
   });
 
   it('allows push, maintain, and admin', async () => {
@@ -88,6 +92,7 @@ describe('getRepoWriteAccess', () => {
     const access = await ask();
     expect(access.canPush).toBe(false);
     expect(access.reason).toContain('archived');
+    expect(access.reasonCode).toBe('github_repo_is_archived');
   });
 
   it('reads a 404 as "your account cannot see this repository"', async () => {
@@ -96,6 +101,42 @@ describe('getRepoWriteAccess', () => {
     const access = await ask();
     expect(access.canPush).toBe(false);
     expect(access.reason).toContain('cannot see echo-lab/assets');
+    expect(access.reasonCode).toBe('github_repo_not_visible');
+  });
+
+  // The English above is what the log and an old client keep seeing; the code
+  // beside it is what lets the viewer say the same thing in Korean. Both halves
+  // have to stay true, so pin them together: every refusal carries a code whose
+  // catalog English, with the slug filled in, is the sentence itself.
+  it('says each refusal twice — as English, and as a code the viewer can translate', async () => {
+    const refusals: RepoWriteAccess[] = [];
+
+    getUserGithubToken.mockResolvedValue(null);
+    refusals.push(await ask('U-none'));
+    getUserGithubToken.mockResolvedValue('gho_test');
+
+    repoResponds({ archived: true, permissions: { admin: true } });
+    refusals.push(await ask('U-archived'));
+
+    repoResponds({ permissions: { pull: true } });
+    refusals.push(await ask('U-read'));
+
+    repoRejects(404);
+    refusals.push(await ask('U-hidden'));
+
+    expect(refusals.map((r) => r.reasonCode)).toEqual([
+      'github_no_token',
+      'github_repo_is_archived',
+      'github_repo_read_only',
+      'github_repo_not_visible',
+    ]);
+
+    for (const refusal of refusals) {
+      expect(refusal.canPush).toBe(false);
+      expect(refusal.params).toEqual({ repo: 'echo-lab/assets' });
+      const body = apiErrorBodyFor(refusal.reasonCode as DocsApiErrorCode, refusal.params);
+      expect([refusal.reasonCode, body.message]).toEqual([refusal.reasonCode, refusal.reason]);
+    }
   });
 
   it('fails open on an unexpected GitHub error rather than locking managers out', async () => {

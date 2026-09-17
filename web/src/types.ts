@@ -1,4 +1,5 @@
 import type { Locale } from './i18n/supported-locales';
+import type { ParamValue } from './i18n/types';
 import type { InlineSegment } from './utils/inline-markdown';
 
 export type DocFile = {
@@ -56,7 +57,15 @@ export type ProvenanceListItem = ProvenanceRecord & { id: string };
  * Present only for managers; absent on older servers, which the viewer treats as
  * "unknown" and lets the save endpoint decide.
  */
-export type GithubWriteAccess = { connected: boolean; canPush: boolean; repo?: string; reason?: string };
+export type GithubWriteAccess = {
+  connected: boolean;
+  canPush: boolean;
+  repo?: string;
+  /** A `DocsApiErrorCode`, or an English sentence from a server that had none. */
+  reason?: string;
+  /** What that code's sentence names — the repository slug, in practice. */
+  detail?: Record<string, ParamValue>;
+};
 
 /**
  * `language` is the reader's own CHOIR language setting, resolved server-side
