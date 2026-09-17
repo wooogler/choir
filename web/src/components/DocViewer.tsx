@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DocFile, DocSectionUsage, RepoInfo, SessionInfo, TocItem } from '../types';
 import { docsPath, encodePath, extractToc, parseDocsUrl, scrollToAnchor, slugifyHeading } from '../utils/docs';
+import { inlineMarkdownToText } from '../utils/inline-markdown';
 import { CommitDialog } from './CommitDialog';
 import { CrepeEditor, type CrepeEditorHandle } from './CrepeEditor';
 import { DeleteDocumentDialog } from './DeleteDocumentDialog';
@@ -565,7 +566,10 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     const bySlug = new Map<string, { retrievals: number; unanswered: number }>();
     for (const section of usageSections) {
       if (!section.headingPath) continue;
-      const slug = slugifyHeading(section.headingPath.split('>').pop()?.trim() ?? '');
+      // The server stores heading text with its markdown markers, so strip them
+      // first: the slug below is compared against one built from the *rendered*
+      // heading's text, which has none.
+      const slug = slugifyHeading(inlineMarkdownToText(section.headingPath.split('>').pop()?.trim() ?? ''));
       if (!slug) continue;
       const cur = bySlug.get(slug) ?? { retrievals: 0, unanswered: 0 };
       cur.retrievals += section.retrievals;

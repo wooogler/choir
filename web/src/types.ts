@@ -1,3 +1,5 @@
+import type { InlineSegment } from './utils/inline-markdown';
+
 export type DocFile = {
   path: string;
   name: string;
@@ -21,6 +23,7 @@ export type TocItem = {
   id: string;
   label: string;
   level: number;
+  segments: InlineSegment[];
   slug: string;
 };
 

@@ -1,4 +1,5 @@
 import type { DocFile, FolderNode, TocItem } from '../types';
+import { inlineMarkdownToText, parseInlineMarkdown } from './inline-markdown';
 
 // `/docs/:workspaceId/dashboard` is reserved for the Insights view, so parseDocsUrl
 // (used by DocViewer's routing) treats it as "not a document" and stays inert there.
@@ -43,12 +44,18 @@ export function navigate(path: string): void {
 }
 
 export function slugifyHeading(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
+  return (
+    text
+      .toLowerCase()
+      // Unicode letters and numbers are kept, matching the server's
+      // createGitHubAnchor (services/document/section-utils.ts): an ASCII-only
+      // class collapsed every Korean heading to the same empty anchor, so their
+      // outline rows all shared a slug and their Slack deep links never resolved.
+      .replace(/[^\p{L}\p{N}\s-]/gu, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+  );
 }
 
 export function extractToc(markdown: string): TocItem[] {
@@ -58,13 +65,17 @@ export function extractToc(markdown: string): TocItem[] {
       const match = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
       if (!match) return null;
 
-      const label = match[2].trim();
+      const source = match[2].trim();
+      // The rail renders emphasis, so keep the styled runs alongside the plain
+      // text the slug and the tooltip need.
+      const label = inlineMarkdownToText(source);
       if (!label) return null;
 
       return {
         id: `${index}-${slugifyHeading(label)}`,
         label,
         level: match[1].length,
+        segments: parseInlineMarkdown(source),
         slug: slugifyHeading(label),
       };
     })
