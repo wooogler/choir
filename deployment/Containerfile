@@ -10,6 +10,18 @@ RUN corepack enable && corepack prepare pnpm@10.8.1 --activate
 COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY web ./web
 
+# The viewer shares three vocabularies with the server rather than keeping its
+# own copy that could drift: the supported locales, the docs API's error codes,
+# and the import steps. They are deliberately import-free so they can be pulled
+# across the workspace boundary, but `tsc` still needs the files to exist at the
+# paths `web/src` reaches for. Copied one by one, not as whole directories, so a
+# backend change does not invalidate this layer's cache — and so a new
+# cross-boundary import fails the build here instead of silently shipping.
+# __tests__/web-shared-modules.test.ts keeps this list honest.
+COPY src/i18n/supported-locales.ts ./src/i18n/supported-locales.ts
+COPY services/docs-editor/api-errors.ts ./services/docs-editor/api-errors.ts
+COPY services/google/import-steps.ts ./services/google/import-steps.ts
+
 RUN --mount=type=cache,target=/pnpm/store,id=pnpm-store-web,sharing=locked \
     pnpm --filter choir-web install --frozen-lockfile --store-dir=/pnpm/store
 RUN pnpm --filter choir-web build
