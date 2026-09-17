@@ -4,12 +4,15 @@ import { GithubService } from 'services/github';
 import { getGithubRepo } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
-import { stripBanner } from './banner';
+import { LINK_DESCRIPTION, stripBanner } from './banner';
 import { exportDocMarkdown, getDocMeta } from './drive-client';
 import { type RejectedAsset, assetRepoPath, extractImportable } from './gdocs-delta';
 import { getWorkspaceClient } from './google-auth-service';
 import { normalizeImportPath } from './import-path';
-import { publishReplica } from './replica-publisher';
+import { type ImportProgress, makeProgressReporter } from './import-steps';
+import { seedReplica } from './replica-publisher';
+
+export { IMPORT_STEPS, type ImportProgress, type ImportStep } from './import-steps';
 
 /**
  * Brings an existing Google Doc into the repository as a new markdown document.
@@ -50,8 +53,13 @@ export async function importGoogleDoc(params: {
   githubPath: string;
   fileId: string;
   userId: string;
+  /** Called as each step begins. Never throws into the import: errors are swallowed. */
+  onProgress?: (progress: ImportProgress) => void;
 }): Promise<ImportResult> {
   const { workspaceId, fileId, userId } = params;
+
+  const report = makeProgressReporter(params.onProgress);
+  report('checking');
 
   const githubPath = normalizeImportPath(params.githubPath);
   if (!githubPath) {
@@ -74,6 +82,7 @@ export async function importGoogleDoc(params: {
   }
 
   try {
+    report('reading');
     const meta = await getDocMeta(client, fileId);
     if (meta.trashed) {
       return { outcome: 'failed', detail: 'That document is in the trash' };
@@ -81,7 +90,12 @@ export async function importGoogleDoc(params: {
 
     // A Doc that is already somebody's replica carries the banner; importing it
     // should not commit the banner as if it were part of the text.
-    const exported = stripBanner(await exportDocMarkdown(client, fileId));
+    //
+    // The raw export is kept as well as the stripped body: it becomes the sync
+    // baseline, and the baseline has to be what the document actually exports,
+    // not a version of it we edited on the way past.
+    const rawExport = await exportDocMarkdown(client, fileId);
+    const exported = stripBanner(rawExport);
     const extraction = extractImportable(exported.body);
 
     if (!extraction.markdown.trim()) {
@@ -96,6 +110,7 @@ export async function importGoogleDoc(params: {
     // whole file. Where it came from is already on the commit message and in the
     // Google Doc mapping. Documents with no records are an ordinary state:
     // readRecords returns [] for a missing directory.
+    report('committing');
     const { commitSha } = await GithubService.getInstance().commitFilesWithContext({
       owner: repoInfo.owner,
       repo: repoInfo.repo,
@@ -115,6 +130,7 @@ export async function importGoogleDoc(params: {
 
     // The mirror is what the viewer reads, and the GitHub sync that would
     // otherwise refresh it runs on its own schedule.
+    report('mirroring');
     await mirror.writeMarkdownFile(workspaceId, githubPath, extraction.markdown);
     const repoRoot = mirror.getRepoRoot(workspaceId);
     for (const asset of extraction.assets) {
@@ -123,28 +139,38 @@ export async function importGoogleDoc(params: {
       await fs.promises.writeFile(absolute, asset.bytes);
     }
 
-    // Link it, so from here on this is an ordinary replica: GitHub changes push
-    // into the Doc, and edits made in the Doc come back through review.
+    // Link it, so edits made in the Doc from here on come back through review.
+    //
+    // Nothing is written to the document. It was somebody's document before it
+    // was ours, and publishing the round-tripped markdown back over it — which is
+    // what this step used to do — replaced its fonts, its alignment, its page
+    // layout and the size of its images with whatever Drive renders markdown as.
+    // The sync bookkeeping is instead seeded from the export we just read, which
+    // is the same pair a publish would have recorded, minus the damage.
+    report('linking');
     let linked = false;
     try {
       await new WorkspaceStore().setGoogleDocMapping(workspaceId, githubPath, {
         fileId,
         webViewLink: meta.webViewLink ?? `https://docs.google.com/document/d/${fileId}/edit`,
         linkedBy: userId,
+        mode: 'preserve',
       });
-      // Force: nothing has been recorded for this document yet, and the Doc has
-      // to carry the banner and the round-tripped text from now on.
-      const published = await publishReplica({
+      const seeded = await seedReplica({
         workspaceId,
         githubPath,
         markdown: extraction.markdown,
-        force: true,
+        baseline: rawExport,
+        description: LINK_DESCRIPTION,
       });
-      linked = published.outcome === 'published';
+      // 'seeded-drifted' counts as linked: the bookkeeping is in place and the
+      // difference is a human edit the poller will raise for review.
+      linked = seeded.outcome === 'seeded' || seeded.outcome === 'seeded-drifted';
     } catch {
       linked = false;
     }
 
+    report('done');
     return {
       outcome: 'imported',
       githubPath,

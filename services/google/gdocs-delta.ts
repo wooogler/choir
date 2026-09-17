@@ -78,8 +78,27 @@ function unescapeExportedLine(line: string): string {
  * is never written anywhere — it exists so `1\. Item  ` and `1. Item` can be
  * recognised as the same line.
  */
-function alignmentKey(line: string): string {
+export function alignmentKey(line: string): string {
   return line.replace(ESCAPED_PUNCTUATION, '$1').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Whether two markdown texts say the same thing once Google's export dialect is
+ * out of the comparison.
+ *
+ * One side has been through Docs and back — escaped punctuation, hard-break
+ * padding, blank lines the converter introduced — and the other has not, so a
+ * byte comparison would call every pair different. Blank lines are dropped
+ * rather than compared because the converter invents them freely.
+ */
+export function sameAfterDialect(a: string, b: string): boolean {
+  const reduce = (text: string) =>
+    text
+      .split('\n')
+      .map(alignmentKey)
+      .filter((line) => line.length > 0)
+      .join('\n');
+  return reduce(a) === reduce(b);
 }
 
 // ── Image handling ────────────────────────────────────────────────────────────

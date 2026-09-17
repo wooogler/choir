@@ -74,7 +74,7 @@ function buildBlocks(params: {
   ];
 }
 
-async function recipientsFor(workspaceId: string, githubPath: string): Promise<string[]> {
+export async function recipientsFor(workspaceId: string, githubPath: string): Promise<string[]> {
   const store = new WorkspaceStore();
   const [mapping, auth] = await Promise.all([
     store.getGoogleDocMapping(workspaceId, githubPath),

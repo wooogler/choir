@@ -13,6 +13,18 @@
  * addition and can be committed to the repository.
  */
 
+/**
+ * The `preserve` counterpart to the banner, written to the file's Drive
+ * `description` instead of into the body.
+ *
+ * A document whose formatting must survive cannot carry a banner: the banner is
+ * body text, so writing it would be the single edit CHOIR makes to a document it
+ * promised not to edit, and it would show up in every export and every diff. The
+ * description says the same thing from outside the document.
+ */
+export const LINK_DESCRIPTION =
+  'Linked to CHOIR. Edits made here are reviewed by a manager before they reach the repository.';
+
 export const REPLICA_BANNER =
   '*This document is a read-only replica of a GitHub document, synced by CHOIR. ' +
   'Edits made here are not applied directly — they are sent to a manager for review.*';

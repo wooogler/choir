@@ -25,12 +25,35 @@ export interface GoogleAuthRecord {
   broken?: boolean;
 }
 
+/**
+ * How much of a linked Google Doc CHOIR owns.
+ *
+ * `replica` is the original behaviour: the Doc is a derivative of the repository
+ * and every publish replaces its whole body, banner and all. Anything the Doc
+ * had of its own — fonts, alignment, page layout, images at their authored size —
+ * is gone after the first publish, which is correct for a Doc CHOIR produced and
+ * destructive for one a person wrote.
+ *
+ * `preserve` is for a Doc that was already a document before CHOIR saw it. Its
+ * body is never replaced. See docs/gdocs-format-preserving-sync.md.
+ */
+export type GoogleDocMode = 'replica' | 'preserve';
+
 /** A GitHub document's Google Docs replica. Keyed by repo-relative path. */
 export interface GoogleDocMapping {
   fileId: string;
   webViewLink: string;
   linkedBy: string;
   linkedAt: Date;
+  /**
+   * Optional on read so a mapping written before modes existed stays
+   * representable — and, more importantly, *detectable*. Callers must refuse to
+   * act on a mapping with no mode rather than assuming one: guessing `replica`
+   * would replace the body of a document somebody wrote, and guessing
+   * `preserve` would silently stop syncing a real replica. `scripts/backfill-gdocs-mode.ts`
+   * stamps the existing ones; the setter requires it from here on.
+   */
+  mode?: GoogleDocMode;
 }
 
 export interface WorkspaceConfig {
@@ -1022,11 +1045,16 @@ export class WorkspaceStore {
    * Links a repo document to a Google Doc. Rejects a fileId already linked to a
    * different path: two documents publishing into one Doc would overwrite each
    * other on every sync and make drift impossible to attribute.
+   *
+   * `mode` is required rather than defaulted. It decides whether publishing may
+   * replace the Doc's whole body, so every caller has to have made that decision
+   * deliberately; a default here would let a new call site quietly inherit the
+   * destructive one.
    */
   public async setGoogleDocMapping(
     workspaceId: string,
     githubPath: string,
-    mapping: { fileId: string; webViewLink: string; linkedBy: string },
+    mapping: { fileId: string; webViewLink: string; linkedBy: string; mode: GoogleDocMode },
   ): Promise<void> {
     let conflictPath: string | undefined;
     const applied = this.mutateConfigSync(workspaceId, (config) => {
@@ -1045,6 +1073,7 @@ export class WorkspaceStore {
         webViewLink: mapping.webViewLink,
         linkedBy: mapping.linkedBy,
         linkedAt: new Date(),
+        mode: mapping.mode,
       };
     });
 
@@ -1054,6 +1083,45 @@ export class WorkspaceStore {
     if (applied === null) {
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
+  }
+
+  /**
+   * Stamps a mode onto mappings that predate the field, without touching
+   * anything else about them — `linkedBy` and `linkedAt` are history and must
+   * survive a backfill.
+   *
+   * `onlyIfUnset` is the backfill's own safety catch: run twice, the second run
+   * changes nothing, and it can never reclassify a document somebody has since
+   * set deliberately. Returns the paths it actually changed.
+   */
+  public async setGoogleDocMode(
+    workspaceId: string,
+    mode: GoogleDocMode,
+    options: { githubPath?: string; onlyIfUnset?: boolean } = {},
+  ): Promise<string[]> {
+    const changed: string[] = [];
+
+    const applied = this.mutateConfigSync(workspaceId, (config) => {
+      const docs = config.google?.docs;
+      if (!docs) return false;
+
+      for (const [githubPath, mapping] of Object.entries(docs)) {
+        if (options.githubPath && githubPath !== options.githubPath) continue;
+        if (options.onlyIfUnset && mapping.mode) continue;
+        if (mapping.mode === mode) continue;
+        mapping.mode = mode;
+        changed.push(githubPath);
+      }
+
+      // Returning false skips the write when there is nothing to change, so a
+      // repeat backfill does not rewrite (and re-encrypt) every config.
+      return changed.length > 0 ? undefined : false;
+    });
+
+    if (applied === null) {
+      throw new Error(`Workspace not found: ${workspaceId}`);
+    }
+    return changed;
   }
 
   public async getGoogleDocMapping(workspaceId: string, githubPath: string): Promise<GoogleDocMapping | null> {

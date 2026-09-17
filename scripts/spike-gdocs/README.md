@@ -23,6 +23,7 @@ CHOIR가 문서를 *직접 생성*하므로 `drive.file` 스코프면 충분합�
 | `picker-spike.ts` | P0 체크 — **Picker로 고른 남의 문서에 서버측(refresh token만으로) 접근이 되는지**. 로컬 페이지를 띄워 실제 Picker를 사용 |
 | `markdown-to-docs-html.ts` | HTML import 경로용 렌더러 (`marked` 재사용). **측정 결과 마크다운 import가 우세해 기본 경로에서는 불필요** — 코드 블록 우선이면 사용 |
 | `render.ts` | 위 렌더러로 마크다운 파일을 HTML로 렌더 |
+| `docs-spike.ts` | **P0-C 체크 12종 — 서식 보존 in-place 편집이 가능한지.** `files.copy` / `documents.get`(관문) / `batchUpdate` 인가 / `fields` 마스크 / **풍부한 서식 문서의 export 결정성** / batchUpdate의 Drive version 영향 / **revision 펜스** / 문단 비우고 다시 채웠을 때 스타일 유지 / 삽입 앵커 규칙 / 구조 인벤토리 |
 
 ## GCP 준비 (P0 실행 전 1회)
 
@@ -240,8 +241,46 @@ CHOIR가 계속 동기화한다"는 P1 UX가 성립합니다.
 "문서가 비었음"이라는 정상 결과이며, 드리프트 판정에서 `baseline 파일 없음`(측정 불가)과
 `baseline이 빈 문자열`(사람이 내용을 전부 지움)을 반드시 구분해야 합니다.
 
+### P0-C 검증 — 서식 보존 in-place 편집 (미실행)
+
+`docs/gdocs-format-preserving-sync.md`의 Phase B 착수 게이트입니다. **합성 픽스처가 아니라
+실제 Handbook에 대고 돌려야 합니다** — 도형·커스텀 폰트·소프트 줄바꿈은 픽스처에 없습니다.
+
+GCP 콘솔에서 **Google Docs API를 추가로 켜야** 합니다(Drive API만으로는 체크 1이 403).
+
+```bash
+GOOGLE_OAUTH_CLIENT=/path/to/client_secret.json \
+  node dist-spike/docs-spike.js --file-id <documentId> --keep
+```
+
+스파이크는 지정한 문서를 **`files.copy`로 복사한 뒤 사본에만 씁니다.** 원본은 어떤 경로로도
+수정되지 않습니다(`--no-copy`를 명시했을 때만 예외). `--keep`을 주면 사본을 남겨 눈으로
+확인할 수 있고, 없으면 끝에 삭제합니다.
+
+체크 12종:
+
+| 체크 | 무엇을 결정하는가 |
+| --- | --- |
+| 0. `files.copy` | Phase A의 백업 수단. 동일 충실도 복원은 native copy뿐 |
+| **1. `documents.get`** | **관문.** Picker grant가 Docs API에도 미치는지. 실패 시 민감 스코프로 가지 말고 Phase A에서 멈춘다 |
+| 2. `batchUpdate` 인가 | 아무것도 바꾸지 않는 배치로 쓰기 권한만 확인 |
+| 3. `fields` 마스크 | import 시점의 탭 사전 점검을 싸게 할 수 있는지 |
+| **4. export 결정성 ×3** | 드리프트 판정 전체의 전제. 지금까지 CHOIR가 만든 문서로만 측정됨 |
+| 5. version 영향 | batchUpdate가 Drive `version`을 올리는지 — 폴러의 유일한 트리거 |
+| 6. revision 펜스 | 낡은 `requiredRevisionId`가 400으로 거부되는지 |
+| **7a. 스팬 교체** | 바뀐 문자 구간만 교체했을 때 **주변 run(링크·기울임·굵게)이 그대로인지**. "스타일은 두고 텍스트만" 의 가장 강한 형태. 실제 Handbook 제목처럼 run이 섞인 문단이어야 의미가 있다 |
+| 7b. 삽입 후 삭제 | 개행 직전에 새 텍스트를 넣고 옛 텍스트를 지웠을 때 문단 스타일·폰트가 유지되는지 |
+| 7c. 삭제 후 삽입 | 옛 텍스트를 먼저 지우고 문단 시작에 넣었을 때 **앞 문단의 스타일이 새어 들어오는지** |
+| 8. 삽입 앵커 | `endIndex - 1`은 되고 body 끝 인덱스는 안 되는지. 섹션 추가가 가능한지가 여기서 갈린다 |
+| 9. 구조 인벤토리 | 표·이미지·위치 고정 개체·소프트 줄바꿈·탭이 몇 개인지, export 줄과 문단이 1:1로 대응하는지 |
+
+체크 9는 PASS/FAIL이 아니라 **눈으로 읽는 출력**입니다. 문단 목록과 export 앞부분을 나란히
+찍어 주므로, 가운데 정렬 서명줄이 Shift+Enter로 만든 한 문단인지 세 문단인지 같은 것이
+거기서 드러납니다. export 원문은 `docs-spike-export.md`로 저장됩니다.
+
 ### 아직 미검증
 
+- 위 P0-C 체크 12종 (스크립트는 준비됨, 실행 필요)
 - 공유 드라이브(shared drive)에서 위가 모두 되는지 — 조직 전체 공유가 목표라면 실질 관문
   (`drive-spike.js --shared-drive <driveId>`)
 

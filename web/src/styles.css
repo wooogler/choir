@@ -225,6 +225,63 @@ a {
   justify-content: center;
 }
 
+/* Import progress. Sits directly under the import button and reports the step
+   the server is actually on, streamed one line at a time. */
+.import-progress {
+  padding: 6px 8px 2px;
+}
+
+.import-progress-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #ececea;
+}
+
+.import-progress-fill {
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: #2f6feb;
+  transition: width 240ms ease;
+}
+
+/* Before the first step lands there is no position to report, so the bar sweeps
+   rather than sitting at zero pretending to know. */
+.import-progress-track.indeterminate .import-progress-fill {
+  width: 40%;
+  transition: none;
+  animation: import-progress-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes import-progress-sweep {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(260%);
+  }
+}
+
+.import-progress-label {
+  margin-top: 4px;
+  color: #8b8b86;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .import-progress-fill {
+    transition: none;
+  }
+
+  .import-progress-track.indeterminate .import-progress-fill {
+    width: 100%;
+    opacity: 0.4;
+    animation: none;
+  }
+}
+
 .file-link.active {
   background: #e7e7e3;
   color: #202124;

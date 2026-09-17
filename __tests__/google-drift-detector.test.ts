@@ -53,6 +53,7 @@ describe('Google Docs drift detection', () => {
       fileId: 'file-a',
       webViewLink: 'https://example.com/a',
       linkedBy: 'U-manager',
+      mode: 'replica',
     });
 
     const repoDir = path.join(tempDir, 'workspaces', 'T1', 'repo', 'docs');
@@ -250,6 +251,7 @@ describe('Google Docs drift detection', () => {
           fileId: `file-${index}`,
           webViewLink: `https://example.com/${index}`,
           linkedBy: 'U-manager',
+          mode: 'replica',
         });
         await writeBaseline('T1', docPath, BASELINE);
         await mutateDocState('T1', docPath, () => ({ status: 'synced', lastPushedVersion: '10', updatedAt: '' }));
@@ -325,6 +327,7 @@ describe('a replica whose GitHub source is gone', () => {
       fileId: 'file-x',
       webViewLink: 'https://example.com/x',
       linkedBy: 'U-manager',
+      mode: 'replica',
     });
     fs.mkdirSync(path.join(tempDir, 'workspaces', 'T1', 'repo'), { recursive: true });
 

@@ -6,6 +6,7 @@ import { DocumentUpdateService } from 'services/document/document-update-service
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
 import { removeDocState } from 'services/google/gdocs-state';
+import { retireManualCards } from 'services/google/manual-apply';
 import { retireReviewCards } from 'services/google/review-cards';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { getGithubRepo } from 'services/slack';
@@ -78,6 +79,12 @@ export async function deleteDocument(params: {
         workspaceId,
         githubPath: filePath,
         reason: 'This document was deleted, so the pending edit was dropped.',
+        client: params.slackClient,
+      });
+      await retireManualCards({
+        workspaceId,
+        githubPath: filePath,
+        reason: 'This document was deleted, so there is nothing left to apply in Google Docs.',
         client: params.slackClient,
       });
       await store.removeGoogleDocMapping(workspaceId, filePath);

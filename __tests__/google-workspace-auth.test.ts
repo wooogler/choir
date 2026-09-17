@@ -67,6 +67,7 @@ describe('workspace Google credential and doc mappings', () => {
       fileId: 'file-a',
       webViewLink: 'https://docs.google.com/document/d/file-a/edit',
       linkedBy: 'U-manager',
+      mode: 'replica',
     });
 
     await store.clearGoogleAuth('T1');
@@ -97,6 +98,7 @@ describe('workspace Google credential and doc mappings', () => {
       fileId: 'file-a',
       webViewLink: 'https://docs.google.com/document/d/file-a/edit',
       linkedBy: 'U-manager',
+      mode: 'replica',
     });
 
     const mapping = await store.getGoogleDocMapping('T1', 'docs/a.md');
@@ -109,6 +111,7 @@ describe('workspace Google credential and doc mappings', () => {
       fileId: 'file-a',
       webViewLink: 'https://example.com/a',
       linkedBy: 'U-manager',
+      mode: 'replica',
     });
 
     // Two documents publishing into one Doc would overwrite each other on every
@@ -118,6 +121,7 @@ describe('workspace Google credential and doc mappings', () => {
         fileId: 'file-a',
         webViewLink: 'https://example.com/a',
         linkedBy: 'U-manager',
+        mode: 'replica',
       }),
     ).rejects.toThrow('already linked to docs/a.md');
 
@@ -125,7 +129,12 @@ describe('workspace Google credential and doc mappings', () => {
   });
 
   it('allows re-linking the same path to the same file', async () => {
-    const mapping = { fileId: 'file-a', webViewLink: 'https://example.com/a', linkedBy: 'U-manager' };
+    const mapping = {
+      fileId: 'file-a',
+      webViewLink: 'https://example.com/a',
+      linkedBy: 'U-manager',
+      mode: 'replica' as const,
+    };
     await store.setGoogleDocMapping('T1', 'docs/a.md', mapping);
 
     await expect(store.setGoogleDocMapping('T1', 'docs/a.md', mapping)).resolves.toBeUndefined();
@@ -136,6 +145,7 @@ describe('workspace Google credential and doc mappings', () => {
       fileId: 'file-a',
       webViewLink: 'https://example.com/a',
       linkedBy: 'U-manager',
+      mode: 'replica',
     });
 
     expect(await store.removeGoogleDocMapping('T1', 'docs/a.md')).toBe(true);
@@ -161,6 +171,7 @@ describe('workspace Google credential and doc mappings', () => {
           fileId: `file-${name}`,
           webViewLink: `https://example.com/${name}`,
           linkedBy: 'U-manager',
+          mode: 'replica',
         }),
       ),
     );

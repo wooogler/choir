@@ -3,6 +3,7 @@ import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
 import { sweepAllWorkspaces } from './drift-detector';
 import { notifyDrift } from './drift-notifier';
+import { documentsAwaitingNotice, notifyManualApply } from './manual-apply';
 
 /**
  * Periodically asks Drive whether anyone has edited a replica.
@@ -31,6 +32,23 @@ export async function runDriftSweep(client: WebClient): Promise<void> {
 
   try {
     for (const sweep of await sweepAllWorkspaces()) {
+      // A change CHOIR could not push into a document that keeps its own
+      // formatting. This runs here rather than at the publish hooks because
+      // those have no Slack client in scope — schedulePublish is fire-and-forget
+      // from a service with no way to reach Slack — so the poller is where a
+      // held change gets turned into something a person sees. Independent of
+      // drift, and so not subject to the mass-drift suppression below.
+      for (const githubPath of await documentsAwaitingNotice(sweep.workspaceId)) {
+        try {
+          await notifyManualApply({ workspaceId: sweep.workspaceId, githubPath, client });
+        } catch (error) {
+          Logger.error('Google Docs manual-apply notification failed', error as Error, {
+            workspaceId: sweep.workspaceId,
+            githubPath,
+          });
+        }
+      }
+
       if (sweep.drifted.length === 0) continue;
 
       // Suspected export-format change: one operator rebaselines, rather than

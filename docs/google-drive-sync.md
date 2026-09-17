@@ -10,6 +10,11 @@ Docs에서 발생한 사람 편집을 **관리자 승인을 거쳐** GitHub에 �
 
 ---
 
+> **일부 개정됨 (2026-09-02).** 아래 표의 "Docs 전용 서식 보존은 non-goal"과 "복제본은 파생물이므로
+> 전체 내용 교체"는 [`docs/gdocs-format-preserving-sync.md`](gdocs-format-preserving-sync.md)로
+> 대체되었다. 매핑에 `mode`가 생겨 `replica`(기존 동작)와 `preserve`(본문을 절대 쓰지 않음)로
+> 갈린다. 나머지 확정 사항은 그대로 유효하다.
+
 ## 확정된 설계 결정 (재논의 불필요)
 
 | 결정 | 내용 |

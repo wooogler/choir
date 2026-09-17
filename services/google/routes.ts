@@ -12,6 +12,8 @@ import {
   getWorkspaceClient,
 } from './google-auth-service';
 import { importGoogleDoc } from './import-service';
+import type { ImportProgress } from './import-steps';
+import { retireAllManualCards, retireManualCards } from './manual-apply';
 import { issuePickerNonce, verifyPickerNonce } from './picker-nonce';
 import { publishReplica } from './replica-publisher';
 import { retireAllReviewCards, retireReviewCards } from './review-cards';
@@ -45,6 +47,9 @@ export interface GoogleRouteDeps {
 
 const NONCE_COOKIE_PATH = '/docs/auth/google';
 
+/** Content type the import endpoint streams step-by-step progress as. */
+const IMPORT_STREAM_TYPE = 'application/x-ndjson';
+
 // Express's router and handlers are untyped throughout app.ts (the receiver
 // exposes them as `any`); these aliases keep that contained to one place.
 type Router = { get: Handler; post: Handler; delete: Handler };
@@ -61,6 +66,11 @@ type Res = {
   send: (body: unknown) => Res;
   redirect: (url: string) => Res;
   setHeader: (name: string, value: string | string[]) => void;
+  /** Used by the streaming import, which reports progress line by line. */
+  write: (chunk: string) => boolean;
+  end: (chunk?: string) => void;
+  flushHeaders?: () => void;
+  headersSent?: boolean;
 };
 
 export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps): void {
@@ -190,6 +200,13 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
               webViewLink: mapping.webViewLink,
               linkedAt: mapping.linkedAt,
               status: filePath ? (states[filePath]?.status ?? 'synced') : undefined,
+              mode: mapping.mode,
+              // A preserved document cannot receive a GitHub change on its own,
+              // so the viewer has to be able to say that one is waiting rather
+              // than showing a document that looks in sync and is not.
+              awaitingManualApply: Boolean(
+                filePath && states[filePath]?.pendingManual && !states[filePath]?.pendingManual?.declined,
+              ),
             }
           : null,
         linkedCount: Object.keys(mappings).length,
@@ -285,6 +302,11 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
         fileId,
         webViewLink: meta.webViewLink ?? `https://docs.google.com/document/d/${fileId}/edit`,
         linkedBy: session.userId,
+        // Linking publishes the repository document over whatever the picked Doc
+        // held, which the caller has just been warned about and agreed to. That
+        // is `replica` by definition. Bringing an already-written Doc in without
+        // flattening it is the *import* route, which links as `preserve`.
+        mode: 'replica',
       });
 
       // Force: a freshly linked document has no recorded hash or state, but the
@@ -336,7 +358,34 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
         return res.status(400).json({ error: 'Pick the document again — this import request has expired' });
       }
 
-      const result = await importGoogleDoc({ workspaceId, githubPath: filePath, fileId, userId: session.userId });
+      // An import runs long enough to need a progress bar: reading the Doc,
+      // committing it with its images, and writing the replica back are each
+      // several seconds. A client that asks for NDJSON gets one line per step
+      // and a final `result` line; everyone else gets the single JSON body the
+      // endpoint has always returned.
+      const streaming = String(req.headers?.accept || '').includes(IMPORT_STREAM_TYPE);
+      if (streaming) {
+        res.setHeader('Content-Type', `${IMPORT_STREAM_TYPE}; charset=utf-8`);
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        // Progress arrives in pieces; a proxy holding it back to buffer the
+        // whole body would defeat the point.
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders?.();
+      }
+
+      const onProgress = streaming
+        ? (progress: ImportProgress) => {
+            res.write(`${JSON.stringify({ type: 'progress', ...progress })}\n`);
+          }
+        : undefined;
+
+      const result = await importGoogleDoc({
+        workspaceId,
+        githubPath: filePath,
+        fileId,
+        userId: session.userId,
+        onProgress,
+      });
 
       if (result.outcome === 'imported') {
         deps.logger.info('Imported a Google Doc into the repository', {
@@ -344,6 +393,9 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
           filePath: result.githubPath,
           fileId,
         });
+        if (streaming) {
+          return res.end(`${JSON.stringify({ type: 'result', ...result })}\n`);
+        }
         return res.json(result);
       }
 
@@ -355,9 +407,19 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
             : result.outcome === 'invalid-path' || result.outcome === 'empty'
               ? 400
               : 500;
+      // The status line is long gone once progress has been streamed, so a
+      // streaming caller reads the outcome off the final line instead.
+      if (streaming) {
+        return res.end(
+          `${JSON.stringify({ type: 'error', error: result.detail ?? result.outcome, code: result.outcome, status })}\n`,
+        );
+      }
       return res.status(status).json({ error: result.detail ?? result.outcome, code: result.outcome });
     } catch (err) {
       deps.logger.error('POST google/import failed', err);
+      if (res.headersSent) {
+        return res.end(`${JSON.stringify({ type: 'error', error: 'Internal server error', status: 500 })}\n`);
+      }
       return res.status(500).json({ error: 'Internal server error' });
     }
   });
@@ -381,6 +443,12 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
         workspaceId,
         githubPath: filePath,
         reason: 'This document is no longer synced to Google Docs, so the pending edit was dropped.',
+        client: deps.slackClient,
+      });
+      await retireManualCards({
+        workspaceId,
+        githubPath: filePath,
+        reason: 'This document is no longer synced to Google Docs, so there is nothing left to apply.',
         client: deps.slackClient,
       });
 
@@ -462,7 +530,14 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       }
 
       const result = await rejectReview(workspaceId, filePath);
-      const status = result.outcome === 'restored' ? 200 : result.outcome === 'failed' ? 500 : 409;
+      // 'declined-not-restored' is a preserve-mode success: the decision stuck,
+      // but reverting the document is a person's job.
+      const status =
+        result.outcome === 'restored' || result.outcome === 'declined-not-restored'
+          ? 200
+          : result.outcome === 'failed'
+            ? 500
+            : 409;
       return res.status(status).json(result);
     } catch (err) {
       deps.logger.error('POST google/review/reject failed', err);
@@ -506,11 +581,19 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
         reason: 'A manager republished this document from GitHub, so the pending edit was discarded.',
         client: deps.slackClient,
       });
+      await retireManualCards({
+        workspaceId,
+        githubPath: filePath,
+        reason: 'A manager rebaselined this document, so this request no longer describes it.',
+        client: deps.slackClient,
+      });
 
+      // For a preserved document this rebuilds the comparison snapshot from the
+      // document itself rather than replacing it — which is what "rebaseline"
+      // should mean there, and the only thing it is allowed to mean.
       const published = await publishReplica({ workspaceId, githubPath: filePath, markdown, force: true });
-      return res
-        .status(published.outcome === 'published' ? 200 : 500)
-        .json({ outcome: published.outcome, detail: published.detail });
+      const settled = published.outcome === 'published' || published.outcome === 'held-for-manual';
+      return res.status(settled ? 200 : 500).json({ outcome: published.outcome, detail: published.detail });
     } catch (err) {
       deps.logger.error('POST google/rebaseline failed', err);
       return res.status(500).json({ error: 'Internal server error' });
@@ -527,6 +610,11 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       await retireAllReviewCards({
         workspaceId,
         reason: 'The workspace Google account was disconnected, so this pending edit can no longer be applied.',
+        client: deps.slackClient,
+      });
+      await retireAllManualCards({
+        workspaceId,
+        reason: 'The workspace Google account was disconnected, so these documents are no longer synced.',
         client: deps.slackClient,
       });
       await disconnectWorkspace(workspaceId);

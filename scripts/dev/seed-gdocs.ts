@@ -83,6 +83,9 @@ async function main(): Promise<void> {
     fileId: created.fileId,
     webViewLink: created.webViewLink ?? `http://localhost/fake-drive/${created.fileId}`,
     linkedBy: managerId,
+    // The doc was just created from the repository, so there is nothing of its
+    // own to preserve. Pass --preserve to seed the other mode instead.
+    mode: process.argv.includes('--preserve') ? 'preserve' : 'replica',
   });
   console.log(`• linked ${githubPath} → ${created.fileId}`);
 

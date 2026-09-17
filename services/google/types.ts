@@ -72,6 +72,24 @@ export interface GdocsDocState {
   /** GitHub blob SHA the delta was merged against — the approve fence. */
   oursBlobSha?: string;
   reviewCards?: GdocsReviewCard[];
+  /**
+   * A GitHub change that could not be pushed because the document is in
+   * `preserve` mode, and is waiting for a person to apply it in Google Docs.
+   *
+   * Deliberately a field and not a `GdocsDocStatus`. A status would join
+   * HOLDING_STATES and hold *later* GitHub changes behind this one; what should
+   * actually happen is that a newer change replaces it, which is what comparing
+   * `targetHash` gives. `declined` records that somebody chose to leave the
+   * document as it is, so the same content is not asked about again.
+   */
+  pendingManual?: {
+    /** contentHash of the repository markdown waiting to be applied. */
+    targetHash: string;
+    requestedAt: string;
+    declined?: boolean;
+  };
+  /** Outstanding "apply this by hand" cards, kept apart from `reviewCards`. */
+  manualCards?: GdocsReviewCard[];
   error?: string;
   updatedAt: string;
 }

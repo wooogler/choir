@@ -98,6 +98,32 @@ function makeRes() {
     setHeader(name: string, value: string | string[]) {
       res.headers[name] = value;
     },
+    // The import route streams progress when asked for NDJSON; these record
+    // what a real response would have put on the wire.
+    written: [] as string[],
+    ended: false,
+    headersSent: false,
+    flushHeaders() {
+      res.headersSent = true;
+    },
+    write(chunk: string) {
+      res.written.push(chunk);
+      res.headersSent = true;
+      return true;
+    },
+    end(chunk?: string) {
+      if (chunk) res.written.push(chunk);
+      res.ended = true;
+      return res;
+    },
+    /** The streamed body, one parsed object per line. */
+    lines() {
+      return res.written
+        .join('')
+        .split('\n')
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+    },
   };
   return res;
 }
@@ -272,6 +298,87 @@ describe('Google Drive routes', () => {
       );
     });
 
+    it('streams each step and then the result when NDJSON is asked for', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+      mockImport.mockImplementation(async (params) => {
+        params.onProgress?.({ step: 'checking', index: 1, total: 6, label: 'Checking the repository' });
+        params.onProgress?.({ step: 'committing', index: 3, total: 6, label: 'Committing to GitHub' });
+        return { outcome: 'imported', githubPath: 'notes/imported.md', linked: true };
+      });
+
+      await route('post', '/api/docs/:workspaceId/google/import')(
+        {
+          params: { workspaceId: 'T1' },
+          headers: { accept: 'application/x-ndjson' },
+          body: {
+            filePath: 'notes/imported.md',
+            fileId: 'file-a',
+            pickerNonce: issuePickerNonce('T1', 'U-manager'),
+          },
+        },
+        res,
+      );
+
+      expect(String(res.headers['Content-Type'])).toContain('application/x-ndjson');
+      expect(res.lines()).toEqual([
+        { type: 'progress', step: 'checking', index: 1, total: 6, label: 'Checking the repository' },
+        { type: 'progress', step: 'committing', index: 3, total: 6, label: 'Committing to GitHub' },
+        { type: 'result', outcome: 'imported', githubPath: 'notes/imported.md', linked: true },
+      ]);
+      expect(res.ended).toBe(true);
+    });
+
+    it('reports a streamed failure on the last line, the status line being long gone', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+      mockImport.mockImplementation(async (params) => {
+        params.onProgress?.({ step: 'checking', index: 1, total: 6, label: 'Checking the repository' });
+        return { outcome: 'exists', detail: 'a.md already exists in this repository' };
+      });
+
+      await route('post', '/api/docs/:workspaceId/google/import')(
+        {
+          params: { workspaceId: 'T1' },
+          headers: { accept: 'application/x-ndjson' },
+          body: { filePath: 'a.md', fileId: 'file-a', pickerNonce: issuePickerNonce('T1', 'U-manager') },
+        },
+        res,
+      );
+
+      const lines = res.lines();
+      expect(lines[lines.length - 1]).toEqual({
+        type: 'error',
+        error: 'a.md already exists in this repository',
+        code: 'exists',
+        status: 409,
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('still answers a plain JSON caller with a single body', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+      mockImport.mockResolvedValue({ outcome: 'imported', githubPath: 'notes/imported.md', linked: true });
+
+      await route('post', '/api/docs/:workspaceId/google/import')(
+        {
+          params: { workspaceId: 'T1' },
+          headers: { accept: 'application/json' },
+          body: {
+            filePath: 'notes/imported.md',
+            fileId: 'file-a',
+            pickerNonce: issuePickerNonce('T1', 'U-manager'),
+          },
+        },
+        res,
+      );
+
+      expect(res.written).toEqual([]);
+      expect(res.body).toEqual({ outcome: 'imported', githubPath: 'notes/imported.md', linked: true });
+      expect(res.headers['Content-Type']).toBeUndefined();
+    });
+
     it('refuses an import without a nonce from a recent pick', async () => {
       const route = collectRoutes();
       const res = makeRes();
@@ -353,6 +460,7 @@ describe('Google Drive routes', () => {
         fileId: 'file-a',
         webViewLink: 'https://example.com/a',
         linkedBy: 'U-manager',
+        mode: 'replica',
       });
       const route = collectRoutes();
       const res = makeRes();
@@ -369,6 +477,7 @@ describe('Google Drive routes', () => {
         fileId: 'file-a',
         webViewLink: 'https://example.com/a',
         linkedBy: 'U-manager',
+        mode: 'replica',
       });
       const route = collectRoutes();
       const res = makeRes();
@@ -501,6 +610,7 @@ describe('Google Drive routes', () => {
         fileId: 'file-a',
         webViewLink: 'https://example.com/a',
         linkedBy: 'U-manager',
+        mode: 'replica',
       });
       const route = collectRoutes();
       const res = makeRes();

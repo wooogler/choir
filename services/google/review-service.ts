@@ -46,6 +46,12 @@ export type DecisionOutcome =
   /** The commit landed but the replica could not be republished from it. */
   | 'committed-not-republished'
   | 'restored'
+  /**
+   * Preserve mode: the rejection was recorded and the baseline rebuilt, but the
+   * document still holds the text that was turned down. Reverting it is a
+   * person's job — CHOIR does not write that document's body.
+   */
+  | 'declined-not-restored'
   /** The document or the repository moved; the review was rebuilt. */
   | 'stale'
   | 'not-pending'
@@ -74,7 +80,6 @@ function gitBlobSha(content: string): string {
 
 interface Materials {
   mapping: { fileId: string; webViewLink: string };
-  // biome-ignore lint/suspicious/noExplicitAny: the Google client type is internal to the auth service
   auth: any;
   baseline: string;
   sourceAtPush: string;
@@ -276,7 +281,12 @@ export async function approveReview(params: {
     // leave the Doc showing the pre-review text.
     const republished = await publishReplica({ workspaceId, githubPath, markdown: params.content, force: true });
 
-    if (republished.outcome !== 'published') {
+    // `held-for-manual` is a preserve-mode success: the document was not written
+    // because it must not be, and the publisher has already released the review
+    // state and left a note asking someone to carry the remainder across by hand.
+    // Treating it as a failure would set the document back to `drifted`, and the
+    // next sweep would ask the manager to approve the edit they just approved.
+    if (republished.outcome !== 'published' && republished.outcome !== 'held-for-manual') {
       // The commit landed, so the edit is not lost — but the replica and the
       // recorded baseline no longer describe it. Leaving the document in
       // 'applying' would freeze it; 'drifted' makes the next sweep look again.
@@ -407,6 +417,18 @@ export async function rejectReview(workspaceId: string, githubPath: string): Pro
     markdown: prepared.markdown ?? '',
     force: true,
   });
+
+  // A preserved document cannot be restored by overwriting it, so rejection means
+  // something weaker there: the decision is recorded and the baseline is rebuilt
+  // from the document, but the text the manager turned down is still sitting in
+  // Google Docs and only a person can take it back out. Reported as its own
+  // outcome rather than as a restore that did not happen.
+  if (published.outcome === 'held-for-manual') {
+    return {
+      outcome: 'declined-not-restored',
+      detail: 'The document keeps the rejected text until someone reverts it',
+    };
+  }
 
   if (published.outcome !== 'published') {
     await mutateDocState(workspaceId, githubPath, (current) => ({

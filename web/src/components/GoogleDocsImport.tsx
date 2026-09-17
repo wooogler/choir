@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { docsPath } from '../utils/docs';
+import { readNdjson } from '../utils/ndjson';
 import { pickGoogleDoc } from '../utils/picker';
 
 /**
@@ -8,9 +9,11 @@ import { pickGoogleDoc } from '../utils/picker';
  *
  * The counterpart to GoogleDocsSync, which points the other way: this one reads
  * a Doc and commits it, rather than replacing a Doc with what the repository
- * already has. Once imported the document is linked as a replica, so from then
- * on it behaves like any other — GitHub changes push into the Doc, and edits
- * made in the Doc come back through review.
+ * already has. Nothing is written to the Google Doc: it was somebody's document
+ * before it was ours, so its fonts, layout and images are left exactly as they
+ * are and only the sync bookkeeping is recorded. Edits made in the Doc from then
+ * on come back through the ordinary review path, while changes made on the
+ * CHOIR side are reported to a manager to apply rather than pushed over it.
  *
  * Workspace-level rather than per-document, because the document being created
  * does not exist yet.
@@ -22,6 +25,16 @@ type ImportResponse = {
   rejectedAssets?: Array<{ reason: string; contentType: string; bytes: number }>;
   error?: string;
 };
+
+/** One line of the NDJSON the import endpoint streams while it works. */
+type ImportEvent =
+  | { type: 'progress'; step: string; index: number; total: number; label: string }
+  | ({ type: 'result' } & ImportResponse)
+  | { type: 'error'; error?: string; code?: string; status?: number };
+
+type Progress = { label: string; index: number; total: number };
+
+const IMPORT_STREAM_TYPE = 'application/x-ndjson';
 
 /** Repo-relative, markdown, no traversal — mirrors the server's own check. */
 function looksLikeRepoPath(candidate: string): boolean {
@@ -45,6 +58,10 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
   const [available, setAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Progress | null>(null);
+  // Distinct from `busy`, which covers picking a document too: the bar belongs
+  // to the request, not to the file picker sitting open in front of it.
+  const [importing, setImporting] = useState(false);
 
   // Asks the server rather than taking props: the same endpoint answers whether
   // Google is configured, whether an account is connected, and — by refusing a
@@ -78,6 +95,7 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
   const run = useCallback(async () => {
     setBusy(true);
     setError(null);
+    setProgress(null);
     try {
       const picked = await pickGoogleDoc(workspaceId);
       if (!picked) return;
@@ -92,15 +110,40 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
         return;
       }
 
+      // Reading the Doc, committing it with its images, and writing the replica
+      // back each take seconds, so ask for the step-by-step stream and show it.
+      setImporting(true);
+      const streamable = typeof ReadableStream === 'function';
       const response = await fetch(`/api/docs/${encodeURIComponent(workspaceId)}/google/import`, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: streamable ? IMPORT_STREAM_TYPE : 'application/json',
+        },
         body: JSON.stringify({ filePath: target.trim(), fileId: picked.fileId, pickerNonce: picked.pickerNonce }),
       });
-      const result = (await response.json()) as ImportResponse;
-      if (!response.ok) {
-        throw new Error(result.error || 'Could not import that document');
+
+      const streamed =
+        Boolean(response.body) && (response.headers.get('Content-Type') ?? '').includes(IMPORT_STREAM_TYPE);
+
+      let result: ImportResponse | null = null;
+      if (streamed && response.body) {
+        // The status line went out before the first step ran, so a streaming
+        // import reports its outcome on the last line instead of in the status.
+        for await (const event of readNdjson<ImportEvent>(response.body)) {
+          if (event.type === 'progress') {
+            setProgress({ label: event.label, index: event.index, total: event.total });
+          } else if (event.type === 'error') {
+            throw new Error(event.error || 'Could not import that document');
+          } else if (event.type === 'result') {
+            result = event;
+          }
+        }
+        if (!result) throw new Error('The import stopped before it finished');
+      } else {
+        result = (await response.json()) as ImportResponse;
+        if (!response.ok) throw new Error(result.error || 'Could not import that document');
       }
 
       if (result.rejectedAssets?.length) {
@@ -115,12 +158,16 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
       setError(err instanceof Error ? err.message : 'Could not import that document');
     } finally {
       setBusy(false);
+      setImporting(false);
+      setProgress(null);
     }
   }, [workspaceId]);
 
   // Importing needs somewhere to read from; connecting a Google account is
   // offered on a document, where the consequences of linking are spelled out.
   if (!available) return null;
+
+  const percent = progress ? Math.round((progress.index / progress.total) * 100) : 0;
 
   return (
     <>
@@ -135,6 +182,29 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
         </span>
         <span className="file-label">{busy ? 'Importing…' : 'Import from Google Docs'}</span>
       </button>
+      {importing && (
+        // Until the first step arrives the bar has nothing true to show, so it
+        // sweeps instead of claiming a position.
+        <div className="import-progress">
+          <div
+            className={`import-progress-track${progress ? '' : ' indeterminate'}`}
+            role="progressbar"
+            aria-label="Google Docs import"
+            aria-valuemin={0}
+            aria-valuemax={progress ? progress.total : undefined}
+            aria-valuenow={progress ? progress.index : undefined}
+            aria-valuetext={progress?.label}
+            // Not keyboard-reachable on purpose: there is nothing to operate,
+            // and the label below it carries the same words the bar shows.
+            tabIndex={-1}
+          >
+            <div className="import-progress-fill" style={progress ? { width: `${percent}%` } : undefined} />
+          </div>
+          <div className="import-progress-label" aria-live="polite">
+            {progress ? progress.label : 'Starting the import…'}
+          </div>
+        </div>
+      )}
       {error && (
         <div className="sidebar-subtitle" role="alert">
           {error}

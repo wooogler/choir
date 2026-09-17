@@ -70,6 +70,7 @@ describe('Google Docs review and decisions', () => {
       fileId: 'file-a',
       webViewLink: 'https://docs.google.com/document/d/file-a/edit',
       linkedBy: 'U-manager',
+      mode: 'replica',
     });
 
     writeMirror(SOURCE);
@@ -313,6 +314,7 @@ describe('the approve fence against the Google Doc', () => {
       fileId: 'file-a',
       webViewLink: 'https://example.com/a',
       linkedBy: 'U-manager',
+      mode: 'replica',
     });
 
     const dir = path.join(tempDir, 'workspaces', 'T1', 'repo', 'docs');
@@ -393,5 +395,39 @@ describe('the approve fence against the Google Doc', () => {
     expect(result.outcome).toBe('committed-not-republished');
     expect(result.commitSha).toBe('abc123');
     expect((await getDocState('T1', 'docs/a.md'))?.status).toBe('drifted');
+  });
+
+  describe('a document CHOIR must not write over', () => {
+    it('treats a held approval as done rather than sending the manager round again', async () => {
+      const review = await buildReview('T1', 'docs/a.md');
+      // What preserve mode returns: nothing was written, on purpose, and the
+      // publisher has already released the review state.
+      mockPublish.mockResolvedValue({ outcome: 'held-for-manual' });
+
+      const result = await approveReview({
+        workspaceId: 'T1',
+        githubPath: 'docs/a.md',
+        userId: 'U-manager',
+        content: review.after ?? '',
+      });
+
+      expect(result.outcome).toBe('committed');
+      expect(result.commitSha).toBe('abc123');
+      // Marking it drifted here is what would make the next sweep ask for the
+      // same approval again, forever.
+      expect((await getDocState('T1', 'docs/a.md'))?.status).not.toBe('drifted');
+    });
+
+    it('says a rejection stuck but the document still holds the text', async () => {
+      await buildReview('T1', 'docs/a.md');
+      mockPublish.mockResolvedValue({ outcome: 'held-for-manual' });
+
+      const result = await rejectReview('T1', 'docs/a.md');
+
+      expect(result.outcome).toBe('declined-not-restored');
+      expect(result.detail).toMatch(/reverts/i);
+      // Not wedged back into review: the decision was made and recorded.
+      expect((await getDocState('T1', 'docs/a.md'))?.error).toBeUndefined();
+    });
   });
 });

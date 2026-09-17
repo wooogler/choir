@@ -8,6 +8,10 @@ import { pickGoogleDoc } from '../utils/picker';
  * Docs are not applied directly — they are collected and sent to a manager for
  * review. That is why linking is manager-only and why the confirmation below
  * spells out that the picked document's content will be replaced.
+ *
+ * Linking here always produces a `replica`, which is what the warning is about.
+ * A document that must keep its own formatting arrives through the import
+ * control instead, and this panel then only reports on it.
  */
 
 type GoogleStatus = {
@@ -15,7 +19,15 @@ type GoogleStatus = {
   connected: boolean;
   email?: string;
   broken: boolean;
-  document: { fileId: string; webViewLink: string; status?: string } | null;
+  document: {
+    fileId: string;
+    webViewLink: string;
+    status?: string;
+    /** 'preserve' documents are never written by CHOIR; see the import flow. */
+    mode?: 'replica' | 'preserve';
+    /** A GitHub change is waiting for a person to apply it in Google Docs. */
+    awaitingManualApply?: boolean;
+  } | null;
   linkedCount: number;
 };
 
@@ -151,13 +163,21 @@ export function GoogleDocsSync({
           target="_blank"
           rel="noopener noreferrer"
           title={
-            status.document.status === 'drifted' || status.document.status === 'pending-review'
-              ? 'Someone edited the Google Doc; a manager is reviewing the change'
-              : 'Open the Google Docs replica'
+            status.document.awaitingManualApply
+              ? 'This document keeps its own formatting, so a change from CHOIR is waiting for someone to apply it in Google Docs'
+              : status.document.status === 'drifted' || status.document.status === 'pending-review'
+                ? 'Someone edited the Google Doc; a manager is reviewing the change'
+                : status.document.mode === 'preserve'
+                  ? 'Open the Google Doc. CHOIR does not write to this one'
+                  : 'Open the Google Docs replica'
           }
         >
           Google Doc
-          {status.document.status === 'drifted' || status.document.status === 'pending-review' ? ' •' : ''}
+          {status.document.awaitingManualApply ||
+          status.document.status === 'drifted' ||
+          status.document.status === 'pending-review'
+            ? ' •'
+            : ''}
         </a>
         {isManager && (
           <button type="button" className="doc-button doc-button-ghost" onClick={unlink} disabled={busy}>

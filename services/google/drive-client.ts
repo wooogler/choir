@@ -135,6 +135,28 @@ export async function replaceDocContent(auth: OAuth2Client, fileId: string, mark
   });
 }
 
+/**
+ * Sets the file's Drive `description` and nothing else.
+ *
+ * The metadata counterpart to `replaceDocContent`: no `media`, so the body is
+ * untouched. This is how a document CHOIR must not rewrite carries the notice
+ * that it is linked — the banner cannot be used there, because the banner is
+ * body text and would be the one thing CHOIR ever wrote into it.
+ *
+ * It still bumps `version` (measured: metadata alone does), so callers that are
+ * about to record a version must stamp first and read after.
+ */
+export async function setDocDescription(auth: OAuth2Client, fileId: string, description: string): Promise<DocMeta> {
+  return withRetry('files.update(description)', async () => {
+    const updated = await client(auth).files.update({
+      fileId,
+      requestBody: { description },
+      fields: 'id, name, version, modifiedTime, webViewLink',
+    });
+    return toMeta(fileId, updated.data);
+  });
+}
+
 export async function exportDocMarkdown(auth: OAuth2Client, fileId: string): Promise<string> {
   return withRetry('files.export', async () => {
     const response = await client(auth).files.export({ fileId, mimeType: MARKDOWN_MIME }, { responseType: 'text' });

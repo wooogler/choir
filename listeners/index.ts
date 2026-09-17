@@ -8,6 +8,7 @@ import { register as registerAppHome } from './features/app-home';
 import { registerConversationFeature } from './features/conversation';
 import { registerDMFeatures } from './features/dm';
 import { registerDocumentUpdateFeature } from './features/document-update';
+import { registerGoogleDocsFeature } from './features/google-docs';
 import { registerPreferencesFeature } from './features/preferences';
 import { registerQAFeature } from './features/qa';
 import { registerRegistrationFeature } from './features/registration';
@@ -25,6 +26,7 @@ const registerListeners = (app: App) => {
   registerConversationFeature(app);
   registerDMFeatures(app);
   registerRegistrationFeature(app);
+  registerGoogleDocsFeature(app);
 };
 
 export default registerListeners;

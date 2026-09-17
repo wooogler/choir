@@ -58,6 +58,7 @@ describe('Google Docs replica publisher', () => {
       fileId: 'file-a',
       webViewLink: 'https://docs.google.com/document/d/file-a/edit',
       linkedBy: 'U-manager',
+      mode: 'replica',
     });
 
     mockClient.mockResolvedValue({} as never);
@@ -259,6 +260,7 @@ describe('Google Docs replica publisher', () => {
         fileId: 'file-b',
         webViewLink: 'https://example.com/b',
         linkedBy: 'U-manager',
+        mode: 'replica',
       });
     });
 
