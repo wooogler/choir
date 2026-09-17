@@ -1,13 +1,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Document } from '@langchain/core/documents';
+import type { LanguageCode } from 'services/common/language';
 import { Logger } from 'services/common/logger';
 import { sectionPathToOriginalPath } from 'services/document/markdown-section-splitter';
 import type { DocumentMetadata } from 'services/file-registry/types';
+import { buildCrossLingualSearchQueries } from 'services/llm/query-translation';
 import { getGithubRepo } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { PathMapService } from 'services/workspace/path-map-service';
+import {
+  VECTOR_SEARCH_FAILURE_HINT,
+  ensureEmbedModelUpToDate,
+  getConfiguredEmbedModel,
+  getVectorSearchFailureCount,
+  recordVectorSearchFailure,
+  writeIndexMeta,
+} from './qmd-embed-guard';
 import { buildQmdStructuredSearchQueries, searchQmdLexWithFallback } from './qmd-lex-search';
+import { detectRepositoryLanguage } from './repository-language';
 import type { RetrievalDocument, RetrievalProvider, RetrievalSearchParams, RetrievalWarmupParams } from './types';
 
 type QmdSearchMode = 'lex' | 'hybrid';
@@ -76,6 +87,11 @@ interface StoreCacheEntry {
   owner: string;
   repo: string;
   branch?: string;
+  /**
+   * Dominant language of the mirrored documentation, sampled once per store and
+   * refreshed with the index. Drives the cross-lingual query translation.
+   */
+  repositoryLanguage?: LanguageCode;
 }
 
 export class QmdRetrievalProvider implements RetrievalProvider {
@@ -96,6 +112,15 @@ export class QmdRetrievalProvider implements RetrievalProvider {
 
   private getSearchMode(): QmdSearchMode {
     return process.env.QMD_SEARCH_MODE === 'lex' ? 'lex' : 'hybrid';
+  }
+
+  /**
+   * QMD can re-score hybrid results with `qwen3-reranker`. It is off by default:
+   * on the CPU-only production instances the extra cross-encoder pass costs more
+   * latency per answer than the ordering it buys. Opt in with `QMD_RERANK=true`.
+   */
+  private isRerankEnabled(): boolean {
+    return process.env.QMD_RERANK === 'true';
   }
 
   private getWarmupQuery(): string {
@@ -286,6 +311,8 @@ export class QmdRetrievalProvider implements RetrievalProvider {
         });
         await this.syncStoreIndex(cached.store);
         cached.indexedAt = syncState.updatedAt;
+        // Files changed, so the sampled language may have changed with them.
+        cached.repositoryLanguage = await detectRepositoryLanguage(cached.sectionsRoot);
       }
 
       return cached;
@@ -294,9 +321,10 @@ export class QmdRetrievalProvider implements RetrievalProvider {
     const sectionsRoot = this.getSectionsRoot(workspaceId);
     await mirrorService.populateSectionsIfEmpty(workspaceId);
 
+    const dbPath = this.getDbPath(workspaceId);
     const qmd = await this.loadQmdModule();
     const store = await qmd.createStore({
-      dbPath: this.getDbPath(workspaceId),
+      dbPath,
       config: {
         collections: {
           docs: {
@@ -307,7 +335,19 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       },
     });
 
-    await this.syncStoreIndex(store);
+    // Before this store serves anything: if the configured embedding model no
+    // longer matches the one the index was embedded with, the stored vectors are
+    // unusable (and would fail as a dimension mismatch deep inside QMD), so a
+    // forced re-embed has to run first.
+    const embedGuardOutcome = await ensureEmbedModelUpToDate({
+      workspaceId,
+      dbPath,
+      reembed: () => this.syncStoreIndex(store, true),
+    });
+
+    if (embedGuardOutcome !== 're-embedded') {
+      await this.syncStoreIndex(store);
+    }
 
     const entry: StoreCacheEntry = {
       store,
@@ -316,13 +356,19 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       owner: repoInfo.owner,
       repo: repoInfo.repo,
       branch: repoInfo.branch || syncState?.branch,
+      repositoryLanguage: await detectRepositoryLanguage(sectionsRoot),
     };
 
     this.storeCache.set(workspaceId, entry);
     Logger.info(`QmdRetrievalProvider: initialized QMD store for workspace ${workspaceId}`, {
       repoRoot,
-      dbPath: this.getDbPath(workspaceId),
+      dbPath,
       searchMode: this.getSearchMode(),
+      rerank: this.isRerankEnabled(),
+      embedModel: getConfiguredEmbedModel(),
+      embedGuardOutcome,
+      repositoryLanguage: entry.repositoryLanguage,
+      vectorSearchFailures: getVectorSearchFailureCount(),
     });
 
     return entry;
@@ -376,6 +422,10 @@ export class QmdRetrievalProvider implements RetrievalProvider {
 
     try {
       const { updateResult, embedResult } = await this.syncStoreIndex(store, true);
+      // The index now holds vectors from whatever model is configured right now:
+      // record it so the guard does not re-embed again on the next start.
+      await writeIndexMeta(dbPath, getConfiguredEmbedModel());
+
       this.storeCache.set(workspaceId, {
         store,
         indexedAt: syncState?.updatedAt,
@@ -383,6 +433,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
         owner: repoInfo.owner,
         repo: repoInfo.repo,
         branch: repoInfo.branch || syncState?.branch,
+        repositoryLanguage: await detectRepositoryLanguage(sectionsRoot),
       });
 
       Logger.info(`QmdRetrievalProvider: rebuilt QMD index for workspace ${workspaceId}`, {
@@ -390,6 +441,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
         sectionsRoot,
         updateResult,
         embedResult,
+        embedModel: getConfiguredEmbedModel(),
       });
 
       return {
@@ -438,13 +490,35 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       );
 
       if (searchMode === 'hybrid') {
-        const queries = buildQmdStructuredSearchQueries(params.query, 2);
-        const results = await storeEntry.store.search({
-          queries,
-          limit,
-          collections: ['docs'],
-          rerank: false,
+        // Adds a translated vector leg when the asker's language is not the
+        // repository's; identical to the plain structured queries otherwise.
+        const queries = await buildCrossLingualSearchQueries({
+          query: params.query,
+          repositoryLanguage: storeEntry.repositoryLanguage,
+          workspaceId,
+          maxLexCandidates: 2,
         });
+
+        let results: QmdHybridQueryResult[] = [];
+        try {
+          results = await storeEntry.store.search({
+            queries,
+            limit,
+            collections: ['docs'],
+            rerank: this.isRerankEnabled(),
+          });
+        } catch (error) {
+          // The single most likely cause is an index whose vectors were written
+          // by a different embedding model, which surfaces far away from here as
+          // a dimension mismatch. Say so loudly instead of quietly answering
+          // from lexical hits alone.
+          const failureCount = recordVectorSearchFailure();
+          Logger.error(`QmdRetrievalProvider: hybrid search failed. ${VECTOR_SEARCH_FAILURE_HINT}`, error as Error, {
+            workspaceId: params.workspaceId,
+            embedModel: getConfiguredEmbedModel(),
+            vectorSearchFailures: failureCount,
+          });
+        }
 
         if (results.length > 0) {
           return results.map((result) =>
@@ -520,16 +594,22 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       query,
     });
 
+    // No translation on warm-up: the warm-up query exists to load the models, so
+    // it must not depend on (or pay for) an LLM round-trip.
     const queries = buildQmdStructuredSearchQueries(query, 2);
     await storeEntry.store.search({
       queries,
       limit: 1,
       collections: ['docs'],
-      rerank: false,
+      rerank: this.isRerankEnabled(),
     });
 
     Logger.info('QmdRetrievalProvider: hybrid warm-up completed.', {
       workspaceId: params.workspaceId,
+      embedModel: getConfiguredEmbedModel(),
+      repositoryLanguage: storeEntry.repositoryLanguage,
+      rerank: this.isRerankEnabled(),
+      vectorSearchFailures: getVectorSearchFailureCount(),
     });
   }
 

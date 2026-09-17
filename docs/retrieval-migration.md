@@ -120,3 +120,62 @@ That is a better long-term fit for a local mirror workflow than the current FAIS
 2. Add `SyncProvider` or `WorkspaceMirrorService` abstraction next.
 3. Introduce local mirror path management per workspace.
 4. Define dirty-state and conflict semantics before changing write flows.
+
+## Switching the Embedding Model
+
+The vector leg of hybrid search is embedded by whatever model
+`QMD_EMBED_MODEL` names — QMD reads it at module import, `createStore` has no
+per-store option, and the `model` column it writes next to each vector is a
+label nothing ever compares. So a swapped model used to be invisible: the old
+768-d vectors stayed in `content_vectors`, re-embedding skipped them (it only
+visits chunks with *no* vector), and the first query threw a dimension
+mismatch inside `vectors_vec MATCH` that was swallowed into a silent
+lexical-only fallback.
+
+CHOIR therefore keeps a sidecar next to each index:
+
+```
+<workspace>/state/qmd-index-v2.sqlite
+<workspace>/state/qmd-index-v2.meta.json   { "embedModel": "...", "embeddedAt": "..." }
+```
+
+`services/retrieval/qmd-embed-guard.ts` compares it with the configured model
+on every store init. Missing sidecar → written with the current value (the
+existing index is assumed to match; this is the first-deploy case). Match →
+nothing. Mismatch → a warning, then `syncStoreIndex(store, true)` (a forced
+full re-embed) *before* the store serves a single query, then the sidecar is
+rewritten. If that re-embed fails the sidecar is deliberately left stale so
+the next start retries.
+
+### Runbook
+
+1. Decide the CPU budget first. The default is
+   `embeddinggemma-300M-Q8_0` (768-d). `hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf`
+   (1024-d) is stronger cross-lingually but roughly doubles embed and query
+   cost, and production runs six CPU-only PM2 instances.
+2. Set `QMD_EMBED_MODEL` in the instance's env file.
+3. Restart the instance. The guard runs the forced re-embed on the first store
+   init per workspace — the first question after a restart waits for it.
+   To do it on demand instead, use App Home → *Rebuild index*, which wipes the
+   sqlite file, re-embeds and writes the sidecar itself.
+4. Expect roughly a minute per few hundred section files on CPU; a mid-size
+   workspace lands in the tens of minutes. The process looks idle while
+   llama.cpp works.
+
+### Verifying
+
+- `cat <workspace>/state/qmd-index-v2.meta.json` shows the new `embedModel`
+  and a fresh `embeddedAt`.
+- The logs show `QMD_EMBED_MODEL changed since this index was embedded`
+  followed by `re-embedded the QMD index for the new embedding model`, and the
+  store-init line reports `embedGuardOutcome: "re-embedded"`.
+- No `hybrid search failed` errors afterwards; `vectorSearchFailures` stays at
+  its previous count in the init/warm-up lines.
+
+### Rolling Back
+
+Put the previous `QMD_EMBED_MODEL` value back (or unset it) and restart: the
+sidecar now disagrees in the other direction, so the guard re-embeds back to
+the old model on its own. Nothing outside `state/` is touched, and deleting
+`qmd-index-v2.sqlite*` plus `qmd-index-v2.meta.json` always rebuilds from the
+mirror from scratch.
