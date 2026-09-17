@@ -425,7 +425,9 @@ describe('the approve fence against the Google Doc', () => {
       const result = await rejectReview('T1', 'docs/a.md');
 
       expect(result.outcome).toBe('declined-not-restored');
-      expect(result.detail).toMatch(/reverts/i);
+      // A code, not a sentence: the viewer owns the wording now, because it
+      // is the only side that knows the reader's language.
+      expect(result.detail).toBe('review_declined_not_restored');
       // Not wedged back into review: the decision was made and recorded.
       expect((await getDocState('T1', 'docs/a.md'))?.error).toBeUndefined();
     });

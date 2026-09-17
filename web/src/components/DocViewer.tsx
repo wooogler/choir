@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocale, useT } from '../i18n';
+import { type ServerErrorPayload, describeServerError, useLocale, useT } from '../i18n';
 import type { DocFile, DocSectionUsage, RepoInfo, SessionInfo, TocItem } from '../types';
 import { docsPath, encodePath, extractToc, parseDocsUrl, scrollToAnchor, slugifyHeading } from '../utils/docs';
 import { inlineMarkdownToText } from '../utils/inline-markdown';
@@ -156,7 +156,11 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   // absent on older servers, which we read as "unknown" and allow.
   const isManager = session?.authenticated === true && session.isManager;
   const githubAccess = session?.authenticated === true ? session.github : undefined;
-  const writeBlockedReason = isManager && githubAccess?.canPush === false ? githubAccess.reason : null;
+  // `reason` is a `DocsApiErrorCode` when CHOIR knows why (no repository
+  // connected), and GitHub's own English when the answer is a repository slug,
+  // an org policy URL or an SSO prompt — `describeServerError` handles both.
+  const writeBlockedReason =
+    (isManager && githubAccess?.canPush === false ? describeServerError(t, githubAccess.reason) : null) ?? null;
   const canEdit = isManager && !writeBlockedReason;
   const canSeeInsights = session?.authenticated === true && session.isChoirUser;
   const sessionLoaded = session !== null;
@@ -753,10 +757,8 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => ({}))) as { error?: string };
-        // TODO(i18n): server error codes — `data.error` is an English sentence
-        // built by the API and is rendered verbatim.
-        throw new Error(data.error || `${response.status} ${response.statusText}`);
+        const data = (await response.json().catch(() => ({}))) as ServerErrorPayload;
+        throw new Error(describeServerError(t, data) ?? `${response.status} ${response.statusText}`);
       }
 
       const data = (await response.json()) as { nextFilePath?: string | null };
@@ -793,10 +795,8 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         });
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => ({}))) as { error?: string };
-          // TODO(i18n): server error codes — `data.error` is an English sentence
-          // built by the API and is rendered verbatim.
-          throw new Error(data.error || `${response.status} ${response.statusText}`);
+          const data = (await response.json().catch(() => ({}))) as ServerErrorPayload;
+          throw new Error(describeServerError(t, data) ?? `${response.status} ${response.statusText}`);
         }
 
         const data = (await response.json()) as { commitSha?: string };
@@ -885,8 +885,6 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           </button>
         </>
       )}
-      {/* TODO(i18n): server error codes — `writeBlockedReason` is an English
-          sentence from the session endpoint, shown verbatim in the tooltip. */}
       {writeBlockedReason && !isEditing && (
         <span className="doc-change-count" title={writeBlockedReason}>
           {t('viewer.readOnly')}
@@ -954,7 +952,6 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
                 {usageUnmatched > 0 && ` ${t('viewer.usage.unmatched', { count: usageUnmatched })}`}
               </div>
             )}
-            {/* TODO(i18n): server error codes — `writeBlockedReason` is rendered verbatim. */}
             {writeBlockedReason && !writeNoticeDismissed && (
               <output className="doc-notice doc-notice-error doc-notice-dismissible">
                 <span>{writeBlockedReason}</span>
@@ -970,7 +967,8 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
               </output>
             )}
             {notice && <output className="doc-notice">{notice}</output>}
-            {/* TODO(i18n): server error codes — a failed save surfaces the API's own message. */}
+            {/* Already translated: the save and delete handlers run the
+                server's code through `describeServerError` first. */}
             {saveError && (
               <div className="doc-notice doc-notice-error" role="alert">
                 {saveError}

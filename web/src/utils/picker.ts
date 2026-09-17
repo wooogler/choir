@@ -12,7 +12,7 @@
  * second switch at each of the two call sites for no extra flexibility.
  */
 
-import type { T } from '../i18n';
+import { type ServerErrorPayload, type T, describeServerError } from '../i18n';
 
 type PickerDocsView = {
   setMimeTypes: (types: string) => unknown;
@@ -109,10 +109,9 @@ export async function pickGoogleDoc(workspaceId: string, t: T): Promise<PickedDo
     method: 'POST',
     credentials: 'same-origin',
   });
-  const bootstrap = (await response.json()) as PickerBootstrap & { error?: string };
+  const bootstrap = (await response.json()) as PickerBootstrap & ServerErrorPayload;
   if (!response.ok) {
-    // TODO(i18n): server error codes — `bootstrap.error` is the API's own English text.
-    throw new Error(bootstrap.error || t('picker.error.start'));
+    throw new Error(describeServerError(t, bootstrap) ?? t('picker.error.start'));
   }
 
   await loadPicker(t);

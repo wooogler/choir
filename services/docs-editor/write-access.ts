@@ -1,5 +1,6 @@
 import { GithubService } from 'services/github';
 import { getGithubRepo } from 'services/slack';
+import type { DocsApiErrorCode } from './api-errors';
 
 /**
  * Whether a signed-in manager can actually commit to the workspace's repository.
@@ -17,7 +18,16 @@ export interface DocsWriteAccess {
   canPush: boolean;
   /** "owner/repo", when one is configured. */
   repo?: string;
-  /** Why not, phrased for the person who has to fix it. */
+  /**
+   * Why not.
+   *
+   * A `DocsApiErrorCode` when CHOIR itself knows the answer, so the viewer can
+   * say it in the reader's language — this is resolved at session time, which
+   * is not necessarily a request that carried a locale. GitHub's own answers
+   * come back as English sentences instead: they are assembled in
+   * `services/github` out of a repository slug, an org OAuth policy URL or an
+   * SSO prompt, and the viewer shows a `reason` it does not recognise verbatim.
+   */
   reason?: string;
 }
 
@@ -27,7 +37,7 @@ export async function getDocsWriteAccess(workspaceId: string, userId: string): P
     return {
       connected: false,
       canPush: false,
-      reason: 'No GitHub repository is connected to this workspace yet.',
+      reason: 'no_github_repo' satisfies DocsApiErrorCode,
     };
   }
 

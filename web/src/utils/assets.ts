@@ -1,4 +1,4 @@
-import type { T } from '../i18n';
+import { type ServerErrorPayload, type T, describeServerError } from '../i18n';
 import { encodePath } from './docs';
 
 const ABSOLUTE_URL = /^(?:[a-z][a-z0-9+.-]*:)?\/\//i; // http://, https://, protocol-relative //
@@ -21,9 +21,8 @@ export async function uploadAsset(workspaceId: string, file: File, t: T): Promis
   });
 
   if (!response.ok) {
-    const data = (await response.json().catch(() => ({}))) as { error?: string };
-    // TODO(i18n): server error codes — `data.error` is the API's own English text.
-    throw new Error(data.error || t('assets.error.upload', { status: response.status }));
+    const data = (await response.json().catch(() => ({}))) as ServerErrorPayload;
+    throw new Error(describeServerError(t, data) ?? t('assets.error.upload', { status: response.status }));
   }
 
   const data = (await response.json()) as { path?: string };

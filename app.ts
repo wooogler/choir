@@ -10,11 +10,14 @@ import { sweepExpiredSessions } from 'services/common';
 import { CHOIRError } from 'services/common/error-handler';
 import { getDocUsage, getGaps, getSummary, getTopics } from 'services/dashboard/dashboard-api';
 import { clusterAllWorkspaces } from 'services/dashboard/topic-clusterer';
+import type { DocsApiErrorBody } from 'services/docs-editor';
 import {
   ALLOWED_IMAGE_TYPES,
   IMAGE_EXTENSIONS,
   MAX_ASSET_BYTES,
   OAUTH_NONCE_COOKIE,
+  apiError,
+  apiErrorBodyFor,
   buildClearSessionCookieHeader,
   buildSessionCookieHeader,
   buildSlackAuthorizeUrl,
@@ -31,6 +34,7 @@ import {
   verifyImageToken,
   verifyOAuthState,
   verifySessionCookieValue,
+  writeAccessErrorBody,
 } from 'services/docs-editor';
 import { registerDevLoginRoute } from 'services/docs-editor/dev-login';
 import { getLineProvenance, getProvenanceRecord, listProvenanceForDoc } from 'services/document/provenance';
@@ -158,10 +162,22 @@ function apiErrorStatus(err: unknown, fallback: number): number {
   return err instanceof CHOIRError && typeof err.statusCode === 'number' ? err.statusCode : fallback;
 }
 
-/** Error body for the docs API: the actionable message plus a stable code. */
-function apiErrorBody(err: unknown): { error: string; code?: string } {
-  const error = err instanceof Error ? err.message : 'Internal server error';
-  return err instanceof CHOIRError ? { error, code: err.code } : { error };
+/**
+ * Error body for the docs API, for the routes that let a domain error escape.
+ *
+ * A CHOIRError already carries a sentence written for the person who has to fix
+ * it — built in services/github out of a repository slug, an org OAuth policy
+ * URL or an SSO prompt — so it is passed through as the `error` string rather
+ * than flattened into a code no catalog entry could reproduce. The viewer
+ * renders an `error` it does not recognise verbatim, which is the right answer
+ * for exactly these. Anything else is a server fault: one code, with the real
+ * message kept in `detail` for the log rather than shown to a reader.
+ */
+function apiErrorBody(err: unknown): DocsApiErrorBody {
+  if (err instanceof CHOIRError) {
+    return { error: err.message, message: err.message, code: err.code };
+  }
+  return apiErrorBodyFor('internal_error', { message: err instanceof Error ? err.message : String(err) });
 }
 
 function setupPublicSite(): void {
@@ -292,7 +308,7 @@ function setupPublicSite(): void {
       });
     } catch (err) {
       app.logger.error('GET /api/docs/session failed', err as Error);
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -393,7 +409,7 @@ function setupPublicSite(): void {
       // valid session for this workspace (mirrors the content/provenance routes).
       const session = await readSession(req);
       if (!session || session.workspaceId !== workspaceId) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        return apiError(res, 401, 'unauthorized');
       }
 
       const syncState = await WorkspaceMirrorService.getInstance().getSyncState(workspaceId);
@@ -441,7 +457,7 @@ function setupPublicSite(): void {
       files.sort((left, right) => left.path.localeCompare(right.path, undefined, { numeric: true }));
       return res.json({ files, repo });
     } catch (err) {
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -453,7 +469,7 @@ function setupPublicSite(): void {
       const workspaceId = String(req.params.workspaceId);
       const docPath = Array.isArray(req.params.splat) ? req.params.splat.join('/') : String(req.params.splat);
       if (!docPath) {
-        return res.status(400).json({ error: 'document path is required' });
+        return apiError(res, 400, 'document_path_required');
       }
 
       // A valid session for this workspace now proves internal membership (the
@@ -461,7 +477,7 @@ function setupPublicSite(): void {
       // may see full records. External visitors have no valid session → blocked.
       const payload = await readSession(req);
       if (!payload || payload.workspaceId !== workspaceId) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        return apiError(res, 401, 'unauthorized');
       }
 
       // Line-level provenance (blame): current line number → record id.
@@ -474,7 +490,7 @@ function setupPublicSite(): void {
       if (id) {
         const record = await getProvenanceRecord(workspaceId, docPath, id);
         if (!record) {
-          return res.status(404).json({ error: 'Record not found' });
+          return apiError(res, 404, 'record_not_found');
         }
         return res.json({ record });
       }
@@ -483,7 +499,7 @@ function setupPublicSite(): void {
       return res.json({ records });
     } catch (err) {
       app.logger.error('GET /api/docs provenance failed', err as Error);
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -494,7 +510,7 @@ function setupPublicSite(): void {
       const filePath = Array.isArray(req.params.splat) ? req.params.splat.join('/') : String(req.params.splat);
 
       if (!filePath) {
-        return res.status(400).json({ error: 'filePath is required' });
+        return apiError(res, 400, 'file_path_required');
       }
 
       const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
@@ -504,18 +520,18 @@ function setupPublicSite(): void {
       // Containment: must be inside repoRoot. Compare with a trailing separator so
       // a sibling directory like "<repoRoot>-evil" can't pass a bare startsWith.
       if (resolved !== repoRootResolved && !resolved.startsWith(repoRootResolved + path.sep)) {
-        return res.status(403).json({ error: 'Forbidden' });
+        return apiError(res, 403, 'forbidden');
       }
 
       // Never serve the hidden provenance store — checked on the NORMALIZED
       // relative path so "foo/../.choir/…" can't slip past a raw startsWith.
       const relToRepo = path.relative(repoRootResolved, resolved).split(path.sep).join('/');
       if (relToRepo === '.choir' || relToRepo.startsWith('.choir/')) {
-        return res.status(404).json({ error: 'File not found' });
+        return apiError(res, 404, 'document_not_found');
       }
 
       if (!fs.existsSync(resolved)) {
-        return res.status(404).json({ error: 'File not found' });
+        return apiError(res, 404, 'document_not_found');
       }
 
       // Image assets are served as raw binary so the docs viewer/editor can
@@ -530,7 +546,7 @@ function setupPublicSite(): void {
         const token = typeof req.query.token === 'string' ? req.query.token : '';
         const tokenOk = !!token && verifyImageToken(token, workspaceId, filePath);
         if (!sessionOk && !tokenOk) {
-          return res.status(401).json({ error: 'Unauthorized' });
+          return apiError(res, 401, 'unauthorized');
         }
         res.setHeader('content-type', imageMime);
         res.setHeader('cache-control', 'private, max-age=31536000, immutable');
@@ -541,13 +557,13 @@ function setupPublicSite(): void {
       // for this workspace (mirrors the provenance route above).
       const session = await readSession(req);
       if (!session || session.workspaceId !== workspaceId) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        return apiError(res, 401, 'unauthorized');
       }
 
       const content = await fs.promises.readFile(resolved, 'utf-8');
       return res.json({ content, filePath });
     } catch (err) {
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -670,44 +686,41 @@ function setupPublicSite(): void {
         const filePath = Array.isArray(req.params.splat) ? req.params.splat.join('/') : String(req.params.splat);
 
         if (!filePath) {
-          return res.status(400).json({ error: 'filePath is required' });
+          return apiError(res, 400, 'file_path_required');
         }
 
         const { content, commitMessage } = req.body || {};
         if (typeof content !== 'string') {
-          return res.status(400).json({ error: 'content is required' });
+          return apiError(res, 400, 'content_required');
         }
         if (typeof commitMessage !== 'string' || !commitMessage.trim()) {
-          return res.status(400).json({ error: 'commitMessage is required' });
+          return apiError(res, 400, 'commit_message_required');
         }
 
         const session = await readSession(req);
         if (!session) {
-          return res.status(401).json({ error: 'Not signed in' });
+          return apiError(res, 401, 'not_signed_in');
         }
         if (session.workspaceId !== workspaceId) {
-          return res.status(403).json({ error: 'Session does not match workspace' });
+          return apiError(res, 403, 'workspace_mismatch');
         }
 
         const managerCheck = await isManager(workspaceId, session.userId);
         if (!managerCheck) {
-          return res.status(403).json({ error: 'User is not a workspace manager' });
+          return apiError(res, 403, 'not_a_manager');
         }
 
         // Refuse before staging or committing anything: GitHub would otherwise
         // only reveal a missing write permission mid-save, as a 404.
         const writeAccess = await getDocsWriteAccess(workspaceId, session.userId);
         if (!writeAccess.canPush) {
-          return res.status(403).json({
-            error: writeAccess.reason ?? 'No write access to the workspace repository',
-            code: 'GITHUB_WRITE_FORBIDDEN',
-          });
+          return res.status(403).json(writeAccessErrorBody(writeAccess.reason));
         }
 
         const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
         const resolved = path.resolve(repoRoot, filePath);
         if (!resolved.startsWith(path.resolve(repoRoot))) {
-          return res.status(403).json({ error: 'Forbidden' });
+          return apiError(res, 403, 'forbidden');
         }
 
         const result = await saveEditedDocument({
@@ -741,36 +754,33 @@ function setupPublicSite(): void {
         const filePath = Array.isArray(req.params.splat) ? req.params.splat.join('/') : String(req.params.splat);
 
         if (!filePath) {
-          return res.status(400).json({ error: 'filePath is required' });
+          return apiError(res, 400, 'file_path_required');
         }
         if (!filePath.endsWith('.md')) {
-          return res.status(400).json({ error: 'Only markdown documents can be deleted' });
+          return apiError(res, 400, 'not_markdown_document');
         }
         // Deleting is irreversible in the viewer, so the caller has to name the
         // document it means. The dialog makes the manager type it.
         if (String(req.body?.confirmPath || '') !== filePath) {
-          return res.status(400).json({ error: 'The typed path does not match this document' });
+          return apiError(res, 400, 'confirm_path_mismatch');
         }
 
         const session = await readSession(req);
         if (!session) {
-          return res.status(401).json({ error: 'Not signed in' });
+          return apiError(res, 401, 'not_signed_in');
         }
         if (session.workspaceId !== workspaceId) {
-          return res.status(403).json({ error: 'Session does not match workspace' });
+          return apiError(res, 403, 'workspace_mismatch');
         }
 
         const managerCheck = await isManager(workspaceId, session.userId);
         if (!managerCheck) {
-          return res.status(403).json({ error: 'User is not a workspace manager' });
+          return apiError(res, 403, 'not_a_manager');
         }
 
         const writeAccess = await getDocsWriteAccess(workspaceId, session.userId);
         if (!writeAccess.canPush) {
-          return res.status(403).json({
-            error: writeAccess.reason ?? 'No write access to the workspace repository',
-            code: 'GITHUB_WRITE_FORBIDDEN',
-          });
+          return res.status(403).json(writeAccessErrorBody(writeAccess.reason));
         }
 
         // The stricter containment form, with the trailing separator: for a
@@ -779,25 +789,22 @@ function setupPublicSite(): void {
         const repoRootResolved = path.resolve(repoRoot);
         const resolved = path.resolve(repoRootResolved, filePath);
         if (resolved !== repoRootResolved && !resolved.startsWith(repoRootResolved + path.sep)) {
-          return res.status(403).json({ error: 'Forbidden' });
+          return apiError(res, 403, 'forbidden');
         }
 
         const normalized = path.posix.normalize(filePath).replace(/^\/+/, '');
         if (normalized === '.choir' || normalized.startsWith('.choir/')) {
-          return res.status(404).json({ error: 'File not found' });
+          return apiError(res, 404, 'document_not_found');
         }
         if (!fs.existsSync(resolved)) {
-          return res.status(404).json({ error: 'File not found' });
+          return apiError(res, 404, 'document_not_found');
         }
 
         // Read-only is advisory everywhere else, but this operation cannot be
         // undone from the viewer, so here it is a refusal.
         const readOnlyFiles = await new WorkspaceStore().getReadOnlyFiles(workspaceId);
         if (isReadOnlyFile(readOnlyFiles, { path: filePath, name: path.posix.basename(filePath) })) {
-          return res.status(403).json({
-            error: 'This document is marked read-only. Clear that in App Home before deleting it.',
-            code: 'DOCUMENT_READ_ONLY',
-          });
+          return res.status(403).json({ ...apiErrorBodyFor('read_only_document'), code: 'DOCUMENT_READ_ONLY' });
         }
 
         const result = await deleteDocument({
@@ -826,29 +833,26 @@ function setupPublicSite(): void {
 
         const session = await readSession(req);
         if (!session) {
-          return res.status(401).json({ error: 'Not signed in' });
+          return apiError(res, 401, 'not_signed_in');
         }
         if (session.workspaceId !== workspaceId) {
-          return res.status(403).json({ error: 'Session does not match workspace' });
+          return apiError(res, 403, 'workspace_mismatch');
         }
 
         const managerCheck = await isManager(workspaceId, session.userId);
         if (!managerCheck) {
-          return res.status(403).json({ error: 'User is not a workspace manager' });
+          return apiError(res, 403, 'not_a_manager');
         }
 
         // Assets are committed to GitHub too, so the same write-access gate applies.
         const writeAccess = await getDocsWriteAccess(workspaceId, session.userId);
         if (!writeAccess.canPush) {
-          return res.status(403).json({
-            error: writeAccess.reason ?? 'No write access to the workspace repository',
-            code: 'GITHUB_WRITE_FORBIDDEN',
-          });
+          return res.status(403).json(writeAccessErrorBody(writeAccess.reason));
         }
 
         const body = req.body;
         if (!Buffer.isBuffer(body) || body.length === 0) {
-          return res.status(400).json({ error: 'Expected a binary image body' });
+          return apiError(res, 400, 'expected_image_body');
         }
 
         const result = await saveUploadedAsset({

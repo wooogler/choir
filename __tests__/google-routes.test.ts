@@ -347,9 +347,14 @@ describe('Google Drive routes', () => {
       );
 
       const lines = res.lines();
+      // The outcome travels as a code the viewer can translate; the import
+      // service's own `outcome` stays alongside it, and the English it used to
+      // send is now `message`, for the log and for anyone reading by hand.
       expect(lines[lines.length - 1]).toEqual({
         type: 'error',
-        error: 'a.md already exists in this repository',
+        error: 'import_path_exists',
+        message: 'a.md already exists in this repository',
+        detail: { path: 'a.md' },
         code: 'exists',
         status: 409,
       });

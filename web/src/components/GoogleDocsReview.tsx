@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fillNodes, useT } from '../i18n';
+import { type ServerErrorPayload, describeServerError, fillNodes, useT } from '../i18n';
 import type { T } from '../i18n';
 import { lineDiff } from '../utils/diff';
 
@@ -99,7 +99,7 @@ export function GoogleDocsReview({
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(decision === 'approve' ? { filePath, content } : { filePath }),
         });
-        const body = (await response.json()) as { outcome?: string; detail?: string; error?: string };
+        const body = (await response.json()) as ServerErrorPayload & { outcome?: string };
 
         if (body.outcome === 'stale') {
           // The server has already rebuilt the proposal against the newer state.
@@ -108,8 +108,7 @@ export function GoogleDocsReview({
           return;
         }
         if (!response.ok) {
-          // TODO(i18n): server error codes — `body.detail`/`body.error` are the API's own English text.
-          throw new Error(body.detail || body.error || t(failure));
+          throw new Error(describeServerError(t, body) ?? t(failure));
         }
 
         onApplied();
@@ -136,10 +135,9 @@ export function GoogleDocsReview({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ filePath }),
       });
-      const body = (await response.json()) as { detail?: string; error?: string };
+      const body = (await response.json()) as ServerErrorPayload;
       if (!response.ok) {
-        // TODO(i18n): server error codes — `body.detail`/`body.error` are the API's own English text.
-        throw new Error(body.detail || body.error || t('gdocs.review.error.republish'));
+        throw new Error(describeServerError(t, body) ?? t('gdocs.review.error.republish'));
       }
       onApplied();
       onClose();
@@ -212,7 +210,8 @@ export function GoogleDocsReview({
         {t('gdocs.review.approveHint')}
       </p>
 
-      {/* TODO(i18n): server error codes — a rejected decision can carry the API's own message. */}
+      {/* Already translated: every path that sets `error` runs the server's
+          code through `describeServerError` first. */}
       {error && <p className="gdocs-review-error">{error}</p>}
 
       {conflicts.length > 0 && (
@@ -233,10 +232,11 @@ export function GoogleDocsReview({
       )}
       {(review.rejectedAssets?.length ?? 0) > 0 && (
         <p className="gdocs-review-note">
-          {/* TODO(i18n): server error codes — each `reason` is the API's own English text. */}
           {t('gdocs.review.rejectedAssets', {
             count: review.rejectedAssets?.length ?? 0,
-            reasons: review.rejectedAssets?.map((asset) => asset.reason).join('; ') ?? '',
+            reasons:
+              review.rejectedAssets?.map((asset) => describeServerError(t, asset.reason) ?? asset.reason).join('; ') ??
+              '',
           })}
         </p>
       )}

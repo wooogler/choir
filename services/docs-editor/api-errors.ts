@@ -1,0 +1,150 @@
+/**
+ * The docs viewer's HTTP error vocabulary.
+ *
+ * The SPA renders these to a reader whose language the server does not always
+ * know — an NDJSON import line and a stored write-access `reason` are both
+ * written outside any request that carried a locale — so the wire carries a
+ * machine-readable code and the browser picks the sentence. `web/src/i18n/
+ * server-errors.ts` maps every code below to a catalog key; the root suite
+ * `__tests__/docs-api-errors.test.ts` fails if the two ever drift.
+ *
+ * The English here is not dead weight: it is what `curl` and the server log
+ * show, and it is the exact text the `en` catalog repeats, so the viewer reads
+ * identically in English before and after this indirection.
+ *
+ * Deliberately import-free. That is what lets `web/src` pull the union across
+ * the workspace boundary the way it already pulls `src/i18n/supported-locales`:
+ * Vite bundles this one file and none of the node app comes with it.
+ */
+
+/**
+ * Every code the docs API may put in `error`, with the English it stands for.
+ *
+ * `{name}` holes are filled from the response's `detail` object, by the same
+ * rules the i18n catalogs use, so a translated sentence can move them around.
+ */
+export const DOCS_API_ERROR_MESSAGES = {
+  // ── Generic ─────────────────────────────────────────────────────────────
+  internal_error: 'Internal server error',
+
+  // ── Session and authorization ───────────────────────────────────────────
+  unauthorized: 'Unauthorized',
+  forbidden: 'Forbidden',
+  not_signed_in: 'Not signed in',
+  workspace_mismatch: 'Session does not match workspace',
+  not_a_manager: 'User is not a workspace manager',
+  manager_access_required: 'Manager access required',
+
+  // ── Request shape ───────────────────────────────────────────────────────
+  document_path_required: 'document path is required',
+  file_path_required: 'filePath is required',
+  content_required: 'content is required',
+  commit_message_required: 'commitMessage is required',
+  file_path_and_file_id_required: 'filePath and fileId are required',
+  file_path_and_content_required: 'filePath and content are required',
+  confirm_path_mismatch: 'The typed path does not match this document',
+  not_markdown_document: 'Only markdown documents can be deleted',
+  expected_image_body: 'Expected a binary image body',
+
+  // ── Documents ───────────────────────────────────────────────────────────
+  document_not_found: 'File not found',
+  record_not_found: 'Record not found',
+  read_only_document: 'This document is marked read-only. Clear that in App Home before deleting it.',
+
+  // ── Write access ────────────────────────────────────────────────────────
+  write_access_denied: 'No write access to the workspace repository',
+  no_github_repo: 'No GitHub repository is connected to this workspace yet.',
+
+  // ── Google Drive sync ───────────────────────────────────────────────────
+  google_not_connected: 'Connect a Google account first',
+  google_picker_not_configured: 'The file picker is not configured (GOOGLE_PICKER_API_KEY, GOOGLE_PROJECT_NUMBER)',
+  google_no_access_token: 'Google did not return an access token',
+  google_pick_expired_link: 'Pick the document again — this link request has expired',
+  google_pick_expired_import: 'Pick the document again — this import request has expired',
+  google_doc_missing_in_repo: 'No such document in this workspace',
+  google_doc_trashed: 'That document is in the trash',
+  google_doc_already_linked: 'Google Doc {fileId} is already linked to {conflictPath}',
+  google_doc_not_linked: 'This document is not linked to a Google Doc',
+  github_document_gone: 'The GitHub document no longer exists. Unlink this replica instead.',
+  republish_failed: 'Could not republish this document from GitHub: {message}',
+  review_declined_not_restored: 'The document keeps the rejected text until someone reverts it',
+
+  // ── Import ──────────────────────────────────────────────────────────────
+  import_invalid_path: 'Give a repository-relative path ending in .md',
+  import_path_exists: '{path} already exists in this repository',
+  import_empty: 'That document exported as empty',
+  import_failed: 'Could not import that document: {message}',
+  import_interrupted: 'The import stopped before it finished',
+} as const;
+
+export type DocsApiErrorCode = keyof typeof DOCS_API_ERROR_MESSAGES;
+
+/** Values a `{name}` hole in the English above (or in a translation) accepts. */
+export type DocsApiErrorDetail = Record<string, string | number>;
+
+/**
+ * The body every refusal below sends.
+ *
+ * `error` stays a string so a client written against the old API still has
+ * something to show; it is now a code rather than a sentence. `message` is the
+ * English that code stands for, for logs and for anyone reading the response by
+ * hand. `code` survives where a route already sent one (the CHOIR domain-error
+ * codes like `GITHUB_WRITE_FORBIDDEN`) and is not the same vocabulary.
+ */
+export interface DocsApiErrorBody {
+  error: string;
+  message: string;
+  detail?: DocsApiErrorDetail;
+  code?: string;
+}
+
+/** Narrowest shape of Express's `res` this module needs. Both `any` (app.ts) and
+ *  the hand-written `Res` alias in services/google/routes.ts satisfy it. */
+export interface ApiErrorResponder {
+  status(code: number): { json(body: unknown): unknown };
+}
+
+export function isDocsApiErrorCode(value: unknown): value is DocsApiErrorCode {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(DOCS_API_ERROR_MESSAGES, value);
+}
+
+/** Fills the English `{name}` holes, so `message` reads as a finished sentence. */
+function renderMessage(code: DocsApiErrorCode, detail?: DocsApiErrorDetail): string {
+  const template: string = DOCS_API_ERROR_MESSAGES[code];
+  if (!detail) return template;
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => {
+    const value = detail[name];
+    return value === undefined ? match : String(value);
+  });
+}
+
+/** The body for `code`, for the two places that cannot simply send a response. */
+export function apiErrorBodyFor(code: DocsApiErrorCode, detail?: DocsApiErrorDetail): DocsApiErrorBody {
+  return { error: code, message: renderMessage(code, detail), ...(detail ? { detail } : {}) };
+}
+
+/** `return apiError(res, 403, 'not_a_manager')` — the shape every refusal takes. */
+export function apiError(
+  res: ApiErrorResponder,
+  status: number,
+  code: DocsApiErrorCode,
+  detail?: DocsApiErrorDetail,
+): unknown {
+  return res.status(status).json(apiErrorBodyFor(code, detail));
+}
+
+/**
+ * The 403 body for a manager whose GitHub account cannot push.
+ *
+ * `reason` comes from `getDocsWriteAccess`, which answers with a code when
+ * CHOIR itself knows why (no repository connected) and with GitHub's own
+ * sentence when the answer depends on a repository slug, an org policy URL or
+ * an SSO prompt. Those sentences are built in `services/github` and are passed
+ * through verbatim — the viewer shows an unknown `error` as-is.
+ */
+export function writeAccessErrorBody(reason?: string): DocsApiErrorBody {
+  const body: DocsApiErrorBody = isDocsApiErrorCode(reason)
+    ? apiErrorBodyFor(reason)
+    : { error: reason ?? 'write_access_denied', message: reason ?? DOCS_API_ERROR_MESSAGES.write_access_denied };
+  return { ...body, code: 'GITHUB_WRITE_FORBIDDEN' };
+}

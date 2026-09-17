@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useT } from '../i18n';
+import { type ServerErrorPayload, describeServerError, useT } from '../i18n';
 import { pickGoogleDoc } from '../utils/picker';
 
 /**
@@ -87,10 +87,9 @@ export function GoogleDocsSync({
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ filePath, fileId, pickerNonce }),
         });
-        const body = (await response.json()) as { error?: string };
+        const body = (await response.json()) as ServerErrorPayload;
         if (!response.ok) {
-          // TODO(i18n): server error codes — `body.error` is the API's own English text.
-          throw new Error(body.error || t('gdocs.sync.error.link'));
+          throw new Error(describeServerError(t, body) ?? t('gdocs.sync.error.link'));
         }
         await refresh();
       } catch (err) {
@@ -205,7 +204,8 @@ export function GoogleDocsSync({
             ? t('gdocs.sync.button.reconnect')
             : t('gdocs.sync.button.sync')}
       </button>
-      {/* TODO(i18n): server error codes — a linking failure can carry the API's own message. */}
+      {/* Already in the reader's language: `link` and `pick` translate the
+          server's code before it ever reaches this state. */}
       {error && (
         <span className="doc-change-count" title={error}>
           {error}

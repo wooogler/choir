@@ -235,6 +235,14 @@ export const ko: LocaleCatalog = {
   'gdocs.import.aria.progress': 'Google Docs 가져오기',
   'gdocs.import.starting': '가져오기를 시작하는 중…',
 
+  // ── Import progress steps ───────────────────────────────────────────────
+  'import.step.checking': '저장소를 확인하고 있어요',
+  'import.step.reading': 'Google 문서를 읽고 있어요',
+  'import.step.committing': 'GitHub에 커밋하고 있어요',
+  'import.step.mirroring': '로컬 사본을 갱신하고 있어요',
+  'import.step.linking': 'Google 문서를 연결하고 있어요',
+  'import.step.done': '완료',
+
   // ── Google Picker ───────────────────────────────────────────────────────
   'picker.error.gapiMissing': 'Google API 스크립트를 불러왔지만 gapi가 없습니다',
   'picker.error.scriptFailed': 'Google 파일 선택기를 불러오지 못했습니다',
@@ -244,6 +252,47 @@ export const ko: LocaleCatalog = {
   // ── Asset upload ────────────────────────────────────────────────────────
   'assets.error.upload': '업로드에 실패했습니다 ({status})',
   'assets.error.missingPath': '업로드 응답에 경로가 없습니다',
+
+  // ── Docs API error codes ────────────────────────────────────────────────
+  'serverError.internal_error': '서버에 문제가 생겼어요.',
+  'serverError.unauthorized': '접근 권한이 없어요.',
+  'serverError.forbidden': '허용되지 않는 요청이에요.',
+  'serverError.not_signed_in': '로그인이 필요해요.',
+  'serverError.workspace_mismatch': '지금 로그인한 워크스페이스와 맞지 않아요.',
+  'serverError.not_a_manager': '워크스페이스 매니저만 할 수 있어요.',
+  'serverError.manager_access_required': '매니저 권한이 필요해요.',
+  'serverError.document_path_required': '문서 경로가 필요해요.',
+  'serverError.file_path_required': '문서 경로(filePath)가 필요해요.',
+  'serverError.content_required': '본문(content)이 필요해요.',
+  'serverError.commit_message_required': '커밋 메시지(commitMessage)가 필요해요.',
+  'serverError.file_path_and_file_id_required': '문서 경로(filePath)와 파일 ID(fileId)가 모두 필요해요.',
+  'serverError.file_path_and_content_required': '문서 경로(filePath)와 본문(content)이 모두 필요해요.',
+  'serverError.confirm_path_mismatch': '입력한 경로가 이 문서와 달라요.',
+  'serverError.not_markdown_document': '마크다운 문서만 삭제할 수 있어요.',
+  'serverError.expected_image_body': '이미지 파일이 담긴 요청이어야 해요.',
+  'serverError.document_not_found': '문서를 찾을 수 없어요.',
+  'serverError.record_not_found': '기록을 찾을 수 없어요.',
+  'serverError.read_only_document': '이 문서는 읽기 전용으로 표시돼 있어요. 삭제하려면 앱 홈에서 먼저 해제해 주세요.',
+  'serverError.write_access_denied': '워크스페이스 저장소에 쓰기 권한이 없어요.',
+  'serverError.no_github_repo': '이 워크스페이스에는 아직 연결된 GitHub 저장소가 없어요.',
+  'serverError.google_not_connected': 'Google 계정을 먼저 연결해 주세요.',
+  'serverError.google_picker_not_configured':
+    '파일 선택기가 설정돼 있지 않아요 (GOOGLE_PICKER_API_KEY, GOOGLE_PROJECT_NUMBER).',
+  'serverError.google_no_access_token': 'Google이 액세스 토큰을 주지 않았어요.',
+  'serverError.google_pick_expired_link': '문서를 다시 골라 주세요. 이 연결 요청은 만료됐어요.',
+  'serverError.google_pick_expired_import': '문서를 다시 골라 주세요. 이 가져오기 요청은 만료됐어요.',
+  'serverError.google_doc_missing_in_repo': '이 워크스페이스에는 그런 문서가 없어요.',
+  'serverError.google_doc_trashed': '그 문서는 휴지통에 있어요.',
+  'serverError.google_doc_already_linked': 'Google 문서 {fileId}는 이미 {conflictPath}에 연결돼 있어요.',
+  'serverError.google_doc_not_linked': '이 문서는 Google 문서와 연결돼 있지 않아요.',
+  'serverError.github_document_gone': 'GitHub 문서가 더 이상 없어요. 대신 이 사본의 연결을 해제해 주세요.',
+  'serverError.republish_failed': 'GitHub에서 이 문서를 다시 게시하지 못했어요: {message}',
+  'serverError.review_declined_not_restored': '누군가 되돌리기 전까지는 거절된 내용이 문서에 그대로 남아 있어요.',
+  'serverError.import_invalid_path': '.md로 끝나는 저장소 기준 경로를 적어 주세요.',
+  'serverError.import_path_exists': '{path}는 이미 이 저장소에 있어요.',
+  'serverError.import_empty': '그 문서는 내용이 빈 채로 내보내졌어요.',
+  'serverError.import_failed': '문서를 가져오지 못했어요: {message}',
+  'serverError.import_interrupted': '가져오기가 끝나기 전에 멈췄어요.',
 
   // ── Milkdown/Crepe editor chrome ────────────────────────────────────────
   'editor.placeholder': '내용을 입력하세요...',

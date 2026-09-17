@@ -268,6 +268,17 @@ export const en = {
   'gdocs.import.aria.progress': 'Google Docs import',
   'gdocs.import.starting': 'Starting the import…',
 
+  // ── Import progress steps (services/google/import-steps.ts) ─────────────
+  // Keyed by the `step` the NDJSON stream carries, not by the `label` beside
+  // it: the label is the server's own English, for logs and for anyone reading
+  // the stream by hand.
+  'import.step.checking': 'Checking the repository',
+  'import.step.reading': 'Reading the Google Doc',
+  'import.step.committing': 'Committing to GitHub',
+  'import.step.mirroring': 'Updating the local copy',
+  'import.step.linking': 'Linking the Google Doc',
+  'import.step.done': 'Done',
+
   // ── Google Picker (utils/picker.ts) ─────────────────────────────────────
   'picker.error.gapiMissing': 'Google API script loaded without gapi',
   'picker.error.scriptFailed': 'Could not load the Google file picker',
@@ -277,6 +288,50 @@ export const en = {
   // ── Asset upload (utils/assets.ts) ──────────────────────────────────────
   'assets.error.upload': 'Upload failed ({status})',
   'assets.error.missingPath': 'Upload response missing path',
+
+  // ── Docs API error codes (i18n/server-errors.ts) ────────────────────────
+  // One entry per `DocsApiErrorCode`. The English here is deliberately the
+  // same text the server used to send, so an English reader sees no change;
+  // `services/docs-editor/api-errors.ts` keeps the matching copy for logs.
+  'serverError.internal_error': 'Internal server error',
+  'serverError.unauthorized': 'Unauthorized',
+  'serverError.forbidden': 'Forbidden',
+  'serverError.not_signed_in': 'Not signed in',
+  'serverError.workspace_mismatch': 'Session does not match workspace',
+  'serverError.not_a_manager': 'User is not a workspace manager',
+  'serverError.manager_access_required': 'Manager access required',
+  'serverError.document_path_required': 'document path is required',
+  'serverError.file_path_required': 'filePath is required',
+  'serverError.content_required': 'content is required',
+  'serverError.commit_message_required': 'commitMessage is required',
+  'serverError.file_path_and_file_id_required': 'filePath and fileId are required',
+  'serverError.file_path_and_content_required': 'filePath and content are required',
+  'serverError.confirm_path_mismatch': 'The typed path does not match this document',
+  'serverError.not_markdown_document': 'Only markdown documents can be deleted',
+  'serverError.expected_image_body': 'Expected a binary image body',
+  'serverError.document_not_found': 'File not found',
+  'serverError.record_not_found': 'Record not found',
+  'serverError.read_only_document': 'This document is marked read-only. Clear that in App Home before deleting it.',
+  'serverError.write_access_denied': 'No write access to the workspace repository',
+  'serverError.no_github_repo': 'No GitHub repository is connected to this workspace yet.',
+  'serverError.google_not_connected': 'Connect a Google account first',
+  'serverError.google_picker_not_configured':
+    'The file picker is not configured (GOOGLE_PICKER_API_KEY, GOOGLE_PROJECT_NUMBER)',
+  'serverError.google_no_access_token': 'Google did not return an access token',
+  'serverError.google_pick_expired_link': 'Pick the document again — this link request has expired',
+  'serverError.google_pick_expired_import': 'Pick the document again — this import request has expired',
+  'serverError.google_doc_missing_in_repo': 'No such document in this workspace',
+  'serverError.google_doc_trashed': 'That document is in the trash',
+  'serverError.google_doc_already_linked': 'Google Doc {fileId} is already linked to {conflictPath}',
+  'serverError.google_doc_not_linked': 'This document is not linked to a Google Doc',
+  'serverError.github_document_gone': 'The GitHub document no longer exists. Unlink this replica instead.',
+  'serverError.republish_failed': 'Could not republish this document from GitHub: {message}',
+  'serverError.review_declined_not_restored': 'The document keeps the rejected text until someone reverts it',
+  'serverError.import_invalid_path': 'Give a repository-relative path ending in .md',
+  'serverError.import_path_exists': '{path} already exists in this repository',
+  'serverError.import_empty': 'That document exported as empty',
+  'serverError.import_failed': 'Could not import that document: {message}',
+  'serverError.import_interrupted': 'The import stopped before it finished',
 
   // ── Milkdown/Crepe editor chrome (i18n/crepe.ts) ────────────────────────
   'editor.placeholder': 'Please enter...',

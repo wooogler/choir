@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useT } from '../i18n';
+import type { ImportStep } from '../../../services/google/import-steps';
+import { type ServerErrorPayload, type T, describeServerError, useT } from '../i18n';
 import { docsPath } from '../utils/docs';
 import { readNdjson } from '../utils/ndjson';
 import { pickGoogleDoc } from '../utils/picker';
@@ -20,22 +21,44 @@ import { pickGoogleDoc } from '../utils/picker';
  * does not exist yet.
  */
 
-type ImportResponse = {
+type ImportResponse = ServerErrorPayload & {
   githubPath?: string;
   linked?: boolean;
   rejectedAssets?: Array<{ reason: string; contentType: string; bytes: number }>;
-  error?: string;
 };
 
 /** One line of the NDJSON the import endpoint streams while it works. */
 type ImportEvent =
   | { type: 'progress'; step: string; index: number; total: number; label: string }
   | ({ type: 'result' } & ImportResponse)
-  | { type: 'error'; error?: string; code?: string; status?: number };
+  | ({ type: 'error'; status?: number } & ServerErrorPayload);
 
-type Progress = { label: string; index: number; total: number };
+type Progress = { step: string; label: string; index: number; total: number };
 
 const IMPORT_STREAM_TYPE = 'application/x-ndjson';
+
+/**
+ * The import's steps, keyed by the `step` the stream carries rather than by the
+ * `label` beside it: the label is the server's own English, written before
+ * anyone knew who would be watching the bar.
+ */
+const STEP_KEY = {
+  checking: 'import.step.checking',
+  reading: 'import.step.reading',
+  committing: 'import.step.committing',
+  mirroring: 'import.step.mirroring',
+  linking: 'import.step.linking',
+  done: 'import.step.done',
+} as const satisfies Record<ImportStep, Parameters<T>[0]>;
+
+/**
+ * A server newer than this bundle can stream a step the catalog has no word
+ * for. Its English `label` is a better answer there than a blank bar.
+ */
+function describeStep(t: T, progress: Progress): string {
+  const key = STEP_KEY[progress.step as ImportStep];
+  return key ? t(key) : progress.label;
+}
 
 /** Repo-relative, markdown, no traversal — mirrors the server's own check. */
 function looksLikeRepoPath(candidate: string): boolean {
@@ -135,10 +158,9 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
         // import reports its outcome on the last line instead of in the status.
         for await (const event of readNdjson<ImportEvent>(response.body)) {
           if (event.type === 'progress') {
-            setProgress({ label: event.label, index: event.index, total: event.total });
+            setProgress({ step: event.step, label: event.label, index: event.index, total: event.total });
           } else if (event.type === 'error') {
-            // TODO(i18n): server error codes — `event.error` is the API's own English text.
-            throw new Error(event.error || t('gdocs.import.error.failed'));
+            throw new Error(describeServerError(t, event) ?? t('gdocs.import.error.failed'));
           } else if (event.type === 'result') {
             result = event;
           }
@@ -146,13 +168,13 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
         if (!result) throw new Error(t('gdocs.import.error.interrupted'));
       } else {
         result = (await response.json()) as ImportResponse;
-        // TODO(i18n): server error codes — `result.error` is the API's own English text.
-        if (!response.ok) throw new Error(result.error || t('gdocs.import.error.failed'));
+        if (!response.ok) throw new Error(describeServerError(t, result) ?? t('gdocs.import.error.failed'));
       }
 
       if (result.rejectedAssets?.length) {
-        // TODO(i18n): server error codes — each `reason` is the API's own English text.
-        const reasons = result.rejectedAssets.map((asset) => `• ${asset.reason}`).join('\n');
+        const reasons = result.rejectedAssets
+          .map((asset) => `• ${describeServerError(t, asset.reason) ?? asset.reason}`)
+          .join('\n');
         window.alert(t('gdocs.import.rejectedAssets', { count: result.rejectedAssets.length, reasons }));
       }
       // A full load rather than a soft navigation: the file tree is fetched once
@@ -200,7 +222,7 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
             aria-valuemin={0}
             aria-valuemax={progress ? progress.total : undefined}
             aria-valuenow={progress ? progress.index : undefined}
-            aria-valuetext={progress?.label}
+            aria-valuetext={progress ? describeStep(t, progress) : undefined}
             // Not keyboard-reachable on purpose: there is nothing to operate,
             // and the label below it carries the same words the bar shows.
             tabIndex={-1}
@@ -208,12 +230,12 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
             <div className="import-progress-fill" style={progress ? { width: `${percent}%` } : undefined} />
           </div>
           <div className="import-progress-label" aria-live="polite">
-            {/* TODO(i18n): server error codes — `progress.label` is the step name the API streams. */}
-            {progress ? progress.label : t('gdocs.import.starting')}
+            {progress ? describeStep(t, progress) : t('gdocs.import.starting')}
           </div>
         </div>
       )}
-      {/* TODO(i18n): server error codes — an import failure can carry the API's own message. */}
+      {/* Already in the reader's language: every throw above runs the server's
+          code through `describeServerError` first. */}
       {error && (
         <div className="sidebar-subtitle" role="alert">
           {error}

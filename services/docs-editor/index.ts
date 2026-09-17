@@ -21,3 +21,11 @@ export { buildSlackAuthorizeUrl, exchangeSlackOidcCode, getSlackOidcConfig } fro
 export type { SlackOidcConfig, SlackOidcResult } from './slack-oidc';
 export { getDocsWriteAccess } from './write-access';
 export type { DocsWriteAccess } from './write-access';
+export {
+  DOCS_API_ERROR_MESSAGES,
+  apiError,
+  apiErrorBodyFor,
+  isDocsApiErrorCode,
+  writeAccessErrorBody,
+} from './api-errors';
+export type { DocsApiErrorCode, DocsApiErrorDetail, DocsApiErrorBody } from './api-errors';

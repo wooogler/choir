@@ -1,4 +1,5 @@
 import { AppConfig } from '@/config';
+import { type DocsApiErrorCode, apiError, apiErrorBodyFor } from 'services/docs-editor/api-errors';
 import { OAUTH_NONCE_COOKIE, issueOAuthState, verifyOAuthState } from 'services/docs-editor/oauth-state';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
@@ -84,11 +85,11 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
   const requireManagerOf = async (req: Req, res: Res, workspaceId: string) => {
     const session = await deps.readSession(req);
     if (!session || session.workspaceId !== workspaceId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      apiError(res, 401, 'unauthorized');
       return null;
     }
     if (!(await deps.isManager(workspaceId, session.userId))) {
-      res.status(403).json({ error: 'Manager access required' });
+      apiError(res, 403, 'manager_access_required');
       return null;
     }
     return session;
@@ -178,7 +179,7 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       const workspaceId = String(req.params.workspaceId);
       const session = await deps.readSession(req);
       if (!session || session.workspaceId !== workspaceId) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        return apiError(res, 401, 'unauthorized');
       }
 
       const { configured } = AppConfig.getGoogleConfig();
@@ -213,7 +214,7 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       });
     } catch (err) {
       deps.logger.error('GET google/status failed', err);
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -232,19 +233,17 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
 
       const { pickerApiKey, projectNumber } = AppConfig.getGoogleConfig();
       if (!pickerApiKey || !projectNumber) {
-        return res.status(503).json({
-          error: 'The file picker is not configured (GOOGLE_PICKER_API_KEY, GOOGLE_PROJECT_NUMBER)',
-        });
+        return apiError(res, 503, 'google_picker_not_configured');
       }
 
       const client = await getWorkspaceClient(workspaceId);
       if (!client) {
-        return res.status(409).json({ error: 'Connect a Google account first' });
+        return apiError(res, 409, 'google_not_connected');
       }
 
       const token = await client.getAccessToken();
       if (!token.token) {
-        return res.status(502).json({ error: 'Google did not return an access token' });
+        return apiError(res, 502, 'google_no_access_token');
       }
 
       return res.json({
@@ -257,7 +256,7 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       });
     } catch (err) {
       deps.logger.error('POST google/picker-token failed', err);
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -274,28 +273,28 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       const pickerNonce = String(req.body?.pickerNonce || '');
 
       if (!filePath || !fileId) {
-        return res.status(400).json({ error: 'filePath and fileId are required' });
+        return apiError(res, 400, 'file_path_and_file_id_required');
       }
       // Linking replaces the document's content, so it must follow a deliberate
       // pick rather than an arbitrary fileId posted at the endpoint.
       if (!verifyPickerNonce(pickerNonce, workspaceId, session.userId)) {
-        return res.status(400).json({ error: 'Pick the document again — this link request has expired' });
+        return apiError(res, 400, 'google_pick_expired_link');
       }
 
       const markdown = await WorkspaceMirrorService.getInstance().readMirrorFile(workspaceId, filePath);
       if (markdown === null) {
-        return res.status(404).json({ error: 'No such document in this workspace' });
+        return apiError(res, 404, 'google_doc_missing_in_repo');
       }
 
       const client = await getWorkspaceClient(workspaceId);
       if (!client) {
-        return res.status(409).json({ error: 'Connect a Google account first' });
+        return apiError(res, 409, 'google_not_connected');
       }
 
       // Confirms the grant actually reaches this file before anything is stored.
       const meta = await getDocMeta(client, fileId);
       if (meta.trashed) {
-        return res.status(400).json({ error: 'That document is in the trash' });
+        return apiError(res, 400, 'google_doc_trashed');
       }
 
       await store.setGoogleDocMapping(workspaceId, filePath, {
@@ -323,12 +322,18 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Internal server error';
-      // A duplicate fileId is the caller's mistake, not a server fault.
-      if (/already linked to/.test(message)) {
-        return res.status(409).json({ error: message });
+      // A duplicate fileId is the caller's mistake, not a server fault. The
+      // store phrases it as a sentence; the conflicting path is the half of it
+      // the manager needs, so it travels as a detail the viewer can re-word.
+      const conflict = /already linked to (.+)$/.exec(message);
+      if (conflict) {
+        return apiError(res, 409, 'google_doc_already_linked', {
+          fileId: String(req.body?.fileId || '').trim(),
+          conflictPath: conflict[1],
+        });
       }
       deps.logger.error('POST google/link failed', err);
-      return res.status(500).json({ error: message });
+      return apiError(res, 500, 'internal_error', { message });
     }
   });
 
@@ -352,10 +357,10 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       const pickerNonce = String(req.body?.pickerNonce || '');
 
       if (!filePath || !fileId) {
-        return res.status(400).json({ error: 'filePath and fileId are required' });
+        return apiError(res, 400, 'file_path_and_file_id_required');
       }
       if (!verifyPickerNonce(pickerNonce, workspaceId, session.userId)) {
-        return res.status(400).json({ error: 'Pick the document again — this import request has expired' });
+        return apiError(res, 400, 'google_pick_expired_import');
       }
 
       // An import runs long enough to need a progress bar: reading the Doc,
@@ -407,20 +412,22 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
             : result.outcome === 'invalid-path' || result.outcome === 'empty'
               ? 400
               : 500;
+      // `outcome` is already a code, but it is the import service's vocabulary
+      // rather than the API's, so it is translated into one the viewer's
+      // catalog covers and kept alongside for anyone who reads it today.
+      const body = { ...importErrorBody(result, filePath), code: result.outcome };
       // The status line is long gone once progress has been streamed, so a
       // streaming caller reads the outcome off the final line instead.
       if (streaming) {
-        return res.end(
-          `${JSON.stringify({ type: 'error', error: result.detail ?? result.outcome, code: result.outcome, status })}\n`,
-        );
+        return res.end(`${JSON.stringify({ type: 'error', ...body, status })}\n`);
       }
-      return res.status(status).json({ error: result.detail ?? result.outcome, code: result.outcome });
+      return res.status(status).json(body);
     } catch (err) {
       deps.logger.error('POST google/import failed', err);
       if (res.headersSent) {
-        return res.end(`${JSON.stringify({ type: 'error', error: 'Internal server error', status: 500 })}\n`);
+        return res.end(`${JSON.stringify({ type: 'error', ...apiErrorBodyFor('internal_error'), status: 500 })}\n`);
       }
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -433,7 +440,7 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
 
       const filePath = String(req.body?.filePath || req.query?.filePath || '').trim();
       if (!filePath) {
-        return res.status(400).json({ error: 'filePath is required' });
+        return apiError(res, 400, 'file_path_required');
       }
 
       // Retire cards before the mapping goes: a manager clicking Approve on a
@@ -460,7 +467,7 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       return res.json({ ok: true, removed });
     } catch (err) {
       deps.logger.error('DELETE google/link failed', err);
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -475,13 +482,13 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
 
       const filePath = typeof req.query?.filePath === 'string' ? req.query.filePath : '';
       if (!filePath) {
-        return res.status(400).json({ error: 'filePath is required' });
+        return apiError(res, 400, 'file_path_required');
       }
 
       return res.json(await buildReview(workspaceId, filePath));
     } catch (err) {
       deps.logger.error('GET google/review failed', err);
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -496,7 +503,7 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       const filePath = String(req.body?.filePath || '').trim();
       const content = typeof req.body?.content === 'string' ? req.body.content : null;
       if (!filePath || content === null) {
-        return res.status(400).json({ error: 'filePath and content are required' });
+        return apiError(res, 400, 'file_path_and_content_required');
       }
 
       const result = await approveReview({ workspaceId, githubPath: filePath, userId: session.userId, content });
@@ -513,7 +520,7 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       return res.status(status).json(result);
     } catch (err) {
       deps.logger.error('POST google/review/approve failed', err);
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -526,7 +533,7 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
 
       const filePath = String(req.body?.filePath || '').trim();
       if (!filePath) {
-        return res.status(400).json({ error: 'filePath is required' });
+        return apiError(res, 400, 'file_path_required');
       }
 
       const result = await rejectReview(workspaceId, filePath);
@@ -541,7 +548,7 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       return res.status(status).json(result);
     } catch (err) {
       deps.logger.error('POST google/review/reject failed', err);
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -562,17 +569,15 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
 
       const filePath = String(req.body?.filePath || '').trim();
       if (!filePath) {
-        return res.status(400).json({ error: 'filePath is required' });
+        return apiError(res, 400, 'file_path_required');
       }
       if (!(await store.getGoogleDocMapping(workspaceId, filePath))) {
-        return res.status(404).json({ error: 'This document is not linked to a Google Doc' });
+        return apiError(res, 404, 'google_doc_not_linked');
       }
 
       const markdown = await WorkspaceMirrorService.getInstance().readMirrorFile(workspaceId, filePath);
       if (markdown === null) {
-        return res.status(409).json({
-          error: 'The GitHub document no longer exists. Unlink this replica instead.',
-        });
+        return apiError(res, 409, 'github_document_gone');
       }
 
       await retireReviewCards({
@@ -593,10 +598,21 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       // should mean there, and the only thing it is allowed to mean.
       const published = await publishReplica({ workspaceId, githubPath: filePath, markdown, force: true });
       const settled = published.outcome === 'published' || published.outcome === 'held-for-manual';
-      return res.status(settled ? 200 : 500).json({ outcome: published.outcome, detail: published.detail });
+      if (settled) {
+        return res.status(200).json({ outcome: published.outcome, detail: published.detail });
+      }
+      // `detail` stays the free-text string it has always been — the viewer
+      // reads a string detail as the `{message}` the catalog sentence wraps —
+      // so nothing that already parses this body has to change.
+      const detail = published.detail ?? published.outcome;
+      return res.status(500).json({
+        outcome: published.outcome,
+        ...apiErrorBodyFor('republish_failed', { message: detail }),
+        detail,
+      });
     } catch (err) {
       deps.logger.error('POST google/rebaseline failed', err);
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
 
@@ -624,7 +640,36 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       return res.json({ ok: true });
     } catch (err) {
       deps.logger.error('POST google/disconnect failed', err);
-      return res.status(500).json({ error: 'Internal server error' });
+      return apiError(res, 500, 'internal_error');
     }
   });
+}
+
+/**
+ * The import service reports refusals with its own outcome vocabulary and an
+ * English `detail`. This turns one into the API's code, so the viewer can say
+ * the same thing in the reader's language; `failed` keeps the detail as the
+ * `{message}` its sentence wraps, because what went wrong there is assembled
+ * deeper down (a trashed document, a missing repository, a GitHub error) and
+ * cannot be enumerated from here.
+ */
+function importErrorBody(result: { outcome: string; githubPath?: string; detail?: string }, requestedPath: string) {
+  const code: DocsApiErrorCode =
+    result.outcome === 'exists'
+      ? 'import_path_exists'
+      : result.outcome === 'not-connected'
+        ? 'google_not_connected'
+        : result.outcome === 'invalid-path'
+          ? 'import_invalid_path'
+          : result.outcome === 'empty'
+            ? 'import_empty'
+            : 'import_failed';
+
+  if (code === 'import_path_exists') {
+    return apiErrorBodyFor(code, { path: result.githubPath ?? requestedPath });
+  }
+  if (code === 'import_failed') {
+    return apiErrorBodyFor(code, { message: result.detail ?? result.outcome });
+  }
+  return apiErrorBodyFor(code);
 }

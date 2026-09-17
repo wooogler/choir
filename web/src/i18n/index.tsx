@@ -22,6 +22,8 @@ import { DEFAULT_LOCALE, type Locale, normalizeLocale } from './supported-locale
 import { PLACEHOLDER, type T, createT } from './translate';
 
 export { formatDate, formatRelative } from './format';
+export { SERVER_ERROR_KEY, describeServerError, isDocsApiErrorCode } from './server-errors';
+export type { DocsApiErrorCode, ServerErrorPayload } from './server-errors';
 export {
   type T,
   catalogs,

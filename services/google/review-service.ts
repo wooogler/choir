@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { Logger } from 'services/common/logger';
+import type { DocsApiErrorCode } from 'services/docs-editor/api-errors';
 import { ASSETS_DIR } from 'services/docs-editor/save-asset';
 import { buildContextFile, persistContextToMirror } from 'services/document/provenance';
 import type { ProvenanceRecord } from 'services/document/provenance/types';
@@ -426,7 +427,10 @@ export async function rejectReview(workspaceId: string, githubPath: string): Pro
   if (published.outcome === 'held-for-manual') {
     return {
       outcome: 'declined-not-restored',
-      detail: 'The document keeps the rejected text until someone reverts it',
+      // A code, not a sentence: this crosses the docs API to a viewer whose
+      // language is the reader's, and `services/docs-editor/api-errors.ts`
+      // holds the English it stands for.
+      detail: 'review_declined_not_restored' satisfies DocsApiErrorCode,
     };
   }
 
