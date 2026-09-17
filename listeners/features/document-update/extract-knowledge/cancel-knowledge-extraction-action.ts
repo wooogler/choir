@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
-import { tForRequest, tForUser, tForWorkspace } from 'services/i18n';
+import { describeError, tForRequest, tForUser, tForWorkspace } from 'services/i18n';
 import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -269,7 +269,7 @@ export const cancelKnowledgeExtractionCallback = async ({
         channel: originalChannelId,
         user: body.user.id,
         text: t('docUpdate.extract.error.cancelFailed.fallback', {
-          reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+          reason: describeError(t, error),
         }),
         blocks: [
           {
@@ -277,7 +277,7 @@ export const cancelKnowledgeExtractionCallback = async ({
             text: {
               type: 'mrkdwn',
               text: t('docUpdate.extract.error.cancelFailed', {
-                reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+                reason: describeError(t, error),
               }),
             },
           },

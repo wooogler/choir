@@ -16,6 +16,9 @@ export const common = {
   'common.button.back': 'Back',
   'common.error.generic': 'Something went wrong. Please try again.',
   'common.error.managerOnly': 'Only managers can do this.',
+  // Stands in for the manager names when there are none to list, or when
+  // Slack would not tell us who they are.
+  'common.managers': 'managers',
   'common.count.managers': { one: '{count} manager', other: '{count} managers' },
   'common.count.files': { one: '{count} file', other: '{count} files' },
   'common.count.messages': { one: '{count} message', other: '{count} messages' },

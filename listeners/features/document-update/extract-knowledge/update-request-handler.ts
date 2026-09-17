@@ -1,7 +1,7 @@
 import type { WebClient } from '@slack/web-api';
 import { SessionType, generateSessionId, storeSessionData } from 'services/common';
 import { logKnowledgeExtraction, logUpdateRequestProcessing } from 'services/common/interaction-tracker';
-import { tForUser, tForWorkspace } from 'services/i18n';
+import { describeError, tForUser, tForWorkspace } from 'services/i18n';
 import { extractKnowledgeFromMessages } from 'services/llm/knowledge-extractor';
 import {
   type SlackMessage,
@@ -169,7 +169,9 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
 
       // Get managers for the message
       const managers = await getManagers(workspaceId);
-      const managerText = await getManagerText(workspaceId, client);
+      // Read in the source channel alongside the preview, so it follows the
+      // workspace language rather than the requester's.
+      const managerText = await getManagerText(workspaceId, client, tChannel);
 
       // Get workspace configuration for organizational context
       const workspaceStore = new WorkspaceStore();
@@ -446,10 +448,7 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
             text: {
               type: 'mrkdwn',
               text: tChannel('docUpdate.extract.error.extractionFailed', {
-                reason:
-                  extractionError instanceof Error
-                    ? extractionError.message
-                    : tChannel('docUpdate.extract.error.unknown'),
+                reason: describeError(tChannel, extractionError),
               }),
             },
           },

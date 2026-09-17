@@ -3,6 +3,7 @@ import { SessionType, getSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/interaction-tracker';
 import { convertMarkdownToSlackText, updateDocumentContent } from 'services/document';
 import { createAppendSuggestionBlock } from 'services/document/update-processor';
+import { describeError } from 'services/i18n';
 import { createDiffBlock, getWorkspaceId } from 'services/slack';
 import { tForReviewer } from './shared';
 
@@ -175,7 +176,7 @@ export const handleSuggestionEditorSubmission = async ({
         await client.chat.postMessage({
           channel: dmResult.channel.id,
           text: t('docUpdate.suggestions.editor.error.save', {
-            reason: error instanceof Error ? error.message : 'Unknown error',
+            reason: describeError(t, error),
           }),
         });
       }

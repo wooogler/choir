@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, SlackViewAction, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/interaction-tracker';
-import { tForRequest, tForWorkspace } from 'services/i18n';
+import { describeError, tForRequest, tForWorkspace } from 'services/i18n';
 import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { withRateLimit } from 'services/slack/rate-limit-handler';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
@@ -196,7 +196,7 @@ export async function handleKnowledgeEditManagerModal({
         });
 
         // Step 2: Create new message with updated content (complete message with greeting and buttons)
-        const choirGreeting = t('docUpdate.extract.card.intro', {
+        const choirGreeting = t('notifications.manager.suggestion.intro', {
           userName: sessionData.userName || t('docUpdate.extract.card.unknownUser'),
         });
 
@@ -552,7 +552,7 @@ export async function handleKnowledgeEditManagerModal({
         client.chat.postMessage({
           channel: userId, // Use manager's ID for error message
           text: t('docUpdate.extract.error.editFailed', {
-            reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+            reason: describeError(t, error),
           }),
         }),
       'send error message',

@@ -72,7 +72,6 @@ export const qa = {
   // --- "Share with Q&A" submit --------------------------------------------
   'qa.channelSubmit.posted': '✅ Your Q&A has been posted to {channel}',
   'qa.channelSubmit.error': "❌ I couldn't post your Q&A to the configured Q&A channel. {reason}",
-  'qa.channelSubmit.errorReason': 'Please check that I have access to the channel and try again.',
   'qa.channelSubmit.notInChannel':
     'The bot is not in the configured Q&A channel and cannot join automatically because the Slack app is missing the channels:join scope. Add channels:join and reinstall the app, or invite the bot to the Q&A channel manually.',
 

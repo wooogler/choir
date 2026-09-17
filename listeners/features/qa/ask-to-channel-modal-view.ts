@@ -1,6 +1,6 @@
 import type { AllMiddlewareArgs, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData } from 'services/common';
-import { tForRequest } from 'services/i18n';
+import { describeError, tForRequest } from 'services/i18n';
 import { createQAChannelMessage, createQAChannelPreview, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { logModalSubmit } from '../../../services/common/interaction-tracker';
@@ -262,7 +262,7 @@ export const askToChannelSubmitCallback = async ({
       client,
       body.user.id,
       t('qa.channelSubmit.error', {
-        reason: error instanceof Error ? error.message : t('qa.channelSubmit.errorReason'),
+        reason: describeError(t, error),
       }),
     );
 

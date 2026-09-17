@@ -70,8 +70,8 @@ export const docUpdateExtract = {
   'docUpdate.extract.card.new.fallback': '📝 New document update suggestion from *{userName}* for your review.',
   'docUpdate.extract.card.updatedByManager.fallback':
     '📝 Document update suggestion updated by manager for session {sessionId}.',
-  'docUpdate.extract.card.intro':
-    "Hi! I'm CHOIR, your documentation assistant.\n \n \n*{userName}* has a document update suggestion:",
+  // The card's greeting is `notifications.manager.suggestion.intro`: the same
+  // sentence is sent by the manager fan-out, and two copies drifted apart.
   'docUpdate.extract.card.unknownUser': 'Unknown User',
   // Alt text on the requester's avatar, when their name is not known.
   'docUpdate.extract.card.profileAlt': 'User profile',
@@ -169,9 +169,9 @@ export const docUpdateExtract = {
     'The update suggestion (ID: {sessionId}) has been cancelled by *{userName}*.',
   'docUpdate.extract.reviewCancel.own.fallback': 'Update suggestion cancelled.',
 
-  // Failures. `{reason}` is the caught error's own message, which stays in
-  // whatever language the thrower used — a locale is not worth losing a cause.
-  'docUpdate.extract.error.unknown': 'Unknown error',
+  // Failures. `{reason}` comes from `describeError`, which translates the
+  // errors that carry a code (see `errors.*`) and otherwise keeps the
+  // thrower's own English — a locale is not worth losing a cause.
   'docUpdate.extract.error.noMessages': '❌ No messages found to analyze.',
   'docUpdate.extract.error.invalidSession': '❌ Invalid session. Please try the knowledge extraction again.',
   'docUpdate.extract.error.invalidSessionSubmit': '❌ Invalid session. Please try submitting your suggestion again.',

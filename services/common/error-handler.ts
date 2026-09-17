@@ -1,9 +1,22 @@
+/**
+ * Values that may be interpolated into the reader's translation of an error.
+ * Deliberately narrower than `metadata`, which is for the log line: these end
+ * up inside a sentence a person reads, so they have to render as text.
+ */
+export type ErrorParams = Record<string, string | number>;
+
 export class CHOIRError extends Error {
   constructor(
     message: string,
     public code: string,
     public metadata?: any,
     public statusCode?: number,
+    /**
+     * Fillers for the catalog entry `errors.<code>`, when `code` names one.
+     * `message` stays English for the log; `params` is what makes the reader's
+     * language possible without re-parsing that English.
+     */
+    public params?: ErrorParams,
   ) {
     super(message);
     this.name = 'CHOIRError';
@@ -18,8 +31,8 @@ export class VectorStoreError extends CHOIRError {
 }
 
 export class GitHubError extends CHOIRError {
-  constructor(message: string, options: { code: string; metadata?: any; statusCode?: number }) {
-    super(message, options.code, options.metadata, options.statusCode || 500);
+  constructor(message: string, options: { code: string; metadata?: any; statusCode?: number; params?: ErrorParams }) {
+    super(message, options.code, options.metadata, options.statusCode || 500, options.params);
     this.name = 'GitHubError';
   }
 }

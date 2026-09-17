@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/interaction-tracker';
 import { SessionType, getSessionData } from 'services/common/session-store';
-import { tForRequest, tForWorkspace } from 'services/i18n';
+import { describeError, tForRequest, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { handleUpdateRequestMessage } from '../document-update/extract-knowledge/update-request-handler';
@@ -123,7 +123,7 @@ export const handleAsUpdateRequestCallback = async ({
     logger.error('Error handling message as update request:', error);
 
     const failure = t('conversation.reclassify.updateRequest.error', {
-      reason: error instanceof Error ? error.message : 'Unknown error',
+      reason: describeError(t, error),
     });
     await client.chat.postMessage({
       channel: body.user.id,

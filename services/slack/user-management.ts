@@ -378,12 +378,18 @@ export async function resolveUserNames(
 
 /**
  * Get formatted manager text with all manager names
+ *
+ * Names need no translation; the fallback for "we have no names to show" is a
+ * word in a sentence, so a caller that knows who is reading passes their
+ * translator. Callers that do not keep the English they always got.
  */
-export async function getManagerText(workspaceId: string, client: WebClient): Promise<string> {
+export async function getManagerText(workspaceId: string, client: WebClient, t?: T): Promise<string> {
+  const managersWord = () => t?.('common.managers') ?? 'managers';
+
   try {
     const managers = await getManagers(workspaceId);
     if (managers.length === 0) {
-      return 'managers';
+      return managersWord();
     }
 
     // Get all manager names
@@ -392,7 +398,7 @@ export async function getManagerText(workspaceId: string, client: WebClient): Pr
     return managerNames.join(', ');
   } catch (error) {
     Logger.error('Error getting manager text', error as Error, { workspaceId });
-    return 'managers';
+    return managersWord();
   }
 }
 

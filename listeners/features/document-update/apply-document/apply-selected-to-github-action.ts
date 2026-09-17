@@ -3,7 +3,7 @@ import { logButtonClick } from 'services/common/interaction-tracker';
 import { getStoredDocumentUpdates } from 'services/document';
 import { formatSectionPathWithLinks } from 'services/document/section-utils';
 import { GithubService, applyDocumentUpdatesToGithub } from 'services/github';
-import { tForWorkspace } from 'services/i18n';
+import { describeError, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { createDocumentUpdateText } from 'services/slack/message-text-utils';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
@@ -331,7 +331,7 @@ export const applySelectedToGithubAction = async ({
     // 에러 메시지를 DM으로 전송 - 기존 채널 사용
     try {
       const errorMessage = t('docUpdate.apply.error.github', {
-        reason: error instanceof Error ? error.message : 'Unknown error',
+        reason: describeError(t, error),
       });
 
       // 이미 연 DM 채널이 있으면 재사용, 없으면 새로 열기

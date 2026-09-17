@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, SlackViewAction, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/interaction-tracker';
-import { tForRequest, tForWorkspace } from 'services/i18n';
+import { describeError, tForRequest, tForWorkspace } from 'services/i18n';
 import { getManagers, getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -205,7 +205,7 @@ export async function handleKnowledgeEditModal({
     await client.chat.postMessage({
       channel: body.user.id,
       text: t('docUpdate.extract.error.editFailed', {
-        reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+        reason: describeError(t, error),
       }),
       blocks: [
         {
@@ -213,7 +213,7 @@ export async function handleKnowledgeEditModal({
           text: {
             type: 'mrkdwn',
             text: t('docUpdate.extract.error.editFailed', {
-              reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+              reason: describeError(t, error),
             }),
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),

@@ -57,7 +57,6 @@ export const qa: LocaleCatalog = {
 
   'qa.channelSubmit.posted': '✅ Q&A를 {channel} 채널에 올렸어요',
   'qa.channelSubmit.error': '❌ 설정된 Q&A 채널에 Q&A를 올리지 못했어요. {reason}',
-  'qa.channelSubmit.errorReason': '제가 그 채널에 접근할 수 있는지 확인하고 다시 시도해 주세요.',
   'qa.channelSubmit.notInChannel':
     '봇이 설정된 Q&A 채널에 들어가 있지 않고, Slack 앱에 channels:join 권한이 없어서 자동으로 들어갈 수도 없어요. channels:join 권한을 추가하고 앱을 다시 설치하거나, 봇을 Q&A 채널에 직접 초대해 주세요.',
 

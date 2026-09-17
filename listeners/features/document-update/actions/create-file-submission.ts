@@ -5,7 +5,7 @@ import { DocumentUpdateService } from 'services/document/document-update-service
 import { type ProvenanceRecord, buildContextFile, persistContextToMirror } from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
-import { tForRequest, tForWorkspace } from 'services/i18n';
+import { describeError, tForRequest, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId, resolveUserNames } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
@@ -440,7 +440,7 @@ export const createFileSubmissionCallback = async ({
               text: {
                 type: 'mrkdwn',
                 text: t('docUpdate.actions.createFile.failed.error', {
-                  reason: error instanceof Error ? error.message : 'Unknown error',
+                  reason: describeError(t, error),
                 }),
               },
             },

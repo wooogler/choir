@@ -49,8 +49,6 @@ export const docUpdateExtract: LocaleCatalog = {
   'docUpdate.extract.card.fallback': '문서 업데이트 제안',
   'docUpdate.extract.card.new.fallback': '📝 *{userName}*님이 보낸 새 문서 업데이트 제안이에요. 검토해 주세요.',
   'docUpdate.extract.card.updatedByManager.fallback': '📝 매니저가 세션 {sessionId}의 문서 업데이트 제안을 수정했어요.',
-  'docUpdate.extract.card.intro':
-    '안녕하세요, 문서 도우미 CHOIR예요.\n \n \n*{userName}*님이 문서 업데이트를 제안했어요:',
   'docUpdate.extract.card.unknownUser': '알 수 없는 사용자',
   'docUpdate.extract.card.profileAlt': '프로필 사진',
   'docUpdate.extract.card.from': '*보낸 사람:* {user} (최초 요청자: {userName})',
@@ -131,7 +129,6 @@ export const docUpdateExtract: LocaleCatalog = {
   'docUpdate.extract.reviewCancel.own.other': '*{userName}*님이 업데이트 제안(ID: {sessionId})을 취소했어요.',
   'docUpdate.extract.reviewCancel.own.fallback': '업데이트 제안을 취소했어요.',
 
-  'docUpdate.extract.error.unknown': '알 수 없는 오류',
   'docUpdate.extract.error.noMessages': '❌ 분석할 메시지를 찾지 못했어요.',
   'docUpdate.extract.error.invalidSession': '❌ 세션이 올바르지 않아요. 지식 추출을 다시 시도해 주세요.',
   'docUpdate.extract.error.invalidSessionSubmit': '❌ 세션이 올바르지 않아요. 제안을 다시 보내 주세요.',

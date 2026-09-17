@@ -2,7 +2,7 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
 import { deAnonymizeText } from 'services/common/name-cache';
-import { tForRequest } from 'services/i18n';
+import { describeError, tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 
 export const viewAnalyzedMessagesAction = async ({
@@ -169,7 +169,7 @@ export const viewAnalyzedMessagesAction = async ({
         channel: body.channel?.id || 'unknown',
         user: body.user.id,
         text: t('docUpdate.actions.analyzed.error', {
-          reason: error instanceof Error ? error.message : 'Unknown error',
+          reason: describeError(t, error),
         }),
       });
     } catch (ephemeralError) {

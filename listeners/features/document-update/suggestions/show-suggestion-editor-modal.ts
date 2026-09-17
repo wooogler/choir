@@ -2,6 +2,7 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import { SessionType, generateSessionId, storeSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
 import { getStoredDocumentUpdates } from 'services/document/document-store';
+import { describeError } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { buildSectionBlocks } from 'services/slack/block-text';
 import { tForReviewer } from './shared';
@@ -169,7 +170,7 @@ export const showSuggestionEditorModal = async ({
         await client.chat.postMessage({
           channel: dmResult.channel.id,
           text: t('docUpdate.suggestions.editor.error.open', {
-            reason: error instanceof Error ? error.message : 'Unknown error',
+            reason: describeError(t, error),
           }),
         });
       }

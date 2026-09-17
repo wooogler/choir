@@ -104,7 +104,7 @@ export const sendUpdateSuggestionToManagerCallback = async ({
         // language, not in the language of whoever sent the suggestion.
         const tManager = await tForUser(workspaceId, managerId, client);
         // CHOIR의 메시지 템플릿
-        const choirGreeting = tManager('docUpdate.extract.card.intro', { userName });
+        const choirGreeting = tManager('notifications.manager.suggestion.intro', { userName });
 
         let originalMessageLinkBlock = null;
         let messageLink = '';
@@ -291,15 +291,15 @@ export const sendUpdateSuggestionToManagerCallback = async ({
 
     // 원래 채널에 알림 메시지 전송
     if (sessionData.originalChannelId) {
-      const originalChannelName = await getChannelName(sessionData.originalChannelId, client);
+      // Posted back into the channel the request came from, so it follows the
+      // workspace default rather than the requester's own language — including
+      // the channel-name fallback, which is a word inside that sentence.
+      const tChannel = await tForWorkspace(workspaceId);
+      const originalChannelName = await getChannelName(sessionData.originalChannelId, client, tChannel);
 
       // 매니저 이름 목록을 볼드체로 변환
       const managerNames = await Promise.all(managers.map((id: string) => getUserName(id, client)));
       const managerNamesBold = managerNames.map((name: string) => `*${name}*`).join(', ');
-
-      // Posted back into the channel the request came from, so it follows the
-      // workspace default rather than the requester's own language.
-      const tChannel = await tForWorkspace(workspaceId);
 
       await client.chat.postMessage({
         channel: sessionData.originalChannelId,

@@ -173,9 +173,10 @@ describe('manager-to-manager update notification', () => {
   it('writes each DM in its recipient’s language and leaves the shared blocks alone', async () => {
     const client = makeClient();
     getManagers.mockResolvedValue(['M-actor', 'M-en', 'M-ko']);
-    const passedBlocks = [{ type: 'section', text: { type: 'mrkdwn', text: 'header' } }, { type: 'divider' }];
+    const passedBlocks = [{ type: 'divider' }];
+    const applied = { fileLink: '<https://github.com/e/a|guide.md>', sectionInfo: 'Travel' };
 
-    await notifyOtherManagersAboutUpdate({}, 'M-actor', 'Dana', 'the summary', passedBlocks, client, silentLogger());
+    await notifyOtherManagersAboutUpdate({}, 'M-actor', 'Dana', applied, passedBlocks, client, silentLogger());
 
     expect(client.chat.postMessage).toHaveBeenCalledTimes(2);
 
@@ -184,12 +185,16 @@ describe('manager-to-manager update notification', () => {
     expect(english.blocks[0].text.text).toBe(
       '📝 *Document Update Notification*\n\nDana has updated a document that you were also reviewing.',
     );
-    // The caller's own text and trailing blocks pass through untranslated.
-    expect(english.blocks[1].text.text).toBe('the summary');
+    // The applied-update line is rendered here, per recipient, rather than
+    // forwarded as the caller's already-rendered workspace-language string.
+    expect(english.blocks[1].text.text).toBe('✅ Document Updated by Dana: <https://github.com/e/a|guide.md> - Travel');
+    // Blocks the caller built (a diff) pass through untranslated.
     expect(english.blocks[2]).toEqual({ type: 'divider' });
 
-    expect(sentTo(client.chat.postMessage, 'M-ko').blocks[0].text.text).toBe(
-      '📝 *문서 업데이트 알림*\n\nDana님이 함께 검토하던 문서를 업데이트했어요.',
+    const korean = sentTo(client.chat.postMessage, 'M-ko');
+    expect(korean.blocks[0].text.text).toBe('📝 *문서 업데이트 알림*\n\nDana님이 함께 검토하던 문서를 업데이트했어요.');
+    expect(korean.blocks[1].text.text).toBe(
+      '✅ Dana님이 문서를 업데이트했어요: <https://github.com/e/a|guide.md> - Travel',
     );
   });
 
@@ -197,7 +202,15 @@ describe('manager-to-manager update notification', () => {
     const client = makeClient();
     getManagers.mockResolvedValue(['M-actor']);
 
-    await notifyOtherManagersAboutUpdate({}, 'M-actor', 'Dana', 'the summary', [], client, silentLogger());
+    await notifyOtherManagersAboutUpdate(
+      {},
+      'M-actor',
+      'Dana',
+      { fileLink: '<https://github.com/e/a|guide.md>', sectionInfo: 'Travel' },
+      [],
+      client,
+      silentLogger(),
+    );
 
     expect(client.chat.postMessage).not.toHaveBeenCalled();
   });

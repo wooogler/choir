@@ -3,7 +3,7 @@ import { Logger } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 import { SessionType, getSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
-import { tForRequest, tForUser, tForWorkspace } from 'services/i18n';
+import { describeError, tForRequest, tForUser, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -229,7 +229,7 @@ export const cancelUpdateSuggestionReviewCallback = async ({
         channel: body.channel.id,
         user: body.user.id,
         text: t('docUpdate.extract.error.reviewCancelFailed', {
-          reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+          reason: describeError(t, error),
         }),
       });
     }

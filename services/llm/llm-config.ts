@@ -2,6 +2,7 @@
  * LLM configuration validation and per-workspace resolution for OpenAI.
  */
 
+import { CHOIRUserError } from 'services/common/choir-error';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 
 export type LLMPurpose = 'qa' | 'document-update' | 'classification';
@@ -59,7 +60,10 @@ export async function resolveLLMConfig(
   if (purpose === 'classification') {
     const apiKey = (await readWorkspaceApiKey(workspaceId)) || envConfig.apiKey;
     if (!apiKey) {
-      throw new Error('No OpenAI API key configured. Set it from App Home or via OPENAI_API_KEY.');
+      throw new CHOIRUserError(
+        'llm.noApiKey',
+        'No OpenAI API key configured. Set it from App Home or via OPENAI_API_KEY.',
+      );
     }
     return {
       apiKey,
@@ -71,7 +75,10 @@ export async function resolveLLMConfig(
   const wsSettings = workspaceId ? await new WorkspaceStore().getOpenAISettings(workspaceId) : undefined;
   const apiKey = wsSettings?.apiKey || envConfig.apiKey;
   if (!apiKey) {
-    throw new Error('No OpenAI API key configured. Set it from App Home or via OPENAI_API_KEY.');
+    throw new CHOIRUserError(
+      'llm.noApiKey',
+      'No OpenAI API key configured. Set it from App Home or via OPENAI_API_KEY.',
+    );
   }
 
   const wsModel = purpose === 'qa' ? wsSettings?.qaModel : wsSettings?.documentUpdateModel;

@@ -1,3 +1,4 @@
+import { CHOIRUserError } from 'services/common/choir-error';
 import { Logger } from 'services/common/logger';
 
 export interface DeviceCodeResponse {
@@ -154,11 +155,14 @@ export class GitHubOAuthDeviceFlow {
         }
 
         if (data.error === 'expired_token') {
-          throw new Error('The device code has expired. Please start the process again.');
+          throw new CHOIRUserError(
+            'github.deviceCodeExpired',
+            'The device code has expired. Please start the process again.',
+          );
         }
 
         if (data.error === 'access_denied') {
-          throw new Error('The user denied the authorization request.');
+          throw new CHOIRUserError('github.authorizationDenied', 'The user denied the authorization request.');
         }
 
         throw new Error(`GitHub OAuth error: ${data.error_description || data.error}`);
@@ -171,7 +175,10 @@ export class GitHubOAuthDeviceFlow {
       }
     }
 
-    throw new Error('Polling timeout. The authorization process took too long.');
+    throw new CHOIRUserError(
+      'github.authorizationTimeout',
+      'Polling timeout. The authorization process took too long.',
+    );
   }
 
   /**

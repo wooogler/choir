@@ -23,6 +23,7 @@ import {
 import { type ProcessedDocument, processDocument } from 'services/document/update-processor';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import type { DocumentMetadata } from 'services/file-registry/types';
+import { describeError } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { buildSuggestionBlocks } from './blocks/suggestion-blocks';
@@ -515,7 +516,7 @@ export const suggestUpdatesCallback = async ({
     if (currentDmChannelId) {
       try {
         const genericErrorText = t('docUpdate.suggestions.error.generic', {
-          reason: error instanceof Error ? error.message : 'Unknown error',
+          reason: describeError(t, error),
         });
         await client.chat.postMessage({
           channel: currentDmChannelId,

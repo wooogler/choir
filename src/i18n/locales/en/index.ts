@@ -15,6 +15,7 @@ import { dm } from './dm';
 import { docUpdateActions } from './doc-update-actions';
 import { docUpdateExtract } from './doc-update-extract';
 import { docUpdateSuggestions } from './doc-update-suggestions';
+import { errors } from './errors';
 import { indexManagement } from './index-management';
 import { notifications } from './notifications';
 import { qa } from './qa';
@@ -33,4 +34,5 @@ export const en = {
   ...docUpdateActions,
   ...appHomeGithub,
   ...indexManagement,
+  ...errors,
 } as const;

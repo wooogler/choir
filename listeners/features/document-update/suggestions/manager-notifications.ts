@@ -1,11 +1,20 @@
 import { tForUser, tForWorkspace } from 'services/i18n';
 import { getManagers, getWorkspaceId } from 'services/slack';
 
+/**
+ * Tells the managers who were not the one who applied the update.
+ *
+ * The caller has already written the same sentence once, for the source
+ * channel, and it would be cheaper to forward that string — but it was written
+ * in the *workspace's* language, and these are DMs to named people. So the
+ * caller passes the pieces and each manager's line is rendered here, next to
+ * the translator that belongs to them.
+ */
 export async function notifyOtherManagersAboutUpdate(
   _currentUpdate: any,
   currentManagerId: string,
   updatedBy: string,
-  notificationText: string,
+  applied: { fileLink: string; sectionInfo: string },
   blocks: any[],
   client: any,
   logger: any,
@@ -38,9 +47,12 @@ export async function notifyOtherManagersAboutUpdate(
             },
             {
               type: 'section',
-              text: { type: 'mrkdwn', text: notificationText },
+              text: {
+                type: 'mrkdwn',
+                text: t('docUpdate.suggestions.applied.channel', { updatedBy, ...applied }),
+              },
             },
-            ...blocks.slice(1),
+            ...blocks,
           ],
           unfurl_links: false,
           unfurl_media: false,

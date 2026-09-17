@@ -22,3 +22,4 @@ export {
 } from '../../src/i18n/supported-locales';
 
 export { tForRequest, tForUser, tForWorkspace } from './t';
+export { describeError } from './describe-error';

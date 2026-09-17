@@ -16,6 +16,7 @@ export const common = {
   'common.button.back': '뒤로',
   'common.error.generic': '문제가 생겼어요. 다시 시도해 주세요.',
   'common.error.managerOnly': '매니저만 할 수 있어요.',
+  'common.managers': '매니저들',
   'common.count.managers': { other: '매니저 {count}명' },
   'common.count.files': { other: '파일 {count}개' },
   'common.count.messages': { other: '메시지 {count}개' },

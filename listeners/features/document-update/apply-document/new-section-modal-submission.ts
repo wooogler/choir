@@ -3,7 +3,7 @@ import { SessionType, getSessionData } from 'services/common';
 import { logModalSubmit } from 'services/common/interaction-tracker';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
-import { tForRequest, tForWorkspace } from 'services/i18n';
+import { describeError, tForRequest, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId, parseGithubUrl } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -498,7 +498,7 @@ Content: ${sectionBody.substring(0, 100)}${sectionBody.length > 100 ? '...' : ''
     logger.error('Error handling new section modal submission:', error);
 
     const submitErrorText = t('docUpdate.apply.newSection.error.submit', {
-      reason: error instanceof Error ? error.message : 'Unknown error',
+      reason: describeError(t, error),
     });
     await client.chat.postMessage({
       channel: body.user.id,

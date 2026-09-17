@@ -1,7 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/interaction-tracker';
 import { SessionType, getSessionData } from 'services/common/session-store';
-import { tForRequest, tForWorkspace } from 'services/i18n';
+import { describeError, tForRequest, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { handleQuestionMessage } from '../qa/question-handler';
@@ -123,7 +123,7 @@ export const handleAsQuestionCallback = async ({
     logger.error('Error handling message as question:', error);
 
     const failure = t('conversation.reclassify.question.error', {
-      reason: error instanceof Error ? error.message : 'Unknown error',
+      reason: describeError(t, error),
     });
     await client.chat.postMessage({
       channel: body.user.id,

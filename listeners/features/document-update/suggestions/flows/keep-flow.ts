@@ -110,12 +110,11 @@ export async function handleKeep(params: {
           }
         }
 
-        const notificationText = tChannel('docUpdate.suggestions.applied.channel', {
-          updatedBy,
-          fileLink: `<${currentUpdate.githubUrl}|${currentUpdate.fileName}>`,
-          sectionInfo,
-        });
-        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: notificationText } });
+        // The pieces, not the sentence: the channel post is written here in the
+        // workspace's language, and the manager fan-out re-renders the same
+        // line per recipient from these.
+        const applied = { fileLink: `<${currentUpdate.githubUrl}|${currentUpdate.fileName}>`, sectionInfo };
+        const notificationText = tChannel('docUpdate.suggestions.applied.channel', { updatedBy, ...applied });
 
         try {
           const { convertMarkdownToSlackText } = await import('services/document');
@@ -146,7 +145,7 @@ export async function handleKeep(params: {
               block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
               text: { type: 'mrkdwn', text: notificationText },
             },
-            ...blocks.slice(1),
+            ...blocks,
           ],
           unfurl_links: false,
           unfurl_media: false,
@@ -156,15 +155,7 @@ export async function handleKeep(params: {
         const isFromUserSuggestion = sessionData?.userId && sessionData.userId !== userId;
 
         if (isFromUserSuggestion) {
-          await notifyOtherManagersAboutUpdate(
-            currentUpdate,
-            userId,
-            updatedBy,
-            notificationText,
-            blocks,
-            client,
-            logger,
-          );
+          await notifyOtherManagersAboutUpdate(currentUpdate, userId, updatedBy, applied, blocks, client, logger);
           logger.info(
             `Notified other managers about update from user suggestion (original user: ${sessionData.userId})`,
           );

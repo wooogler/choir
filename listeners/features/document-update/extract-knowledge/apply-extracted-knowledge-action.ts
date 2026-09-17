@@ -3,7 +3,7 @@ import type { Logger } from '@slack/bolt';
 import type { WebClient } from '@slack/web-api';
 import type { Block, KnownBlock } from '@slack/web-api';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
-import { tForRequest, tForUser, tForWorkspace } from 'services/i18n';
+import { describeError, tForRequest, tForUser, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import suggestUpdatesCallback from '../suggestions/suggest-updates-handler';
@@ -273,7 +273,7 @@ export const applyExtractedKnowledgeCallback = async ({
     await client.chat.postMessage({
       channel: body.user.id,
       text: t('docUpdate.extract.error.applyFailed', {
-        reason: error instanceof Error ? error.message : t('docUpdate.extract.error.unknown'),
+        reason: describeError(t, error),
       }),
     });
   }
@@ -308,7 +308,7 @@ async function updateOtherManagerMessages(
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: t('docUpdate.extract.card.intro', {
+            text: t('notifications.manager.suggestion.intro', {
               userName: sessionData.userName || t('notifications.manager.suggestion.anonymousUser'),
             }),
           },

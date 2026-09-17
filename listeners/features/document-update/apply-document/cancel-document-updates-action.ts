@@ -2,7 +2,7 @@ import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } 
 import { deleteProgressMessageTimestamp, getLastMessageTimestamp, getProgressMessageTimestamp } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
 import { getFileSelectionState } from 'services/document/document-store';
-import { tForRequest, tForWorkspace } from 'services/i18n';
+import { describeError, tForRequest, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 
@@ -231,7 +231,7 @@ export const cancelDocumentUpdatesCallback = async ({
         await client.chat.postMessage({
           channel: dmResult.channel.id,
           text: t('docUpdate.apply.cancel.error.fallback', {
-            reason: error instanceof Error ? error.message : 'Unknown error',
+            reason: describeError(t, error),
           }),
           blocks: [
             {
@@ -239,7 +239,7 @@ export const cancelDocumentUpdatesCallback = async ({
               text: {
                 type: 'mrkdwn',
                 text: t('docUpdate.apply.cancel.error', {
-                  reason: error instanceof Error ? error.message : 'Unknown error',
+                  reason: describeError(t, error),
                 }),
               },
               block_id: createCHOIRBlockId(CHOIRMessageType.RESPONSE),

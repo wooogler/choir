@@ -1,5 +1,6 @@
 import type { WebClient } from '@slack/web-api';
 import { Octokit } from 'octokit';
+import type { ErrorCode } from 'services/common/choir-error';
 import { ErrorCodes, GitHubError } from 'services/common/error-handler';
 import { Logger } from 'services/common/logger';
 import { type DocumentTree, parseMarkdownToTree } from 'services/document';
@@ -603,7 +604,11 @@ class GithubService {
           if (clashedPath) {
             throw new GitHubError(
               `Concurrent modification of ${clashedPath} while committing; aborting to avoid overwriting it`,
-              { code: ErrorCodes.GITHUB_UPDATE_FAILED, metadata: { owner, repo, path: clashedPath } },
+              {
+                code: 'github.concurrentModification' satisfies ErrorCode,
+                metadata: { owner, repo, path: clashedPath },
+                params: { path: clashedPath },
+              },
             );
           }
         }
@@ -976,8 +981,11 @@ class GithubService {
         });
 
         // If we get here, file exists
+        // Stays a GitHubError (write-error.ts passes our own through
+        // untouched) but carries a catalog code, so Slack can say this in the
+        // reader's language instead of echoing the English.
         throw new GitHubError('File already exists', {
-          code: ErrorCodes.GITHUB_FILE_EXISTS,
+          code: 'github.fileAlreadyExists' satisfies ErrorCode,
           metadata: { owner: params.owner, repo: params.repo, path: params.path },
         });
       } catch (error: any) {

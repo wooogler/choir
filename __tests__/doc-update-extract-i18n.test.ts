@@ -49,6 +49,7 @@ jest.mock('services/i18n', () => ({
   tForRequest: (...args: unknown[]) => tForRequest(...args),
   tForUser: (...args: unknown[]) => tForUser(...args),
   tForWorkspace: (...args: unknown[]) => tForWorkspace(...args),
+  describeError: jest.requireActual('../services/i18n/describe-error').describeError,
 }));
 
 import { editExtractedKnowledgeCallback } from '../listeners/features/document-update/extract-knowledge/edit-extracted-knowledge-action';
@@ -192,7 +193,7 @@ describe('handing the suggestion to the managers', () => {
     const english = sentTo(client.chat.postMessage, 'M-en');
     expect(english.text).toBe('📝 New document update suggestion from *Alice* for your review.');
     expect(english.blocks[0].text.text).toBe(
-      "Hi! I'm CHOIR, your documentation assistant.\n \n \n*Alice* has a document update suggestion:",
+      "Hi! I'm CHOIR, your documentation assistant.\n*Alice* has a document update suggestion:",
     );
     expect(english.blocks[2].elements.map((element: any) => element.text.text)).toEqual([
       '✏️ Edit Suggestion',
@@ -200,10 +201,17 @@ describe('handing the suggestion to the managers', () => {
       'Decline',
     ]);
 
+    // The greeting is the *same* catalog entry the manager-notification
+    // fan-out uses; the extract card used to keep a near-identical copy of it,
+    // three blank lines apart.
+    expect(english.blocks[0].text.text).toBe(
+      createT('en')('notifications.manager.suggestion.intro', { userName: 'Alice' }),
+    );
+
     const korean = sentTo(client.chat.postMessage, 'M-ko');
     expect(korean.text).toBe('📝 *Alice*님이 보낸 새 문서 업데이트 제안이에요. 검토해 주세요.');
     expect(korean.blocks[0].text.text).toBe(
-      '안녕하세요, 문서 도우미 CHOIR예요.\n \n \n*Alice*님이 문서 업데이트를 제안했어요:',
+      '안녕하세요, 문서 도우미 CHOIR예요.\n*Alice*님이 문서 업데이트를 제안했어요:',
     );
     expect(korean.blocks[2].elements.map((element: any) => element.text.text)).toEqual([
       '✏️ 제안 수정',

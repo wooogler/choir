@@ -3,7 +3,7 @@ import type { ModalView } from '@slack/web-api';
 import { SessionType, generateSessionId, getSessionData, storeSessionData } from 'services/common';
 import { logButtonClick } from 'services/common/interaction-tracker';
 import { GithubService } from 'services/github';
-import { tForRequest } from 'services/i18n';
+import { describeError, tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 
@@ -315,7 +315,7 @@ export const createNewSectionAction = async ({
     await client.chat.postMessage({
       channel: body.user.id,
       text: t('docUpdate.actions.newSection.error.open', {
-        reason: error instanceof Error ? error.message : 'Unknown error',
+        reason: describeError(t, error),
       }),
     });
 

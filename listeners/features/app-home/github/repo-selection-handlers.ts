@@ -4,7 +4,7 @@ import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService } from 'services/github';
 import { GitHubOAuthDeviceFlow } from 'services/github/oauth-device-flow';
 import { getRepositoryAccessError, normalizeRepositoryPath } from 'services/github/repository-access';
-import { tForRequest } from 'services/i18n';
+import { describeError, tForRequest } from 'services/i18n';
 import { getRetrievalProvider } from 'services/retrieval';
 import { QmdRetrievalProvider } from 'services/retrieval/qmd-provider';
 import { getWorkspaceId, isManager, isWorkspaceOwner, parseGithubUrl, storeGithubRepo } from 'services/slack';
@@ -289,9 +289,9 @@ export const registerRepositorySelectionHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
-          // `accessError` is written by `services/github/repository-access`, which
-          // has no translator of its own, so it rides along as an opaque reason.
-          text: t('appHome.github.connectRepo.error.access', { reason: accessError }),
+          // `accessError` carries a code, not a sentence, so the reason is
+          // rendered here — in the language of whoever clicked connect.
+          text: t('appHome.github.connectRepo.error.access', { reason: describeError(t, accessError) }),
         });
         return;
       }
