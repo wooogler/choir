@@ -58,6 +58,78 @@ describe('anonymizeText', () => {
     expect(out).toContain('Robin');
   });
 
+  it('masks a Korean name fused with a particle or honorific, keeping the suffix', () => {
+    const svc = serviceWith({
+      U1: { realName: '김철수', fakeName: 'Alex Kim', fakeNickname: 'Alex', lastUsed: new Date().toISOString() },
+    });
+    // Korean glues particles/honorifics straight onto the name with no space; the
+    // old letter-boundary lookahead rejected these and leaked the real name.
+    const cases: Array<[string, string]> = [
+      ['김철수가 회의를 열었다', 'Alex가 회의를 열었다'],
+      ['김철수를 불러주세요', 'Alex를 불러주세요'],
+      ['김철수님 확인 부탁드립니다', 'Alex님 확인 부탁드립니다'],
+      ['김철수에게 전달했습니다', 'Alex에게 전달했습니다'],
+      ['김철수이랑 같이 했어요', 'Alex이랑 같이 했어요'],
+      ['김철수님이 승인했습니다', 'Alex님이 승인했습니다'],
+    ];
+    for (const [input, expected] of cases) {
+      const out = svc.anonymizeText(input);
+      expect(out).not.toContain('김철수');
+      expect(out).toBe(expected);
+    }
+  });
+
+  it('prefers the longest suffix (에게 over 에, 이랑 over 이)', () => {
+    const svc = serviceWith({
+      U1: { realName: '김철수', fakeName: 'Alex Kim', fakeNickname: 'Alex', lastUsed: new Date().toISOString() },
+    });
+    // A shorter alternative matching first would strip the rest of the particle.
+    expect(svc.anonymizeText('김철수에게')).toBe('Alex에게');
+    expect(svc.anonymizeText('김철수이랑')).toBe('Alex이랑');
+  });
+
+  it('masks a given name fused with an honorific via the stored nickname', () => {
+    const svc = serviceWith({
+      U1: {
+        realName: '김철수',
+        nickname: '철수',
+        fakeName: 'Alex Kim',
+        fakeNickname: 'Alex',
+        lastUsed: new Date().toISOString(),
+      },
+    });
+    expect(svc.anonymizeText('철수씨 오셨어요')).toBe('Alex씨 오셨어요');
+    expect(svc.anonymizeText('김철수 교수님과 상의')).not.toContain('김철수');
+  });
+
+  it('does not let the Korean suffix rule over-match a Latin name (John vs Johnson)', () => {
+    const svc = serviceWith({
+      U1: { realName: 'John Smith', fakeName: 'Alex Kim', fakeNickname: 'Alex', lastUsed: new Date().toISOString() },
+    });
+    // The boundary lookahead still applies after the (empty) optional suffix.
+    const out = svc.anonymizeText('Johnson emailed John about Johnsonville');
+    expect(out).toBe('Johnson emailed Alex about Johnsonville');
+  });
+
+  it('skips the first-name fallback for a name with no space (no single-syllable matching)', () => {
+    const svc = serviceWith({
+      U1: { realName: '김철수', fakeName: 'Alex Kim', fakeNickname: 'Alex', lastUsed: new Date().toISOString() },
+    });
+    // "김" alone is a surname syllable AND an ordinary word fragment; it must never be
+    // treated as a "first name". Only the whole name is masked.
+    const out = svc.anonymizeText('김밥과 김치를 먹었다. 김철수가 왔다.');
+    expect(out).toBe('김밥과 김치를 먹었다. Alex가 왔다.');
+  });
+
+  it('skips a one-syllable Hangul surname token of a spaced name', () => {
+    const svc = serviceWith({
+      U1: { realName: '김 철수', fakeName: 'Alex Kim', fakeNickname: 'Alex', lastUsed: new Date().toISOString() },
+    });
+    const out = svc.anonymizeText('김 사원과 김 철수가 참석');
+    expect(out).toContain('김 사원'); // the bare surname is untouched
+    expect(out).toContain('Alex가');
+  });
+
   it('replaces a Slack user-id mention with the fake nickname', () => {
     const svc = serviceWith({
       U1: { realName: '김철수', fakeName: 'Alex Kim', fakeNickname: 'Alex', lastUsed: new Date().toISOString() },
@@ -80,6 +152,41 @@ describe('deAnonymizeText', () => {
     const out = svc.deAnonymizeText('Alex Kim reviewed the doc. Alex approved.');
     expect(out).toContain('김철수');
     expect(out).toContain('철수');
+  });
+
+  it('restores a pseudonym fused with a Korean particle', () => {
+    const svc = serviceWith({
+      U1: { realName: '김철수', fakeName: 'Alex Kim', fakeNickname: 'Alex', lastUsed: new Date().toISOString() },
+    });
+    // The particle attached to the pseudonym is the ORIGINAL one (anonymizeText only
+    // swapped the name part), so restoring the name and keeping the particle is exact.
+    expect(svc.deAnonymizeText('Alex가 승인했습니다')).toBe('김철수가 승인했습니다');
+    expect(svc.deAnonymizeText('Alex에게 물어보세요')).toBe('김철수에게 물어보세요');
+    expect(svc.deAnonymizeText('Alex님이 답했습니다')).toBe('김철수님이 답했습니다');
+  });
+
+  it('round-trips a Korean sentence with several fused particles byte-for-byte', () => {
+    const svc = serviceWith({
+      // No nickname on U1: a space-less Korean name has no separable first name, so
+      // the whole real name is what gets masked and what gets restored.
+      U1: { realName: '김철수', fakeName: 'Alex Kim', fakeNickname: 'Alex', lastUsed: new Date().toISOString() },
+      U2: {
+        realName: '이영희',
+        fakeName: 'Jamie Lee',
+        fakeNickname: 'Jamie',
+        lastUsed: new Date(Date.now() - 1000).toISOString(),
+      },
+    });
+    const original = '김철수가 이영희에게 보고했고, 김철수님은 이영희와 함께 김철수를 대신해 발표했다.';
+
+    const masked = svc.anonymizeText(original);
+    expect(masked).not.toContain('김철수');
+    expect(masked).not.toContain('이영희');
+    // Particles survive the masking pass untouched.
+    expect(masked).toContain('Alex가');
+    expect(masked).toContain('Jamie에게');
+
+    expect(svc.deAnonymizeText(masked)).toBe(original);
   });
 });
 

@@ -18,6 +18,87 @@ export interface AnonymizationData {
 }
 
 /**
+ * Korean honorifics that fuse onto a name with no space: 김철수님, 철수씨, 김교수님.
+ */
+const KOREAN_HONORIFICS = [
+  '교수님',
+  '선생님',
+  '박사님',
+  '팀장님',
+  '대표님',
+  '과장님',
+  '부장님',
+  '선배',
+  '후배',
+  '교수',
+  '박사',
+  '팀장',
+  '대표',
+  '님',
+  '씨',
+  '군',
+  '양',
+];
+
+/**
+ * Korean case/topic particles that fuse onto a name with no space: 김철수가, 김철수에게.
+ */
+const KOREAN_PARTICLES = [
+  '이라고',
+  '라고',
+  '에게',
+  '께서',
+  '이랑',
+  '하고',
+  '에서',
+  '으로',
+  '한테',
+  '부터',
+  '까지',
+  '처럼',
+  '보다',
+  '이나',
+  '이야',
+  '께',
+  '의',
+  '도',
+  '만',
+  '와',
+  '과',
+  '랑',
+  '로',
+  '나',
+  '야',
+  '이',
+  '가',
+  '은',
+  '는',
+  '을',
+  '를',
+];
+
+/** Longest alternatives first so `에게` wins over `에`, `이랑` over `이`. */
+function alternation(suffixes: readonly string[]): string {
+  return [...suffixes].sort((a, b) => b.length - a.length).join('|');
+}
+
+/**
+ * Optional honorific followed by an optional particle (`님` + `이` covers 김철수님이),
+ * wrapped in ONE capture group so a replacement can put the suffix back verbatim.
+ * Every alternative is Hangul, so this can never extend a Latin name: `John` still
+ * refuses to match inside `Johnson` because the trailing boundary lookahead applies
+ * after the (empty) suffix.
+ */
+const NAME_SUFFIX_PATTERN = `((?:${alternation(KOREAN_HONORIFICS)})?(?:${alternation(KOREAN_PARTICLES)})?)`;
+
+/** True when the name contains any Hangul (used to pick a matching pseudonym pool). */
+function isHangulName(name: string): boolean {
+  return /\p{Script=Hangul}/u.test(name);
+}
+
+const HANGUL_ONLY = /^\p{Script=Hangul}+$/u;
+
+/**
  * AnonymizationService handles all anonymization and de-anonymization operations
  * Maintains mappings between real and fake names for privacy protection
  */
@@ -117,7 +198,9 @@ export class AnonymizationService {
       } else {
         // Only avoid fake-name collisions WITHIN the same workspace.
         const usedNames = new Set(this.scopedEntries(workspaceId).map(([, entry]) => entry.fakeName));
-        const { fakeName, fakeNickname } = generateFakeName(usedNames);
+        // Hangul real names get Hangul pseudonyms so the masked text still reads as
+        // Korean (and so fused particles stay grammatical-looking) for the LLM.
+        const { fakeName, fakeNickname } = generateFakeName(usedNames, isHangulName(realName));
 
         mapping = {
           realName,
@@ -157,16 +240,16 @@ export class AnonymizationService {
 
       // Replace nickname first (highest priority)
       if (mapping.nickname) {
-        anonymizedText = anonymizedText.replace(this.buildNameRegex(mapping.nickname), mapping.fakeNickname);
+        anonymizedText = this.replaceName(anonymizedText, mapping.nickname, mapping.fakeNickname);
       }
 
       // Replace full name with nickname only
-      anonymizedText = anonymizedText.replace(this.buildNameRegex(mapping.realName), mapping.fakeNickname);
+      anonymizedText = this.replaceName(anonymizedText, mapping.realName, mapping.fakeNickname);
 
       // Replace first name (extracted from real name) with nickname only
-      const firstName = mapping.realName.split(' ')[0];
+      const firstName = this.firstNameOf(mapping.realName);
       if (firstName && firstName !== mapping.nickname) {
-        anonymizedText = anonymizedText.replace(this.buildNameRegex(firstName), mapping.fakeNickname);
+        anonymizedText = this.replaceName(anonymizedText, firstName, mapping.fakeNickname);
       }
     }
 
@@ -190,11 +273,13 @@ export class AnonymizationService {
 
     for (const [, mapping] of sortedMappings) {
       // Replace fake full name with real name
-      deAnonymizedText = deAnonymizedText.replace(this.buildNameRegex(mapping.fakeName), mapping.realName);
+      deAnonymizedText = this.replaceName(deAnonymizedText, mapping.fakeName, mapping.realName);
 
-      // Replace fake nickname with real nickname (if exists) or first name
-      const realNickname = mapping.nickname || mapping.realName.split(' ')[0];
-      deAnonymizedText = deAnonymizedText.replace(this.buildNameRegex(mapping.fakeNickname), realNickname);
+      // Replace fake nickname with real nickname (if exists) or first name. Names with
+      // no space (Korean full names) have no separable first name, so the whole real
+      // name is restored — which is exactly what anonymizeText masked.
+      const realNickname = mapping.nickname || this.firstNameOf(mapping.realName) || mapping.realName;
+      deAnonymizedText = this.replaceName(deAnonymizedText, mapping.fakeNickname, realNickname);
     }
 
     return deAnonymizedText;
@@ -211,11 +296,45 @@ export class AnonymizationService {
    * Builds a "whole name" matcher that works in any script. JavaScript's `\b`
    * is ASCII-only, so `\b김철수\b` never matches and Korean/CJK names would be
    * sent to the LLM unmasked. Unicode letter/number lookarounds bound the name
-   * correctly regardless of script. (Names directly fused with a suffix — e.g. a
-   * Korean particle — are still not split; that needs morphological analysis.)
+   * correctly regardless of script.
+   *
+   * Korean fuses honorifics and particles straight onto the name with no space
+   * (김철수가, 김철수를, 김철수님이, 철수씨), which the trailing lookaround alone
+   * rejects — leaking the real name to the LLM. So an optional honorific+particle
+   * from a fixed list may sit between the name and the boundary. It is captured
+   * (group 1) so `replaceName` can put it back verbatim: only the name is swapped.
    */
   private buildNameRegex(name: string): RegExp {
-    return new RegExp(`(?<![\\p{L}\\p{N}])${this.escapeRegex(name)}(?![\\p{L}\\p{N}])`, 'gu');
+    return new RegExp(`(?<![\\p{L}\\p{N}])${this.escapeRegex(name)}${NAME_SUFFIX_PATTERN}(?![\\p{L}\\p{N}])`, 'gu');
+  }
+
+  /**
+   * Swaps `name` for `replacement` everywhere it stands alone, keeping any fused
+   * Korean suffix byte-for-byte (김철수가 → Alex가). Preserving the original particle
+   * rather than re-deriving it is what makes anonymize → de-anonymize round-trip
+   * exactly; Korean 이/가 and 을/를 alternate on the final consonant of the *name*,
+   * and "fixing" that would rewrite text we are only supposed to mask.
+   * A function replacer is used so `$&`/`$1` inside a real name are never expanded.
+   */
+  private replaceName(text: string, name: string, replacement: string): string {
+    return text.replace(this.buildNameRegex(name), (_match: string, suffix: string) => `${replacement}${suffix}`);
+  }
+
+  /**
+   * The space-separated given name used as an extra alias ("John Smith" → "John").
+   * Returns null when the real name has no space: Korean/CJK full names (김철수) are
+   * written as one token, so there is nothing to split. We deliberately do NOT slice
+   * off the surname syllable — a one-syllable Hangul "first name" (이, 강, 안 …) is
+   * also a common particle/ordinary word and would mis-mask half the message. Such
+   * names are masked whole, and a given-name-only mention (철수씨) is covered by the
+   * stored Slack nickname instead. The same guard rejects the surname token of a
+   * spaced Hangul name ("김 철수" → "김").
+   */
+  private firstNameOf(realName: string): string | null {
+    const [first, ...rest] = realName.trim().split(/\s+/);
+    if (!first || rest.length === 0) return null;
+    if (HANGUL_ONLY.test(first) && first.length < 2) return null;
+    return first;
   }
 
   /** Removes all anonymization mappings for a workspace (used on uninstall). */
