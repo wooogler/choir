@@ -15,6 +15,7 @@ import {
 } from 'services/google/manual-apply';
 import { getManagers, isManager } from 'services/slack/user-management';
 import { type WorkspaceConfig, WorkspaceStore } from 'services/workspace/workspace-store';
+import { createT } from '../src/i18n';
 
 /**
  * The manual-apply card is the whole delivery mechanism for a change CHOIR could
@@ -48,6 +49,8 @@ const mockDescribe = setDocDescription as jest.MockedFunction<typeof setDocDescr
 const mockClient = getWorkspaceClient as jest.MockedFunction<typeof getWorkspaceClient>;
 const mockIsManager = isManager as jest.MockedFunction<typeof isManager>;
 const mockGetManagers = getManagers as jest.MockedFunction<typeof getManagers>;
+
+const t = createT('en');
 
 const DOC_EXPORT = '# Handbook\n\nWelcome to the lab\\.\n';
 const DOC_AS_REPOSITORY = '# Handbook\n\nWelcome to the lab.\n';
@@ -148,7 +151,7 @@ describe('manual apply', () => {
 
   describe('the diff the card carries', () => {
     it('shows what the repository has that the document does not', () => {
-      const preview = buildDiffPreview(DOC_AS_REPOSITORY, REPOSITORY_MOVED_ON);
+      const preview = buildDiffPreview(DOC_AS_REPOSITORY, REPOSITORY_MOVED_ON, t);
 
       expect(preview).toContain('+ ## Advising');
       expect(preview).toContain('+ We meet weekly.');
@@ -156,12 +159,12 @@ describe('manual apply', () => {
     });
 
     it('says nothing when the two agree', () => {
-      expect(buildDiffPreview(DOC_AS_REPOSITORY, DOC_AS_REPOSITORY)).toBe('');
+      expect(buildDiffPreview(DOC_AS_REPOSITORY, DOC_AS_REPOSITORY, t)).toBe('');
     });
 
     it('stays inside what a Slack block can hold', () => {
       const huge = Array.from({ length: 4000 }, (_unused, index) => `line ${index}`).join('\n');
-      const preview = buildDiffPreview('', huge);
+      const preview = buildDiffPreview('', huge, t);
 
       expect(preview.length).toBeLessThan(2400);
       expect(preview).toContain('more characters not shown');
@@ -252,7 +255,7 @@ describe('manual apply', () => {
       await retireManualCards({
         workspaceId: 'T1',
         githubPath: 'docs/a.md',
-        reason: 'Unlinked.',
+        notice: { reason: 'gdocs.card.retired.unlinkedManual' },
         client: slack as never,
       });
 

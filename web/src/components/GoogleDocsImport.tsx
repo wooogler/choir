@@ -173,7 +173,15 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
 
       if (result.rejectedAssets?.length) {
         const reasons = result.rejectedAssets
-          .map((asset) => `• ${describeServerError(t, asset.reason) ?? asset.reason}`)
+          .map(
+            (asset) =>
+              `• ${
+                describeServerError(t, {
+                  error: asset.reason,
+                  detail: { contentType: asset.contentType, bytes: asset.bytes },
+                }) ?? asset.reason
+              }`,
+          )
           .join('\n');
         window.alert(t('gdocs.import.rejectedAssets', { count: result.rejectedAssets.length, reasons }));
       }

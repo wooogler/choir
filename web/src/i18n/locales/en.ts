@@ -314,6 +314,33 @@ export const en = {
   'serverError.read_only_document': 'This document is marked read-only. Clear that in App Home before deleting it.',
   'serverError.write_access_denied': 'No write access to the workspace repository',
   'serverError.no_github_repo': 'No GitHub repository is connected to this workspace yet.',
+  'serverError.github_credentials_rejected':
+    'GitHub rejected the stored credentials while trying to {action} {target}. Reconnect your GitHub account from the CHOIR App Home and try again.',
+  'serverError.github_rate_limited':
+    'GitHub rate-limited the request to {action} {target}. Wait a moment and try again.',
+  'serverError.github_oauth_app_restricted':
+    "The {owner} organization has not approved CHOIR's GitHub OAuth app, so it cannot {action} {target}. An organization owner must approve it at {url}.",
+  'serverError.github_sso_required':
+    'Your GitHub authorization is not enabled for {owner}\'s SAML single sign-on, so CHOIR cannot {action} {target}. Authorize it under your GitHub account\'s "Authorized OAuth Apps" settings, then retry.',
+  'serverError.github_repo_archived': '{repo} is archived or read-only, so CHOIR cannot {action} {target}.',
+  'serverError.github_write_forbidden': 'GitHub refused to let the connected account {action} {target}.',
+  'serverError.github_write_forbidden_detail':
+    'GitHub refused to let the connected account {action} {target}. GitHub said: {detail}',
+  'serverError.github_no_push_access':
+    'GitHub answered 404 when CHOIR tried to {action} {target}. GitHub reports a missing write permission as 404, so the connected GitHub account almost certainly has no push access to {repo}. Ask a repository admin to grant Write access, or reconnect GitHub from the CHOIR App Home with an account that has it.',
+  'serverError.github_target_not_found':
+    'GitHub could not find {target}. Check the repository, branch, and file path configured for this workspace.',
+  'serverError.github_branch_moved':
+    'The branch moved while CHOIR was writing {target}, so the {action} was rejected as a conflict. Reload the document and re-apply your change.',
+  'serverError.github_branch_protected':
+    'GitHub rejected the {action} of {target}. A protected branch that requires a pull request is the usual cause.',
+  'serverError.github_branch_protected_detail':
+    'GitHub rejected the {action} of {target}. A protected branch that requires a pull request is the usual cause. GitHub said: {detail}',
+  'serverError.github_unavailable':
+    'GitHub is unavailable (HTTP {status}), so the {action} of {target} did not go through. Try again shortly.',
+  'serverError.image_too_large': 'larger than 10MB',
+  'serverError.too_many_images': 'too many new images in one edit',
+  'serverError.unsupported_image_type': 'not a PNG, JPEG, GIF or WebP image',
   'serverError.google_not_connected': 'Connect a Google account first',
   'serverError.google_picker_not_configured':
     'The file picker is not configured (GOOGLE_PICKER_API_KEY, GOOGLE_PROJECT_NUMBER)',

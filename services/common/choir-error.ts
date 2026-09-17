@@ -36,6 +36,23 @@ export type ErrorCode =
   | 'github.deviceCodeExpired'
   | 'github.authorizationDenied'
   | 'github.authorizationTimeout'
+  // Write failures, classified in services/github/write-error.ts. The `…Detail`
+  // twins exist because GitHub's own sentence is appended behind a framing
+  // phrase ("GitHub said:") that has to be translated with the rest; a single
+  // key with an optional hole would leave that phrase stranded in English.
+  | 'github.credentialsRejected'
+  | 'github.rateLimited'
+  | 'github.oauthAppRestricted'
+  | 'github.ssoRequired'
+  | 'github.repoArchived'
+  | 'github.writeForbidden'
+  | 'github.writeForbiddenDetail'
+  | 'github.noPushAccess'
+  | 'github.targetNotFound'
+  | 'github.branchMoved'
+  | 'github.branchProtected'
+  | 'github.branchProtectedDetail'
+  | 'github.unavailable'
   | 'llm.noApiKey';
 
 /**

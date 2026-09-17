@@ -1,8 +1,10 @@
 import { sanitizeText } from '@/utils';
 import type { WebClient } from '@slack/web-api';
 import { Logger } from 'services/common/logger';
+import { tForUser } from 'services/i18n';
 import { getManagers, isManager } from 'services/slack/user-management';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
+import type { T } from '../../src/i18n';
 import type { DriftResult } from './drift-detector';
 import { getDocState, mutateDocState } from './gdocs-state';
 import type { GdocsReviewCard } from './types';
@@ -34,31 +36,33 @@ function buildBlocks(params: {
   reviewUrl: string | null;
   editor?: string;
   alsoChangedOnGithub: boolean;
+  t: T;
 }): unknown[] {
+  const { t } = params;
   const fileName = params.githubPath.split('/').pop() || params.githubPath;
   const context = [
     // The editor is a Google display name we do not control; unescaped it can
     // inject links and formatting into a manager's DM.
     params.editor
-      ? `Last edited by ${sanitizeText(params.editor).slice(0, 120)}.`
-      : 'The editor could not be identified.',
-    'The replica will not be overwritten until this is resolved.',
+      ? t('gdocs.card.drift.editedBy', { editor: sanitizeText(params.editor).slice(0, 120) })
+      : t('gdocs.card.drift.editorUnknown'),
+    t('gdocs.card.drift.held'),
   ];
   if (params.alsoChangedOnGithub) {
-    context.push('The GitHub side has also changed since the replica was published.');
+    context.push(t('gdocs.card.drift.alsoOnGithub'));
   }
 
   const actions: Array<Record<string, unknown>> = [
     {
       type: 'button',
-      text: { type: 'plain_text', text: 'Open Google Doc', emoji: true },
+      text: { type: 'plain_text', text: t('gdocs.card.button.openDoc'), emoji: true },
       url: params.docUrl,
     },
   ];
   if (params.reviewUrl) {
     actions.unshift({
       type: 'button',
-      text: { type: 'plain_text', text: 'Review changes', emoji: true },
+      text: { type: 'plain_text', text: t('gdocs.card.drift.button.review'), emoji: true },
       style: 'primary',
       url: params.reviewUrl,
     });
@@ -67,7 +71,7 @@ function buildBlocks(params: {
   return [
     {
       type: 'section',
-      text: { type: 'mrkdwn', text: `✏️ *${fileName}* was edited in Google Docs.` },
+      text: { type: 'mrkdwn', text: t('gdocs.card.drift.headline', { file: fileName }) },
     },
     { type: 'context', elements: [{ type: 'mrkdwn', text: context.join(' ') }] },
     { type: 'actions', elements: actions },
@@ -108,23 +112,32 @@ export async function notifyDrift(params: {
   if (!mapping) return;
 
   const state = await getDocState(workspaceId, result.githubPath);
-  const blocks = buildBlocks({
-    githubPath: result.githubPath,
-    docUrl: mapping.webViewLink,
-    reviewUrl: viewerUrl(workspaceId, result.githubPath),
-    editor: result.lastModifyingUser,
-    alsoChangedOnGithub: Boolean(
-      state?.lastPushedContentHash && state.status === 'drifted' && result.outcome === 'drifted-again',
-    ),
-  });
-  const fallback = `${result.githubPath} was edited in Google Docs.`;
+  // Everything the card says depends on who is reading it, so the blocks are
+  // rendered per recipient rather than once for the workspace.
+  const cardFor = async (managerId: string) => {
+    const t = await tForUser(workspaceId, managerId, client);
+    return {
+      text: t('gdocs.card.drift.fallback', { path: result.githubPath }),
+      blocks: buildBlocks({
+        githubPath: result.githubPath,
+        docUrl: mapping.webViewLink,
+        reviewUrl: viewerUrl(workspaceId, result.githubPath),
+        editor: result.lastModifyingUser,
+        alsoChangedOnGithub: Boolean(
+          state?.lastPushedContentHash && state.status === 'drifted' && result.outcome === 'drifted-again',
+        ),
+        t,
+      }),
+    };
+  };
 
   // A further edit during review refreshes what managers are already looking at.
   if (state?.reviewCards?.length) {
     await Promise.allSettled(
       state.reviewCards.map(async (card) => {
         try {
-          await client.chat.update({ channel: card.channel, ts: card.ts, text: fallback, blocks: blocks as never });
+          const { text, blocks } = await cardFor(card.managerId);
+          await client.chat.update({ channel: card.channel, ts: card.ts, text, blocks: blocks as never });
         } catch (error) {
           Logger.warn('Could not refresh a Google Docs review card', {
             workspaceId,
@@ -141,9 +154,10 @@ export async function notifyDrift(params: {
   await Promise.allSettled(
     (await recipientsFor(workspaceId, result.githubPath)).map(async (managerId) => {
       try {
+        const { text, blocks } = await cardFor(managerId);
         const posted = await client.chat.postMessage({
           channel: managerId,
-          text: fallback,
+          text,
           blocks: blocks as never,
           unfurl_links: false,
           unfurl_media: false,

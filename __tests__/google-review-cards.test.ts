@@ -36,7 +36,7 @@ describe('retiring review cards', () => {
     await retireReviewCards({
       workspaceId: 'T1',
       githubPath: 'docs/a.md',
-      reason: 'Unlinked.',
+      notice: { reason: 'gdocs.card.retired.unlinkedReview' },
       client: client as never,
     });
 
@@ -52,7 +52,7 @@ describe('retiring review cards', () => {
     await retireReviewCards({
       workspaceId: 'T1',
       githubPath: 'docs/a.md',
-      reason: 'Unlinked.',
+      notice: { reason: 'gdocs.card.retired.unlinkedReview' },
       client: client as never,
     });
 
@@ -62,7 +62,12 @@ describe('retiring review cards', () => {
   });
 
   it('does nothing for a document with no cards', async () => {
-    await retireReviewCards({ workspaceId: 'T1', githubPath: 'docs/none.md', reason: 'x', client: client as never });
+    await retireReviewCards({
+      workspaceId: 'T1',
+      githubPath: 'docs/none.md',
+      notice: { reason: 'gdocs.card.retired.unlinkedReview' },
+      client: client as never,
+    });
 
     expect(update).not.toHaveBeenCalled();
   });
@@ -70,14 +75,22 @@ describe('retiring review cards', () => {
   it('retires every document in the workspace on disconnect', async () => {
     await mutateDocState('T1', 'docs/b.md', () => ({ status: 'drifted', reviewCards: cards, updatedAt: '' }));
 
-    await retireAllReviewCards({ workspaceId: 'T1', reason: 'Disconnected.', client: client as never });
+    await retireAllReviewCards({
+      workspaceId: 'T1',
+      notice: { reason: 'gdocs.card.retired.disconnectedReview' },
+      client: client as never,
+    });
 
     expect(update).toHaveBeenCalledTimes(4);
     expect((await getDocState('T1', 'docs/b.md'))?.reviewCards).toBeUndefined();
   });
 
   it('still clears state when no Slack client is available', async () => {
-    await retireReviewCards({ workspaceId: 'T1', githubPath: 'docs/a.md', reason: 'Unlinked.' });
+    await retireReviewCards({
+      workspaceId: 'T1',
+      githubPath: 'docs/a.md',
+      notice: { reason: 'gdocs.card.retired.unlinkedReview' },
+    });
 
     expect((await getDocState('T1', 'docs/a.md'))?.reviewCards).toBeUndefined();
   });

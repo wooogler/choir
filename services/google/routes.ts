@@ -449,13 +449,13 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       await retireReviewCards({
         workspaceId,
         githubPath: filePath,
-        reason: 'This document is no longer synced to Google Docs, so the pending edit was dropped.',
+        notice: { reason: 'gdocs.card.retired.unlinkedReview' },
         client: deps.slackClient,
       });
       await retireManualCards({
         workspaceId,
         githubPath: filePath,
-        reason: 'This document is no longer synced to Google Docs, so there is nothing left to apply.',
+        notice: { reason: 'gdocs.card.retired.unlinkedManual' },
         client: deps.slackClient,
       });
 
@@ -583,13 +583,13 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
       await retireReviewCards({
         workspaceId,
         githubPath: filePath,
-        reason: 'A manager republished this document from GitHub, so the pending edit was discarded.',
+        notice: { reason: 'gdocs.card.retired.republishedReview' },
         client: deps.slackClient,
       });
       await retireManualCards({
         workspaceId,
         githubPath: filePath,
-        reason: 'A manager rebaselined this document, so this request no longer describes it.',
+        notice: { reason: 'gdocs.card.retired.rebaselinedManual' },
         client: deps.slackClient,
       });
 
@@ -625,12 +625,12 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
 
       await retireAllReviewCards({
         workspaceId,
-        reason: 'The workspace Google account was disconnected, so this pending edit can no longer be applied.',
+        notice: { reason: 'gdocs.card.retired.disconnectedReview' },
         client: deps.slackClient,
       });
       await retireAllManualCards({
         workspaceId,
-        reason: 'The workspace Google account was disconnected, so these documents are no longer synced.',
+        notice: { reason: 'gdocs.card.retired.disconnectedManual' },
         client: deps.slackClient,
       });
       await disconnectWorkspace(workspaceId);

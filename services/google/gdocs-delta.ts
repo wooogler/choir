@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { type ILCSResult, LCS, diff3Merge, diffIndices } from 'node-diff3';
+import type { DocsApiErrorCode } from 'services/docs-editor/api-errors';
 import { stripBanner } from './banner';
 
 /**
@@ -41,8 +42,22 @@ export interface DeltaAsset {
   bytes: Buffer;
 }
 
+/**
+ * Why an image never made it into the commit.
+ *
+ * A code rather than the sentence it used to be: these are written while a
+ * Docs export is being processed, which is not a request that carried anybody's
+ * locale, and they end up in the viewer's "3 images were dropped: …" line. The
+ * docs API vocabulary is the one the SPA already translates, so `Extract` pins
+ * these three to it — deleting one there fails the build here.
+ */
+export type RejectedAssetReason = Extract<
+  DocsApiErrorCode,
+  'image_too_large' | 'too_many_images' | 'unsupported_image_type'
+>;
+
 export interface RejectedAsset {
-  reason: string;
+  reason: RejectedAssetReason;
   contentType: string;
   bytes: number;
 }
@@ -196,29 +211,25 @@ function collectNewAssets(
     if (before.has(hash)) continue;
 
     if (assets.length >= MAX_ASSETS_PER_DELTA) {
-      rejected.push({ reason: 'too many new images in one edit', contentType: payload.contentType, bytes: 0 });
+      rejected.push({ reason: 'too_many_images', contentType: payload.contentType, bytes: 0 });
       continue;
     }
 
     // base64 expands by 4/3, so the decoded size is knowable before decoding.
     const approximateBytes = Math.floor((payload.base64.length * 3) / 4);
     if (approximateBytes > MAX_ASSET_BYTES) {
-      rejected.push({ reason: 'larger than 10MB', contentType: payload.contentType, bytes: approximateBytes });
+      rejected.push({ reason: 'image_too_large', contentType: payload.contentType, bytes: approximateBytes });
       continue;
     }
 
     const bytes = Buffer.from(payload.base64, 'base64');
     const sniffed = sniffImageType(bytes);
     if (!sniffed) {
-      rejected.push({
-        reason: 'not a PNG, JPEG, GIF or WebP image',
-        contentType: payload.contentType,
-        bytes: bytes.length,
-      });
+      rejected.push({ reason: 'unsupported_image_type', contentType: payload.contentType, bytes: bytes.length });
       continue;
     }
     if (bytes.length > MAX_ASSET_BYTES) {
-      rejected.push({ reason: 'larger than 10MB', contentType: sniffed.contentType, bytes: bytes.length });
+      rejected.push({ reason: 'image_too_large', contentType: sniffed.contentType, bytes: bytes.length });
       continue;
     }
 

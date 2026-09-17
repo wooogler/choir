@@ -275,6 +275,35 @@ export const ko: LocaleCatalog = {
   'serverError.read_only_document': '이 문서는 읽기 전용으로 표시돼 있어요. 삭제하려면 앱 홈에서 먼저 해제해 주세요.',
   'serverError.write_access_denied': '워크스페이스 저장소에 쓰기 권한이 없어요.',
   'serverError.no_github_repo': '이 워크스페이스에는 아직 연결된 GitHub 저장소가 없어요.',
+  'serverError.github_credentials_rejected':
+    '{target}에 {action} 작업을 하려는데 GitHub가 저장된 인증 정보를 거절했어요. CHOIR 앱 홈에서 GitHub 계정을 다시 연결한 뒤 시도해 주세요.',
+  'serverError.github_rate_limited':
+    '{target}에 대한 {action} 요청이 GitHub의 요청 한도에 걸렸어요. 잠시 기다렸다가 다시 시도해 주세요.',
+  'serverError.github_oauth_app_restricted':
+    '{owner} 조직이 CHOIR의 GitHub OAuth 앱을 아직 승인하지 않아서 {target}에 {action} 작업을 할 수 없어요. 조직 소유자가 {url} 에서 승인해 주어야 해요.',
+  'serverError.github_sso_required':
+    '{owner} 조직의 SAML 싱글 사인온에 GitHub 인증이 연결돼 있지 않아서 CHOIR가 {target}에 {action} 작업을 할 수 없어요. GitHub 계정 설정의 "Authorized OAuth Apps"에서 인증한 뒤 다시 시도해 주세요.',
+  'serverError.github_repo_archived':
+    '{repo} 저장소가 보관됐거나 읽기 전용이라 CHOIR가 {target}에 {action} 작업을 할 수 없어요.',
+  'serverError.github_write_forbidden':
+    '연결된 계정으로는 {target}에 {action} 작업을 할 수 없다고 GitHub가 거절했어요.',
+  'serverError.github_write_forbidden_detail':
+    '연결된 계정으로는 {target}에 {action} 작업을 할 수 없다고 GitHub가 거절했어요. GitHub가 알려준 이유는 이래요: {detail}',
+  'serverError.github_no_push_access':
+    '{target}에 {action} 작업을 하려 했더니 GitHub가 404로 답했어요. GitHub는 쓰기 권한이 없을 때도 404로 답하기 때문에, 연결된 GitHub 계정에 {repo} 푸시 권한이 없을 가능성이 커요. 저장소 관리자에게 Write 권한을 요청하거나, 권한이 있는 계정으로 CHOIR 앱 홈에서 GitHub를 다시 연결해 주세요.',
+  'serverError.github_target_not_found':
+    '{target}을(를) 찾지 못했어요. 이 워크스페이스에 설정된 저장소와 브랜치, 파일 경로를 확인해 주세요.',
+  'serverError.github_branch_moved':
+    'CHOIR가 {target}에 쓰는 동안 브랜치가 움직여서 {action} 작업이 충돌로 거절됐어요. 문서를 새로 불러온 뒤 변경을 다시 적용해 주세요.',
+  'serverError.github_branch_protected':
+    'GitHub가 {target}에 대한 {action} 작업을 거절했어요. 풀 리퀘스트를 요구하는 보호된 브랜치인 경우가 가장 흔해요.',
+  'serverError.github_branch_protected_detail':
+    'GitHub가 {target}에 대한 {action} 작업을 거절했어요. 풀 리퀘스트를 요구하는 보호된 브랜치인 경우가 가장 흔해요. GitHub가 알려준 이유는 이래요: {detail}',
+  'serverError.github_unavailable':
+    'GitHub에 연결할 수 없어서(HTTP {status}) {target}에 대한 {action} 작업이 반영되지 않았어요. 잠시 후 다시 시도해 주세요.',
+  'serverError.image_too_large': '10MB보다 큼',
+  'serverError.too_many_images': '한 번에 추가한 새 이미지가 너무 많음',
+  'serverError.unsupported_image_type': 'PNG, JPEG, GIF, WebP 이미지가 아님',
   'serverError.google_not_connected': 'Google 계정을 먼저 연결해 주세요.',
   'serverError.google_picker_not_configured':
     '파일 선택기가 설정돼 있지 않아요 (GOOGLE_PICKER_API_KEY, GOOGLE_PROJECT_NUMBER).',

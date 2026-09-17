@@ -78,13 +78,13 @@ export async function deleteDocument(params: {
       await retireReviewCards({
         workspaceId,
         githubPath: filePath,
-        reason: 'This document was deleted, so the pending edit was dropped.',
+        notice: { reason: 'gdocs.card.retired.deletedReview' },
         client: params.slackClient,
       });
       await retireManualCards({
         workspaceId,
         githubPath: filePath,
-        reason: 'This document was deleted, so there is nothing left to apply in Google Docs.',
+        notice: { reason: 'gdocs.card.retired.deletedManual' },
         client: params.slackClient,
       });
       await store.removeGoogleDocMapping(workspaceId, filePath);

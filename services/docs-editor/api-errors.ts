@@ -55,6 +55,41 @@ export const DOCS_API_ERROR_MESSAGES = {
   write_access_denied: 'No write access to the workspace repository',
   no_github_repo: 'No GitHub repository is connected to this workspace yet.',
 
+  // ── GitHub write failures ───────────────────────────────────────────────
+  // Classified in services/github/write-error.ts, which owns the mapping from
+  // its `ErrorCode` names to these. The English is that module's sentence word
+  // for word, with the values it composed from moved into `{name}` holes, so a
+  // reader in English sees exactly what the API used to send.
+  github_credentials_rejected:
+    'GitHub rejected the stored credentials while trying to {action} {target}. Reconnect your GitHub account from the CHOIR App Home and try again.',
+  github_rate_limited: 'GitHub rate-limited the request to {action} {target}. Wait a moment and try again.',
+  github_oauth_app_restricted:
+    "The {owner} organization has not approved CHOIR's GitHub OAuth app, so it cannot {action} {target}. An organization owner must approve it at {url}.",
+  github_sso_required:
+    'Your GitHub authorization is not enabled for {owner}\'s SAML single sign-on, so CHOIR cannot {action} {target}. Authorize it under your GitHub account\'s "Authorized OAuth Apps" settings, then retry.',
+  github_repo_archived: '{repo} is archived or read-only, so CHOIR cannot {action} {target}.',
+  github_write_forbidden: 'GitHub refused to let the connected account {action} {target}.',
+  github_write_forbidden_detail: 'GitHub refused to let the connected account {action} {target}. GitHub said: {detail}',
+  github_no_push_access:
+    'GitHub answered 404 when CHOIR tried to {action} {target}. GitHub reports a missing write permission as 404, so the connected GitHub account almost certainly has no push access to {repo}. Ask a repository admin to grant Write access, or reconnect GitHub from the CHOIR App Home with an account that has it.',
+  github_target_not_found:
+    'GitHub could not find {target}. Check the repository, branch, and file path configured for this workspace.',
+  github_branch_moved:
+    'The branch moved while CHOIR was writing {target}, so the {action} was rejected as a conflict. Reload the document and re-apply your change.',
+  github_branch_protected:
+    'GitHub rejected the {action} of {target}. A protected branch that requires a pull request is the usual cause.',
+  github_branch_protected_detail:
+    'GitHub rejected the {action} of {target}. A protected branch that requires a pull request is the usual cause. GitHub said: {detail}',
+  github_unavailable:
+    'GitHub is unavailable (HTTP {status}), so the {action} of {target} did not go through. Try again shortly.',
+
+  // ── Google Docs images refused before a commit ──────────────────────────
+  // `services/google/gdocs-delta.ts` reports these per dropped image; the SPA
+  // joins them into one sentence, so they are fragments, not sentences.
+  image_too_large: 'larger than 10MB',
+  too_many_images: 'too many new images in one edit',
+  unsupported_image_type: 'not a PNG, JPEG, GIF or WebP image',
+
   // ── Google Drive sync ───────────────────────────────────────────────────
   google_not_connected: 'Connect a Google account first',
   google_picker_not_configured: 'The file picker is not configured (GOOGLE_PICKER_API_KEY, GOOGLE_PROJECT_NUMBER)',

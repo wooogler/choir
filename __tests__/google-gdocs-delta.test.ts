@@ -230,7 +230,7 @@ describe('extracting a Google Docs edit as repository markdown', () => {
       });
 
       expect(result.newAssets).toEqual([]);
-      expect(result.rejectedAssets[0].reason).toMatch(/not a PNG/);
+      expect(result.rejectedAssets[0].reason).toBe('unsupported_image_type');
     });
 
     it('refuses a payload whose bytes do not match its declared type', () => {
@@ -260,7 +260,7 @@ describe('extracting a Google Docs edit as repository markdown', () => {
       });
 
       expect(result.newAssets).toEqual([]);
-      expect(result.rejectedAssets[0].reason).toMatch(/10MB/);
+      expect(result.rejectedAssets[0].reason).toBe('image_too_large');
     });
   });
 

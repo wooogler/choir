@@ -235,8 +235,17 @@ export function GoogleDocsReview({
           {t('gdocs.review.rejectedAssets', {
             count: review.rejectedAssets?.length ?? 0,
             reasons:
-              review.rejectedAssets?.map((asset) => describeServerError(t, asset.reason) ?? asset.reason).join('; ') ??
-              '',
+              review.rejectedAssets
+                ?.map(
+                  (asset) =>
+                    // `contentType`/`bytes` ride along as `detail` so a
+                    // translation can name them; the English fragments do not.
+                    describeServerError(t, {
+                      error: asset.reason,
+                      detail: { contentType: asset.contentType, bytes: asset.bytes },
+                    }) ?? asset.reason,
+                )
+                .join('; ') ?? '',
           })}
         </p>
       )}

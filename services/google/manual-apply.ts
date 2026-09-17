@@ -1,8 +1,10 @@
 import type { WebClient } from '@slack/web-api';
 import { diffIndices } from 'node-diff3';
 import { Logger } from 'services/common/logger';
+import { tForUser } from 'services/i18n';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
+import type { T } from '../../src/i18n';
 import { stripBanner } from './banner';
 import { recipientsFor } from './drift-notifier';
 import { exportDocMarkdown } from './drive-client';
@@ -10,7 +12,7 @@ import { extractImportable, sameAfterDialect } from './gdocs-delta';
 import { contentHash, getAllDocStates, getDocState, mutateDocState } from './gdocs-state';
 import { getWorkspaceClient } from './google-auth-service';
 import { seedReplica } from './replica-publisher';
-import type { GdocsReviewCard } from './types';
+import type { GdocsRetireNotice, GdocsReviewCard } from './types';
 
 /**
  * Asks a person to carry a repository change into a Google Doc CHOIR will not
@@ -54,7 +56,7 @@ export async function documentsAwaitingNotice(workspaceId: string): Promise<stri
  * card always describes the difference as it stands right now — the repository
  * may have moved again between the change being held and this being sent.
  */
-export function buildDiffPreview(docSide: string, repositorySide: string): string {
+export function buildDiffPreview(docSide: string, repositorySide: string, t: T): string {
   const before = docSide.split('\n');
   const after = repositorySide.split('\n');
   const lines: string[] = [];
@@ -74,19 +76,17 @@ export function buildDiffPreview(docSide: string, repositorySide: string): strin
 
   const body = lines.join('\n');
   return body.length > MAX_DIFF_CHARS
-    ? `${body.slice(0, MAX_DIFF_CHARS)}\n… ${body.length - MAX_DIFF_CHARS} more characters not shown`
+    ? `${body.slice(0, MAX_DIFF_CHARS)}\n${t('gdocs.card.manual.diffTruncated', { count: body.length - MAX_DIFF_CHARS })}`
     : body;
 }
 
-function buildBlocks(params: { githubPath: string; docUrl: string; diff: string }): unknown[] {
+function buildBlocks(params: { githubPath: string; docUrl: string; diff: string; t: T }): unknown[] {
+  const { t } = params;
   const fileName = params.githubPath.split('/').pop() || params.githubPath;
   const blocks: unknown[] = [
     {
       type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `📝 *${fileName}* changed in the repository, and this Google Doc keeps its own formatting — so the change has to be made in the Doc by hand.`,
-      },
+      text: { type: 'mrkdwn', text: t('gdocs.card.manual.headline', { file: fileName }) },
     },
   ];
 
@@ -96,29 +96,28 @@ function buildBlocks(params: { githubPath: string; docUrl: string; diff: string 
 
   blocks.push({
     type: 'context',
-    elements: [
-      {
-        type: 'mrkdwn',
-        text: 'CHOIR does not write to this document, so nothing happens until someone applies it.',
-      },
-    ],
+    elements: [{ type: 'mrkdwn', text: t('gdocs.card.manual.note') }],
   });
 
   const value = JSON.stringify({ githubPath: params.githubPath } satisfies ManualApplyButtonValue);
   blocks.push({
     type: 'actions',
     elements: [
-      { type: 'button', text: { type: 'plain_text', text: 'Open Google Doc', emoji: true }, url: params.docUrl },
       {
         type: 'button',
-        text: { type: 'plain_text', text: 'I applied it', emoji: true },
+        text: { type: 'plain_text', text: t('gdocs.card.button.openDoc'), emoji: true },
+        url: params.docUrl,
+      },
+      {
+        type: 'button',
+        text: { type: 'plain_text', text: t('gdocs.card.manual.button.applied'), emoji: true },
         style: 'primary',
         action_id: MANUAL_APPLIED_ACTION_ID,
         value,
       },
       {
         type: 'button',
-        text: { type: 'plain_text', text: 'Leave the Doc as is', emoji: true },
+        text: { type: 'plain_text', text: t('gdocs.card.manual.button.declined'), emoji: true },
         action_id: MANUAL_DECLINED_ACTION_ID,
         value,
       },
@@ -149,17 +148,18 @@ export async function notifyManualApply(params: {
   ]);
   if (repositorySide === null) return;
 
-  const diff = docSide === null ? '' : buildDiffPreview(docSide, repositorySide);
-  const blocks = buildBlocks({ githubPath, docUrl: mapping.webViewLink, diff });
-  const fallback = `${githubPath} changed in the repository and needs applying in Google Docs.`;
-
   const cards: GdocsReviewCard[] = [];
   await Promise.allSettled(
     (await recipientsFor(workspaceId, githubPath)).map(async (managerId) => {
       try {
+        // Built inside the loop: the diff's truncation note and every line of
+        // the card are the recipient's language, not the workspace default's.
+        const t = await tForUser(workspaceId, managerId, client);
+        const diff = docSide === null ? '' : buildDiffPreview(docSide, repositorySide, t);
+        const blocks = buildBlocks({ githubPath, docUrl: mapping.webViewLink, diff, t });
         const posted = await client.chat.postMessage({
           channel: managerId,
-          text: fallback,
+          text: t('gdocs.card.manual.fallback', { path: githubPath }),
           blocks: blocks as never,
           unfurl_links: false,
           unfurl_media: false,
@@ -314,7 +314,7 @@ export async function declineManualApply(params: { workspaceId: string; githubPa
 export async function retireManualCards(params: {
   workspaceId: string;
   githubPath: string;
-  reason: string;
+  notice: GdocsRetireNotice;
   client?: WebClient;
 }): Promise<void> {
   const state = await getDocState(params.workspaceId, params.githubPath);
@@ -325,11 +325,15 @@ export async function retireManualCards(params: {
     await Promise.allSettled(
       cards.map(async (card) => {
         try {
+          // Per recipient, not per call: the manager who clicked "I applied it"
+          // is rarely the only one holding a copy of this card.
+          const t = await tForUser(params.workspaceId, card.managerId, params.client);
+          const text = t(params.notice.reason, params.notice.params);
           await params.client?.chat.update({
             channel: card.channel,
             ts: card.ts,
-            text: params.reason,
-            blocks: [{ type: 'section', text: { type: 'mrkdwn', text: params.reason } }] as never,
+            text,
+            blocks: [{ type: 'section', text: { type: 'mrkdwn', text } }] as never,
           });
         } catch (error) {
           Logger.warn('Could not retire a Google Docs manual-apply card', {
@@ -350,7 +354,7 @@ export async function retireManualCards(params: {
 /** Retires every outstanding manual-apply card in a workspace, for disconnect. */
 export async function retireAllManualCards(params: {
   workspaceId: string;
-  reason: string;
+  notice: GdocsRetireNotice;
   client?: WebClient;
 }): Promise<void> {
   const states = await getAllDocStates(params.workspaceId);

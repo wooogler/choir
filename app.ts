@@ -40,6 +40,7 @@ import { registerDevLoginRoute } from 'services/docs-editor/dev-login';
 import { getLineProvenance, getProvenanceRecord, listProvenanceForDoc } from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
+import { docsApiCodeForGitHubError } from 'services/github/write-error';
 import { startDriftPoller } from 'services/google/poller';
 import { registerGoogleDriveRoutes } from 'services/google/routes';
 import {
@@ -165,16 +166,22 @@ function apiErrorStatus(err: unknown, fallback: number): number {
 /**
  * Error body for the docs API, for the routes that let a domain error escape.
  *
- * A CHOIRError already carries a sentence written for the person who has to fix
- * it — built in services/github out of a repository slug, an org OAuth policy
- * URL or an SSO prompt — so it is passed through as the `error` string rather
- * than flattened into a code no catalog entry could reproduce. The viewer
- * renders an `error` it does not recognise verbatim, which is the right answer
- * for exactly these. Anything else is a server fault: one code, with the real
- * message kept in `detail` for the log rather than shown to a reader.
+ * A classified GitHub write failure carries a catalog code and the values its
+ * English was composed from — a repository slug, an org OAuth policy URL, an SSO
+ * prompt — so it goes out as a code plus `detail` and the viewer says it in the
+ * reader's language. `message` is still the same English sentence, because
+ * `apiErrorBodyFor` fills the same holes from the same values.
+ *
+ * A CHOIRError with no catalog code keeps the old shape: its `message` as the
+ * `error` string, which the viewer renders verbatim. That is the honest answer
+ * for a failure nobody could phrase as an action ("socket hang up"). Anything
+ * else is a server fault: one code, with the real message kept in `detail` for
+ * the log rather than shown to a reader.
  */
 function apiErrorBody(err: unknown): DocsApiErrorBody {
   if (err instanceof CHOIRError) {
+    const apiCode = docsApiCodeForGitHubError(err.code);
+    if (apiCode) return { ...apiErrorBodyFor(apiCode, err.params), code: err.code };
     return { error: err.message, message: err.message, code: err.code };
   }
   return apiErrorBodyFor('internal_error', { message: err instanceof Error ? err.message : String(err) });

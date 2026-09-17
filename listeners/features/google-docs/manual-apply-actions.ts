@@ -5,6 +5,7 @@ import {
   declineManualApply,
   retireManualCards,
 } from 'services/google/manual-apply';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { requireManagerForAction } from '../app-home/management/shared';
 import { replaceOriginalMessage } from '../registration/shared';
@@ -34,6 +35,7 @@ export const gdocsManualAppliedAction = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   await ack();
@@ -50,6 +52,9 @@ export const gdocsManualAppliedAction = async ({
       return;
     }
 
+    // The clicker's own copy of the card; the other managers' copies are
+    // retired in their own languages by `retireManualCards`.
+    const t = tForRequest(context);
     const workspaceId = await getWorkspaceId(client);
     const outcome = await confirmManualApply({ workspaceId, githubPath: target.githubPath });
 
@@ -57,36 +62,31 @@ export const gdocsManualAppliedAction = async ({
       await retireManualCards({
         workspaceId,
         githubPath: target.githubPath,
-        reason: `✅ ${target.githubPath} — applied in Google Docs by <@${managerId}>.`,
+        notice: {
+          reason: 'gdocs.card.retired.applied',
+          params: { path: target.githubPath, manager: `<@${managerId}>` },
+        },
         client,
       });
-      await replaceOriginalMessage(
-        body,
-        `✅ ${target.githubPath} — thanks, the Doc and the repository agree now.`,
-        logger,
-      );
+      await replaceOriginalMessage(body, t('gdocs.manual.reply.applied', { path: target.githubPath }), logger);
       return;
     }
 
     if (outcome === 'still-differs') {
       // Deliberately leaves the card in place: the work is not done, and
       // clearing the request here would lose the only reminder anyone has.
-      await replaceOriginalMessage(
-        body,
-        `⚠️ ${target.githubPath} — the Google Doc still differs from the repository. Apply the change and press the button again.`,
-        logger,
-      );
+      await replaceOriginalMessage(body, t('gdocs.manual.reply.stillDiffers', { path: target.githubPath }), logger);
       return;
     }
 
     if (outcome === 'nothing-pending') {
-      await replaceOriginalMessage(body, 'ℹ️ This was already handled.', logger);
+      await replaceOriginalMessage(body, t('gdocs.manual.reply.alreadyHandled'), logger);
       return;
     }
 
     await replaceOriginalMessage(
       body,
-      `⚠️ ${target.githubPath} — could not check the Google Doc (${outcome}). Try again shortly.`,
+      t('gdocs.manual.reply.checkFailed', { path: target.githubPath, outcome }),
       logger,
     );
   } catch (error) {
@@ -98,6 +98,7 @@ export const gdocsManualDeclinedAction = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   await ack();
@@ -114,25 +115,25 @@ export const gdocsManualDeclinedAction = async ({
       return;
     }
 
+    const t = tForRequest(context);
     const workspaceId = await getWorkspaceId(client);
     const declined = await declineManualApply({ workspaceId, githubPath: target.githubPath });
 
     if (!declined) {
-      await replaceOriginalMessage(body, 'ℹ️ This was already handled.', logger);
+      await replaceOriginalMessage(body, t('gdocs.manual.reply.alreadyHandled'), logger);
       return;
     }
 
     await retireManualCards({
       workspaceId,
       githubPath: target.githubPath,
-      reason: `↩️ ${target.githubPath} — left as it is in Google Docs by <@${managerId}>. The repository keeps the change.`,
+      notice: {
+        reason: 'gdocs.card.retired.declined',
+        params: { path: target.githubPath, manager: `<@${managerId}>` },
+      },
       client,
     });
-    await replaceOriginalMessage(
-      body,
-      `↩️ ${target.githubPath} — left as it is. The Doc and the repository will differ until somebody changes one of them.`,
-      logger,
-    );
+    await replaceOriginalMessage(body, t('gdocs.manual.reply.declined', { path: target.githubPath }), logger);
   } catch (error) {
     logger.error('Google Docs manual-decline action failed', error);
   }

@@ -1,3 +1,5 @@
+import type { MessageKey, Params } from '../../src/i18n';
+
 /**
  * Bookkeeping for the GitHub → Google Docs replica sync (docs/google-drive-sync.md).
  *
@@ -36,6 +38,23 @@ export interface GdocsReviewCard {
   managerId: string;
   channel: string;
   ts: string;
+}
+
+/**
+ * Why a card is being retired, as a catalog key rather than a sentence.
+ *
+ * A card belongs to whoever is holding it, not to whoever invalidated it: the
+ * manager who deletes a document may read English while the two managers with
+ * open Approve buttons read Korean. So the caller names the reason and
+ * `retireReviewCards`/`retireManualCards` render it once per recipient, with
+ * `tForUser`, from the `managerId` each card already records.
+ */
+export type GdocsRetireReason = Extract<MessageKey, `gdocs.card.retired.${string}`>;
+
+/** Fillers for the reason, when it names any (`{path}`, `{manager}`). */
+export interface GdocsRetireNotice {
+  reason: GdocsRetireReason;
+  params?: Params;
 }
 
 export interface GdocsDocState {
