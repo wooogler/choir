@@ -1,15 +1,18 @@
 import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { clearRegistrationRequest, getCHOIRUsers, getWorkspaceId, setCHOIRUsers } from 'services/slack';
 import { logManagementButtonError, refreshAppHomeSoon, requireManagerForAction } from './shared';
 
 export const registerChoirUsersHandlers = (app: App) => {
-  app.action('manage_choir_users', async ({ ack, body, client, logger }) => {
+  app.action('manage_choir_users', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
 
+    const t = tForRequest(context);
+
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+      if (!(await requireManagerForAction({ client, userId: body.user.id, t }))) {
         return;
       }
 
@@ -24,29 +27,29 @@ export const registerChoirUsersHandlers = (app: App) => {
           notify_on_close: true,
           title: {
             type: 'plain_text',
-            text: 'Manage CHOIR Users',
+            text: t('appHome.management.choirUsers.title'),
           },
           submit: {
             type: 'plain_text',
-            text: 'Update Users',
+            text: t('appHome.management.choirUsers.submit'),
           },
           close: {
             type: 'plain_text',
-            text: 'Cancel',
+            text: t('common.button.cancel'),
           },
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '👥 *Select CHOIR Users*\n\nChoose which workspace members can use CHOIR features and participate in the research study. Managers are automatically included.',
+                text: t('appHome.management.choirUsers.intro'),
               },
             },
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `📊 *Current Status:* ${choirUsers.length} users registered`,
+                text: t('appHome.management.choirUsers.status', { count: choirUsers.length }),
               },
             },
             {
@@ -58,16 +61,16 @@ export const registerChoirUsersHandlers = (app: App) => {
                 initial_users: choirUsers,
                 placeholder: {
                   type: 'plain_text',
-                  text: 'Select users to include in CHOIR...',
+                  text: t('appHome.management.choirUsers.placeholder'),
                 },
               },
               label: {
                 type: 'plain_text',
-                text: 'CHOIR Users',
+                text: t('appHome.management.choirUsers.label'),
               },
               hint: {
                 type: 'plain_text',
-                text: 'Selected users will be able to use CHOIR features. Managers are automatically included.',
+                text: t('appHome.management.choirUsers.hint'),
               },
             },
             {
@@ -75,7 +78,7 @@ export const registerChoirUsersHandlers = (app: App) => {
               elements: [
                 {
                   type: 'mrkdwn',
-                  text: "🔒 *Privacy Note:* Only selected users' messages will be included in CHOIR's conversation history and research data.",
+                  text: t('appHome.management.choirUsers.privacy'),
                 },
               ],
             },
@@ -102,7 +105,7 @@ export const registerChoirUsersHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '❌ Error opening user management modal. Please try again.',
+          text: t('appHome.management.choirUsers.error.open'),
         });
       }
 
@@ -118,9 +121,10 @@ export const registerChoirUsersHandlers = (app: App) => {
     }
   });
 
-  app.view('choir_users_modal', async ({ ack, body, client, logger, view }) => {
+  app.view('choir_users_modal', async ({ ack, body, client, context, logger, view }) => {
     const startTime = Date.now();
     const userId = body.user.id;
+    const t = tForRequest(context);
     let acked = false;
 
     // Only cheap checks run before ack. setCHOIRUsers below resolves each selected
@@ -128,7 +132,7 @@ export const registerChoirUsersHandlers = (app: App) => {
     // roster can exceed Slack's ~3s ack deadline — so ack first and do that work
     // after, reporting the outcome via an ephemeral message instead of the modal.
     try {
-      if (!(await requireManagerForAction({ client, userId }))) {
+      if (!(await requireManagerForAction({ client, userId, t }))) {
         await ack();
         acked = true;
         return;
@@ -140,7 +144,7 @@ export const registerChoirUsersHandlers = (app: App) => {
         await ack({
           response_action: 'errors',
           errors: {
-            choir_users_select_block: 'Please select at least one user or cancel to keep current settings.',
+            choir_users_select_block: t('appHome.management.choirUsers.error.empty'),
           },
         });
         acked = true;
@@ -163,7 +167,7 @@ export const registerChoirUsersHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
-          text: `✅ CHOIR users updated successfully! ${selectedUsers.length} users are now registered. Please refresh your app home to see the changes.`,
+          text: t('appHome.management.choirUsers.updated', { count: selectedUsers.length }),
         });
 
         refreshAppHomeSoon({ client, logger, userId, reason: 'CHOIR users update' });
@@ -191,7 +195,7 @@ export const registerChoirUsersHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
-          text: '❌ Failed to update CHOIR users. Please try again.',
+          text: t('appHome.management.choirUsers.error.save'),
         });
 
         await logAppHomeModalSubmit(
@@ -216,7 +220,7 @@ export const registerChoirUsersHandlers = (app: App) => {
         await ack({
           response_action: 'errors',
           errors: {
-            choir_users_select_block: 'An error occurred while updating users. Please try again.',
+            choir_users_select_block: t('appHome.management.choirUsers.error.generic'),
           },
         }).catch((ackError) => logger.error('Failed to ack CHOIR users modal error:', ackError));
       } else {
@@ -225,7 +229,7 @@ export const registerChoirUsersHandlers = (app: App) => {
           .postEphemeral({
             user: userId,
             channel: userId,
-            text: '❌ An error occurred while updating CHOIR users. Please try again.',
+            text: t('appHome.management.choirUsers.error.postAck'),
           })
           .catch((dmError) => logger.error('Failed to notify CHOIR users update error:', dmError));
       }

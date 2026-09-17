@@ -29,14 +29,21 @@ export const buildHomeView = async (
     getOrganizationName(workspaceId),
   ]);
 
+  // The network-resolving variant is deliberate here: rendering Home already
+  // costs a `users.info`, and resolving now warms the locale cache for every
+  // cheap (`...Cached`) lookup this person's next interactions will do. It runs
+  // before any block is built because every builder below reads from `t`.
+  const t = createT(await resolveLocaleForUser(workspaceId, userId, client));
+
   let organizationName = organizationNameRaw;
   if (!organizationName) {
     const workspaceInfo = await client.auth.test();
     const teamInfo = await client.team.info();
-    organizationName = teamInfo.team?.name || workspaceInfo.team || 'Our Organization';
+    organizationName = teamInfo.team?.name || workspaceInfo.team || t('appHome.organization.defaultName');
   }
 
   const choirManagementBlocks = await buildChoirManagementBlocks(
+    t,
     client,
     logger,
     workspaceId,
@@ -46,26 +53,23 @@ export const buildHomeView = async (
     choirUsers,
   );
 
-  const becomeManagerBlocks = buildBecomeManagerBlocks(isUserManager, isOwner);
+  const becomeManagerBlocks = buildBecomeManagerBlocks(t, isUserManager, isOwner);
 
   const documentConnectionBlocks = await buildDocumentConnectionBlocks(
+    t,
     workspaceId,
     isUserManager,
     isOwner,
     userGithubInfo,
   );
 
-  const organizationNameBlocks = buildOrganizationNameBlocks(isUserManager, isOwner, organizationName);
+  const organizationNameBlocks = buildOrganizationNameBlocks(t, isUserManager, isOwner, organizationName);
 
-  const logDownloadBlocks = buildLogDownloadBlocks(isUserManager, isOwner);
+  const logDownloadBlocks = buildLogDownloadBlocks(t, isUserManager, isOwner);
 
   const loggingEnabled = await workspaceStore.getLoggingEnabled(workspaceId);
-  const loggingToggleBlocks = buildLoggingToggleBlocks(isUserManager, isOwner, loggingEnabled);
+  const loggingToggleBlocks = buildLoggingToggleBlocks(t, isUserManager, isOwner, loggingEnabled);
 
-  // The network-resolving variant is deliberate here: rendering Home already
-  // costs a `users.info`, and resolving now warms the locale cache for every
-  // cheap (`...Cached`) lookup this person's next interactions will do.
-  const t = createT(await resolveLocaleForUser(workspaceId, userId, client));
   const [userLanguage, workspaceLanguage, contentLanguage] = await Promise.all([
     workspaceStore.getUserLanguage(workspaceId, userId),
     workspaceStore.getWorkspaceLanguage(workspaceId),
@@ -80,11 +84,11 @@ export const buildHomeView = async (
     contentLanguage,
   );
 
-  const readOnlyFilesBlocks = await buildReadOnlyFilesBlocks(workspaceId, isUserManager, isOwner);
+  const readOnlyFilesBlocks = await buildReadOnlyFilesBlocks(t, workspaceId, isUserManager, isOwner);
 
-  const openAISettingsBlocks = await buildOpenAISettingsBlocks(workspaceId, isUserManager, isOwner);
+  const openAISettingsBlocks = await buildOpenAISettingsBlocks(t, workspaceId, isUserManager, isOwner);
 
-  const contextKeyBlocks = await buildContextKeyBlocks(workspaceId, isUserManager, isOwner);
+  const contextKeyBlocks = await buildContextKeyBlocks(t, workspaceId, isUserManager, isOwner);
 
   // Build the deep-link URL for the Messages tab. In OAuth mode SLACK_APP_ID
   // must be set; the legacy SLACK_APP_TOKEN fallback only works for single
@@ -105,21 +109,21 @@ export const buildHomeView = async (
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Welcome, <@${userId}> :house:*`,
+        text: t('appHome.welcome.greeting', { user: `<@${userId}>` }),
       },
     },
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: 'CHOIR is a tool that automatically updates documents based on Slack conversations.',
+        text: t('appHome.welcome.intro'),
       },
     },
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: '💬 *Ready to get started?* Click the button below to chat with CHOIR!',
+        text: t('appHome.welcome.prompt'),
       },
     },
     {
@@ -129,7 +133,7 @@ export const buildHomeView = async (
           type: 'button',
           text: {
             type: 'plain_text',
-            text: '💬 Start Chatting with CHOIR',
+            text: t('appHome.welcome.startChat.button'),
             emoji: true,
           },
           style: 'primary',
@@ -141,7 +145,7 @@ export const buildHomeView = async (
     { type: 'divider' },
   ];
 
-  const insightsBlocks = buildInsightsBlocks(workspaceId, choirUsers.includes(userId));
+  const insightsBlocks = buildInsightsBlocks(t, workspaceId, choirUsers.includes(userId));
 
   return [
     ...homeBlocks,
@@ -164,8 +168,11 @@ export const buildHomeView = async (
  * "Team Insights" entry linking to the web awareness dashboard. Shown to CHOIR
  * users (registered members, incl. managers) when a public web base URL is set.
  * The dashboard page itself re-gates on CHOIR-user status.
+ *
+ * Exported, like the other synchronous builders below, so the blocks can be
+ * rendered in a test without standing up the whole home view.
  */
-const buildInsightsBlocks = (workspaceId: string, isChoirUser: boolean): any[] => {
+export const buildInsightsBlocks = (t: T, workspaceId: string, isChoirUser: boolean): any[] => {
   const baseUrl = process.env.DOCS_BASE_URL?.replace(/\/$/, '');
   if (!isChoirUser || !baseUrl) return [];
 
@@ -175,7 +182,7 @@ const buildInsightsBlocks = (workspaceId: string, isChoirUser: boolean): any[] =
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: '📊 *Team Insights* — what the team asks about, how often docs answer it, and where the gaps are. Privacy-preserving: no individual activity is shown.',
+        text: t('appHome.insights.summary'),
       },
     },
     {
@@ -183,7 +190,7 @@ const buildInsightsBlocks = (workspaceId: string, isChoirUser: boolean): any[] =
       elements: [
         {
           type: 'button',
-          text: { type: 'plain_text', text: '📊 Open Team Insights', emoji: true },
+          text: { type: 'plain_text', text: t('appHome.insights.open.button'), emoji: true },
           action_id: 'open_dashboard_url',
           url: dashboardUrl,
         },
@@ -193,7 +200,7 @@ const buildInsightsBlocks = (workspaceId: string, isChoirUser: boolean): any[] =
   ];
 };
 
-const buildOpenAISettingsBlocks = async (workspaceId: string, isUserManager: boolean, isOwner: boolean) => {
+const buildOpenAISettingsBlocks = async (t: T, workspaceId: string, isUserManager: boolean, isOwner: boolean) => {
   if (!isUserManager && !isOwner) {
     return [];
   }
@@ -208,26 +215,31 @@ const buildOpenAISettingsBlocks = async (workspaceId: string, isUserManager: boo
   if (hasWorkspaceKey) {
     const key = settings?.apiKey ?? '';
     const masked = key.length <= 8 ? '••••' : `${key.slice(0, 4)}…${key.slice(-4)}`;
-    keyStatus = `✅ Workspace key set (${masked})`;
+    keyStatus = t('appHome.openai.key.workspaceSet', { masked });
   } else if (hasEnvKey) {
-    keyStatus = '🟡 Using server default key';
+    keyStatus = t('appHome.openai.key.serverDefault');
   } else {
-    keyStatus = '❌ Not configured';
+    keyStatus = t('appHome.openai.key.notConfigured');
   }
 
-  const qaModelLabel = settings?.qaModel || 'Server default';
-  const documentUpdateModelLabel = settings?.documentUpdateModel || 'Server default';
+  const qaModelLabel = settings?.qaModel || t('appHome.openai.model.serverDefault');
+  const documentUpdateModelLabel = settings?.documentUpdateModel || t('appHome.openai.model.serverDefault');
 
   const blocks: any[] = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: '🤖 AI Settings', emoji: true },
+      text: { type: 'plain_text', text: t('appHome.openai.header'), emoji: true },
     },
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*OpenAI Key:* ${keyStatus}\n*Q&A Model:* ${qaModelLabel}\n*Document Update Model:* ${documentUpdateModelLabel}\n*Classification Model:* ${CLASSIFICATION_MODEL} _(fixed)_`,
+        text: t('appHome.openai.summary', {
+          keyStatus,
+          qaModel: qaModelLabel,
+          documentUpdateModel: documentUpdateModelLabel,
+          classificationModel: CLASSIFICATION_MODEL,
+        }),
       },
     },
   ];
@@ -235,7 +247,7 @@ const buildOpenAISettingsBlocks = async (workspaceId: string, isUserManager: boo
   const actionElements: any[] = [
     {
       type: 'button',
-      text: { type: 'plain_text', text: 'Configure OpenAI', emoji: true },
+      text: { type: 'plain_text', text: t('appHome.openai.configure.button'), emoji: true },
       style: 'primary',
       action_id: 'configure_openai',
     },
@@ -244,17 +256,17 @@ const buildOpenAISettingsBlocks = async (workspaceId: string, isUserManager: boo
   if (hasWorkspaceKey) {
     actionElements.push({
       type: 'button',
-      text: { type: 'plain_text', text: 'Clear Settings', emoji: true },
+      text: { type: 'plain_text', text: t('appHome.openai.clear.button'), emoji: true },
       style: 'danger',
       action_id: 'clear_openai_settings',
       confirm: {
-        title: { type: 'plain_text', text: 'Clear OpenAI Settings?' },
+        title: { type: 'plain_text', text: t('appHome.openai.clear.confirm.title') },
         text: {
           type: 'plain_text',
-          text: 'CHOIR will fall back to the server default key. The workspace-specific key and model choices will be removed.',
+          text: t('appHome.openai.clear.confirm.text'),
         },
-        confirm: { type: 'plain_text', text: 'Clear' },
-        deny: { type: 'plain_text', text: 'Cancel' },
+        confirm: { type: 'plain_text', text: t('appHome.openai.clear.confirm.ok.button') },
+        deny: { type: 'plain_text', text: t('common.button.cancel') },
       },
     });
   }
@@ -270,7 +282,7 @@ const buildOpenAISettingsBlocks = async (workspaceId: string, isUserManager: boo
   return blocks;
 };
 
-const buildContextKeyBlocks = async (workspaceId: string, isUserManager: boolean, isOwner: boolean) => {
+const buildContextKeyBlocks = async (t: T, workspaceId: string, isUserManager: boolean, isOwner: boolean) => {
   if (!isUserManager && !isOwner) {
     return [];
   }
@@ -284,27 +296,26 @@ const buildContextKeyBlocks = async (workspaceId: string, isUserManager: boolean
     const created = asDate(status.createdAt);
     const rotated = asDate(status.rotatedAt);
     statusText = [
-      '🔐 *Provenance key:* ✅ Configured',
-      created ? `Created ${created}` : null,
-      rotated ? `Last rotated ${rotated}` : null,
+      t('appHome.contextKey.status.configured'),
+      created ? t('appHome.contextKey.status.created', { date: created }) : null,
+      rotated ? t('appHome.contextKey.status.rotated', { date: rotated }) : null,
     ]
       .filter(Boolean)
       .join('\n');
   } else {
-    statusText =
-      '🔐 *Provenance key:* 🟡 Not yet generated\nA per-workspace key is created automatically the first time a document change records its history.';
+    statusText = t('appHome.contextKey.status.notGenerated');
   }
 
   const blocks: any[] = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: '🔐 Change History Encryption', emoji: true },
+      text: { type: 'plain_text', text: t('appHome.contextKey.header'), emoji: true },
     },
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `${statusText}\n\nChange history (the conversation, extracted knowledge, and diff behind each document update) is encrypted with this key. It lives only in CHOIR's database — GitHub only ever holds ciphertext.`,
+        text: t('appHome.contextKey.summary', { status: statusText }),
       },
     },
   ];
@@ -312,7 +323,7 @@ const buildContextKeyBlocks = async (workspaceId: string, isUserManager: boolean
   const actionElements: any[] = [
     {
       type: 'button',
-      text: { type: 'plain_text', text: 'Import Key', emoji: true },
+      text: { type: 'plain_text', text: t('appHome.contextKey.import.button'), emoji: true },
       action_id: 'import_context_key',
     },
   ];
@@ -321,12 +332,12 @@ const buildContextKeyBlocks = async (workspaceId: string, isUserManager: boolean
     actionElements.unshift(
       {
         type: 'button',
-        text: { type: 'plain_text', text: 'Back Up Key', emoji: true },
+        text: { type: 'plain_text', text: t('appHome.contextKey.backup.button'), emoji: true },
         action_id: 'backup_context_key',
       },
       {
         type: 'button',
-        text: { type: 'plain_text', text: 'Rotate Key', emoji: true },
+        text: { type: 'plain_text', text: t('appHome.contextKey.rotate.button'), emoji: true },
         style: 'danger',
         action_id: 'rotate_context_key',
       },
@@ -343,7 +354,7 @@ const buildContextKeyBlocks = async (workspaceId: string, isUserManager: boolean
       elements: [
         {
           type: 'mrkdwn',
-          text: '⚠️ Rotating or importing a new key makes *all previously recorded change history permanently unreadable*. Back up the current key first if you may need the old history.',
+          text: t('appHome.contextKey.warning'),
         },
       ],
     },
@@ -371,6 +382,7 @@ function resolveAppIdFromEnv(): string | undefined {
 }
 
 const buildChoirManagementBlocks = async (
+  t: T,
   client: WebClient,
   logger: Logger,
   workspaceId: string,
@@ -389,7 +401,7 @@ const buildChoirManagementBlocks = async (
     type: 'header',
     text: {
       type: 'plain_text',
-      text: '⚙️ CHOIR Management',
+      text: t('appHome.choirManagement.header'),
       emoji: true,
     },
   });
@@ -400,16 +412,19 @@ const buildChoirManagementBlocks = async (
     for (const managerId of managers) {
       try {
         const userInfo = await client.users.info({ user: managerId });
-        const name = userInfo.user?.real_name || userInfo.user?.name || 'Unknown User';
-        managerNames.push(`<@${managerId}> (${name})`);
+        const name =
+          userInfo.user?.real_name || userInfo.user?.name || t('appHome.choirManagement.managers.unknownName');
+        managerNames.push(t('appHome.choirManagement.managers.entry', { user: `<@${managerId}>`, name }));
       } catch (error) {
         logger.error(`Failed to get user info for manager ${managerId}:`, error);
         managerNames.push(`<@${managerId}>`);
       }
     }
-    managersListText = `*Current Managers:*\n${managerNames.map((name) => `• ${name}`).join('\n')}`;
+    managersListText = t('appHome.choirManagement.managers.list', {
+      list: managerNames.map((name) => `• ${name}`).join('\n'),
+    });
   } else {
-    managersListText = '*Current Managers:* None assigned';
+    managersListText = t('appHome.choirManagement.managers.none');
   }
 
   blocks.push(
@@ -417,7 +432,7 @@ const buildChoirManagementBlocks = async (
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `${managersListText}\n\nManagers can access advanced features and grant permissions to other users.`,
+        text: t('appHome.choirManagement.managers.summary', { managers: managersListText }),
       },
     },
     {
@@ -427,7 +442,7 @@ const buildChoirManagementBlocks = async (
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Manage Managers',
+            text: t('appHome.choirManagement.managers.button'),
             emoji: true,
           },
           style: 'primary',
@@ -442,7 +457,7 @@ const buildChoirManagementBlocks = async (
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*CHOIR Users:* ${choirUsers.length} registered\nCHOIR users are authorized to use CHOIR features and participate in the research study.`,
+        text: t('appHome.choirManagement.choirUsers.summary', { count: choirUsers.length }),
       },
     },
     {
@@ -452,7 +467,7 @@ const buildChoirManagementBlocks = async (
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Manage CHOIR Users',
+            text: t('appHome.choirManagement.choirUsers.button'),
             emoji: true,
           },
           style: 'primary',
@@ -463,18 +478,18 @@ const buildChoirManagementBlocks = async (
   );
 
   const qaChannelId = await getQAChannel(workspaceId, client);
-  let qaChannelName = 'No channel selected';
-  let channelStatus = '❌ Not configured';
+  let qaChannelName = '';
+  let channelStatus = t('appHome.choirManagement.qaChannel.status.notConfigured');
 
   if (qaChannelId) {
     try {
       const channelInfo = await client.conversations.info({ channel: qaChannelId });
-      qaChannelName = channelInfo.channel?.name || 'Unknown channel';
-      channelStatus = '✅ Configured';
+      qaChannelName = channelInfo.channel?.name || t('appHome.choirManagement.qaChannel.unknownName');
+      channelStatus = t('appHome.choirManagement.qaChannel.status.configured');
     } catch (error) {
       logger.warn(`Could not get Q&A channel name for ${qaChannelId}:`, error);
-      qaChannelName = 'Unknown channel';
-      channelStatus = '⚠️ Channel not found';
+      qaChannelName = t('appHome.choirManagement.qaChannel.unknownName');
+      channelStatus = t('appHome.choirManagement.qaChannel.status.notFound');
     }
   }
 
@@ -482,7 +497,12 @@ const buildChoirManagementBlocks = async (
     type: 'section',
     text: {
       type: 'mrkdwn',
-      text: `*Q&A Channel:* ${channelStatus}\n${qaChannelId ? `Current Channel: #${qaChannelName}` : 'Current Channel: None'}`,
+      text: t('appHome.choirManagement.qaChannel.summary', {
+        status: channelStatus,
+        current: qaChannelId
+          ? t('appHome.choirManagement.qaChannel.current', { channel: qaChannelName })
+          : t('appHome.choirManagement.qaChannel.currentNone'),
+      }),
     },
   });
 
@@ -491,7 +511,7 @@ const buildChoirManagementBlocks = async (
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: "⚠️ *Alert:* No Q&A channel is configured. Users won't be able to forward questions to a channel.",
+        text: t('appHome.choirManagement.qaChannel.alert'),
       },
     });
   }
@@ -501,7 +521,7 @@ const buildChoirManagementBlocks = async (
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: "Select a channel where CHOIR will forward questions when users click 'Ask to Channel'.",
+        text: t('appHome.choirManagement.qaChannel.instructions'),
       },
     },
     {
@@ -511,7 +531,7 @@ const buildChoirManagementBlocks = async (
           type: 'channels_select',
           placeholder: {
             type: 'plain_text',
-            text: 'Select Channel',
+            text: t('appHome.choirManagement.qaChannel.placeholder'),
             emoji: true,
           },
           action_id: 'select_qa_channel',
@@ -528,7 +548,7 @@ const buildChoirManagementBlocks = async (
   return blocks;
 };
 
-const buildBecomeManagerBlocks = (isUserManager: boolean, isOwner: boolean) => {
+export const buildBecomeManagerBlocks = (t: T, isUserManager: boolean, isOwner: boolean) => {
   if (isUserManager || isOwner) {
     return [];
   }
@@ -539,7 +559,7 @@ const buildBecomeManagerBlocks = (isUserManager: boolean, isOwner: boolean) => {
       elements: [
         {
           type: 'mrkdwn',
-          text: '🔒 _Need access to advanced features? Contact your workspace administrator._',
+          text: t('appHome.becomeManager.hint'),
         },
       ],
     },
@@ -550,7 +570,7 @@ const buildBecomeManagerBlocks = (isUserManager: boolean, isOwner: boolean) => {
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Manager Access',
+            text: t('appHome.becomeManager.button'),
             emoji: true,
           },
           action_id: 'request_manager_permission',
@@ -564,6 +584,7 @@ const buildBecomeManagerBlocks = (isUserManager: boolean, isOwner: boolean) => {
 };
 
 const buildDocumentConnectionBlocks = async (
+  t: T,
   workspaceId: string,
   isUserManager: boolean,
   isOwner: boolean,
@@ -580,23 +601,29 @@ const buildDocumentConnectionBlocks = async (
     type: 'header',
     text: {
       type: 'plain_text',
-      text: '📁 Document Connection',
+      text: t('appHome.documentConnection.header'),
       emoji: true,
     },
   });
 
   if (userGithubInfo) {
+    const login = userGithubInfo.user.login;
     blocks.push(
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Personal GitHub Access:* ✅ Connected\n*GitHub Username:* <https://github.com/${userGithubInfo.user.login}|${userGithubInfo.user.login}>\n*Connected:* ${userGithubInfo.connectedAt.toLocaleDateString()}`,
+          // URLs never live in the catalog: the link is assembled here and the
+          // catalog only gets the finished `<url|label>` to place in a sentence.
+          text: t('appHome.documentConnection.personal.connected', {
+            profileLink: `<https://github.com/${login}|${login}>`,
+            date: userGithubInfo.connectedAt.toLocaleDateString(),
+          }),
         },
         accessory: {
           type: 'image',
           image_url: userGithubInfo.user.avatar_url,
-          alt_text: 'GitHub Avatar',
+          alt_text: t('appHome.documentConnection.personal.avatarAlt'),
         },
       },
       {
@@ -606,7 +633,7 @@ const buildDocumentConnectionBlocks = async (
             type: 'button',
             text: {
               type: 'plain_text',
-              text: 'Disconnect GitHub',
+              text: t('appHome.documentConnection.disconnect.button'),
               emoji: true,
             },
             style: 'danger',
@@ -614,19 +641,19 @@ const buildDocumentConnectionBlocks = async (
             confirm: {
               title: {
                 type: 'plain_text',
-                text: 'Disconnect GitHub',
+                text: t('appHome.documentConnection.disconnect.confirm.title'),
               },
               text: {
                 type: 'plain_text',
-                text: 'Are you sure you want to disconnect your personal GitHub account?',
+                text: t('appHome.documentConnection.disconnect.confirm.text'),
               },
               confirm: {
                 type: 'plain_text',
-                text: 'Disconnect',
+                text: t('appHome.documentConnection.disconnect.confirm.ok.button'),
               },
               deny: {
                 type: 'plain_text',
-                text: 'Cancel',
+                text: t('common.button.cancel'),
               },
             },
           },
@@ -639,7 +666,7 @@ const buildDocumentConnectionBlocks = async (
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '*Personal GitHub Access:* ❌ Not connected\n\nConnect your GitHub account to access public repositories you can write to.',
+          text: t('appHome.documentConnection.personal.notConnected'),
         },
       },
       {
@@ -649,7 +676,7 @@ const buildDocumentConnectionBlocks = async (
             type: 'button',
             text: {
               type: 'plain_text',
-              text: 'Connect GitHub Account',
+              text: t('appHome.documentConnection.connect.button'),
               emoji: true,
             },
             style: 'primary',
@@ -663,13 +690,20 @@ const buildDocumentConnectionBlocks = async (
   if ((isUserManager || isOwner) && userGithubInfo) {
     const savedRepoInfo = await getGithubRepo(workspaceId);
     if (savedRepoInfo) {
+      const repoLabel = savedRepoInfo.path
+        ? t('appHome.documentConnection.repo.labelWithPath', {
+            owner: savedRepoInfo.owner,
+            repo: savedRepoInfo.repo,
+            path: savedRepoInfo.path,
+          })
+        : t('appHome.documentConnection.repo.label', { owner: savedRepoInfo.owner, repo: savedRepoInfo.repo });
       blocks.push({
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Repository Connection:* ✅ Connected\n<${savedRepoInfo.url}|${savedRepoInfo.owner}/${savedRepoInfo.repo}${
-            savedRepoInfo.path ? ` (Path: ${savedRepoInfo.path})` : ''
-          }>`,
+          text: t('appHome.documentConnection.repo.connected', {
+            repoLink: `<${savedRepoInfo.url}|${repoLabel}>`,
+          }),
         },
       });
     } else {
@@ -677,7 +711,7 @@ const buildDocumentConnectionBlocks = async (
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '*Repository Connection:* ❌ No repository connected',
+          text: t('appHome.documentConnection.repo.notConnected'),
         },
       });
     }
@@ -689,7 +723,7 @@ const buildDocumentConnectionBlocks = async (
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Browse My Repositories',
+            text: t('appHome.documentConnection.browse.button'),
             emoji: true,
           },
           style: 'primary',
@@ -704,7 +738,7 @@ const buildDocumentConnectionBlocks = async (
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Normalize Markdown',
+            text: t('appHome.documentConnection.normalize.button'),
             emoji: true,
           },
           style: 'primary',
@@ -712,19 +746,19 @@ const buildDocumentConnectionBlocks = async (
           confirm: {
             title: {
               type: 'plain_text',
-              text: 'Normalize Markdown Files',
+              text: t('appHome.documentConnection.normalize.confirm.title'),
             },
             text: {
               type: 'plain_text',
-              text: 'This will convert all markdown files to tree format and back to markdown, standardizing the formatting. This may change newlines, list styles, etc.',
+              text: t('appHome.documentConnection.normalize.confirm.text'),
             },
             confirm: {
               type: 'plain_text',
-              text: 'Normalize',
+              text: t('appHome.documentConnection.normalize.confirm.ok.button'),
             },
             deny: {
               type: 'plain_text',
-              text: 'Cancel',
+              text: t('common.button.cancel'),
             },
           },
         },
@@ -732,7 +766,7 @@ const buildDocumentConnectionBlocks = async (
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Reload from GitHub',
+            text: t('appHome.documentConnection.reload.button'),
             emoji: true,
           },
           style: 'primary',
@@ -740,19 +774,19 @@ const buildDocumentConnectionBlocks = async (
           confirm: {
             title: {
               type: 'plain_text',
-              text: 'Reload from GitHub?',
+              text: t('appHome.documentConnection.reload.confirm.title'),
             },
             text: {
               type: 'plain_text',
-              text: 'This will fetch the latest files from GitHub and update the vector store. Any unsaved changes will be overwritten.',
+              text: t('appHome.documentConnection.reload.confirm.text'),
             },
             confirm: {
               type: 'plain_text',
-              text: 'Reload',
+              text: t('appHome.documentConnection.reload.confirm.ok.button'),
             },
             deny: {
               type: 'plain_text',
-              text: 'Cancel',
+              text: t('common.button.cancel'),
             },
           },
         },
@@ -762,26 +796,26 @@ const buildDocumentConnectionBlocks = async (
         type: 'button',
         text: {
           type: 'plain_text',
-          text: 'Rebuild QMD Index',
+          text: t('appHome.documentConnection.rebuildQmd.button'),
           emoji: true,
         },
         action_id: 'rebuild_qmd_index',
         confirm: {
           title: {
             type: 'plain_text',
-            text: 'Rebuild QMD Index?',
+            text: t('appHome.documentConnection.rebuildQmd.confirm.title'),
           },
           text: {
             type: 'plain_text',
-            text: 'This will delete the local QMD SQLite index and rebuild it from the synced markdown mirror. Use this after chunking changes or if retrieval looks stale.',
+            text: t('appHome.documentConnection.rebuildQmd.confirm.text'),
           },
           confirm: {
             type: 'plain_text',
-            text: 'Rebuild',
+            text: t('appHome.documentConnection.rebuildQmd.confirm.ok.button'),
           },
           deny: {
             type: 'plain_text',
-            text: 'Cancel',
+            text: t('common.button.cancel'),
           },
         },
       });
@@ -791,7 +825,7 @@ const buildDocumentConnectionBlocks = async (
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '*Index Management*\nRun these after editing markdown files or when retrieval looks stale.',
+            text: t('appHome.documentConnection.indexManagement.summary'),
           },
         },
         {
@@ -809,7 +843,12 @@ const buildDocumentConnectionBlocks = async (
   return blocks;
 };
 
-const buildOrganizationNameBlocks = (isUserManager: boolean, isOwner: boolean, organizationName: string) => {
+export const buildOrganizationNameBlocks = (
+  t: T,
+  isUserManager: boolean,
+  isOwner: boolean,
+  organizationName: string,
+) => {
   if (!isUserManager && !isOwner) {
     return [];
   }
@@ -819,7 +858,7 @@ const buildOrganizationNameBlocks = (isUserManager: boolean, isOwner: boolean, o
       type: 'header',
       text: {
         type: 'plain_text',
-        text: '🏢 Organization Name',
+        text: t('appHome.organization.header'),
         emoji: true,
       },
     },
@@ -827,7 +866,7 @@ const buildOrganizationNameBlocks = (isUserManager: boolean, isOwner: boolean, o
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Organization Name:* ${organizationName}`,
+        text: t('appHome.organization.summary', { name: organizationName }),
       },
     },
     {
@@ -837,7 +876,7 @@ const buildOrganizationNameBlocks = (isUserManager: boolean, isOwner: boolean, o
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Edit Organization Name',
+            text: t('appHome.organization.edit.button'),
             emoji: true,
           },
           style: 'primary',
@@ -851,7 +890,7 @@ const buildOrganizationNameBlocks = (isUserManager: boolean, isOwner: boolean, o
   ];
 };
 
-const buildLogDownloadBlocks = (isUserManager: boolean, isOwner: boolean) => {
+export const buildLogDownloadBlocks = (t: T, isUserManager: boolean, isOwner: boolean) => {
   if (!isUserManager && !isOwner) {
     return [];
   }
@@ -861,7 +900,7 @@ const buildLogDownloadBlocks = (isUserManager: boolean, isOwner: boolean) => {
       type: 'header',
       text: {
         type: 'plain_text',
-        text: '📊 Interaction Logs Download',
+        text: t('appHome.logs.header'),
         emoji: true,
       },
     },
@@ -869,7 +908,7 @@ const buildLogDownloadBlocks = (isUserManager: boolean, isOwner: boolean) => {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: 'Download user interaction logs for analysis and research purposes.',
+        text: t('appHome.logs.summary'),
       },
     },
     {
@@ -879,7 +918,7 @@ const buildLogDownloadBlocks = (isUserManager: boolean, isOwner: boolean) => {
           type: 'button',
           text: {
             type: 'plain_text',
-            text: "Today's Logs",
+            text: t('appHome.logs.today.button'),
             emoji: true,
           },
           action_id: 'download_today_logs',
@@ -889,7 +928,7 @@ const buildLogDownloadBlocks = (isUserManager: boolean, isOwner: boolean) => {
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'All Logs',
+            text: t('appHome.logs.all.button'),
             emoji: true,
           },
           action_id: 'download_all_logs',
@@ -1031,7 +1070,7 @@ export const buildLanguageSettingsBlocks = (
   ];
 };
 
-const buildLoggingToggleBlocks = (isUserManager: boolean, isOwner: boolean, loggingEnabled: boolean) => {
+export const buildLoggingToggleBlocks = (t: T, isUserManager: boolean, isOwner: boolean, loggingEnabled: boolean) => {
   if (!isUserManager && !isOwner) {
     return [];
   }
@@ -1041,7 +1080,7 @@ const buildLoggingToggleBlocks = (isUserManager: boolean, isOwner: boolean, logg
       type: 'header',
       text: {
         type: 'plain_text',
-        text: '🔧 Logging Settings',
+        text: t('appHome.logging.header'),
         emoji: true,
       },
     },
@@ -1049,7 +1088,9 @@ const buildLoggingToggleBlocks = (isUserManager: boolean, isOwner: boolean, logg
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*File Logging:* ${loggingEnabled ? '✅ Enabled' : '❌ Disabled'}\n\nControls whether user interactions are saved to log files for research purposes.`,
+        text: t('appHome.logging.summary', {
+          status: loggingEnabled ? t('appHome.logging.status.enabled') : t('appHome.logging.status.disabled'),
+        }),
       },
     },
     {
@@ -1059,7 +1100,7 @@ const buildLoggingToggleBlocks = (isUserManager: boolean, isOwner: boolean, logg
           type: 'button',
           text: {
             type: 'plain_text',
-            text: loggingEnabled ? 'Disable Logging' : 'Enable Logging',
+            text: loggingEnabled ? t('appHome.logging.disable.button') : t('appHome.logging.enable.button'),
             emoji: true,
           },
           action_id: 'toggle_logging',
@@ -1073,7 +1114,7 @@ const buildLoggingToggleBlocks = (isUserManager: boolean, isOwner: boolean, logg
   ];
 };
 
-const buildReadOnlyFilesBlocks = async (workspaceId: string, isUserManager: boolean, isOwner: boolean) => {
+const buildReadOnlyFilesBlocks = async (t: T, workspaceId: string, isUserManager: boolean, isOwner: boolean) => {
   // Only show this section for managers and owners
   if (!isUserManager && !isOwner) {
     return [];
@@ -1094,7 +1135,7 @@ const buildReadOnlyFilesBlocks = async (workspaceId: string, isUserManager: bool
           type: 'header',
           text: {
             type: 'plain_text',
-            text: '🔒 Read-Only Files',
+            text: t('appHome.readOnly.header'),
             emoji: true,
           },
         },
@@ -1102,14 +1143,14 @@ const buildReadOnlyFilesBlocks = async (workspaceId: string, isUserManager: bool
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '📋 *Read-Only Files Management*\nConnect a GitHub repository to manage read-only files. Read-only files are excluded from document updates but remain searchable.',
+            text: t('appHome.readOnly.introNeedsRepo'),
           },
         },
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '⚠️ *GitHub repository not connected*\nPlease connect a GitHub repository in the Document Connection section above to manage read-only files.',
+            text: t('appHome.readOnly.repoMissing'),
           },
         },
         {
@@ -1124,7 +1165,7 @@ const buildReadOnlyFilesBlocks = async (workspaceId: string, isUserManager: bool
         type: 'header',
         text: {
           type: 'plain_text',
-          text: '🔒 Read-Only Files',
+          text: t('appHome.readOnly.header'),
           emoji: true,
         },
       },
@@ -1132,14 +1173,14 @@ const buildReadOnlyFilesBlocks = async (workspaceId: string, isUserManager: bool
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '📋 *Read-Only Files Management*\nRead-only files are excluded from document updates but remain searchable.',
+          text: t('appHome.readOnly.intro'),
         },
       },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '⏳ *Loading files...*\nMarkdown files are being loaded from GitHub. Please refresh in a moment or use the "Reload from GitHub" button in Vector Store Management.',
+          text: t('appHome.readOnly.loading'),
         },
       },
       {
@@ -1153,7 +1194,7 @@ const buildReadOnlyFilesBlocks = async (workspaceId: string, isUserManager: bool
       type: 'header',
       text: {
         type: 'plain_text',
-        text: '🔒 Read-Only Files',
+        text: t('appHome.readOnly.header'),
         emoji: true,
       },
     },
@@ -1161,7 +1202,7 @@ const buildReadOnlyFilesBlocks = async (workspaceId: string, isUserManager: bool
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Read-Only Files:* ${readOnlyFiles.length} of ${markdownFiles.length} files\nRead-only files are excluded from document updates but remain searchable.`,
+        text: t('appHome.readOnly.summary', { count: readOnlyFiles.length, total: markdownFiles.length }),
       },
     },
     {
@@ -1170,8 +1211,8 @@ const buildReadOnlyFilesBlocks = async (workspaceId: string, isUserManager: bool
         type: 'mrkdwn',
         text:
           readOnlyFiles.length > 0
-            ? `*Current read-only files:*\n${readOnlyFiles.map((file) => `• ${file}`).join('\n')}`
-            : '*Current read-only files:* None',
+            ? t('appHome.readOnly.current', { list: readOnlyFiles.map((file) => `• ${file}`).join('\n') })
+            : t('appHome.readOnly.currentNone'),
       },
     },
     {
@@ -1181,7 +1222,7 @@ const buildReadOnlyFilesBlocks = async (workspaceId: string, isUserManager: bool
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Manage Read-Only Files',
+            text: t('appHome.readOnly.manage.button'),
             emoji: true,
           },
           style: 'primary',

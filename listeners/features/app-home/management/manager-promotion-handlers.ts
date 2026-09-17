@@ -1,12 +1,15 @@
 import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId, promoteToManagerWithPassword } from 'services/slack';
 import { logManagementButtonError, logManagementModalError, refreshAppHomeSoon } from './shared';
 
 export const registerManagerPromotionHandlers = (app: App) => {
-  app.action('request_manager_permission', async ({ ack, body, client, logger }) => {
+  app.action('request_manager_permission', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
+
+    const t = tForRequest(context);
 
     try {
       await client.views.open({
@@ -17,22 +20,22 @@ export const registerManagerPromotionHandlers = (app: App) => {
           notify_on_close: true,
           title: {
             type: 'plain_text',
-            text: 'Become Manager',
+            text: t('appHome.management.promotion.title'),
           },
           submit: {
             type: 'plain_text',
-            text: 'Submit',
+            text: t('common.button.submit'),
           },
           close: {
             type: 'plain_text',
-            text: 'Cancel',
+            text: t('common.button.cancel'),
           },
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '🔐 *Manager Promotion*\n\nEnter the manager promotion password to gain manager permissions.',
+                text: t('appHome.management.promotion.intro'),
               },
             },
             {
@@ -43,12 +46,12 @@ export const registerManagerPromotionHandlers = (app: App) => {
                 action_id: 'password_input',
                 placeholder: {
                   type: 'plain_text',
-                  text: 'Enter promotion password...',
+                  text: t('appHome.management.promotion.placeholder'),
                 },
               },
               label: {
                 type: 'plain_text',
-                text: 'Password',
+                text: t('appHome.management.promotion.label'),
               },
             },
           ],
@@ -73,7 +76,7 @@ export const registerManagerPromotionHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '❌ Error opening manager promotion modal. Please try again.',
+          text: t('appHome.management.promotion.error.open'),
         });
       }
 
@@ -89,8 +92,9 @@ export const registerManagerPromotionHandlers = (app: App) => {
     }
   });
 
-  app.view('manager_promotion_modal', async ({ ack, body, client, logger, view }) => {
+  app.view('manager_promotion_modal', async ({ ack, body, client, context, logger, view }) => {
     const startTime = Date.now();
+    const t = tForRequest(context);
 
     try {
       const password = view.state.values.password_block.password_input.value;
@@ -99,7 +103,7 @@ export const registerManagerPromotionHandlers = (app: App) => {
         await ack({
           response_action: 'errors',
           errors: {
-            password_block: 'Please enter the promotion password.',
+            password_block: t('appHome.management.promotion.error.empty'),
           },
         });
 
@@ -129,7 +133,7 @@ export const registerManagerPromotionHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '✅ Congratulations! You have been promoted to manager. Please refresh your app home to see the changes.',
+          text: t('appHome.management.promotion.success'),
         });
 
         refreshAppHomeSoon({ client, logger, userId: body.user.id, reason: 'manager promotion' });
@@ -155,7 +159,7 @@ export const registerManagerPromotionHandlers = (app: App) => {
         await ack({
           response_action: 'errors',
           errors: {
-            password_block: 'Invalid password. Please check the password and try again.',
+            password_block: t('appHome.management.promotion.error.invalid'),
           },
         });
 
@@ -178,7 +182,7 @@ export const registerManagerPromotionHandlers = (app: App) => {
       await ack({
         response_action: 'errors',
         errors: {
-          password_block: 'An error occurred while processing your request. Please try again.',
+          password_block: t('appHome.management.promotion.error.generic'),
         },
       });
 

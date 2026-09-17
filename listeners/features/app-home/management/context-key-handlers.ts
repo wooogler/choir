@@ -1,5 +1,6 @@
 import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { logManagementModalError, refreshAppHomeSoon, requireManagerForAction } from './shared';
@@ -12,11 +13,12 @@ const IMPORT_PHRASE = 'IMPORT';
 
 export const registerContextKeyHandlers = (app: App) => {
   // --- Rotate: warning + type-to-confirm ------------------------------------
-  app.action('rotate_context_key', async ({ ack, body, client, logger }) => {
+  app.action('rotate_context_key', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
+    const t = tForRequest(context);
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) return;
+      if (!(await requireManagerForAction({ client, userId: body.user.id, t }))) return;
       const workspaceId = await getWorkspaceId(client);
 
       await client.views.open({
@@ -25,21 +27,24 @@ export const registerContextKeyHandlers = (app: App) => {
           type: 'modal',
           callback_id: 'rotate_context_key_modal',
           private_metadata: JSON.stringify({ workspaceId }),
-          title: { type: 'plain_text', text: 'Rotate Key' },
-          submit: { type: 'plain_text', text: 'Rotate' },
-          close: { type: 'plain_text', text: 'Cancel' },
+          title: { type: 'plain_text', text: t('appHome.management.contextKey.rotate.title') },
+          submit: { type: 'plain_text', text: t('appHome.management.contextKey.rotate.submit') },
+          close: { type: 'plain_text', text: t('common.button.cancel') },
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '⚠️ *This permanently destroys access to all existing change history.*\n\nEvery previously recorded update (its conversation, extracted knowledge, and diff) was encrypted with the current key. A new key cannot decrypt them — those records become unreadable forever. Back up the current key first if you might need the old history.',
+                text: t('appHome.management.contextKey.rotate.warning'),
               },
             },
             {
               type: 'input',
               block_id: 'confirm_block',
-              label: { type: 'plain_text', text: `Type ${ROTATE_PHRASE} to confirm` },
+              label: {
+                type: 'plain_text',
+                text: t('appHome.management.contextKey.confirm.label', { phrase: ROTATE_PHRASE }),
+              },
               element: {
                 type: 'plain_text_input',
                 action_id: 'confirm_input',
@@ -65,14 +70,15 @@ export const registerContextKeyHandlers = (app: App) => {
     }
   });
 
-  app.view('rotate_context_key_modal', async ({ ack, body, client, logger, view }) => {
+  app.view('rotate_context_key_modal', async ({ ack, body, client, context, logger, view }) => {
     const startTime = Date.now();
     const userId = body.user.id;
+    const t = tForRequest(context);
     const { workspaceId } = JSON.parse(view.private_metadata || '{}') as { workspaceId?: string };
     let acked = false;
 
     try {
-      if (!(await requireManagerForAction({ client, userId }))) {
+      if (!(await requireManagerForAction({ client, userId, t }))) {
         await ack();
         return;
       }
@@ -81,7 +87,7 @@ export const registerContextKeyHandlers = (app: App) => {
       if (typed !== ROTATE_PHRASE) {
         await ack({
           response_action: 'errors',
-          errors: { confirm_block: `Type ${ROTATE_PHRASE} exactly to confirm.` },
+          errors: { confirm_block: t('appHome.management.contextKey.confirm.error', { phrase: ROTATE_PHRASE }) },
         });
         acked = true;
         return;
@@ -96,7 +102,7 @@ export const registerContextKeyHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: userId,
         channel: userId,
-        text: '🔐 Provenance key rotated. New change history will use the new key; records made with the previous key are no longer readable.',
+        text: t('appHome.management.contextKey.rotate.success'),
       });
       refreshAppHomeSoon({ client, logger, userId, reason: 'context key rotation' });
 
@@ -115,14 +121,14 @@ export const registerContextKeyHandlers = (app: App) => {
       if (!acked) {
         await ack({
           response_action: 'errors',
-          errors: { confirm_block: 'Failed to rotate the key. Please try again.' },
+          errors: { confirm_block: t('appHome.management.contextKey.rotate.error.modal') },
         }).catch(() => {});
       } else {
         await client.chat
           .postEphemeral({
             user: userId,
             channel: userId,
-            text: '❌ Failed to rotate the provenance key. Please try again.',
+            text: t('appHome.management.contextKey.rotate.error.postAck'),
           })
           .catch(() => {});
       }
@@ -139,11 +145,12 @@ export const registerContextKeyHandlers = (app: App) => {
   });
 
   // --- Back up: display the current key for copying -------------------------
-  app.action('backup_context_key', async ({ ack, body, client, logger }) => {
+  app.action('backup_context_key', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
+    const t = tForRequest(context);
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) return;
+      if (!(await requireManagerForAction({ client, userId: body.user.id, t }))) return;
       const workspaceId = await getWorkspaceId(client);
       const key = await new WorkspaceStore().getContextEncryptionKey(workspaceId);
 
@@ -151,7 +158,7 @@ export const registerContextKeyHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: 'No provenance key exists yet — it is generated on the first recorded document change.',
+          text: t('appHome.management.contextKey.backup.missing'),
         });
         return;
       }
@@ -161,14 +168,14 @@ export const registerContextKeyHandlers = (app: App) => {
         view: {
           type: 'modal',
           callback_id: 'backup_context_key_modal',
-          title: { type: 'plain_text', text: 'Back Up Key' },
-          close: { type: 'plain_text', text: 'Done' },
+          title: { type: 'plain_text', text: t('appHome.management.contextKey.backup.title') },
+          close: { type: 'plain_text', text: t('appHome.management.contextKey.backup.close') },
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '*Provenance key (base64).* Store this somewhere safe and private — anyone with it can decrypt this workspace’s change history. You will need it to read existing history after a key rotation or a database restore.',
+                text: t('appHome.management.contextKey.backup.intro'),
               },
             },
             {
@@ -195,11 +202,12 @@ export const registerContextKeyHandlers = (app: App) => {
   });
 
   // --- Import: paste a key + type-to-confirm --------------------------------
-  app.action('import_context_key', async ({ ack, body, client, logger }) => {
+  app.action('import_context_key', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
+    const t = tForRequest(context);
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) return;
+      if (!(await requireManagerForAction({ client, userId: body.user.id, t }))) return;
       const workspaceId = await getWorkspaceId(client);
       const configured = (await new WorkspaceStore().getContextKeyStatus(workspaceId)).configured;
 
@@ -209,33 +217,36 @@ export const registerContextKeyHandlers = (app: App) => {
           type: 'modal',
           callback_id: 'import_context_key_modal',
           private_metadata: JSON.stringify({ workspaceId }),
-          title: { type: 'plain_text', text: 'Import Key' },
-          submit: { type: 'plain_text', text: 'Import' },
-          close: { type: 'plain_text', text: 'Cancel' },
+          title: { type: 'plain_text', text: t('appHome.management.contextKey.import.title') },
+          submit: { type: 'plain_text', text: t('appHome.management.contextKey.import.submit') },
+          close: { type: 'plain_text', text: t('common.button.cancel') },
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
                 text: configured
-                  ? '⚠️ Importing a key *replaces the current one*. Existing change history encrypted with the current key becomes unreadable unless you re-import that key later. Back it up first if unsure.'
-                  : 'Set this workspace’s provenance key from a base64-encoded 32-byte key (e.g. a backup from another environment).',
+                  ? t('appHome.management.contextKey.import.warning.configured')
+                  : t('appHome.management.contextKey.import.warning.new'),
               },
             },
             {
               type: 'input',
               block_id: 'key_block',
-              label: { type: 'plain_text', text: 'Base64 key (32 bytes)' },
+              label: { type: 'plain_text', text: t('appHome.management.contextKey.import.key.label') },
               element: {
                 type: 'plain_text_input',
                 action_id: 'key_input',
-                placeholder: { type: 'plain_text', text: 'Paste the base64 key' },
+                placeholder: { type: 'plain_text', text: t('appHome.management.contextKey.import.key.placeholder') },
               },
             },
             {
               type: 'input',
               block_id: 'confirm_block',
-              label: { type: 'plain_text', text: `Type ${IMPORT_PHRASE} to confirm` },
+              label: {
+                type: 'plain_text',
+                text: t('appHome.management.contextKey.confirm.label', { phrase: IMPORT_PHRASE }),
+              },
               element: {
                 type: 'plain_text_input',
                 action_id: 'confirm_input',
@@ -261,14 +272,15 @@ export const registerContextKeyHandlers = (app: App) => {
     }
   });
 
-  app.view('import_context_key_modal', async ({ ack, body, client, logger, view }) => {
+  app.view('import_context_key_modal', async ({ ack, body, client, context, logger, view }) => {
     const startTime = Date.now();
     const userId = body.user.id;
+    const t = tForRequest(context);
     const { workspaceId } = JSON.parse(view.private_metadata || '{}') as { workspaceId?: string };
     let acked = false;
 
     try {
-      if (!(await requireManagerForAction({ client, userId }))) {
+      if (!(await requireManagerForAction({ client, userId, t }))) {
         await ack();
         return;
       }
@@ -279,7 +291,7 @@ export const registerContextKeyHandlers = (app: App) => {
       if (typed !== IMPORT_PHRASE) {
         await ack({
           response_action: 'errors',
-          errors: { confirm_block: `Type ${IMPORT_PHRASE} exactly to confirm.` },
+          errors: { confirm_block: t('appHome.management.contextKey.confirm.error', { phrase: IMPORT_PHRASE }) },
         });
         acked = true;
         return;
@@ -289,7 +301,7 @@ export const registerContextKeyHandlers = (app: App) => {
       if (!keyB64 || decoded.length !== 32) {
         await ack({
           response_action: 'errors',
-          errors: { key_block: 'Enter a base64-encoded 32-byte key.' },
+          errors: { key_block: t('appHome.management.contextKey.import.error.invalidKey') },
         });
         acked = true;
         return;
@@ -304,7 +316,7 @@ export const registerContextKeyHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: userId,
         channel: userId,
-        text: '🔐 Provenance key imported. Change history recorded from now on uses it, and history encrypted with this key (e.g. a restored backup) is readable again.',
+        text: t('appHome.management.contextKey.import.success'),
       });
       refreshAppHomeSoon({ client, logger, userId, reason: 'context key import' });
 
@@ -323,14 +335,14 @@ export const registerContextKeyHandlers = (app: App) => {
       if (!acked) {
         await ack({
           response_action: 'errors',
-          errors: { key_block: 'Failed to import the key. Please try again.' },
+          errors: { key_block: t('appHome.management.contextKey.import.error.modal') },
         }).catch(() => {});
       } else {
         await client.chat
           .postEphemeral({
             user: userId,
             channel: userId,
-            text: '❌ Failed to import the provenance key. Please try again.',
+            text: t('appHome.management.contextKey.import.error.postAck'),
           })
           .catch(() => {});
       }

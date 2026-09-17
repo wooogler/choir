@@ -1,15 +1,17 @@
 import type { App, BlockAction, ChannelsSelectAction } from '@slack/bolt';
 import { logAppHomeButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId, isManager, isWorkspaceOwner, setQAChannel } from 'services/slack';
 import { refreshAppHomeSoon } from '../refresh';
 import { logManagementButtonError } from './shared';
 
 export const registerQAChannelHandlers = (app: App) => {
-  app.action<BlockAction<ChannelsSelectAction>>('select_qa_channel', async ({ ack, body, client, logger }) => {
+  app.action<BlockAction<ChannelsSelectAction>>('select_qa_channel', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
 
     const userId = body.user.id;
+    const t = tForRequest(context);
 
     try {
       const workspaceId = await getWorkspaceId(client);
@@ -23,7 +25,7 @@ export const registerQAChannelHandlers = (app: App) => {
         await client.chat.postEphemeral({
           channel: userId,
           user: userId,
-          text: "❌ You don't have permission to change the Q&A channel.",
+          text: t('appHome.management.qaChannel.error.permission'),
         });
         return;
       }
@@ -44,7 +46,7 @@ export const registerQAChannelHandlers = (app: App) => {
         logger.warn(`Could not access channel ${selectedChannelId}:`, channelError);
         await client.chat.postMessage({
           channel: userId,
-          text: '❌ Cannot access the selected channel. Please invite CHOIR to it or pick a public channel.',
+          text: t('appHome.management.qaChannel.error.access'),
         });
         return;
       }
@@ -53,7 +55,7 @@ export const registerQAChannelHandlers = (app: App) => {
 
       await client.chat.postMessage({
         channel: userId,
-        text: `✅ Q&A channel has been set to #${channelName}.`,
+        text: t('appHome.management.qaChannel.success', { channel: channelName }),
       });
 
       refreshAppHomeSoon({ client, logger, userId, reason: 'Q&A channel update' });
@@ -72,7 +74,7 @@ export const registerQAChannelHandlers = (app: App) => {
       logger.error('Error setting Q&A channel:', error);
       await client.chat.postMessage({
         channel: userId,
-        text: '❌ Failed to set Q&A channel. Please try again.',
+        text: t('appHome.management.qaChannel.error.generic'),
       });
       await logManagementButtonError({
         userId,

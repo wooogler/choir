@@ -1,12 +1,15 @@
 import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { addManager, getManagers, getWorkspaceId, isManager, isWorkspaceOwner, removeManager } from 'services/slack';
 import { logManagementButtonError, logManagementModalError, refreshAppHomeSoon } from './shared';
 
 export const registerManagersHandlers = (app: App) => {
-  app.action('manage_managers', async ({ ack, body, client, logger }) => {
+  app.action('manage_managers', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
+
+    const t = tForRequest(context);
 
     try {
       const workspaceId = await getWorkspaceId(client);
@@ -40,29 +43,29 @@ export const registerManagersHandlers = (app: App) => {
           notify_on_close: true,
           title: {
             type: 'plain_text',
-            text: 'Manage Managers',
+            text: t('appHome.management.managers.title'),
           },
           submit: {
             type: 'plain_text',
-            text: 'Update Managers',
+            text: t('appHome.management.managers.submit'),
           },
           close: {
             type: 'plain_text',
-            text: 'Cancel',
+            text: t('common.button.cancel'),
           },
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '👑 *Select Managers*\n\nChoose which workspace members should have manager permissions. Managers can access advanced features and grant permissions to other users.',
+                text: t('appHome.management.managers.intro'),
               },
             },
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `📊 *Current Status:* ${managers.length} managers assigned`,
+                text: t('appHome.management.managers.status', { count: managers.length }),
               },
             },
             {
@@ -74,16 +77,16 @@ export const registerManagersHandlers = (app: App) => {
                 initial_users: managers,
                 placeholder: {
                   type: 'plain_text',
-                  text: 'Select users to be managers...',
+                  text: t('appHome.management.managers.placeholder'),
                 },
               },
               label: {
                 type: 'plain_text',
-                text: 'Managers',
+                text: t('appHome.management.managers.label'),
               },
               hint: {
                 type: 'plain_text',
-                text: 'Selected users will have manager permissions and access to all CHOIR management features.',
+                text: t('appHome.management.managers.hint'),
               },
             },
             {
@@ -91,7 +94,7 @@ export const registerManagersHandlers = (app: App) => {
               elements: [
                 {
                   type: 'mrkdwn',
-                  text: '⚠️ *Important:* Removing manager permissions may affect their ability to manage CHOIR settings.',
+                  text: t('appHome.management.managers.warning'),
                 },
               ],
             },
@@ -124,7 +127,7 @@ export const registerManagersHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '❌ Error opening manager management modal. Please try again.',
+          text: t('appHome.management.managers.error.open'),
         });
       }
 
@@ -140,8 +143,9 @@ export const registerManagersHandlers = (app: App) => {
     }
   });
 
-  app.view('managers_modal', async ({ ack, body, client, logger, view }) => {
+  app.view('managers_modal', async ({ ack, body, client, context, logger, view }) => {
     const startTime = Date.now();
+    const t = tForRequest(context);
 
     try {
       const selectedUsers = view.state.values.managers_select_block.managers_select.selected_users || [];
@@ -150,7 +154,7 @@ export const registerManagersHandlers = (app: App) => {
         await ack({
           response_action: 'errors',
           errors: {
-            managers_select_block: 'Please select at least one manager or cancel to keep current settings.',
+            managers_select_block: t('appHome.management.managers.error.empty'),
           },
         });
 
@@ -183,7 +187,7 @@ export const registerManagersHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: currentUser,
           channel: currentUser,
-          text: "❌ You don't have permission to manage managers.",
+          text: t('appHome.management.managers.error.permission'),
         });
         return;
       }
@@ -200,14 +204,14 @@ export const registerManagersHandlers = (app: App) => {
           // Pass actorIsOwner so an owner not listed as a manager can still grant.
           const addResult = await addManager(workspaceId, userId, currentUser, { actorIsOwner });
           if (addResult) {
-            results.push(`✅ Added manager permission for <@${userId}>`);
+            results.push(t('appHome.management.managers.result.added', { user: `<@${userId}>` }));
           } else {
-            results.push(`❌ Failed to add manager permission for <@${userId}>`);
+            results.push(t('appHome.management.managers.result.addFailed', { user: `<@${userId}>` }));
             success = false;
           }
         } catch (error) {
           logger.error(`Error adding manager ${userId}:`, error);
-          results.push(`❌ Error adding manager permission for <@${userId}>`);
+          results.push(t('appHome.management.managers.result.addError', { user: `<@${userId}>` }));
           success = false;
         }
       }
@@ -216,14 +220,14 @@ export const registerManagersHandlers = (app: App) => {
         try {
           const removeResult = await removeManager(workspaceId, userId, currentUser, { actorIsOwner });
           if (removeResult) {
-            results.push(`✅ Removed manager permission from <@${userId}>`);
+            results.push(t('appHome.management.managers.result.removed', { user: `<@${userId}>` }));
           } else {
-            results.push(`❌ Failed to remove manager permission from <@${userId}>`);
+            results.push(t('appHome.management.managers.result.removeFailed', { user: `<@${userId}>` }));
             success = false;
           }
         } catch (error) {
           logger.error(`Error removing manager ${userId}:`, error);
-          results.push(`❌ Error removing manager permission from <@${userId}>`);
+          results.push(t('appHome.management.managers.result.removeError', { user: `<@${userId}>` }));
           success = false;
         }
       }
@@ -235,7 +239,7 @@ export const registerManagersHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: `✅ Manager permissions updated successfully! ${selectedUsers.length} managers are now assigned.${changesText}`,
+          text: t('appHome.management.managers.updated', { count: selectedUsers.length, changes: changesText }),
         });
 
         refreshAppHomeSoon({ client, logger, userId: body.user.id, reason: 'managers update' });
@@ -270,7 +274,7 @@ export const registerManagersHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '✅ No changes made to manager permissions.',
+          text: t('appHome.management.managers.noChanges'),
         });
 
         await logAppHomeModalSubmit(
@@ -291,7 +295,7 @@ export const registerManagersHandlers = (app: App) => {
         await ack({
           response_action: 'errors',
           errors: {
-            managers_select_block: 'Some manager permission changes failed. Please try again.',
+            managers_select_block: t('appHome.management.managers.error.partial'),
           },
         });
 
@@ -318,7 +322,7 @@ export const registerManagersHandlers = (app: App) => {
       await ack({
         response_action: 'errors',
         errors: {
-          managers_select_block: 'An error occurred while updating managers. Please try again.',
+          managers_select_block: t('appHome.management.managers.error.generic'),
         },
       });
 

@@ -1,21 +1,24 @@
 import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getOrganizationName, getWorkspaceId, setOrganizationName } from 'services/slack';
 import { requireManagerForAction } from './management/shared';
 import { refreshAppHomeSoon } from './refresh';
 
 export const registerOrganizationHandlers = (app: App) => {
-  app.action('edit_organization_name', async ({ ack, body, client, logger }) => {
+  app.action('edit_organization_name', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
 
+    const t = tForRequest(context);
+
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+      if (!(await requireManagerForAction({ client, userId: body.user.id, t }))) {
         return;
       }
 
       const workspaceId = await getWorkspaceId(client);
-      const organizationName = (await getOrganizationName(workspaceId)) || 'Our Organization';
+      const organizationName = (await getOrganizationName(workspaceId)) || t('appHome.organization.defaultName');
 
       await client.views.open({
         trigger_id: (body as any).trigger_id,
@@ -25,15 +28,15 @@ export const registerOrganizationHandlers = (app: App) => {
           notify_on_close: true,
           title: {
             type: 'plain_text',
-            text: 'Edit Organization Name',
+            text: t('appHome.organization.edit.title'),
           },
           submit: {
             type: 'plain_text',
-            text: 'Save Changes',
+            text: t('appHome.organization.edit.submit'),
           },
           close: {
             type: 'plain_text',
-            text: 'Cancel',
+            text: t('common.button.cancel'),
           },
           blocks: [
             {
@@ -45,12 +48,12 @@ export const registerOrganizationHandlers = (app: App) => {
                 initial_value: organizationName,
                 placeholder: {
                   type: 'plain_text',
-                  text: 'Enter your organization name (e.g., Smith Research Lab, AI Team, etc.)',
+                  text: t('appHome.organization.edit.placeholder'),
                 },
               },
               label: {
                 type: 'plain_text',
-                text: 'Organization Name',
+                text: t('appHome.organization.edit.label'),
               },
             },
           ],
@@ -75,7 +78,7 @@ export const registerOrganizationHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: '❌ Error opening edit modal. Please try again.',
+        text: t('appHome.organization.edit.error.open'),
       });
 
       // Log error
@@ -100,11 +103,12 @@ export const registerOrganizationHandlers = (app: App) => {
     }
   });
 
-  app.view('edit_organization_name_modal', async ({ ack, body, client, logger, view }) => {
+  app.view('edit_organization_name_modal', async ({ ack, body, client, context, logger, view }) => {
     const startTime = Date.now();
+    const t = tForRequest(context);
 
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+      if (!(await requireManagerForAction({ client, userId: body.user.id, t }))) {
         await ack();
         return;
       }
@@ -115,7 +119,7 @@ export const registerOrganizationHandlers = (app: App) => {
         await ack({
           response_action: 'errors',
           errors: {
-            organization_name_input_block: 'Organization name is required.',
+            organization_name_input_block: t('appHome.organization.edit.error.required'),
           },
         });
 
@@ -145,7 +149,7 @@ export const registerOrganizationHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: `✅ Organization name updated to "${newName.trim()}"!`,
+        text: t('appHome.organization.edit.success', { name: newName.trim() }),
       });
 
       refreshAppHomeSoon({ client, logger, userId: body.user.id, reason: 'organization name update' });
@@ -169,7 +173,7 @@ export const registerOrganizationHandlers = (app: App) => {
       await ack({
         response_action: 'errors',
         errors: {
-          organization_name_input_block: 'An error occurred while updating organization name. Please try again.',
+          organization_name_input_block: t('appHome.organization.edit.error.save'),
         },
       });
 

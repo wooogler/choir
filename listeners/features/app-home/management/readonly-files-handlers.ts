@@ -1,5 +1,6 @@
 import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import {
@@ -37,12 +38,14 @@ export const registerReadonlyFilesHandlers = (app: App) => {
     }
   });
 
-  app.action('manage_readonly_files', async ({ ack, body, client, logger }) => {
+  app.action('manage_readonly_files', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
 
+    const t = tForRequest(context);
+
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+      if (!(await requireManagerForAction({ client, userId: body.user.id, t }))) {
         return;
       }
 
@@ -55,7 +58,7 @@ export const registerReadonlyFilesHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '❌ No markdown files found. Please connect to a GitHub repository first.',
+          text: t('appHome.management.readOnly.error.noFiles'),
         });
         return;
       }
@@ -68,29 +71,32 @@ export const registerReadonlyFilesHandlers = (app: App) => {
           notify_on_close: true,
           title: {
             type: 'plain_text',
-            text: 'Manage Read-Only Files',
+            text: t('appHome.management.readOnly.title'),
           },
           submit: {
             type: 'plain_text',
-            text: 'Update Files',
+            text: t('appHome.management.readOnly.submit'),
           },
           close: {
             type: 'plain_text',
-            text: 'Cancel',
+            text: t('common.button.cancel'),
           },
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '🔒 *Select Read-Only Files*\n\nRead-only files are excluded from document updates but remain searchable. Choose which files should be protected from automatic updates.',
+                text: t('appHome.management.readOnly.intro'),
               },
             },
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `📊 *Current Status:* ${readOnlyFiles.length} of ${markdownFiles.length} files are read-only`,
+                text: t('appHome.management.readOnly.status', {
+                  count: readOnlyFiles.length,
+                  total: markdownFiles.length,
+                }),
               },
             },
             {
@@ -124,12 +130,12 @@ export const registerReadonlyFilesHandlers = (app: App) => {
                 }),
                 placeholder: {
                   type: 'plain_text',
-                  text: 'Search files to mark as read-only...',
+                  text: t('appHome.management.readOnly.placeholder'),
                 },
               },
               label: {
                 type: 'plain_text',
-                text: 'Select files to mark as read-only',
+                text: t('appHome.management.readOnly.label'),
               },
               optional: true,
             },
@@ -138,7 +144,7 @@ export const registerReadonlyFilesHandlers = (app: App) => {
               elements: [
                 {
                   type: 'mrkdwn',
-                  text: "💡 *Tip:* Read-only files can still be searched and referenced, but they won't be modified during document updates.",
+                  text: t('appHome.management.readOnly.tip'),
                 },
               ],
             },
@@ -166,7 +172,7 @@ export const registerReadonlyFilesHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '❌ Error opening read-only files management modal. Please try again.',
+          text: t('appHome.management.readOnly.error.open'),
         });
       }
 
@@ -182,11 +188,12 @@ export const registerReadonlyFilesHandlers = (app: App) => {
     }
   });
 
-  app.view('readonly_files_modal', async ({ ack, body, client, logger, view }) => {
+  app.view('readonly_files_modal', async ({ ack, body, client, context, logger, view }) => {
     const startTime = Date.now();
+    const t = tForRequest(context);
 
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+      if (!(await requireManagerForAction({ client, userId: body.user.id, t }))) {
         await ack();
         return;
       }
@@ -206,7 +213,7 @@ export const registerReadonlyFilesHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: `✅ Read-only files updated successfully! ${selectedFiles.length} files are now marked as read-only. Please refresh your app home to see the changes.`,
+          text: t('appHome.management.readOnly.updated', { count: selectedFiles.length }),
         });
 
         refreshAppHomeSoon({ client, logger, userId: body.user.id, reason: 'read-only files update' });
@@ -235,7 +242,7 @@ export const registerReadonlyFilesHandlers = (app: App) => {
         await ack({
           response_action: 'errors',
           errors: {
-            readonly_files_select_block: 'Failed to update read-only files. Please try again.',
+            readonly_files_select_block: t('appHome.management.readOnly.error.save'),
           },
         });
 
@@ -260,7 +267,7 @@ export const registerReadonlyFilesHandlers = (app: App) => {
       await ack({
         response_action: 'errors',
         errors: {
-          readonly_files_select_block: 'An error occurred while updating read-only files. Please try again.',
+          readonly_files_select_block: t('appHome.management.readOnly.error.generic'),
         },
       });
 

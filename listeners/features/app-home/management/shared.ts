@@ -1,5 +1,6 @@
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
 import { getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
+import { DEFAULT_LOCALE, type T, createT } from '../../../../src/i18n';
 
 export { refreshAppHome, refreshAppHomeSoon } from '../refresh';
 
@@ -10,13 +11,20 @@ export { refreshAppHome, refreshAppHomeSoon } from '../refresh';
  * workspace manager or the workspace owner; otherwise posts an ephemeral denial
  * and returns false. Callers must `await ack()` themselves before/after as their
  * handler type requires.
+ *
+ * `t` is the denial's language and should be the *actor's* translator, since the
+ * person reading the notice is the one who was refused. It is optional so that
+ * callers outside App Home keep compiling; they fall back to English, which is
+ * what they printed before. `denyText` still wins when a caller needs wording
+ * specific to its own action.
  */
 export const requireManagerForAction = async (params: {
   client: any;
   userId: string;
+  t?: T;
   denyText?: string;
 }): Promise<boolean> => {
-  const { client, userId, denyText } = params;
+  const { client, userId, t, denyText } = params;
   const workspaceId = await getWorkspaceId(client);
   const [isUserManager, isOwner] = await Promise.all([
     isManager(workspaceId, userId),
@@ -28,7 +36,7 @@ export const requireManagerForAction = async (params: {
     await client.chat.postEphemeral({
       user: userId,
       channel: userId,
-      text: denyText || "❌ You don't have permission to perform this action.",
+      text: denyText || (t ?? createT(DEFAULT_LOCALE))('appHome.management.error.permissionDenied'),
     });
   } catch {
     // Best-effort denial notice; authorization result stands regardless.

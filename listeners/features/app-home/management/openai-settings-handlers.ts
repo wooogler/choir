@@ -1,5 +1,6 @@
 import type { App, BlockAction } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { CURATED_GPT5_MODELS, invalidateModelCatalog, listGpt5Models } from 'services/llm/model-catalog';
 import { invalidateClientCache, validateOpenAIKey } from 'services/llm/openai-client-factory';
 import { getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
@@ -23,10 +24,11 @@ function maskApiKey(apiKey: string | undefined): string {
 }
 
 export const registerOpenAISettingsHandlers = (app: App) => {
-  app.action('configure_openai', async ({ ack, body, client, logger }) => {
+  app.action('configure_openai', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
     const userId = body.user.id;
+    const t = tForRequest(context);
 
     try {
       const workspaceId = await getWorkspaceId(client);
@@ -38,7 +40,7 @@ export const registerOpenAISettingsHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: userId,
           channel: userId,
-          text: "❌ You don't have permission to configure OpenAI settings.",
+          text: t('appHome.management.openai.error.permission'),
         });
         return;
       }
@@ -65,24 +67,24 @@ export const registerOpenAISettingsHandlers = (app: App) => {
       const documentUpdateInitial = findInitial(existing?.documentUpdateModel);
 
       const apiKeyHint = existing?.apiKey
-        ? `Current key: ${maskApiKey(existing.apiKey)}. Leave blank to keep it.`
-        : 'Paste your OpenAI API key. It will be validated before saving.';
+        ? t('appHome.management.openai.apiKey.hint.existing', { masked: maskApiKey(existing.apiKey) })
+        : t('appHome.management.openai.apiKey.hint.new');
 
       await client.views.open({
         trigger_id: (body as any).trigger_id,
         view: {
           type: 'modal',
           callback_id: 'openai_settings_modal',
-          title: { type: 'plain_text', text: 'OpenAI Settings' },
-          submit: { type: 'plain_text', text: 'Save' },
-          close: { type: 'plain_text', text: 'Cancel' },
+          title: { type: 'plain_text', text: t('appHome.management.openai.title') },
+          submit: { type: 'plain_text', text: t('appHome.management.openai.submit') },
+          close: { type: 'plain_text', text: t('common.button.cancel') },
           private_metadata: JSON.stringify({ workspaceId, hadKey: !!existing?.apiKey }),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '🔐 *OpenAI API Key & Models*\nManage the key CHOIR uses for this workspace and pick which GPT-5 models power Q&A and document updates. Classification always uses a fixed model.',
+                text: t('appHome.management.openai.intro'),
               },
             },
             {
@@ -92,10 +94,10 @@ export const registerOpenAISettingsHandlers = (app: App) => {
               element: {
                 type: 'plain_text_input',
                 action_id: 'api_key_input',
-                placeholder: { type: 'plain_text', text: 'sk-...' },
+                placeholder: { type: 'plain_text', text: t('appHome.management.openai.apiKey.placeholder') },
                 ...(existing?.apiKey ? { initial_value: SENTINEL_UNCHANGED } : {}),
               },
-              label: { type: 'plain_text', text: 'API Key' },
+              label: { type: 'plain_text', text: t('appHome.management.openai.apiKey.label') },
               hint: { type: 'plain_text', text: apiKeyHint },
             },
             {
@@ -105,11 +107,11 @@ export const registerOpenAISettingsHandlers = (app: App) => {
               element: {
                 type: 'static_select',
                 action_id: 'qa_model_select',
-                placeholder: { type: 'plain_text', text: 'Use default' },
+                placeholder: { type: 'plain_text', text: t('appHome.management.openai.model.placeholder') },
                 options: buildModelOptions(selectableModels),
                 ...(qaInitial ? { initial_option: qaInitial } : {}),
               },
-              label: { type: 'plain_text', text: 'Q&A Model' },
+              label: { type: 'plain_text', text: t('appHome.management.openai.qaModel.label') },
             },
             {
               type: 'input',
@@ -118,11 +120,11 @@ export const registerOpenAISettingsHandlers = (app: App) => {
               element: {
                 type: 'static_select',
                 action_id: 'document_update_model_select',
-                placeholder: { type: 'plain_text', text: 'Use default' },
+                placeholder: { type: 'plain_text', text: t('appHome.management.openai.model.placeholder') },
                 options: buildModelOptions(selectableModels),
                 ...(documentUpdateInitial ? { initial_option: documentUpdateInitial } : {}),
               },
-              label: { type: 'plain_text', text: 'Document Update Model' },
+              label: { type: 'plain_text', text: t('appHome.management.openai.documentUpdateModel.label') },
             },
           ],
         },
@@ -143,7 +145,7 @@ export const registerOpenAISettingsHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: userId,
         channel: userId,
-        text: '❌ Error opening OpenAI settings. Please try again.',
+        text: t('appHome.management.openai.error.open'),
       });
       await logManagementButtonError({
         userId,
@@ -157,9 +159,10 @@ export const registerOpenAISettingsHandlers = (app: App) => {
     }
   });
 
-  app.view('openai_settings_modal', async ({ ack, body, client, logger, view }) => {
+  app.view('openai_settings_modal', async ({ ack, body, client, context, logger, view }) => {
     const startTime = Date.now();
     const userId = body.user.id;
+    const t = tForRequest(context);
     const metadata = JSON.parse(view.private_metadata || '{}') as { workspaceId?: string; hadKey?: boolean };
     const workspaceId = metadata.workspaceId || (await getWorkspaceId(client));
     // Track whether the modal has been acknowledged: once we ack (which closes the
@@ -184,7 +187,9 @@ export const registerOpenAISettingsHandlers = (app: App) => {
           await ack({
             response_action: 'errors',
             errors: {
-              api_key_block: `Key validation failed: ${validation.error || 'unknown error'}`,
+              api_key_block: t('appHome.management.openai.error.validation', {
+                reason: validation.error || t('appHome.management.openai.error.unknownReason'),
+              }),
             },
           });
           acked = true;
@@ -220,7 +225,7 @@ export const registerOpenAISettingsHandlers = (app: App) => {
 
       await client.chat.postMessage({
         channel: userId,
-        text: '✅ OpenAI settings saved.',
+        text: t('appHome.management.openai.saved'),
       });
 
       refreshAppHomeSoon({ client, logger, userId, reason: 'OpenAI settings update' });
@@ -246,14 +251,14 @@ export const registerOpenAISettingsHandlers = (app: App) => {
         await client.chat
           .postMessage({
             channel: userId,
-            text: '⚠️ Your OpenAI settings may not have been fully saved. Please reopen the settings and try again.',
+            text: t('appHome.management.openai.error.postAck'),
           })
           .catch((dmError) => logger.error('Failed to notify OpenAI settings post-ack failure:', dmError));
       } else {
         await ack({
           response_action: 'errors',
           errors: {
-            api_key_block: 'An error occurred while saving. Please try again.',
+            api_key_block: t('appHome.management.openai.error.save'),
           },
         });
       }
@@ -269,10 +274,11 @@ export const registerOpenAISettingsHandlers = (app: App) => {
     }
   });
 
-  app.action<BlockAction>('clear_openai_settings', async ({ ack, body, client, logger }) => {
+  app.action<BlockAction>('clear_openai_settings', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
     const userId = body.user.id;
+    const t = tForRequest(context);
 
     try {
       const workspaceId = await getWorkspaceId(client);
@@ -294,7 +300,7 @@ export const registerOpenAISettingsHandlers = (app: App) => {
 
       await client.chat.postMessage({
         channel: userId,
-        text: '✅ Workspace OpenAI settings cleared. CHOIR will fall back to the server default key.',
+        text: t('appHome.management.openai.cleared'),
       });
 
       refreshAppHomeSoon({ client, logger, userId, reason: 'OpenAI settings cleared' });

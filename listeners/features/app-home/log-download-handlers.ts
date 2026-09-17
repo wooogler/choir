@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { App } from '@slack/bolt';
 import archiver from 'archiver';
 import { getDataPath } from 'services/common/data-path';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { requireManagerForAction } from './management/shared';
 
@@ -29,11 +30,13 @@ function filterLogLinesForWorkspace(filePath: string, workspaceId: string): stri
 }
 
 export const registerLogDownloadHandlers = (app: App) => {
-  app.action('download_today_logs', async ({ ack, body, client, logger }) => {
+  app.action('download_today_logs', async ({ ack, body, client, context, logger }) => {
     await ack();
 
+    const t = tForRequest(context);
+
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+      if (!(await requireManagerForAction({ client, userId: body.user.id, t }))) {
         return;
       }
 
@@ -46,7 +49,7 @@ export const registerLogDownloadHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '❌ No interaction logs found.',
+          text: t('appHome.logs.error.none'),
         });
         return;
       }
@@ -59,7 +62,7 @@ export const registerLogDownloadHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: `❌ No interaction log files found for today (${today}).`,
+          text: t('appHome.logs.error.noneToday', { date: today }),
         });
         return;
       }
@@ -67,7 +70,7 @@ export const registerLogDownloadHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: "📊 Preparing today's interaction logs for download...",
+        text: t('appHome.logs.today.preparing'),
       });
 
       const zipPath = getDataPath(`today-logs-${workspaceId}-${Date.now()}.zip`);
@@ -125,8 +128,8 @@ export const registerLogDownloadHandlers = (app: App) => {
           channel_id: dmChannel.channel.id,
           file: fs.createReadStream(zipPath),
           filename: fileName,
-          title: "Today's Interaction Logs",
-          initial_comment: `📊 Here are today's interaction logs (${today}) for analysis.`,
+          title: t('appHome.logs.today.fileTitle'),
+          initial_comment: t('appHome.logs.today.comment', { date: today }),
         });
 
         fs.unlinkSync(zipPath);
@@ -136,7 +139,7 @@ export const registerLogDownloadHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: `✅ Successfully uploaded today's interaction logs (${Math.round(fileSize / 1024)}KB)`,
+          text: t('appHome.logs.today.uploaded', { size: Math.round(fileSize / 1024) }),
         });
       } catch (uploadError) {
         logger.error('Error uploading today log file:', uploadError);
@@ -148,7 +151,7 @@ export const registerLogDownloadHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '❌ Error uploading log files. Please try again.',
+          text: t('appHome.logs.error.upload'),
         });
       }
     } catch (error) {
@@ -156,16 +159,18 @@ export const registerLogDownloadHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: '❌ Error preparing interaction logs. Please try again.',
+        text: t('appHome.logs.error.prepare'),
       });
     }
   });
 
-  app.action('download_all_logs', async ({ ack, body, client, logger }) => {
+  app.action('download_all_logs', async ({ ack, body, client, context, logger }) => {
     await ack();
 
+    const t = tForRequest(context);
+
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+      if (!(await requireManagerForAction({ client, userId: body.user.id, t }))) {
         return;
       }
 
@@ -177,7 +182,7 @@ export const registerLogDownloadHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '❌ No interaction logs found.',
+          text: t('appHome.logs.error.none'),
         });
         return;
       }
@@ -188,7 +193,7 @@ export const registerLogDownloadHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '❌ No interaction log files found.',
+          text: t('appHome.logs.error.noneAll'),
         });
         return;
       }
@@ -196,7 +201,7 @@ export const registerLogDownloadHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: '📊 Preparing all interaction logs for download...',
+        text: t('appHome.logs.all.preparing'),
       });
 
       const timestamp = new Date().toISOString().split('T')[0];
@@ -255,8 +260,8 @@ export const registerLogDownloadHandlers = (app: App) => {
           channel_id: dmChannel.channel.id,
           file: fs.createReadStream(zipPath),
           filename: fileName,
-          title: 'All Interaction Logs',
-          initial_comment: '📊 Here are all your interaction logs for analysis.',
+          title: t('appHome.logs.all.fileTitle'),
+          initial_comment: t('appHome.logs.all.comment'),
         });
 
         fs.unlinkSync(zipPath);
@@ -266,7 +271,7 @@ export const registerLogDownloadHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: `✅ Successfully uploaded all interaction logs (${Math.round(fileSize / 1024)}KB)`,
+          text: t('appHome.logs.all.uploaded', { size: Math.round(fileSize / 1024) }),
         });
       } catch (uploadError) {
         logger.error('Error uploading all log file:', uploadError);
@@ -278,7 +283,7 @@ export const registerLogDownloadHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '❌ Error uploading log files. Please try again.',
+          text: t('appHome.logs.error.upload'),
         });
       }
     } catch (error) {
@@ -286,7 +291,7 @@ export const registerLogDownloadHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: '❌ Error preparing interaction logs. Please try again.',
+        text: t('appHome.logs.error.prepare'),
       });
     }
   });

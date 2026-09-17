@@ -1,10 +1,18 @@
-// Strings for the app-home feature. Keys: `appHome.<surface>.<element>[.<variant>]`.
+// Strings for the app-home feature. Keys: `appHome.<surface>.<element>[.<variant>]`,
+// with the manager-only modals (which are their own views, not home sections)
+// grouped under `appHome.management.<surface>.*`.
 //
-// The language settings are the first App Home section to go through the
+// The language settings were the first App Home section to go through the
 // catalog: they are the one place a person can be reading CHOIR in a language
 // they cannot yet change, so the picker itself has to speak their language.
 // Option labels are shared by all three selects — the value each one carries
 // differs (`auto`/`follow-conversation` vs a locale), the wording does not.
+//
+// Section headers are `.header` rather than `.title` on purpose: Slack's header
+// block allows 150 characters while a *modal* title allows 24, and two of these
+// ("📊 Interaction Logs Download", "🔐 Change History Encryption") already
+// exceed 24 in English. `.title` is reserved for real modal titles, where the
+// catalog test's 24-char cap is exactly the constraint we want enforced.
 export const appHome = {
   'appHome.language.title': 'Language',
 
@@ -29,4 +37,330 @@ export const appHome = {
   'appHome.language.confirm.mineAuto': '✅ Language set to automatic — CHOIR will use {language}.',
   'appHome.language.confirm.workspace': '✅ Workspace language set to {language}.',
   'appHome.language.confirm.content': '✅ Document content language set to {language}.',
+
+  // --- Home: the welcome block every visitor sees ---------------------------
+  'appHome.welcome.greeting': '*Welcome, {user} :house:*',
+  'appHome.welcome.intro': 'CHOIR is a tool that automatically updates documents based on Slack conversations.',
+  'appHome.welcome.prompt': '💬 *Ready to get started?* Click the button below to chat with CHOIR!',
+  'appHome.welcome.startChat.button': '💬 Start Chatting with CHOIR',
+
+  // --- Home: team insights (web dashboard link) -----------------------------
+  'appHome.insights.summary':
+    '📊 *Team Insights* — what the team asks about, how often docs answer it, and where the gaps are. Privacy-preserving: no individual activity is shown.',
+  'appHome.insights.open.button': '📊 Open Team Insights',
+
+  // --- Home: AI settings summary --------------------------------------------
+  'appHome.openai.header': '🤖 AI Settings',
+  'appHome.openai.key.workspaceSet': '✅ Workspace key set ({masked})',
+  'appHome.openai.key.serverDefault': '🟡 Using server default key',
+  'appHome.openai.key.notConfigured': '❌ Not configured',
+  'appHome.openai.model.serverDefault': 'Server default',
+  'appHome.openai.summary':
+    '*OpenAI Key:* {keyStatus}\n*Q&A Model:* {qaModel}\n*Document Update Model:* {documentUpdateModel}\n*Classification Model:* {classificationModel} _(fixed)_',
+  'appHome.openai.configure.button': 'Configure OpenAI',
+  'appHome.openai.clear.button': 'Clear Settings',
+  'appHome.openai.clear.confirm.title': 'Clear OpenAI Settings?',
+  'appHome.openai.clear.confirm.text':
+    'CHOIR will fall back to the server default key. The workspace-specific key and model choices will be removed.',
+  'appHome.openai.clear.confirm.ok.button': 'Clear',
+
+  // --- Home: change-history encryption key ----------------------------------
+  'appHome.contextKey.header': '🔐 Change History Encryption',
+  'appHome.contextKey.status.configured': '🔐 *Provenance key:* ✅ Configured',
+  'appHome.contextKey.status.created': 'Created {date}',
+  'appHome.contextKey.status.rotated': 'Last rotated {date}',
+  'appHome.contextKey.status.notGenerated':
+    '🔐 *Provenance key:* 🟡 Not yet generated\nA per-workspace key is created automatically the first time a document change records its history.',
+  'appHome.contextKey.summary':
+    "{status}\n\nChange history (the conversation, extracted knowledge, and diff behind each document update) is encrypted with this key. It lives only in CHOIR's database — GitHub only ever holds ciphertext.",
+  'appHome.contextKey.backup.button': 'Back Up Key',
+  'appHome.contextKey.rotate.button': 'Rotate Key',
+  'appHome.contextKey.import.button': 'Import Key',
+  'appHome.contextKey.warning':
+    '⚠️ Rotating or importing a new key makes *all previously recorded change history permanently unreadable*. Back up the current key first if you may need the old history.',
+
+  // --- Home: CHOIR management (managers, users, Q&A channel) ----------------
+  'appHome.choirManagement.header': '⚙️ CHOIR Management',
+  'appHome.choirManagement.managers.entry': '{user} ({name})',
+  'appHome.choirManagement.managers.unknownName': 'Unknown User',
+  'appHome.choirManagement.managers.list': '*Current Managers:*\n{list}',
+  'appHome.choirManagement.managers.none': '*Current Managers:* None assigned',
+  'appHome.choirManagement.managers.summary':
+    '{managers}\n\nManagers can access advanced features and grant permissions to other users.',
+  'appHome.choirManagement.managers.button': 'Manage Managers',
+  'appHome.choirManagement.choirUsers.summary':
+    '*CHOIR Users:* {count} registered\nCHOIR users are authorized to use CHOIR features and participate in the research study.',
+  'appHome.choirManagement.choirUsers.button': 'Manage CHOIR Users',
+  'appHome.choirManagement.qaChannel.status.configured': '✅ Configured',
+  'appHome.choirManagement.qaChannel.status.notConfigured': '❌ Not configured',
+  'appHome.choirManagement.qaChannel.status.notFound': '⚠️ Channel not found',
+  'appHome.choirManagement.qaChannel.unknownName': 'Unknown channel',
+  'appHome.choirManagement.qaChannel.summary': '*Q&A Channel:* {status}\n{current}',
+  'appHome.choirManagement.qaChannel.current': 'Current Channel: #{channel}',
+  'appHome.choirManagement.qaChannel.currentNone': 'Current Channel: None',
+  'appHome.choirManagement.qaChannel.alert':
+    "⚠️ *Alert:* No Q&A channel is configured. Users won't be able to forward questions to a channel.",
+  'appHome.choirManagement.qaChannel.instructions':
+    "Select a channel where CHOIR will forward questions when users click 'Ask to Channel'.",
+  'appHome.choirManagement.qaChannel.placeholder': 'Select Channel',
+
+  // --- Home: the non-manager's route to manager rights ----------------------
+  'appHome.becomeManager.hint': '🔒 _Need access to advanced features? Contact your workspace administrator._',
+  'appHome.becomeManager.button': 'Manager Access',
+
+  // --- Home: GitHub connection and index maintenance ------------------------
+  'appHome.documentConnection.header': '📁 Document Connection',
+  'appHome.documentConnection.personal.connected':
+    '*Personal GitHub Access:* ✅ Connected\n*GitHub Username:* {profileLink}\n*Connected:* {date}',
+  'appHome.documentConnection.personal.avatarAlt': 'GitHub Avatar',
+  'appHome.documentConnection.personal.notConnected':
+    '*Personal GitHub Access:* ❌ Not connected\n\nConnect your GitHub account to access public repositories you can write to.',
+  'appHome.documentConnection.disconnect.button': 'Disconnect GitHub',
+  'appHome.documentConnection.disconnect.confirm.title': 'Disconnect GitHub',
+  'appHome.documentConnection.disconnect.confirm.text':
+    'Are you sure you want to disconnect your personal GitHub account?',
+  'appHome.documentConnection.disconnect.confirm.ok.button': 'Disconnect',
+  'appHome.documentConnection.connect.button': 'Connect GitHub Account',
+  'appHome.documentConnection.repo.connected': '*Repository Connection:* ✅ Connected\n{repoLink}',
+  'appHome.documentConnection.repo.notConnected': '*Repository Connection:* ❌ No repository connected',
+  'appHome.documentConnection.repo.label': '{owner}/{repo}',
+  'appHome.documentConnection.repo.labelWithPath': '{owner}/{repo} (Path: {path})',
+  'appHome.documentConnection.browse.button': 'Browse My Repositories',
+  'appHome.documentConnection.indexManagement.summary':
+    '*Index Management*\nRun these after editing markdown files or when retrieval looks stale.',
+  'appHome.documentConnection.normalize.button': 'Normalize Markdown',
+  'appHome.documentConnection.normalize.confirm.title': 'Normalize Markdown Files',
+  'appHome.documentConnection.normalize.confirm.text':
+    'This will convert all markdown files to tree format and back to markdown, standardizing the formatting. This may change newlines, list styles, etc.',
+  'appHome.documentConnection.normalize.confirm.ok.button': 'Normalize',
+  'appHome.documentConnection.reload.button': 'Reload from GitHub',
+  'appHome.documentConnection.reload.confirm.title': 'Reload from GitHub?',
+  'appHome.documentConnection.reload.confirm.text':
+    'This will fetch the latest files from GitHub and update the vector store. Any unsaved changes will be overwritten.',
+  'appHome.documentConnection.reload.confirm.ok.button': 'Reload',
+  'appHome.documentConnection.rebuildQmd.button': 'Rebuild QMD Index',
+  'appHome.documentConnection.rebuildQmd.confirm.title': 'Rebuild QMD Index?',
+  'appHome.documentConnection.rebuildQmd.confirm.text':
+    'This will delete the local QMD SQLite index and rebuild it from the synced markdown mirror. Use this after chunking changes or if retrieval looks stale.',
+  'appHome.documentConnection.rebuildQmd.confirm.ok.button': 'Rebuild',
+
+  // --- Home + modal: the organization's display name ------------------------
+  'appHome.organization.header': '🏢 Organization Name',
+  'appHome.organization.defaultName': 'Our Organization',
+  'appHome.organization.summary': '*Organization Name:* {name}',
+  'appHome.organization.edit.button': 'Edit Organization Name',
+  'appHome.organization.edit.title': 'Edit Organization Name',
+  'appHome.organization.edit.submit': 'Save Changes',
+  'appHome.organization.edit.label': 'Organization Name',
+  'appHome.organization.edit.placeholder': 'Enter your organization name (e.g., Smith Research Lab, AI Team, etc.)',
+  'appHome.organization.edit.success': '✅ Organization name updated to "{name}"!',
+  'appHome.organization.edit.error.open': '❌ Error opening edit modal. Please try again.',
+  'appHome.organization.edit.error.required': 'Organization name is required.',
+  'appHome.organization.edit.error.save': 'An error occurred while updating organization name. Please try again.',
+
+  // --- Home + DM: interaction log downloads ---------------------------------
+  'appHome.logs.header': '📊 Interaction Logs Download',
+  'appHome.logs.summary': 'Download user interaction logs for analysis and research purposes.',
+  'appHome.logs.today.button': "Today's Logs",
+  'appHome.logs.today.preparing': "📊 Preparing today's interaction logs for download...",
+  'appHome.logs.today.fileTitle': "Today's Interaction Logs",
+  'appHome.logs.today.comment': "📊 Here are today's interaction logs ({date}) for analysis.",
+  'appHome.logs.today.uploaded': "✅ Successfully uploaded today's interaction logs ({size}KB)",
+  'appHome.logs.all.button': 'All Logs',
+  'appHome.logs.all.preparing': '📊 Preparing all interaction logs for download...',
+  'appHome.logs.all.fileTitle': 'All Interaction Logs',
+  'appHome.logs.all.comment': '📊 Here are all your interaction logs for analysis.',
+  'appHome.logs.all.uploaded': '✅ Successfully uploaded all interaction logs ({size}KB)',
+  'appHome.logs.error.none': '❌ No interaction logs found.',
+  'appHome.logs.error.noneToday': '❌ No interaction log files found for today ({date}).',
+  'appHome.logs.error.noneAll': '❌ No interaction log files found.',
+  'appHome.logs.error.upload': '❌ Error uploading log files. Please try again.',
+  'appHome.logs.error.prepare': '❌ Error preparing interaction logs. Please try again.',
+
+  // --- Home: the file-logging switch ----------------------------------------
+  'appHome.logging.header': '🔧 Logging Settings',
+  'appHome.logging.status.enabled': '✅ Enabled',
+  'appHome.logging.status.disabled': '❌ Disabled',
+  'appHome.logging.summary':
+    '*File Logging:* {status}\n\nControls whether user interactions are saved to log files for research purposes.',
+  'appHome.logging.enable.button': 'Enable Logging',
+  'appHome.logging.disable.button': 'Disable Logging',
+
+  // --- Home: files excluded from document updates ---------------------------
+  'appHome.readOnly.header': '🔒 Read-Only Files',
+  'appHome.readOnly.introNeedsRepo':
+    '📋 *Read-Only Files Management*\nConnect a GitHub repository to manage read-only files. Read-only files are excluded from document updates but remain searchable.',
+  'appHome.readOnly.repoMissing':
+    '⚠️ *GitHub repository not connected*\nPlease connect a GitHub repository in the Document Connection section above to manage read-only files.',
+  'appHome.readOnly.intro':
+    '📋 *Read-Only Files Management*\nRead-only files are excluded from document updates but remain searchable.',
+  'appHome.readOnly.loading':
+    '⏳ *Loading files...*\nMarkdown files are being loaded from GitHub. Please refresh in a moment or use the "Reload from GitHub" button in Vector Store Management.',
+  'appHome.readOnly.summary':
+    '*Read-Only Files:* {count} of {total} files\nRead-only files are excluded from document updates but remain searchable.',
+  'appHome.readOnly.current': '*Current read-only files:*\n{list}',
+  'appHome.readOnly.currentNone': '*Current read-only files:* None',
+  'appHome.readOnly.manage.button': 'Manage Read-Only Files',
+
+  // --- Management: the denial every gated App Home action shares -------------
+  'appHome.management.error.permissionDenied': "❌ You don't have permission to perform this action.",
+
+  // --- Management: the manager roster modal ---------------------------------
+  'appHome.management.managers.title': 'Manage Managers',
+  'appHome.management.managers.submit': 'Update Managers',
+  'appHome.management.managers.intro':
+    '👑 *Select Managers*\n\nChoose which workspace members should have manager permissions. Managers can access advanced features and grant permissions to other users.',
+  'appHome.management.managers.status': {
+    one: '📊 *Current Status:* {count} manager assigned',
+    other: '📊 *Current Status:* {count} managers assigned',
+  },
+  'appHome.management.managers.label': 'Managers',
+  'appHome.management.managers.placeholder': 'Select users to be managers...',
+  'appHome.management.managers.hint':
+    'Selected users will have manager permissions and access to all CHOIR management features.',
+  'appHome.management.managers.warning':
+    '⚠️ *Important:* Removing manager permissions may affect their ability to manage CHOIR settings.',
+  'appHome.management.managers.result.added': '✅ Added manager permission for {user}',
+  'appHome.management.managers.result.addFailed': '❌ Failed to add manager permission for {user}',
+  'appHome.management.managers.result.addError': '❌ Error adding manager permission for {user}',
+  'appHome.management.managers.result.removed': '✅ Removed manager permission from {user}',
+  'appHome.management.managers.result.removeFailed': '❌ Failed to remove manager permission from {user}',
+  'appHome.management.managers.result.removeError': '❌ Error removing manager permission from {user}',
+  'appHome.management.managers.updated': {
+    one: '✅ Manager permissions updated successfully! {count} manager is now assigned.{changes}',
+    other: '✅ Manager permissions updated successfully! {count} managers are now assigned.{changes}',
+  },
+  'appHome.management.managers.noChanges': '✅ No changes made to manager permissions.',
+  'appHome.management.managers.error.open': '❌ Error opening manager management modal. Please try again.',
+  'appHome.management.managers.error.empty': 'Please select at least one manager or cancel to keep current settings.',
+  'appHome.management.managers.error.permission': "❌ You don't have permission to manage managers.",
+  'appHome.management.managers.error.partial': 'Some manager permission changes failed. Please try again.',
+  'appHome.management.managers.error.generic': 'An error occurred while updating managers. Please try again.',
+
+  // --- Management: the CHOIR-user roster modal ------------------------------
+  'appHome.management.choirUsers.title': 'Manage CHOIR Users',
+  'appHome.management.choirUsers.submit': 'Update Users',
+  'appHome.management.choirUsers.intro':
+    '👥 *Select CHOIR Users*\n\nChoose which workspace members can use CHOIR features and participate in the research study. Managers are automatically included.',
+  'appHome.management.choirUsers.status': {
+    one: '📊 *Current Status:* {count} user registered',
+    other: '📊 *Current Status:* {count} users registered',
+  },
+  'appHome.management.choirUsers.label': 'CHOIR Users',
+  'appHome.management.choirUsers.placeholder': 'Select users to include in CHOIR...',
+  'appHome.management.choirUsers.hint':
+    'Selected users will be able to use CHOIR features. Managers are automatically included.',
+  'appHome.management.choirUsers.privacy':
+    "🔒 *Privacy Note:* Only selected users' messages will be included in CHOIR's conversation history and research data.",
+  'appHome.management.choirUsers.updated': {
+    one: '✅ CHOIR users updated successfully! {count} user is now registered. Please refresh your app home to see the changes.',
+    other:
+      '✅ CHOIR users updated successfully! {count} users are now registered. Please refresh your app home to see the changes.',
+  },
+  'appHome.management.choirUsers.error.open': '❌ Error opening user management modal. Please try again.',
+  'appHome.management.choirUsers.error.empty': 'Please select at least one user or cancel to keep current settings.',
+  'appHome.management.choirUsers.error.save': '❌ Failed to update CHOIR users. Please try again.',
+  'appHome.management.choirUsers.error.generic': 'An error occurred while updating users. Please try again.',
+  'appHome.management.choirUsers.error.postAck': '❌ An error occurred while updating CHOIR users. Please try again.',
+
+  // --- Management: the read-only file picker modal --------------------------
+  'appHome.management.readOnly.title': 'Manage Read-Only Files',
+  'appHome.management.readOnly.submit': 'Update Files',
+  'appHome.management.readOnly.intro':
+    '🔒 *Select Read-Only Files*\n\nRead-only files are excluded from document updates but remain searchable. Choose which files should be protected from automatic updates.',
+  'appHome.management.readOnly.status': '📊 *Current Status:* {count} of {total} files are read-only',
+  'appHome.management.readOnly.label': 'Select files to mark as read-only',
+  'appHome.management.readOnly.placeholder': 'Search files to mark as read-only...',
+  'appHome.management.readOnly.tip':
+    "💡 *Tip:* Read-only files can still be searched and referenced, but they won't be modified during document updates.",
+  'appHome.management.readOnly.updated': {
+    one: '✅ Read-only files updated successfully! {count} file is now marked as read-only. Please refresh your app home to see the changes.',
+    other:
+      '✅ Read-only files updated successfully! {count} files are now marked as read-only. Please refresh your app home to see the changes.',
+  },
+  'appHome.management.readOnly.error.noFiles':
+    '❌ No markdown files found. Please connect to a GitHub repository first.',
+  'appHome.management.readOnly.error.open': '❌ Error opening read-only files management modal. Please try again.',
+  'appHome.management.readOnly.error.save': 'Failed to update read-only files. Please try again.',
+  'appHome.management.readOnly.error.generic': 'An error occurred while updating read-only files. Please try again.',
+
+  // --- Management: password-based self-promotion ----------------------------
+  'appHome.management.promotion.title': 'Become Manager',
+  'appHome.management.promotion.intro':
+    '🔐 *Manager Promotion*\n\nEnter the manager promotion password to gain manager permissions.',
+  'appHome.management.promotion.label': 'Password',
+  'appHome.management.promotion.placeholder': 'Enter promotion password...',
+  'appHome.management.promotion.success':
+    '✅ Congratulations! You have been promoted to manager. Please refresh your app home to see the changes.',
+  'appHome.management.promotion.error.open': '❌ Error opening manager promotion modal. Please try again.',
+  'appHome.management.promotion.error.empty': 'Please enter the promotion password.',
+  'appHome.management.promotion.error.invalid': 'Invalid password. Please check the password and try again.',
+  'appHome.management.promotion.error.generic': 'An error occurred while processing your request. Please try again.',
+
+  // --- Management: the Q&A channel select -----------------------------------
+  'appHome.management.qaChannel.success': '✅ Q&A channel has been set to #{channel}.',
+  'appHome.management.qaChannel.error.permission': "❌ You don't have permission to change the Q&A channel.",
+  'appHome.management.qaChannel.error.access':
+    '❌ Cannot access the selected channel. Please invite CHOIR to it or pick a public channel.',
+  'appHome.management.qaChannel.error.generic': '❌ Failed to set Q&A channel. Please try again.',
+
+  // --- Management: the file-logging switch ----------------------------------
+  'appHome.management.logging.enabled': '✅ Logging has been enabled. Please refresh your app home to see the changes.',
+  'appHome.management.logging.disabled':
+    '❌ Logging has been disabled. Please refresh your app home to see the changes.',
+  'appHome.management.logging.error': '❌ Error toggling logging setting. Please try again.',
+
+  // --- Management: the OpenAI key and model modal ---------------------------
+  'appHome.management.openai.title': 'OpenAI Settings',
+  'appHome.management.openai.submit': 'Save',
+  'appHome.management.openai.intro':
+    '🔐 *OpenAI API Key & Models*\nManage the key CHOIR uses for this workspace and pick which GPT-5 models power Q&A and document updates. Classification always uses a fixed model.',
+  'appHome.management.openai.apiKey.label': 'API Key',
+  'appHome.management.openai.apiKey.placeholder': 'sk-...',
+  'appHome.management.openai.apiKey.hint.existing': 'Current key: {masked}. Leave blank to keep it.',
+  'appHome.management.openai.apiKey.hint.new': 'Paste your OpenAI API key. It will be validated before saving.',
+  'appHome.management.openai.model.placeholder': 'Use default',
+  'appHome.management.openai.qaModel.label': 'Q&A Model',
+  'appHome.management.openai.documentUpdateModel.label': 'Document Update Model',
+  'appHome.management.openai.saved': '✅ OpenAI settings saved.',
+  'appHome.management.openai.cleared':
+    '✅ Workspace OpenAI settings cleared. CHOIR will fall back to the server default key.',
+  'appHome.management.openai.error.permission': "❌ You don't have permission to configure OpenAI settings.",
+  'appHome.management.openai.error.open': '❌ Error opening OpenAI settings. Please try again.',
+  'appHome.management.openai.error.validation': 'Key validation failed: {reason}',
+  'appHome.management.openai.error.unknownReason': 'unknown error',
+  'appHome.management.openai.error.save': 'An error occurred while saving. Please try again.',
+  'appHome.management.openai.error.postAck':
+    '⚠️ Your OpenAI settings may not have been fully saved. Please reopen the settings and try again.',
+
+  // --- Management: rotating, backing up and importing the provenance key -----
+  'appHome.management.contextKey.confirm.label': 'Type {phrase} to confirm',
+  'appHome.management.contextKey.confirm.error': 'Type {phrase} exactly to confirm.',
+  'appHome.management.contextKey.rotate.title': 'Rotate Key',
+  'appHome.management.contextKey.rotate.submit': 'Rotate',
+  'appHome.management.contextKey.rotate.warning':
+    '⚠️ *This permanently destroys access to all existing change history.*\n\nEvery previously recorded update (its conversation, extracted knowledge, and diff) was encrypted with the current key. A new key cannot decrypt them — those records become unreadable forever. Back up the current key first if you might need the old history.',
+  'appHome.management.contextKey.rotate.success':
+    '🔐 Provenance key rotated. New change history will use the new key; records made with the previous key are no longer readable.',
+  'appHome.management.contextKey.rotate.error.modal': 'Failed to rotate the key. Please try again.',
+  'appHome.management.contextKey.rotate.error.postAck': '❌ Failed to rotate the provenance key. Please try again.',
+  'appHome.management.contextKey.backup.title': 'Back Up Key',
+  'appHome.management.contextKey.backup.close': 'Done',
+  'appHome.management.contextKey.backup.intro':
+    '*Provenance key (base64).* Store this somewhere safe and private — anyone with it can decrypt this workspace’s change history. You will need it to read existing history after a key rotation or a database restore.',
+  'appHome.management.contextKey.backup.missing':
+    'No provenance key exists yet — it is generated on the first recorded document change.',
+  'appHome.management.contextKey.import.title': 'Import Key',
+  'appHome.management.contextKey.import.submit': 'Import',
+  'appHome.management.contextKey.import.warning.configured':
+    '⚠️ Importing a key *replaces the current one*. Existing change history encrypted with the current key becomes unreadable unless you re-import that key later. Back it up first if unsure.',
+  'appHome.management.contextKey.import.warning.new':
+    'Set this workspace’s provenance key from a base64-encoded 32-byte key (e.g. a backup from another environment).',
+  'appHome.management.contextKey.import.key.label': 'Base64 key (32 bytes)',
+  'appHome.management.contextKey.import.key.placeholder': 'Paste the base64 key',
+  'appHome.management.contextKey.import.success':
+    '🔐 Provenance key imported. Change history recorded from now on uses it, and history encrypted with this key (e.g. a restored backup) is readable again.',
+  'appHome.management.contextKey.import.error.invalidKey': 'Enter a base64-encoded 32-byte key.',
+  'appHome.management.contextKey.import.error.modal': 'Failed to import the key. Please try again.',
+  'appHome.management.contextKey.import.error.postAck': '❌ Failed to import the provenance key. Please try again.',
 } as const;

@@ -1,16 +1,19 @@
 import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { logManagementButtonError, refreshAppHomeSoon, requireManagerForAction } from './shared';
 
 export const registerLoggingHandlers = (app: App) => {
-  app.action('toggle_logging', async ({ ack, body, client, logger }) => {
+  app.action('toggle_logging', async ({ ack, body, client, context, logger }) => {
     const startTime = Date.now();
     await ack();
 
+    const t = tForRequest(context);
+
     try {
-      if (!(await requireManagerForAction({ client, userId: body.user.id }))) {
+      if (!(await requireManagerForAction({ client, userId: body.user.id, t }))) {
         return;
       }
 
@@ -24,7 +27,7 @@ export const registerLoggingHandlers = (app: App) => {
       await client.chat.postEphemeral({
         user: body.user.id,
         channel: body.user.id,
-        text: `${newLogging ? '\u2705' : '\u274c'} Logging has been ${newLogging ? 'enabled' : 'disabled'}. Please refresh your app home to see the changes.`,
+        text: newLogging ? t('appHome.management.logging.enabled') : t('appHome.management.logging.disabled'),
       });
 
       refreshAppHomeSoon({ client, logger, userId: body.user.id, reason: 'logging toggle' });
@@ -55,7 +58,7 @@ export const registerLoggingHandlers = (app: App) => {
         await client.chat.postEphemeral({
           user: body.user.id,
           channel: body.user.id,
-          text: '\u274c Error toggling logging setting. Please try again.',
+          text: t('appHome.management.logging.error'),
         });
       }
 
