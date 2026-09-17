@@ -9,9 +9,14 @@
 
 import type { LocaleCatalog } from '../../types';
 import { appHome } from './app-home';
+import { appHomeGithub } from './app-home-github';
 import { common } from './common';
 import { conversation } from './conversation';
 import { dm } from './dm';
+import { docUpdateActions } from './doc-update-actions';
+import { docUpdateExtract } from './doc-update-extract';
+import { docUpdateSuggestions } from './doc-update-suggestions';
+import { indexManagement } from './index-management';
 import { notifications } from './notifications';
 import { qa } from './qa';
 import { registration } from './registration';
@@ -24,4 +29,9 @@ export const ko: LocaleCatalog = {
   ...qa,
   ...conversation,
   ...dm,
+  ...docUpdateExtract,
+  ...docUpdateSuggestions,
+  ...docUpdateActions,
+  ...appHomeGithub,
+  ...indexManagement,
 };
