@@ -1,4 +1,4 @@
-import type { Locale } from 'services/i18n';
+import { type Locale, tForUser } from 'services/i18n';
 import { classifyMessageIntent } from 'services/llm/document-editor';
 import {
   ensureWorkspaceAnonymizationMigrated,
@@ -11,6 +11,7 @@ import {
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { logMessageProcessing } from '../../services/common/interaction-tracker';
 import { getAnonymousThreadInfo } from '../../services/common/session-store';
+import { DEFAULT_LOCALE, createT } from '../../src/i18n';
 import { handleGeneralConversationMessage } from '../features/conversation/general-conversation-handler';
 import { handleDMClearCommand } from '../features/dm/clear-handler';
 import { handleUpdateRequestMessage } from '../features/document-update/extract-knowledge/update-request-handler';
@@ -108,7 +109,11 @@ export async function handleIncomingMessage(
             // 메시지 작성자 이름 가져오기
             const authorName = await getUserName(event.user, client);
 
-            // 원래 질문자에게 DM 전송
+            // 원래 질문자에게 DM 전송. The reader here is the *asker*, not the
+            // replier whose locale `options.locale` carries, so it is their
+            // translator that binds — the one case in this file where the two
+            // differ.
+            const tAsker = await tForUser(workspaceId, anonymousInfo.originalQuestionerId, client);
             try {
               await client.chat.postMessage({
                 channel: anonymousInfo.originalQuestionerId,
@@ -118,7 +123,7 @@ export async function handleIncomingMessage(
                     type: 'section',
                     text: {
                       type: 'mrkdwn',
-                      text: `💬 *${authorName}* replied to your anonymous question:\n\n${message}`,
+                      text: tAsker('conversation.anonymousThread.reply', { authorName, message }),
                     },
                   },
                 ],
@@ -209,7 +214,7 @@ export async function handleIncomingMessage(
     } else {
       // 일반 대화로 처리
       logger.info(`MessageRouter: Routing to handleGeneralConversationMessage (intent: ${messageIntent})`);
-      routingResult = await handleGeneralConversationMessage(client, event, message, logger);
+      routingResult = await handleGeneralConversationMessage(client, event, message, logger, options.locale);
       logger.info('MessageRouter: handleGeneralConversationMessage completed');
     }
 
@@ -241,16 +246,17 @@ export async function handleIncomingMessage(
       logger.error('Error logging message routing failure:', logError);
     }
 
+    const apology = createT(options.locale ?? DEFAULT_LOCALE)('conversation.error.generic');
     await client.chat.postMessage({
       channel: event.channel,
       ...(event.channel_type !== 'im' ? { thread_ts: event.ts } : {}), // DM이 아닌 경우에만 스레드로 응답
-      text: 'Sorry, an error occurred. Please try again.',
+      text: apology,
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: 'Sorry, an error occurred. Please try again.',
+            text: apology,
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
         },

@@ -68,9 +68,9 @@ export async function updateAllManagerMessages(
  *
  * `t` is the *receiving manager's* translator, not the requester's — this card
  * is fanned out one DM per manager, so each copy is built with its own reader's
- * language. It is optional (defaulting to English) only because the sole caller,
- * request-access-action, has not been migrated yet; this stays synchronous so
- * that caller keeps working unchanged until it is.
+ * language. request-access-action passes one per manager; the English default
+ * exists so the builder stays synchronous and renderable without a resolver
+ * (tests, previews).
  */
 export function buildManagerRequestBlocks(params: {
   userName: string;

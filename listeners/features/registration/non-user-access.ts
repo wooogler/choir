@@ -1,3 +1,4 @@
+import { tForUser } from 'services/i18n';
 import { buildNonUserResponse, getRegistrationRequest, getUserName, saveRegistrationRequest } from 'services/slack';
 import type { NonUserResponseState, RegistrationRequest } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
@@ -62,8 +63,13 @@ export async function handleNonUserAccess(params: {
     }
   }
 
+  // This is CHOIR's first word to someone it has never seen, so the client is
+  // handed over: their Slack locale has no chance of being cached yet, and the
+  // one `users.info` it costs is on a path that is already awaiting Slack.
+  const t = await tForUser(workspaceId, userId, client);
+
   const authorizationBlockId = createCHOIRBlockId(CHOIRMessageType.AUTHORIZATION);
-  const { text, blocks } = await buildNonUserResponse(state, { authorizationBlockId, consentFormUrl });
+  const { text, blocks } = await buildNonUserResponse(state, { authorizationBlockId, consentFormUrl, t });
 
   const finalBlocks =
     state === 'fresh'
@@ -74,7 +80,7 @@ export async function handleNonUserAccess(params: {
             elements: [
               {
                 type: 'button',
-                text: { type: 'plain_text', text: '🙋 Request Access', emoji: true },
+                text: { type: 'plain_text', text: t('registration.nonUser.request.button'), emoji: true },
                 style: 'primary',
                 action_id: REQUEST_ACCESS_ACTION_ID,
                 value: userId,

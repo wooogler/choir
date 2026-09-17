@@ -3,6 +3,7 @@ import { getRequestLocale } from 'services/i18n';
 import { getWorkspaceId, isCHOIRUser } from 'services/slack';
 import { getOrInitBotUserId } from 'services/slack/user-management';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
+import { createT } from '../../src/i18n';
 import { handleNonUserAccess } from '../features/registration';
 import { mpimMessageMentionsBot } from './mention-detection';
 import { handleIncomingMessage } from './message-router';
@@ -110,15 +111,16 @@ const dmMessageCallback = async ({
     await handleIncomingMessage(client, event, userMessage, logger, { locale: getRequestLocale(context) });
   } catch (error) {
     logger.error('Error processing DM message:', error);
+    const apology = createT(getRequestLocale(context))('conversation.error.generic');
     await client.chat.postMessage({
       channel: event.channel,
-      text: 'Sorry, an error occurred. Please try again.',
+      text: apology,
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: 'Sorry, an error occurred. Please try again.',
+            text: apology,
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
         },

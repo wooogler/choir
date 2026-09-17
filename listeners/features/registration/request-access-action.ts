@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest, tForUser } from 'services/i18n';
 import { getManagers, getRegistrationRequest, getWorkspaceId, saveRegistrationRequest } from 'services/slack';
 import {
   REQUEST_ACCESS_ACTION_ID,
@@ -16,10 +17,16 @@ export const requestChoirAccessAction = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // Everything replaced via response_url is read by the requester, who is the
+  // one clicking; the manager cards below are read by someone else entirely and
+  // are built one translator at a time.
+  const t = tForRequest(context);
 
   try {
     const workspaceId = await getWorkspaceId(client);
@@ -30,9 +37,9 @@ export const requestChoirAccessAction = async ({
     // sent, already decided, or expired.
     if (!request || request.status !== 'offered') {
       if (request?.status === 'pending') {
-        await replaceOriginalMessage(body, '⏳ Your request is already waiting for manager approval.', logger);
+        await replaceOriginalMessage(body, t('registration.request.alreadyPending'), logger);
       } else {
-        await replaceOriginalMessage(body, 'Please ask me a question again to request access.', logger);
+        await replaceOriginalMessage(body, t('registration.request.expired'), logger);
       }
       return;
     }
@@ -49,11 +56,7 @@ export const requestChoirAccessAction = async ({
     if (managers.length === 0) {
       request.status = 'offered'; // roll back so the button / re-ask still works
       saveRegistrationRequest(request);
-      await replaceOriginalMessage(
-        body,
-        '⚠️ No managers are configured in this workspace yet. Please contact your Slack admin.',
-        logger,
-      );
+      await replaceOriginalMessage(body, t('registration.request.noManagers'), logger);
       return;
     }
 
@@ -63,14 +66,17 @@ export const requestChoirAccessAction = async ({
     await Promise.allSettled(
       managers.map(async (managerId) => {
         try {
+          // One card per manager, each in that manager's own language.
+          const tManager = await tForUser(workspaceId, managerId, client);
           const posted = await client.chat.postMessage({
             channel: managerId,
-            text: `${request.userName} is requesting access to CHOIR.`,
+            text: tManager('registration.managerCard.request.fallback', { userName: request.userName }),
             blocks: buildManagerRequestBlocks({
               userName: request.userName,
               requesterUserId: userId,
               origin: request.origin,
               consentFormUrl,
+              t: tManager,
             }),
             unfurl_links: false,
             unfurl_media: false,
@@ -87,11 +93,7 @@ export const requestChoirAccessAction = async ({
     if (Object.keys(managerMessageInfo).length === 0) {
       request.status = 'offered';
       saveRegistrationRequest(request);
-      await replaceOriginalMessage(
-        body,
-        "⚠️ I couldn't reach any manager right now — please try asking again in a moment.",
-        logger,
-      );
+      await replaceOriginalMessage(body, t('registration.request.managersUnreachable'), logger);
       return;
     }
 
@@ -99,11 +101,7 @@ export const requestChoirAccessAction = async ({
     saveRegistrationRequest(request);
 
     const mentions = await buildManagerMentions(managers, client);
-    await replaceOriginalMessage(
-      body,
-      `✅ Request sent to ${mentions}. If approved, I'll answer your question right away.`,
-      logger,
-    );
+    await replaceOriginalMessage(body, t('registration.request.sent', { managers: mentions }), logger);
 
     await logButtonClick(
       userId,

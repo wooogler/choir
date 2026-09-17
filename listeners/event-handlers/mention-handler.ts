@@ -6,8 +6,9 @@ import { getOrInitBotUserId } from 'services/slack/user-management';
 // import suggestUpdatesCallback from "../features/document-update/suggest-updates"; // 삭제: document-update feature에서 중앙 관리
 // import { applySelectedToGithubAction } from "../features/document-update/update-documents"; // 삭제: document-update feature에서 중앙 관리
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
-import { handleNonUserAccess } from '../features/registration';
 // import cancelDocumentUpdatesCallback from "../features/document-update/cancel-document-updates-action"; // 삭제: document-update feature에서 중앙 관리
+import { createT } from '../../src/i18n';
+import { handleNonUserAccess } from '../features/registration';
 import { handleIncomingMessage } from './message-router';
 
 /**
@@ -99,16 +100,17 @@ const appMentionCallback = async ({
     });
   } catch (error) {
     logger.error('Error processing app mention:', error);
+    const apology = createT(getRequestLocale(context))('conversation.error.generic');
     await client.chat.postMessage({
       channel: event.channel,
       thread_ts: event.ts,
-      text: 'Sorry, an error occurred. Please try again.',
+      text: apology,
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: 'Sorry, an error occurred. Please try again.',
+            text: apology,
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
         },

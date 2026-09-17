@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest, tForUser, tForWorkspace } from 'services/i18n';
 import {
   approveCHOIRUser,
   clearRegistrationRequest,
@@ -9,6 +10,7 @@ import {
   isCHOIRUser,
 } from 'services/slack';
 import type { RegistrationRequest } from 'services/slack';
+import type { T } from '../../../src/i18n';
 import { requireManagerForAction } from '../app-home/management/shared';
 import { handleQuestionMessage } from '../qa/question-handler';
 import {
@@ -27,10 +29,16 @@ export const approveChoirRegistrationAction = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // Three readers, three translators: the deciding manager sees `t`, the other
+  // managers share one rewritten card (so it follows the workspace), and the
+  // requester's DM is built from their own locale further down.
+  const t = tForRequest(context);
 
   try {
     const managerId = body.user.id;
@@ -49,14 +57,14 @@ export const approveChoirRegistrationAction = async ({
     // Already handled if the request is gone, no longer pending, or the user is
     // already registered.
     if (!request || request.status !== 'pending' || (await isCHOIRUser(workspaceId, targetUserId))) {
-      await replaceOriginalMessage(body, 'ℹ️ This request was already handled.', logger);
+      await replaceOriginalMessage(body, t('registration.action.alreadyHandled'), logger);
       return;
     }
 
     // Atomic claim: deleting the row returns true only for the winning manager, so
     // the approval + auto-answer happens exactly once even on simultaneous clicks.
     if (!clearRegistrationRequest(workspaceId, targetUserId)) {
-      await replaceOriginalMessage(body, 'ℹ️ Another manager just handled this request.', logger);
+      await replaceOriginalMessage(body, t('registration.action.claimedByOther'), logger);
       return;
     }
 
@@ -65,13 +73,22 @@ export const approveChoirRegistrationAction = async ({
 
     await approveCHOIRUser(workspaceId, targetUserId, client);
 
+    // One text for every remaining manager card, so no single reader's language
+    // can claim it: the workspace default is the only defensible choice.
+    const tWorkspace = await tForWorkspace(workspaceId);
     await updateAllManagerMessages(request.managerMessageInfo, client, logger, {
-      text: `✅ *${targetName}* — approved by *${managerName}*.`,
+      text: tWorkspace('registration.managerCard.approved', { targetName, managerName }),
       skipManagerId: managerId,
     });
-    await replaceOriginalMessage(body, `✅ *${targetName}* is now a CHOIR user.`, logger);
+    await replaceOriginalMessage(body, t('registration.approve.confirmation', { targetName }), logger);
 
-    await welcomeAndAnswer({ client, logger, targetUserId, request });
+    await welcomeAndAnswer({
+      client,
+      logger,
+      targetUserId,
+      request,
+      t: await tForUser(workspaceId, targetUserId, client),
+    });
 
     await logButtonClick(
       managerId,
@@ -99,8 +116,10 @@ async function welcomeAndAnswer(params: {
   logger: any;
   targetUserId: string;
   request: RegistrationRequest;
+  /** The *approved user's* translator — this whole function writes to them. */
+  t: T;
 }): Promise<void> {
-  const { client, logger, targetUserId, request } = params;
+  const { client, logger, targetUserId, request, t } = params;
 
   let dmChannel: string | undefined;
   try {
@@ -112,8 +131,8 @@ async function welcomeAndAnswer(params: {
   if (!dmChannel) return;
 
   const welcome = request.heldQuestion
-    ? "🎉 You're in! You can now ask me anything about the team's documentation.\n\nHere's the answer to the question you asked earlier:"
-    : "🎉 You're in! You can now ask me anything about the team's documentation. Just send me a question anytime.";
+    ? t('registration.approve.welcome.withQuestion')
+    : t('registration.approve.welcome');
 
   try {
     await client.chat.postMessage({ channel: dmChannel, text: welcome, blocks: [sectionBlock(welcome)] });
@@ -135,7 +154,7 @@ async function welcomeAndAnswer(params: {
     try {
       await client.chat.postMessage({
         channel: dmChannel,
-        text: `You originally asked this in <#${request.origin.channelId}> — feel free to share the answer there.`,
+        text: t('registration.approve.originChannelHint', { channelLink: `<#${request.origin.channelId}>` }),
       });
     } catch (error) {
       logger.warn('Failed to post origin-channel hint to approved user:', error);

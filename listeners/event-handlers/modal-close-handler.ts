@@ -1,6 +1,8 @@
 import type { AllMiddlewareArgs, App, SlackViewMiddlewareArgs } from '@slack/bolt';
 import { logAppHomeButtonClick, logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
+import type { T } from '../../src/i18n';
 
 /**
  * App Home Modal cancel/close 처리 콜백
@@ -71,7 +73,14 @@ const appHomeModalCloseCallback = async ({
 /**
  * Modal cancel/close 처리 콜백
  */
-const modalCloseCallback = async ({ ack, body, view, client, logger }: AllMiddlewareArgs & SlackViewMiddlewareArgs) => {
+const modalCloseCallback = async ({
+  ack,
+  body,
+  view,
+  client,
+  context,
+  logger,
+}: AllMiddlewareArgs & SlackViewMiddlewareArgs) => {
   await ack();
   const startTime = Date.now();
 
@@ -173,7 +182,9 @@ const modalCloseCallback = async ({ ack, body, view, client, logger }: AllMiddle
     // For the new-file / new-section modals, backing out used to dead-end the
     // review (the New File button had replaced the suggestion message). Offer an
     // easy way back: post a recovery message with a "🔄 Start Over" button.
-    await postRestartRecovery({ callbackId, privateMetadata, userId, client, logger });
+    // The recovery DM goes to the person who just cancelled the modal, so it
+    // speaks the language this request arrived in.
+    await postRestartRecovery({ callbackId, privateMetadata, userId, client, logger, t: tForRequest(context) });
   } catch (error) {
     logger.error('Error processing modal close:', error);
 
@@ -211,8 +222,9 @@ async function postRestartRecovery(params: {
   userId: string;
   client: any;
   logger: any;
+  t: T;
 }): Promise<void> {
-  const { callbackId, privateMetadata, userId, client, logger } = params;
+  const { callbackId, privateMetadata, userId, client, logger, t } = params;
   if (callbackId !== 'create_file_modal' && callbackId !== 'new_section_modal') return;
 
   try {
@@ -253,15 +265,20 @@ async function postRestartRecovery(params: {
     }
 
     const { buildStartOverButton } = await import('../features/document-update/suggestions/shared');
-    const what = callbackId === 'create_file_modal' ? 'creating a new file' : 'creating a new section';
+    // One key per cancelled modal rather than a `{what}` slot: the noun phrase
+    // is a direct object, which most languages inflect.
+    const prompt =
+      callbackId === 'create_file_modal'
+        ? t('conversation.restartRecovery.newFile')
+        : t('conversation.restartRecovery.newSection');
 
     await client.chat.postMessage({
       channel: userId,
-      text: 'Canceled — want to start over?',
+      text: t('conversation.restartRecovery.fallback'),
       blocks: [
         {
           type: 'section',
-          text: { type: 'mrkdwn', text: `↩️ You canceled ${what}. Want to pick the review back up from the top?` },
+          text: { type: 'mrkdwn', text: prompt },
         },
         {
           type: 'actions',

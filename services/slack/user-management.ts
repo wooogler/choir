@@ -4,6 +4,7 @@ import { mapWithConcurrency } from 'services/common/concurrency';
 import { ErrorCodes, SlackError } from 'services/common/error-handler';
 import { Logger } from 'services/common/logger';
 import { getAnonymizationMapping } from 'services/common/name-cache';
+import { DEFAULT_LOCALE, type T, createT } from '../../src/i18n';
 import { WorkspaceStore } from '../workspace/workspace-store';
 
 const workspaceStore = new WorkspaceStore();
@@ -422,30 +423,35 @@ export type NonUserResponseState = 'fresh' | 'pending' | 'declined';
  * message is excluded from conversation history) and, for the 'fresh' state,
  * appends the "Request Access" button itself (keeping the button's action_id in
  * the listener layer). Returns `{ text, blocks }` ready to post.
+ *
+ * `t` is the translator of the person being told — a stranger who has never
+ * interacted with CHOIR, so their locale is worth one `users.info` at the call
+ * site. It is optional, defaulting to English, so a caller with no locale in
+ * hand (and the builder's own tests) still get the previous output exactly.
  */
 export async function buildNonUserResponse(
   state: NonUserResponseState,
   options: {
     authorizationBlockId: string;
     consentFormUrl?: string;
+    t?: T;
   },
 ): Promise<{ text: string; blocks: any[] }> {
   const { authorizationBlockId, consentFormUrl } = options;
+  const t = options.t ?? createT(DEFAULT_LOCALE);
 
   if (state === 'pending') {
-    const text = "⏳ Your access request is waiting for manager approval. I'll message you as soon as you're in!";
+    const text = t('registration.nonUser.pending');
     return { text, blocks: [section(text, authorizationBlockId)] };
   }
 
   if (state === 'declined') {
-    const text =
-      "Your earlier access request wasn't approved. If you think this is a mistake, please reach out to a workspace manager directly.";
+    const text = t('registration.nonUser.declined');
     return { text, blocks: [section(text, authorizationBlockId)] };
   }
 
   // fresh
-  const text =
-    "Hi! 👋 I'm CHOIR, your team's documentation assistant. You're not a CHOIR user yet — tap the button below and a workspace manager can approve you with one click.";
+  const text = t('registration.nonUser.fresh');
   const blocks: any[] = [
     section(text, authorizationBlockId),
     {
@@ -453,7 +459,7 @@ export async function buildNonUserResponse(
       elements: [
         {
           type: 'mrkdwn',
-          text: "If approved, I'll answer the question you just asked right away. Until then it stays private — I don't process or store it.",
+          text: t('registration.nonUser.fresh.privacy'),
         },
       ],
     },
@@ -465,7 +471,9 @@ export async function buildNonUserResponse(
       elements: [
         {
           type: 'mrkdwn',
-          text: `Your manager may ask you to complete the consent form: <${consentFormUrl}|here>.`,
+          text: t('registration.nonUser.fresh.consent', {
+            consentFormLink: `<${consentFormUrl}|${t('registration.link.consentFormHere')}>`,
+          }),
         },
       ],
     });

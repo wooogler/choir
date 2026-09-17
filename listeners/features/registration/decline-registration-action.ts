@@ -1,5 +1,6 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/interaction-tracker';
+import { tForRequest, tForUser, tForWorkspace } from 'services/i18n';
 import { getRegistrationRequest, getUserName, getWorkspaceId, saveRegistrationRequest } from 'services/slack';
 import { requireManagerForAction } from '../app-home/management/shared';
 import { DECLINE_REGISTRATION_ACTION_ID, replaceOriginalMessage, updateAllManagerMessages } from './shared';
@@ -12,10 +13,15 @@ export const declineChoirRegistrationAction = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // The deciding manager reads `t`; the other managers' cards are rewritten
+  // once for all of them, and the requester is told in their own language.
+  const t = tForRequest(context);
 
   try {
     const managerId = body.user.id;
@@ -32,7 +38,7 @@ export const declineChoirRegistrationAction = async ({
     const request = getRegistrationRequest(workspaceId, targetUserId);
 
     if (!request || request.status !== 'pending') {
-      await replaceOriginalMessage(body, 'ℹ️ This request was already handled.', logger);
+      await replaceOriginalMessage(body, t('registration.action.alreadyHandled'), logger);
       return;
     }
 
@@ -45,19 +51,21 @@ export const declineChoirRegistrationAction = async ({
     request.heldQuestion = undefined;
     saveRegistrationRequest(request);
 
+    const tWorkspace = await tForWorkspace(workspaceId);
     await updateAllManagerMessages(request.managerMessageInfo, client, logger, {
-      text: `🚫 *${targetName}* — declined by *${managerName}*.`,
+      text: tWorkspace('registration.managerCard.declined', { targetName, managerName }),
       skipManagerId: managerId,
     });
-    await replaceOriginalMessage(body, `🚫 Declined *${targetName}*'s access request.`, logger);
+    await replaceOriginalMessage(body, t('registration.decline.confirmation', { targetName }), logger);
 
     try {
       const opened = await client.conversations.open({ users: targetUserId });
       const dmChannel = opened.channel?.id;
       if (dmChannel) {
+        const tRequester = await tForUser(workspaceId, targetUserId, client);
         await client.chat.postMessage({
           channel: dmChannel,
-          text: "Your CHOIR access request wasn't approved this time. If you think this is a mistake, please reach out to a workspace manager directly.",
+          text: tRequester('registration.decline.notice'),
         });
       }
     } catch (error) {

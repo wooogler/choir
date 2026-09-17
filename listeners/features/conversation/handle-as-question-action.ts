@@ -1,6 +1,7 @@
 import type { AllMiddlewareArgs, BlockButtonAction, SlackActionMiddlewareArgs } from '@slack/bolt';
 import { logButtonClick } from 'services/common/interaction-tracker';
 import { SessionType, getSessionData } from 'services/common/session-store';
+import { tForRequest, tForWorkspace } from 'services/i18n';
 import { getUserName, getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
 import { handleQuestionMessage } from '../qa/question-handler';
@@ -12,10 +13,16 @@ export const handleAsQuestionCallback = async ({
   ack,
   body,
   client,
+  context,
   logger,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs<BlockButtonAction>) => {
   const startTime = Date.now();
   await ack();
+
+  // The clicker is the person who wrote the message, so every reply addressed
+  // to them follows the request's language; the public note below is read by a
+  // whole channel and follows the workspace's.
+  const t = tForRequest(context);
 
   try {
     const sessionId = body.actions[0].value;
@@ -40,16 +47,20 @@ export const handleAsQuestionCallback = async ({
       channel_type: messageData.channelType,
     };
 
+    const workspaceId = await getWorkspaceId(client);
+
     // Send friendly public notification first
+    const tChannel = await tForWorkspace(workspaceId);
+    const announcement = tChannel('conversation.reclassify.question.announcement', { userName });
     await client.chat.postMessage({
       channel: messageData.channelId,
-      text: `🤔 *${userName}* let me know this was actually a question - I'll handle it properly now!`,
+      text: announcement,
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `🤔 *${userName}* let me know this was actually a question - I'll handle it properly now!`,
+            text: announcement,
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.NOTIFICATION),
         },
@@ -67,13 +78,15 @@ export const handleAsQuestionCallback = async ({
         },
         body: JSON.stringify({
           replace_original: true,
-          text: '✅ Processed as Question',
+          text: t('conversation.reclassify.question.processed.fallback'),
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `✅ *Message processed as Question*\n\n📝 *Original message:* "${messageData.originalMessage}"\n🔄 *Action taken:* Searching documents and generating answer`,
+                text: t('conversation.reclassify.question.processed', {
+                  originalMessage: messageData.originalMessage,
+                }),
               },
             },
           ],
@@ -87,7 +100,6 @@ export const handleAsQuestionCallback = async ({
     logger.info(`Message re-processed as question for user ${messageData.userId}`);
 
     // 로그: 성공
-    const workspaceId = await getWorkspaceId(client);
     await logButtonClick(
       body.user.id,
       workspaceId,
@@ -110,15 +122,18 @@ export const handleAsQuestionCallback = async ({
   } catch (error) {
     logger.error('Error handling message as question:', error);
 
+    const failure = t('conversation.reclassify.question.error', {
+      reason: error instanceof Error ? error.message : 'Unknown error',
+    });
     await client.chat.postMessage({
       channel: body.user.id,
-      text: `❌ Failed to process your message as a question: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      text: failure,
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `❌ Failed to process your message as a question: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            text: failure,
           },
           block_id: createCHOIRBlockId(CHOIRMessageType.ERROR),
         },
