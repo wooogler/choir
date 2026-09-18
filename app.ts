@@ -59,6 +59,17 @@ import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { isCHOIRUser, isManager } from 'services/slack';
 import { getGithubRepo } from 'services/slack';
+import {
+  buildInstallGateCookieHeader,
+  clearAttempts,
+  clientKeyFromRequest,
+  hasValidInstallTicket,
+  isInstallGateEnabled,
+  issueInstallGateCookieValue,
+  registerAttempt,
+  renderInstallPasscodePage,
+  verifyPasscode,
+} from 'services/slack/install-gate';
 import { SqliteSlackInstallationStore } from 'services/slack/sqlite-installation-store';
 import { ensureWorkspaceInitialized } from 'services/slack/workspace-bootstrap';
 import { GitHubSyncService } from 'services/sync/github-sync-service';
@@ -91,6 +102,9 @@ applyQmdCpuOnlyDefaults();
 /** Initialization */
 const slackConfig = AppConfig.getSlackConfig();
 
+const INSTALL_PATH = '/slack/install';
+const INSTALL_PASSCODE_PATH = '/slack/install/passcode';
+
 function createReceiver(): ExpressReceiver | undefined {
   if (slackConfig.socketMode) {
     return undefined;
@@ -107,8 +121,23 @@ function createReceiver(): ExpressReceiver | undefined {
       scopes: slackConfig.scopes,
       installerOptions: {
         directInstall: false,
-        installPath: '/slack/install',
+        installPath: INSTALL_PATH,
         redirectUriPath: '/slack/oauth_redirect',
+        // While the deployment is invite-only, stop the redirect to Slack and
+        // render the passcode form instead. Dormant unless INSTALL_PASSCODE is set.
+        installPathOptions: {
+          beforeRedirection: async (req, res) => {
+            if (!isInstallGateEnabled()) return true;
+            if (hasValidInstallTicket(req.headers?.cookie)) return true;
+
+            res.writeHead(401, {
+              'content-type': 'text/html; charset=utf-8',
+              'cache-control': 'no-store',
+            });
+            res.end(renderInstallPasscodePage({ action: INSTALL_PASSCODE_PATH }));
+            return false;
+          },
+        },
       },
     });
   }
@@ -282,6 +311,42 @@ function setupPublicSite(): void {
   // them is registered a few lines down.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const expressForBodyParser = require('express');
+
+  // Passcode gate for the Slack install path. The receiver's beforeRedirection
+  // hook renders the form; this route is where it posts. Registered only when a
+  // passcode is configured, so self-hosted deployments expose no extra surface.
+  if (receiver && isInstallGateEnabled()) {
+    router.post(
+      INSTALL_PASSCODE_PATH,
+      expressForBodyParser.urlencoded({ extended: false, limit: '1kb' }),
+      (req: any, res: any) => {
+        const clientKey = clientKeyFromRequest(req.headers, req.socket?.remoteAddress);
+        const sendForm = (status: number, error: string) => {
+          res.status(status);
+          res.set('cache-control', 'no-store');
+          return res.type('html').send(renderInstallPasscodePage({ action: INSTALL_PASSCODE_PATH, error }));
+        };
+
+        if (!registerAttempt(clientKey).allowed) {
+          app.logger.warn(`Install passcode attempts throttled for ${clientKey}`);
+          return sendForm(429, 'Too many attempts. Wait a few minutes and try again.');
+        }
+
+        if (!verifyPasscode(req.body?.passcode)) {
+          return sendForm(401, 'That passcode is not correct.');
+        }
+
+        clearAttempts(clientKey);
+        res.setHeader(
+          'set-cookie',
+          buildInstallGateCookieHeader(issueInstallGateCookieValue(), { secure: cookieSecure }),
+        );
+        return res.redirect(303, INSTALL_PATH);
+      },
+    );
+
+    app.logger.info(`Slack install path is passcode-gated at ${INSTALL_PASSCODE_PATH}`);
+  }
 
   /**
    * The language a reader is served, plus the three settings behind it so the

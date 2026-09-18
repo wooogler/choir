@@ -229,6 +229,10 @@ If you want one CHOIR instance to serve OAuth installs from multiple Slack works
 - `SLACK_REDIRECT_URI=https://your-domain/slack/oauth_redirect`
 - `SLACK_SCOPES` (optional override; defaults match the manifest)
 
+Set `INSTALL_PASSCODE` to keep installation invite-only: `/slack/install` then asks for that shared passcode before it
+redirects to Slack, and remembers a correct answer for 12 hours. Leave it unset and the install page is open to anyone who
+reaches it.
+
 In OAuth mode, Bolt exposes `/slack/install` and `/slack/oauth_redirect`. Each installing workspace stores its own bot token in the SQLite installation store. The GitHub webhook endpoint is reachable but auto-reload is not yet wired up for OAuth installs.
 
 Slack manifest scopes are the same as for single mode; what changes is the install path and the per-workspace token storage.
