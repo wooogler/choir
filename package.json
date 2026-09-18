@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "AI-powered Slack bot for answering questions and updating organizational documentation from GitHub markdown files.",
   "main": "dist/app.js",
-  "packageManager": "pnpm@10.8.1",
+  "packageManager": "pnpm@12.4.2+sha512.08adc6613180275c7c9edada39dcf08c9c61ad4e7eaf330a4f3461f102b0f907423454d117f98e72d47fef0616070644d7bffc973a6a57f5090a6d7c368b07c9",
   "scripts": {
     "build": "rm -rf dist && tsc && tsc-alias",
     "build:web": "pnpm --filter choir-web build",
@@ -59,6 +59,7 @@
     "@langchain/core": "^0.3.62",
     "@mozilla/readability": "^0.6.0",
     "@slack/bolt": "^4.2.0",
+    "@slack/oauth": "^3.0.3",
     "@slack/web-api": "^7.8.0",
     "@tobilu/qmd": "^2.0.1",
     "archiver": "^7.0.1",

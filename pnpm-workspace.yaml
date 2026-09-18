@@ -1,5 +1,17 @@
 packages:
   - 'web'
 
-onlyBuiltDependencies:
-  - better-sqlite3
+# pnpm 12 reads its settings here; .npmrc carries only auth/registry settings now.
+autoInstallPeers: false
+
+# Dependencies whose install scripts may run. Anything not listed is refused,
+# and pnpm 12 fails the install (strictDepBuilds) rather than silently skipping.
+# better-sqlite3 compiles its native binding. The rest ship prebuilt binaries
+# and only use their scripts for platform checks, which pnpm 10 was already
+# skipping for us via onlyBuiltDependencies.
+allowBuilds:
+  better-sqlite3: true
+  '@biomejs/biome': false
+  esbuild: false
+  node-llama-cpp: false
+  unrs-resolver: false
