@@ -54,7 +54,11 @@ jest.mock('../listeners/features/app-home/refresh', () => ({
   refreshAppHomeSoon: (...args: unknown[]) => refreshAppHomeSoonPreferences(...args),
 }));
 
-import { buildLanguageSettingsBlocks, buildMyLanguageBlocks } from '../listeners/features/app-home/home-view-builder';
+import {
+  buildContentLanguageRow,
+  buildMyLanguageRow,
+  buildWorkspaceLanguageRow,
+} from '../listeners/features/app-home/home-view-builder';
 import { registerLanguageHandlers as registerWorkspaceLanguageHandlers } from '../listeners/features/app-home/management/language-handlers';
 import { registerLanguageHandlers as registerMyLanguageHandler } from '../listeners/features/preferences/language-handlers';
 import { createT } from '../src/i18n';
@@ -62,18 +66,9 @@ import { createT } from '../src/i18n';
 const en = createT('en');
 const ko = createT('ko');
 
-/** Every static_select in a block list, keyed by its action_id. */
-const selectsOf = (blocks: any[]): Record<string, any> =>
-  Object.fromEntries(
-    blocks
-      .map((block) => block.accessory)
-      .filter((accessory) => accessory?.type === 'static_select')
-      .map((select) => [select.action_id, select]),
-  );
-
-describe('per-user language block', () => {
+describe('per-user language row', () => {
   it('shows the stored preference as the initial option', () => {
-    const select = buildMyLanguageBlocks(en, 'ko')[0].accessory;
+    const select = buildMyLanguageRow(en, 'ko').accessory;
 
     expect(select.action_id).toBe('set_my_language');
     expect(select.initial_option.value).toBe('ko');
@@ -81,14 +76,14 @@ describe('per-user language block', () => {
   });
 
   it('shows Automatic when the user has no preference stored', () => {
-    const select = buildMyLanguageBlocks(en, null)[0].accessory;
+    const select = buildMyLanguageRow(en, null).accessory;
 
     expect(select.initial_option.value).toBe('auto');
     expect(select.initial_option.text.text).toBe(en('appHome.language.option.auto'));
   });
 
   it('renders in the reader’s own language', () => {
-    const select = buildMyLanguageBlocks(ko, 'en')[0].accessory;
+    const select = buildMyLanguageRow(ko, 'en').accessory;
 
     expect(select.initial_option.value).toBe('en');
     expect(select.options[0].text.text).toBe(ko('appHome.language.option.auto'));
@@ -96,30 +91,35 @@ describe('per-user language block', () => {
   });
 });
 
-describe('workspace language blocks', () => {
-  it('are hidden from a member who is neither manager nor owner', () => {
-    expect(buildLanguageSettingsBlocks(en, false, false, 'en', 'follow-conversation')).toEqual([]);
+// The two manager-only settings now live on separate tabs — the workspace
+// default on Team, the document policy on Documents — so each is one row with
+// one select. Who may see them is the tab gate's business, not the row's.
+describe('workspace language row (Team tab)', () => {
+  it('is a single section carrying the stored value', () => {
+    const block = buildWorkspaceLanguageRow(en, 'ko');
+
+    expect(block.type).toBe('section');
+    expect(block.text.text).toContain(en('appHome.language.workspace.label'));
+    expect(block.text.text).toContain(en('appHome.language.workspace.context'));
+    expect(block.accessory.action_id).toBe('set_workspace_language');
+    expect(block.accessory.initial_option.value).toBe('ko');
+    expect(block.accessory.options.map((o: any) => o.value)).toEqual(['en', 'ko']);
+  });
+});
+
+describe('document content language row (Documents tab)', () => {
+  it('lists follow-conversation first and keeps the stored value selected', () => {
+    const block = buildContentLanguageRow(en, 'en');
+
+    expect(block.accessory.action_id).toBe('set_content_language');
+    expect(block.accessory.initial_option.value).toBe('en');
+    expect(block.accessory.options.map((o: any) => o.value)).toEqual(['follow-conversation', 'en', 'ko']);
   });
 
-  it('show a manager both settings with the stored values selected', () => {
-    const blocks = buildLanguageSettingsBlocks(en, true, false, 'ko', 'en');
-    const selects = selectsOf(blocks);
-
-    expect(Object.keys(selects).sort()).toEqual(['set_content_language', 'set_workspace_language']);
-    expect(selects.set_workspace_language.initial_option.value).toBe('ko');
-    expect(selects.set_workspace_language.options.map((o: any) => o.value)).toEqual(['en', 'ko']);
-    expect(selects.set_content_language.initial_option.value).toBe('en');
-    expect(selects.set_content_language.options.map((o: any) => o.value)).toEqual(['follow-conversation', 'en', 'ko']);
-  });
-
-  it('show the owner the same section, defaulting content to follow-conversation', () => {
-    const blocks = buildLanguageSettingsBlocks(en, false, true, 'en', 'follow-conversation');
-    const selects = selectsOf(blocks);
-
-    expect(blocks[0].type).toBe('header');
-    expect(selects.set_content_language.initial_option.value).toBe('follow-conversation');
-    // One explanatory context line per select.
-    expect(blocks.filter((block: any) => block.type === 'context')).toHaveLength(2);
+  it('defaults to follow-conversation', () => {
+    expect(buildContentLanguageRow(en, 'follow-conversation').accessory.initial_option.value).toBe(
+      'follow-conversation',
+    );
   });
 });
 

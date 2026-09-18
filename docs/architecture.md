@@ -30,6 +30,7 @@ Runtime output is intentionally outside source control:
 
 Feature folders should expose a small `index.ts` that registers their callbacks. Large flows should live in focused subfolders:
 
+- `app-home/`: the Home tab's four tabs (Home / Documents / Team / Advanced); see [app-home.md](app-home.md) for the layout rules and who sees what.
 - `app-home/management/`: manager, CHOIR user, logging, and read-only file controls.
 - `document-update/actions/`: small Slack actions that support document updates.
 - `document-update/apply-document/`: applying accepted updates and new sections.

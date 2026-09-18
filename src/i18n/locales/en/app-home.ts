@@ -2,19 +2,30 @@
 // with the manager-only modals (which are their own views, not home sections)
 // grouped under `appHome.management.<surface>.*`.
 //
+// The home view itself is four tabs (see `docs/app-home.md`), so a row's *own*
+// copy — its bold label and one-line status — is named after the tab it sits on:
+// `appHome.home.*`, `appHome.documents.*`, `appHome.team.*`, `appHome.advanced.*`,
+// with the tab bar under `appHome.tabs.*`. Button labels and confirm dialogs keep
+// their older action-shaped keys (`appHome.documentConnection.reload.*`,
+// `appHome.contextKey.rotate.button`, …) because they describe the *action*, which
+// is the same wherever it is rendered; moving them would be a rename for its own
+// sake and would throw away their Korean.
+//
 // The language settings were the first App Home section to go through the
 // catalog: they are the one place a person can be reading CHOIR in a language
 // they cannot yet change, so the picker itself has to speak their language.
 // Option labels are shared by all three selects — the value each one carries
 // differs (`auto`/`follow-conversation` vs a locale), the wording does not.
 //
-// Section headers are `.header` rather than `.title` on purpose: Slack's header
-// block allows 150 characters while a *modal* title allows 24, and two of these
-// ("📊 Interaction Logs Download", "🔐 Change History Encryption") already
-// exceed 24 in English. `.title` is reserved for real modal titles, where the
-// catalog test's 24-char cap is exactly the constraint we want enforced.
+// `.title` is reserved for real modal titles, where the catalog test's 24-char
+// cap is exactly the constraint we want enforced; the redesign left no Slack
+// `header` blocks in the home view at all.
 export const appHome = {
-  'appHome.language.title': 'Language',
+  // --- The tab bar ----------------------------------------------------------
+  'appHome.tabs.home': '🏠 Home',
+  'appHome.tabs.documents': '📁 Documents',
+  'appHome.tabs.team': '👥 Team',
+  'appHome.tabs.advanced': '⚙️ Advanced',
 
   'appHome.language.mine.label': '*Your language*\nThe language CHOIR uses when it talks to you.',
   'appHome.language.mine.placeholder': 'Select a language',
@@ -38,25 +49,32 @@ export const appHome = {
   'appHome.language.confirm.workspace': '✅ Workspace language set to {language}.',
   'appHome.language.confirm.content': '✅ Document content language set to {language}.',
 
-  // --- Home: the welcome block every visitor sees ---------------------------
-  'appHome.welcome.greeting': '*Welcome, {user} :house:*',
-  'appHome.welcome.intro': 'CHOIR is a tool that automatically updates documents based on Slack conversations.',
-  'appHome.welcome.prompt': '💬 *Ready to get started?* Click the button below to chat with CHOIR!',
+  // --- Home: the welcome row every visitor sees -----------------------------
+  'appHome.welcome.greeting': '*Welcome, {user}* :wave:',
+  'appHome.welcome.intro':
+    "CHOIR answers questions from your team's docs and turns Slack conversations into document updates.",
   'appHome.welcome.startChat.button': '💬 Start Chatting with CHOIR',
-
-  // --- Home: team insights (web dashboard link) -----------------------------
-  'appHome.insights.summary':
-    '📊 *Team Insights* — what the team asks about, how often docs answer it, and where the gaps are. Privacy-preserving: no individual activity is shown.',
   'appHome.insights.open.button': '📊 Open Team Insights',
 
-  // --- Home: AI settings summary --------------------------------------------
-  'appHome.openai.header': '🤖 AI Settings',
+  // --- Home: the manager's setup card ---------------------------------------
+  // Configured lines collapse into one summary section; anything unfinished
+  // becomes its own row carrying the control that fixes it.
+  'appHome.home.setup.label': '*Setup*',
+  'appHome.home.setup.github.done': '✅ GitHub account · {login}',
+  'appHome.home.setup.github.todo': '*GitHub account*\n❌ Not connected · connect it to pick a repository',
+  'appHome.home.setup.repo.done': '✅ Repository · {repo}',
+  'appHome.home.setup.repo.todo': '*Repository*\n❌ None · choose the repository CHOIR reads',
+  'appHome.home.setup.channel.done': '✅ Q&A channel · #{channel}',
+  'appHome.home.setup.channel.todo': '*Q&A channel*\n❌ Not set · "Ask to Channel" stays off until you pick one',
+  'appHome.home.setup.people.done': '✅ {users} CHOIR users · {managers} managers',
+
+  // --- Advanced: AI models --------------------------------------------------
+  'appHome.advanced.openai.summary': '*AI models*\nKey: {keyStatus} · Q&A: {qaModel} · Updates: {documentUpdateModel}',
+  'appHome.advanced.openai.context': 'Classification model: {classificationModel} (fixed)',
   'appHome.openai.key.workspaceSet': '✅ Workspace key set ({masked})',
   'appHome.openai.key.serverDefault': '🟡 Using server default key',
   'appHome.openai.key.notConfigured': '❌ Not configured',
   'appHome.openai.model.serverDefault': 'Server default',
-  'appHome.openai.summary':
-    '*OpenAI Key:* {keyStatus}\n*Q&A Model:* {qaModel}\n*Document Update Model:* {documentUpdateModel}\n*Classification Model:* {classificationModel} _(fixed)_',
   'appHome.openai.configure.button': 'Configure OpenAI',
   'appHome.openai.clear.button': 'Clear Settings',
   'appHome.openai.clear.confirm.title': 'Clear OpenAI Settings?',
@@ -64,70 +82,57 @@ export const appHome = {
     'CHOIR will fall back to the server default key. The workspace-specific key and model choices will be removed.',
   'appHome.openai.clear.confirm.ok.button': 'Clear',
 
-  // --- Home: change-history encryption key ----------------------------------
-  'appHome.contextKey.header': '🔐 Change History Encryption',
-  'appHome.contextKey.status.configured': '🔐 *Provenance key:* ✅ Configured',
-  'appHome.contextKey.status.created': 'Created {date}',
-  'appHome.contextKey.status.rotated': 'Last rotated {date}',
-  'appHome.contextKey.status.notGenerated':
-    '🔐 *Provenance key:* 🟡 Not yet generated\nA per-workspace key is created automatically the first time a document change records its history.',
-  'appHome.contextKey.summary':
-    "{status}\n\nChange history (the conversation, extracted knowledge, and diff behind each document update) is encrypted with this key. It lives only in CHOIR's database — GitHub only ever holds ciphertext.",
+  // --- Advanced: change-history encryption key ------------------------------
+  'appHome.advanced.contextKey.configured': '*Change history encryption*\n✅ Key configured{details}',
+  'appHome.advanced.contextKey.notGenerated':
+    '*Change history encryption*\n🟡 Not yet generated · created on the first recorded change',
+  'appHome.contextKey.status.created': 'created {date}',
+  'appHome.contextKey.status.rotated': 'rotated {date}',
   'appHome.contextKey.backup.button': 'Back Up Key',
   'appHome.contextKey.rotate.button': 'Rotate Key',
   'appHome.contextKey.import.button': 'Import Key',
   'appHome.contextKey.warning':
     '⚠️ Rotating or importing a new key makes *all previously recorded change history permanently unreadable*. Back up the current key first if you may need the old history.',
 
-  // --- Home: CHOIR management (managers, users, Q&A channel) ----------------
-  'appHome.choirManagement.header': '⚙️ CHOIR Management',
-  'appHome.choirManagement.managers.entry': '{user} ({name})',
-  'appHome.choirManagement.managers.unknownName': 'Unknown User',
-  'appHome.choirManagement.managers.list': '*Current Managers:*\n{list}',
-  'appHome.choirManagement.managers.none': '*Current Managers:* None assigned',
-  'appHome.choirManagement.managers.summary':
-    '{managers}\n\nManagers can access advanced features and grant permissions to other users.',
+  // --- Team: managers, CHOIR users, Q&A channel, organization ---------------
+  'appHome.team.managers.summary': '*Managers* ({count})\n{list}',
+  'appHome.team.managers.none': '*Managers*\nNobody has manager rights yet.',
+  'appHome.team.choirUsers.summary': '*CHOIR users*\n{count} registered',
+  'appHome.team.qaChannel.configured': '*Q&A channel*\n✅ #{channel}',
+  'appHome.team.qaChannel.notConfigured': '*Q&A channel*\n❌ Not set · "Ask to Channel" is disabled until you pick one',
+  'appHome.team.qaChannel.notFound': '*Q&A channel*\n⚠️ The saved channel is gone · pick another one',
+  'appHome.team.organization.summary': '*Organization*\n{name}',
   'appHome.choirManagement.managers.button': 'Manage Managers',
-  'appHome.choirManagement.choirUsers.summary':
-    '*CHOIR Users:* {count} registered\nCHOIR users are authorized to use CHOIR features and participate in the research study.',
   'appHome.choirManagement.choirUsers.button': 'Manage CHOIR Users',
-  'appHome.choirManagement.qaChannel.status.configured': '✅ Configured',
-  'appHome.choirManagement.qaChannel.status.notConfigured': '❌ Not configured',
-  'appHome.choirManagement.qaChannel.status.notFound': '⚠️ Channel not found',
-  'appHome.choirManagement.qaChannel.unknownName': 'Unknown channel',
-  'appHome.choirManagement.qaChannel.summary': '*Q&A Channel:* {status}\n{current}',
-  'appHome.choirManagement.qaChannel.current': 'Current Channel: #{channel}',
-  'appHome.choirManagement.qaChannel.currentNone': 'Current Channel: None',
-  'appHome.choirManagement.qaChannel.alert':
-    "⚠️ *Alert:* No Q&A channel is configured. Users won't be able to forward questions to a channel.",
-  'appHome.choirManagement.qaChannel.instructions':
-    "Select a channel where CHOIR will forward questions when users click 'Ask to Channel'.",
   'appHome.choirManagement.qaChannel.placeholder': 'Select Channel',
 
   // --- Home: the non-manager's route to manager rights ----------------------
   'appHome.becomeManager.hint': '🔒 _Need access to advanced features? Contact your workspace administrator._',
   'appHome.becomeManager.button': 'Manager Access',
 
-  // --- Home: GitHub connection and index maintenance ------------------------
-  'appHome.documentConnection.header': '📁 Document Connection',
-  'appHome.documentConnection.personal.connected':
-    '*Personal GitHub Access:* ✅ Connected\n*GitHub Username:* {profileLink}\n*Connected:* {date}',
-  'appHome.documentConnection.personal.avatarAlt': 'GitHub Avatar',
-  'appHome.documentConnection.personal.notConnected':
-    '*Personal GitHub Access:* ❌ Not connected\n\nConnect your GitHub account to access public repositories you can write to.',
+  // --- Documents: GitHub connection, repository, files, index maintenance ---
+  'appHome.documents.github.connected': '*GitHub account*\n✅ {login} · connected {date}',
+  'appHome.documents.github.notConnected': '*GitHub account*\n❌ Not connected · connect it to pick a repository',
+  'appHome.documents.repo.connected': '*Repository*\n✅ {repoLink}',
+  'appHome.documents.repo.notConnected': '*Repository*\n❌ None · choose the repository CHOIR reads',
+  'appHome.documents.repo.change.button': 'Change',
+  'appHome.documents.readOnly.summary': '*Read-only files*\n{count} of {total} files are excluded from updates',
+  'appHome.documents.readOnly.current': 'Currently excluded: {list}',
+  'appHome.documents.readOnly.currentNone': 'Nothing is excluded right now.',
+  'appHome.documents.readOnly.more': 'and {count} more',
+  'appHome.documents.readOnly.needsRepo': '*Read-only files*\n🟡 Connect a repository first',
+  'appHome.documents.readOnly.loading': '*Read-only files*\n🟡 Loading files from GitHub…',
   'appHome.documentConnection.disconnect.button': 'Disconnect GitHub',
   'appHome.documentConnection.disconnect.confirm.title': 'Disconnect GitHub',
   'appHome.documentConnection.disconnect.confirm.text':
     'Are you sure you want to disconnect your personal GitHub account?',
   'appHome.documentConnection.disconnect.confirm.ok.button': 'Disconnect',
   'appHome.documentConnection.connect.button': 'Connect GitHub Account',
-  'appHome.documentConnection.repo.connected': '*Repository Connection:* ✅ Connected\n{repoLink}',
-  'appHome.documentConnection.repo.notConnected': '*Repository Connection:* ❌ No repository connected',
   'appHome.documentConnection.repo.label': '{owner}/{repo}',
   'appHome.documentConnection.repo.labelWithPath': '{owner}/{repo} (Path: {path})',
   'appHome.documentConnection.browse.button': 'Browse My Repositories',
   'appHome.documentConnection.indexManagement.summary':
-    '*Index Management*\nRun these after editing markdown files or when retrieval looks stale.',
+    '*Index maintenance*\nRun after editing markdown files or when answers look stale.',
   'appHome.documentConnection.normalize.button': 'Normalize Markdown',
   'appHome.documentConnection.normalize.confirm.title': 'Normalize Markdown Files',
   'appHome.documentConnection.normalize.confirm.text':
@@ -144,10 +149,8 @@ export const appHome = {
     'This will delete the local QMD SQLite index and rebuild it from the synced markdown mirror. Use this after chunking changes or if retrieval looks stale.',
   'appHome.documentConnection.rebuildQmd.confirm.ok.button': 'Rebuild',
 
-  // --- Home + modal: the organization's display name ------------------------
-  'appHome.organization.header': '🏢 Organization Name',
+  // --- Team + modal: the organization's display name ------------------------
   'appHome.organization.defaultName': 'Our Organization',
-  'appHome.organization.summary': '*Organization Name:* {name}',
   'appHome.organization.edit.button': 'Edit Organization Name',
   'appHome.organization.edit.title': 'Edit Organization Name',
   'appHome.organization.edit.submit': 'Save Changes',
@@ -158,9 +161,8 @@ export const appHome = {
   'appHome.organization.edit.error.required': 'Organization name is required.',
   'appHome.organization.edit.error.save': 'An error occurred while updating organization name. Please try again.',
 
-  // --- Home + DM: interaction log downloads ---------------------------------
-  'appHome.logs.header': '📊 Interaction Logs Download',
-  'appHome.logs.summary': 'Download user interaction logs for analysis and research purposes.',
+  // --- Advanced + DM: interaction log downloads -----------------------------
+  'appHome.advanced.logs.summary': '*Download logs*\nInteraction logs for analysis and research.',
   'appHome.logs.today.button': "Today's Logs",
   'appHome.logs.today.preparing': "📊 Preparing today's interaction logs for download...",
   'appHome.logs.today.fileTitle': "Today's Interaction Logs",
@@ -177,29 +179,13 @@ export const appHome = {
   'appHome.logs.error.upload': '❌ Error uploading log files. Please try again.',
   'appHome.logs.error.prepare': '❌ Error preparing interaction logs. Please try again.',
 
-  // --- Home: the file-logging switch ----------------------------------------
-  'appHome.logging.header': '🔧 Logging Settings',
-  'appHome.logging.status.enabled': '✅ Enabled',
-  'appHome.logging.status.disabled': '❌ Disabled',
-  'appHome.logging.summary':
-    '*File Logging:* {status}\n\nControls whether user interactions are saved to log files for research purposes.',
+  // --- Advanced: the file-logging switch ------------------------------------
+  'appHome.advanced.logging.enabled': '*Interaction logging*\n✅ On · interactions are saved to log files for research',
+  'appHome.advanced.logging.disabled': '*Interaction logging*\n❌ Off · nothing is written to the log files',
   'appHome.logging.enable.button': 'Enable Logging',
   'appHome.logging.disable.button': 'Disable Logging',
 
-  // --- Home: files excluded from document updates ---------------------------
-  'appHome.readOnly.header': '🔒 Read-Only Files',
-  'appHome.readOnly.introNeedsRepo':
-    '📋 *Read-Only Files Management*\nConnect a GitHub repository to manage read-only files. Read-only files are excluded from document updates but remain searchable.',
-  'appHome.readOnly.repoMissing':
-    '⚠️ *GitHub repository not connected*\nPlease connect a GitHub repository in the Document Connection section above to manage read-only files.',
-  'appHome.readOnly.intro':
-    '📋 *Read-Only Files Management*\nRead-only files are excluded from document updates but remain searchable.',
-  'appHome.readOnly.loading':
-    '⏳ *Loading files...*\nMarkdown files are being loaded from GitHub. Please refresh in a moment or use the "Reload from GitHub" button in Vector Store Management.',
-  'appHome.readOnly.summary':
-    '*Read-Only Files:* {count} of {total} files\nRead-only files are excluded from document updates but remain searchable.',
-  'appHome.readOnly.current': '*Current read-only files:*\n{list}',
-  'appHome.readOnly.currentNone': '*Current read-only files:* None',
+  // --- Documents: files excluded from document updates ----------------------
   'appHome.readOnly.manage.button': 'Manage Read-Only Files',
 
   // --- Management: the denial every gated App Home action shares -------------

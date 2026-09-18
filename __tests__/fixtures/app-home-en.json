@@ -1,24 +1,59 @@
 {
   "homeManager": [
     {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "🏠 Home",
+            "emoji": true
+          },
+          "action_id": "home_tab:home",
+          "style": "primary"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "📁 Documents",
+            "emoji": true
+          },
+          "action_id": "home_tab:documents"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "👥 Team",
+            "emoji": true
+          },
+          "action_id": "home_tab:team"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "⚙️ Advanced",
+            "emoji": true
+          },
+          "action_id": "home_tab:advanced"
+        }
+      ]
+    },
+    {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Welcome, <@U1> :house:*"
+        "text": "*Welcome, <@U1>* :wave:"
       }
     },
     {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "CHOIR is a tool that automatically updates documents based on Slack conversations."
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "💬 *Ready to get started?* Click the button below to chat with CHOIR!"
+        "text": "CHOIR answers questions from your team's docs and turns Slack conversations into document updates."
       }
     },
     {
@@ -31,9 +66,9 @@
             "text": "💬 Start Chatting with CHOIR",
             "emoji": true
           },
-          "style": "primary",
           "action_id": "start_chat_url",
-          "url": "slack://app?team=T1&id=A123&tab=messages"
+          "url": "slack://app?team=T1&id=A123&tab=messages",
+          "style": "primary"
         }
       ]
     },
@@ -94,504 +129,121 @@
       "type": "divider"
     },
     {
-      "type": "header",
+      "type": "section",
       "text": {
-        "type": "plain_text",
-        "text": "📁 Document Connection",
-        "emoji": true
+        "type": "mrkdwn",
+        "text": "*Setup*\n✅ GitHub account · octocat\n✅ Repository · acme/docs (Path: docs)\n✅ Q&A channel · #qa-channel\n✅ 3 CHOIR users · 2 managers"
       }
+    }
+  ],
+  "homeManagerDocuments": [
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "🏠 Home",
+            "emoji": true
+          },
+          "action_id": "home_tab:home"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "📁 Documents",
+            "emoji": true
+          },
+          "action_id": "home_tab:documents",
+          "style": "primary"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "👥 Team",
+            "emoji": true
+          },
+          "action_id": "home_tab:team"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "⚙️ Advanced",
+            "emoji": true
+          },
+          "action_id": "home_tab:advanced"
+        }
+      ]
     },
     {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Personal GitHub Access:* ✅ Connected\n*GitHub Username:* <https://github.com/octocat|octocat>\n*Connected:* 1/2/2025"
+        "text": "*GitHub account*\n✅ <https://github.com/octocat|octocat> · connected 1/2/2025"
       },
       "accessory": {
-        "type": "image",
-        "image_url": "https://example.com/a.png",
-        "alt_text": "GitHub Avatar"
-      }
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Disconnect GitHub",
-            "emoji": true
-          },
-          "style": "danger",
-          "action_id": "disconnect_personal_github",
-          "confirm": {
-            "title": {
-              "type": "plain_text",
-              "text": "Disconnect GitHub"
-            },
-            "text": {
-              "type": "plain_text",
-              "text": "Are you sure you want to disconnect your personal GitHub account?"
-            },
-            "confirm": {
-              "type": "plain_text",
-              "text": "Disconnect"
-            },
-            "deny": {
-              "type": "plain_text",
-              "text": "Cancel"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*Repository Connection:* ✅ Connected\n<https://github.com/acme/docs|acme/docs (Path: docs)>"
-      }
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Browse My Repositories",
-            "emoji": true
-          },
-          "style": "primary",
-          "action_id": "browse_github_repositories"
-        }
-      ]
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*Index Management*\nRun these after editing markdown files or when retrieval looks stale."
-      }
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Normalize Markdown",
-            "emoji": true
-          },
-          "style": "primary",
-          "action_id": "normalize_markdown_files",
-          "confirm": {
-            "title": {
-              "type": "plain_text",
-              "text": "Normalize Markdown Files"
-            },
-            "text": {
-              "type": "plain_text",
-              "text": "This will convert all markdown files to tree format and back to markdown, standardizing the formatting. This may change newlines, list styles, etc."
-            },
-            "confirm": {
-              "type": "plain_text",
-              "text": "Normalize"
-            },
-            "deny": {
-              "type": "plain_text",
-              "text": "Cancel"
-            }
-          }
-        },
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Reload from GitHub",
-            "emoji": true
-          },
-          "style": "primary",
-          "action_id": "reload_from_github",
-          "confirm": {
-            "title": {
-              "type": "plain_text",
-              "text": "Reload from GitHub?"
-            },
-            "text": {
-              "type": "plain_text",
-              "text": "This will fetch the latest files from GitHub and update the vector store. Any unsaved changes will be overwritten."
-            },
-            "confirm": {
-              "type": "plain_text",
-              "text": "Reload"
-            },
-            "deny": {
-              "type": "plain_text",
-              "text": "Cancel"
-            }
-          }
-        },
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Rebuild QMD Index",
-            "emoji": true
-          },
-          "action_id": "rebuild_qmd_index",
-          "confirm": {
-            "title": {
-              "type": "plain_text",
-              "text": "Rebuild QMD Index?"
-            },
-            "text": {
-              "type": "plain_text",
-              "text": "This will delete the local QMD SQLite index and rebuild it from the synced markdown mirror. Use this after chunking changes or if retrieval looks stale."
-            },
-            "confirm": {
-              "type": "plain_text",
-              "text": "Rebuild"
-            },
-            "deny": {
-              "type": "plain_text",
-              "text": "Cancel"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type": "divider"
-    },
-    {
-      "type": "header",
-      "text": {
-        "type": "plain_text",
-        "text": "⚙️ CHOIR Management",
-        "emoji": true
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*Current Managers:*\n• <@UM1> (Real UM1)\n• <@UM2> (Real UM2)\n\nManagers can access advanced features and grant permissions to other users."
-      }
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Manage Managers",
-            "emoji": true
-          },
-          "style": "primary",
-          "action_id": "manage_managers"
-        }
-      ]
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*CHOIR Users:* 3 registered\nCHOIR users are authorized to use CHOIR features and participate in the research study."
-      }
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Manage CHOIR Users",
-            "emoji": true
-          },
-          "style": "primary",
-          "action_id": "manage_choir_users"
-        }
-      ]
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*Q&A Channel:* ✅ Configured\nCurrent Channel: #qa-channel"
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "Select a channel where CHOIR will forward questions when users click 'Ask to Channel'."
-      }
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "channels_select",
-          "placeholder": {
-            "type": "plain_text",
-            "text": "Select Channel",
-            "emoji": true
-          },
-          "action_id": "select_qa_channel",
-          "initial_channel": "C_QA"
-        }
-      ]
-    },
-    {
-      "type": "divider"
-    },
-    {
-      "type": "header",
-      "text": {
-        "type": "plain_text",
-        "text": "🤖 AI Settings",
-        "emoji": true
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*OpenAI Key:* ✅ Workspace key set (sk-a…mnop)\n*Q&A Model:* gpt-5.4\n*Document Update Model:* gpt-5.4\n*Classification Model:* gpt-5.4-nano-2026-03-17 _(fixed)_"
-      }
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Configure OpenAI",
-            "emoji": true
-          },
-          "style": "primary",
-          "action_id": "configure_openai"
-        },
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Clear Settings",
-            "emoji": true
-          },
-          "style": "danger",
-          "action_id": "clear_openai_settings",
-          "confirm": {
-            "title": {
-              "type": "plain_text",
-              "text": "Clear OpenAI Settings?"
-            },
-            "text": {
-              "type": "plain_text",
-              "text": "CHOIR will fall back to the server default key. The workspace-specific key and model choices will be removed."
-            },
-            "confirm": {
-              "type": "plain_text",
-              "text": "Clear"
-            },
-            "deny": {
-              "type": "plain_text",
-              "text": "Cancel"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type": "divider"
-    },
-    {
-      "type": "header",
-      "text": {
-        "type": "plain_text",
-        "text": "🔐 Change History Encryption",
-        "emoji": true
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "🔐 *Provenance key:* ✅ Configured\nCreated 2025-01-02\nLast rotated 2025-03-04\n\nChange history (the conversation, extracted knowledge, and diff behind each document update) is encrypted with this key. It lives only in CHOIR's database — GitHub only ever holds ciphertext."
-      }
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Back Up Key",
-            "emoji": true
-          },
-          "action_id": "backup_context_key"
-        },
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Rotate Key",
-            "emoji": true
-          },
-          "style": "danger",
-          "action_id": "rotate_context_key"
-        },
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Import Key",
-            "emoji": true
-          },
-          "action_id": "import_context_key"
-        }
-      ]
-    },
-    {
-      "type": "context",
-      "elements": [
-        {
-          "type": "mrkdwn",
-          "text": "⚠️ Rotating or importing a new key makes *all previously recorded change history permanently unreadable*. Back up the current key first if you may need the old history."
-        }
-      ]
-    },
-    {
-      "type": "divider"
-    },
-    {
-      "type": "header",
-      "text": {
-        "type": "plain_text",
-        "text": "🏢 Organization Name",
-        "emoji": true
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*Organization Name:* Acme Labs"
-      }
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Edit Organization Name",
-            "emoji": true
-          },
-          "style": "primary",
-          "action_id": "edit_organization_name"
-        }
-      ]
-    },
-    {
-      "type": "divider"
-    },
-    {
-      "type": "header",
-      "text": {
-        "type": "plain_text",
-        "text": "🔒 Read-Only Files",
-        "emoji": true
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*Read-Only Files:* 1 of 2 files\nRead-only files are excluded from document updates but remain searchable."
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*Current read-only files:*\n• docs/a.md"
-      }
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Manage Read-Only Files",
-            "emoji": true
-          },
-          "style": "primary",
-          "action_id": "manage_readonly_files"
-        }
-      ]
-    },
-    {
-      "type": "divider"
-    },
-    {
-      "type": "header",
-      "text": {
-        "type": "plain_text",
-        "text": "🌐 Language",
-        "emoji": true
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*Workspace language*"
-      },
-      "accessory": {
-        "type": "static_select",
-        "action_id": "set_workspace_language",
-        "placeholder": {
+        "type": "button",
+        "text": {
           "type": "plain_text",
-          "text": "Select a language",
+          "text": "Disconnect GitHub",
           "emoji": true
         },
-        "options": [
-          {
-            "text": {
-              "type": "plain_text",
-              "text": "English",
-              "emoji": true
-            },
-            "value": "en"
+        "action_id": "disconnect_personal_github",
+        "style": "danger",
+        "confirm": {
+          "title": {
+            "type": "plain_text",
+            "text": "Disconnect GitHub"
           },
-          {
-            "text": {
-              "type": "plain_text",
-              "text": "한국어",
-              "emoji": true
-            },
-            "value": "ko"
-          }
-        ],
-        "initial_option": {
           "text": {
             "type": "plain_text",
-            "text": "English",
-            "emoji": true
+            "text": "Are you sure you want to disconnect your personal GitHub account?"
           },
-          "value": "en"
+          "confirm": {
+            "type": "plain_text",
+            "text": "Disconnect"
+          },
+          "deny": {
+            "type": "plain_text",
+            "text": "Cancel"
+          }
         }
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Repository*\n✅ <https://github.com/acme/docs|acme/docs (Path: docs)>"
+      },
+      "accessory": {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Change",
+          "emoji": true
+        },
+        "action_id": "browse_github_repositories"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Read-only files*\n1 of 2 files are excluded from updates"
+      },
+      "accessory": {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Manage Read-Only Files",
+          "emoji": true
+        },
+        "action_id": "manage_readonly_files"
       }
     },
     {
@@ -599,7 +251,7 @@
       "elements": [
         {
           "type": "mrkdwn",
-          "text": "Default for CHOIR's messages and buttons when a member has no preference"
+          "text": "Currently excluded: docs/a.md"
         }
       ]
     },
@@ -607,7 +259,7 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Document content language*"
+        "text": "*Document content language*\nLanguage CHOIR writes new document content in; 'Follow the conversation' keeps today's behaviour"
       },
       "accessory": {
         "type": "static_select",
@@ -654,30 +306,13 @@
       }
     },
     {
-      "type": "context",
-      "elements": [
-        {
-          "type": "mrkdwn",
-          "text": "Language CHOIR writes new document content in; 'Follow the conversation' keeps today's behaviour"
-        }
-      ]
-    },
-    {
       "type": "divider"
-    },
-    {
-      "type": "header",
-      "text": {
-        "type": "plain_text",
-        "text": "🔧 Logging Settings",
-        "emoji": true
-      }
     },
     {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*File Logging:* ✅ Enabled\n\nControls whether user interactions are saved to log files for research purposes."
+        "text": "*Index maintenance*\nRun after editing markdown files or when answers look stale."
       }
     },
     {
@@ -687,11 +322,335 @@
           "type": "button",
           "text": {
             "type": "plain_text",
-            "text": "Disable Logging",
+            "text": "Reload from GitHub",
             "emoji": true
           },
-          "action_id": "toggle_logging",
-          "style": "danger"
+          "action_id": "reload_from_github",
+          "confirm": {
+            "title": {
+              "type": "plain_text",
+              "text": "Reload from GitHub?"
+            },
+            "text": {
+              "type": "plain_text",
+              "text": "This will fetch the latest files from GitHub and update the vector store. Any unsaved changes will be overwritten."
+            },
+            "confirm": {
+              "type": "plain_text",
+              "text": "Reload"
+            },
+            "deny": {
+              "type": "plain_text",
+              "text": "Cancel"
+            }
+          }
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Normalize Markdown",
+            "emoji": true
+          },
+          "action_id": "normalize_markdown_files",
+          "confirm": {
+            "title": {
+              "type": "plain_text",
+              "text": "Normalize Markdown Files"
+            },
+            "text": {
+              "type": "plain_text",
+              "text": "This will convert all markdown files to tree format and back to markdown, standardizing the formatting. This may change newlines, list styles, etc."
+            },
+            "confirm": {
+              "type": "plain_text",
+              "text": "Normalize"
+            },
+            "deny": {
+              "type": "plain_text",
+              "text": "Cancel"
+            }
+          }
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Rebuild QMD Index",
+            "emoji": true
+          },
+          "action_id": "rebuild_qmd_index",
+          "confirm": {
+            "title": {
+              "type": "plain_text",
+              "text": "Rebuild QMD Index?"
+            },
+            "text": {
+              "type": "plain_text",
+              "text": "This will delete the local QMD SQLite index and rebuild it from the synced markdown mirror. Use this after chunking changes or if retrieval looks stale."
+            },
+            "confirm": {
+              "type": "plain_text",
+              "text": "Rebuild"
+            },
+            "deny": {
+              "type": "plain_text",
+              "text": "Cancel"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "homeManagerTeam": [
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "🏠 Home",
+            "emoji": true
+          },
+          "action_id": "home_tab:home"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "📁 Documents",
+            "emoji": true
+          },
+          "action_id": "home_tab:documents"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "👥 Team",
+            "emoji": true
+          },
+          "action_id": "home_tab:team",
+          "style": "primary"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "⚙️ Advanced",
+            "emoji": true
+          },
+          "action_id": "home_tab:advanced"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Managers* (2)\n<@UM1>, <@UM2>"
+      },
+      "accessory": {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Manage Managers",
+          "emoji": true
+        },
+        "action_id": "manage_managers"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*CHOIR users*\n3 registered"
+      },
+      "accessory": {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Manage CHOIR Users",
+          "emoji": true
+        },
+        "action_id": "manage_choir_users"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Q&A channel*\n✅ #qa-channel"
+      },
+      "accessory": {
+        "type": "channels_select",
+        "placeholder": {
+          "type": "plain_text",
+          "text": "Select Channel",
+          "emoji": true
+        },
+        "action_id": "select_qa_channel",
+        "initial_channel": "C_QA"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Organization*\nAcme Labs"
+      },
+      "accessory": {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Edit Organization Name",
+          "emoji": true
+        },
+        "action_id": "edit_organization_name"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Workspace language*\nDefault for CHOIR's messages and buttons when a member has no preference"
+      },
+      "accessory": {
+        "type": "static_select",
+        "action_id": "set_workspace_language",
+        "placeholder": {
+          "type": "plain_text",
+          "text": "Select a language",
+          "emoji": true
+        },
+        "options": [
+          {
+            "text": {
+              "type": "plain_text",
+              "text": "English",
+              "emoji": true
+            },
+            "value": "en"
+          },
+          {
+            "text": {
+              "type": "plain_text",
+              "text": "한국어",
+              "emoji": true
+            },
+            "value": "ko"
+          }
+        ],
+        "initial_option": {
+          "text": {
+            "type": "plain_text",
+            "text": "English",
+            "emoji": true
+          },
+          "value": "en"
+        }
+      }
+    }
+  ],
+  "homeManagerAdvanced": [
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "🏠 Home",
+            "emoji": true
+          },
+          "action_id": "home_tab:home"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "📁 Documents",
+            "emoji": true
+          },
+          "action_id": "home_tab:documents"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "👥 Team",
+            "emoji": true
+          },
+          "action_id": "home_tab:team"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "⚙️ Advanced",
+            "emoji": true
+          },
+          "action_id": "home_tab:advanced",
+          "style": "primary"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*AI models*\nKey: ✅ Workspace key set (sk-a…mnop) · Q&A: gpt-5.4 · Updates: gpt-5.4"
+      },
+      "accessory": {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Configure OpenAI",
+          "emoji": true
+        },
+        "action_id": "configure_openai"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Classification model: gpt-5.4-nano-2026-03-17 (fixed)"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Clear Settings",
+            "emoji": true
+          },
+          "action_id": "clear_openai_settings",
+          "style": "danger",
+          "confirm": {
+            "title": {
+              "type": "plain_text",
+              "text": "Clear OpenAI Settings?"
+            },
+            "text": {
+              "type": "plain_text",
+              "text": "CHOIR will fall back to the server default key. The workspace-specific key and model choices will be removed."
+            },
+            "confirm": {
+              "type": "plain_text",
+              "text": "Clear"
+            },
+            "deny": {
+              "type": "plain_text",
+              "text": "Cancel"
+            }
+          }
         }
       ]
     },
@@ -699,18 +658,78 @@
       "type": "divider"
     },
     {
-      "type": "header",
+      "type": "section",
       "text": {
-        "type": "plain_text",
-        "text": "📊 Interaction Logs Download",
-        "emoji": true
+        "type": "mrkdwn",
+        "text": "*Change history encryption*\n✅ Key configured · created 2025-01-02 · rotated 2025-03-04"
+      },
+      "accessory": {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Import Key",
+          "emoji": true
+        },
+        "action_id": "import_context_key"
+      }
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Back Up Key",
+            "emoji": true
+          },
+          "action_id": "backup_context_key"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Rotate Key",
+            "emoji": true
+          },
+          "action_id": "rotate_context_key",
+          "style": "danger"
+        }
+      ]
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "⚠️ Rotating or importing a new key makes *all previously recorded change history permanently unreadable*. Back up the current key first if you may need the old history."
+        }
+      ]
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Interaction logging*\n✅ On · interactions are saved to log files for research"
+      },
+      "accessory": {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Disable Logging",
+          "emoji": true
+        },
+        "action_id": "toggle_logging"
       }
     },
     {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "Download user interaction logs for analysis and research purposes."
+        "text": "*Download logs*\nInteraction logs for analysis and research."
       }
     },
     {
@@ -723,8 +742,7 @@
             "text": "Today's Logs",
             "emoji": true
           },
-          "action_id": "download_today_logs",
-          "style": "primary"
+          "action_id": "download_today_logs"
         },
         {
           "type": "button",
@@ -733,13 +751,9 @@
             "text": "All Logs",
             "emoji": true
           },
-          "action_id": "download_all_logs",
-          "style": "primary"
+          "action_id": "download_all_logs"
         }
       ]
-    },
-    {
-      "type": "divider"
     }
   ],
   "homeMember": [
@@ -747,21 +761,14 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Welcome, <@U3> :house:*"
+        "text": "*Welcome, <@U3>* :wave:"
       }
     },
     {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "CHOIR is a tool that automatically updates documents based on Slack conversations."
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "💬 *Ready to get started?* Click the button below to chat with CHOIR!"
+        "text": "CHOIR answers questions from your team's docs and turns Slack conversations into document updates."
       }
     },
     {
@@ -774,9 +781,19 @@
             "text": "💬 Start Chatting with CHOIR",
             "emoji": true
           },
-          "style": "primary",
           "action_id": "start_chat_url",
-          "url": "slack://app?team=T1&id=A123&tab=messages"
+          "url": "slack://app?team=T1&id=A123&tab=messages",
+          "style": "primary"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "📊 Open Team Insights",
+            "emoji": true
+          },
+          "action_id": "open_dashboard_url",
+          "url": "https://docs.example.com/docs/T1/dashboard"
         }
       ]
     },
@@ -840,52 +857,17 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "📊 *Team Insights* — what the team asks about, how often docs answer it, and where the gaps are. Privacy-preserving: no individual activity is shown."
+        "text": "🔒 _Need access to advanced features? Contact your workspace administrator._"
+      },
+      "accessory": {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Manager Access",
+          "emoji": true
+        },
+        "action_id": "request_manager_permission"
       }
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "📊 Open Team Insights",
-            "emoji": true
-          },
-          "action_id": "open_dashboard_url",
-          "url": "https://docs.example.com/docs/T1/dashboard"
-        }
-      ]
-    },
-    {
-      "type": "divider"
-    },
-    {
-      "type": "context",
-      "elements": [
-        {
-          "type": "mrkdwn",
-          "text": "🔒 _Need access to advanced features? Contact your workspace administrator._"
-        }
-      ]
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {
-            "type": "plain_text",
-            "text": "Manager Access",
-            "emoji": true
-          },
-          "action_id": "request_manager_permission"
-        }
-      ]
-    },
-    {
-      "type": "divider"
     }
   ],
   "modalEditOrganizationName": {
@@ -961,10 +943,7 @@
         "element": {
           "type": "multi_users_select",
           "action_id": "managers_select",
-          "initial_users": [
-            "UM1",
-            "UM2"
-          ],
+          "initial_users": ["UM1", "UM2"],
           "placeholder": {
             "type": "plain_text",
             "text": "Select users to be managers..."
@@ -1027,11 +1006,7 @@
         "element": {
           "type": "multi_users_select",
           "action_id": "choir_users_select",
-          "initial_users": [
-            "UM1",
-            "UM2",
-            "U3"
-          ],
+          "initial_users": ["UM1", "UM2", "U3"],
           "placeholder": {
             "type": "plain_text",
             "text": "Select users to include in CHOIR..."

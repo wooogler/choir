@@ -1,13 +1,15 @@
-// The App Home root and management surfaces after the catalog migration.
+// The App Home root and management surfaces.
 //
-// Two things are being protected here. English must not have moved: every block
-// and modal is compared against `fixtures/app-home-en.json`, captured from the
-// pre-migration builders, so a reworded catalog entry or a dropped emoji fails
-// loudly (the plural fixes are exercised at counts where English is unchanged;
-// the one-item wording is asserted separately). And Korean must actually fit:
-// Slack rejects a whole view when a modal title runs past 24 characters, so the
-// same blocks are rendered with `createT('ko')` and every length-capped field is
-// measured.
+// Three things are being protected here. The redesigned layout must not drift:
+// every tab's blocks and every modal are compared against
+// `fixtures/app-home-en.json`, so a reworded catalog entry, a dropped emoji, a
+// vanished accessory or a second green button fails loudly (the plural fixes are
+// exercised at counts where English is unchanged; the one-item wording is
+// asserted separately). The tab structure itself is checked — a member gets no
+// tab bar and no manager rows, and each tab carries at most one `primary` button
+// outside the bar. And Korean must actually fit: Slack rejects a whole view when
+// a modal title runs past 24 characters, so every tab is rendered again with
+// `createT('ko')` and each length-capped field is measured.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -93,14 +95,8 @@ jest.mock('../listeners/features/app-home/refresh', () => ({
   refreshAppHomeSoon: jest.fn(),
 }));
 
-import {
-  buildBecomeManagerBlocks,
-  buildHomeView,
-  buildInsightsBlocks,
-  buildLogDownloadBlocks,
-  buildLoggingToggleBlocks,
-  buildOrganizationNameBlocks,
-} from '../listeners/features/app-home/home-view-builder';
+import { type HomeTab, resetHomeTabsForTests, setActiveTab } from '../listeners/features/app-home/home-tabs';
+import { buildHomeView } from '../listeners/features/app-home/home-view-builder';
 import { registerChoirUsersHandlers } from '../listeners/features/app-home/management/choir-users-handlers';
 import { registerContextKeyHandlers } from '../listeners/features/app-home/management/context-key-handlers';
 import { registerManagerPromotionHandlers } from '../listeners/features/app-home/management/manager-promotion-handlers';
@@ -137,6 +133,12 @@ const makeClient = (opened: any[], posted: any[]) =>
       postMessage: jest.fn(async (message: any) => posted.push(message)),
     },
   }) as any;
+
+/** Renders one manager tab by parking the viewer on it first. */
+const renderTab = async (tab: HomeTab, userId = 'U1') => {
+  setActiveTab('T1', userId, tab);
+  return buildHomeView(makeClient([], []), logger, 'T1', userId);
+};
 
 const collect = (register: (app: any) => void) => {
   const handlers = new Map<string, any>();
@@ -179,36 +181,160 @@ const openModals = async (locale: string) => {
   };
 };
 
+/** Every button in a block list that Slack would paint green. */
+const primaryButtons = (blocks: any[]) =>
+  blocks.flatMap((block: any) =>
+    [block.accessory, ...(block.elements ?? [])].filter(
+      (element: any) => element?.type === 'button' && element.style === 'primary',
+    ),
+  );
+
+/** The tab bar, when there is one: the actions block of `home_tab:` buttons. */
+const tabBarOf = (blocks: any[]) =>
+  blocks.find((block: any) => block.elements?.some?.((element: any) => element.action_id?.startsWith('home_tab:')));
+
+const actionIdsOf = (blocks: any[]): string[] =>
+  JSON.stringify(blocks)
+    .match(/"action_id":"([^"]+)"/g)
+    ?.map((match) => match.slice(13, -1)) ?? [];
+
 beforeEach(() => {
   jest.clearAllMocks();
+  resetHomeTabsForTests();
   state.locale = 'en';
   state.isManager = true;
   state.isOwner = false;
+  state.qaChannel = 'C_QA';
+  state.userGithubInfo = {
+    user: { login: 'octocat', avatar_url: 'https://example.com/a.png' },
+    connectedAt: { toLocaleDateString: () => '1/2/2025' },
+  };
   process.env.SLACK_APP_ID = 'A123';
   process.env.DOCS_BASE_URL = 'https://docs.example.com';
   process.env.OPENAI_API_KEY = '';
 });
 
-describe('English is byte-identical to the pre-migration output', () => {
-  it('renders the manager home view exactly as before', async () => {
-    const client = makeClient([], []);
-
-    expect(await buildHomeView(client, logger, 'T1', 'U1')).toEqual(fixtures.homeManager);
+describe('English matches the recorded layout', () => {
+  it('renders the manager home tab', async () => {
+    expect(await buildHomeView(makeClient([], []), logger, 'T1', 'U1')).toEqual(fixtures.homeManager);
   });
 
-  it('renders the non-manager home view exactly as before', async () => {
+  it('renders the non-manager home tab', async () => {
     state.isManager = false;
-    const client = makeClient([], []);
 
-    expect(await buildHomeView(client, logger, 'T1', 'U3')).toEqual(fixtures.homeMember);
+    expect(await buildHomeView(makeClient([], []), logger, 'T1', 'U3')).toEqual(fixtures.homeMember);
+  });
+
+  it('renders the Documents tab', async () => {
+    expect(await renderTab('documents')).toEqual(fixtures.homeManagerDocuments);
+  });
+
+  it('renders the Team tab', async () => {
+    expect(await renderTab('team')).toEqual(fixtures.homeManagerTeam);
+  });
+
+  it('renders the Advanced tab', async () => {
+    expect(await renderTab('advanced')).toEqual(fixtures.homeManagerAdvanced);
   });
 
   it('opens every management modal exactly as before', async () => {
     const modals = await openModals('en');
 
     for (const [name, view] of Object.entries(modals)) {
-      expect([name, view]).toEqual([name, fixtures[name]]);
+      expect([name, fixtures[name]]).toEqual([name, view]);
     }
+  });
+});
+
+describe('tab structure', () => {
+  const managerTabs: HomeTab[] = ['home', 'documents', 'team', 'advanced'];
+
+  it('gives a manager a bar of all four tabs with the active one marked', async () => {
+    for (const tab of managerTabs) {
+      const bar = tabBarOf(await renderTab(tab));
+
+      expect(bar.elements.map((element: any) => element.action_id)).toEqual([
+        'home_tab:home',
+        'home_tab:documents',
+        'home_tab:team',
+        'home_tab:advanced',
+      ]);
+      expect(bar.elements.filter((element: any) => element.style === 'primary')).toHaveLength(1);
+      expect(bar.elements.find((element: any) => element.style === 'primary').action_id).toBe(`home_tab:${tab}`);
+    }
+  });
+
+  it('gives a member no tab bar and no manager rows', async () => {
+    state.isManager = false;
+    const blocks = await buildHomeView(makeClient([], []), logger, 'T1', 'U3');
+
+    expect(tabBarOf(blocks)).toBeUndefined();
+    expect(actionIdsOf(blocks)).toEqual([
+      'start_chat_url',
+      'open_dashboard_url',
+      'set_my_language',
+      'request_manager_permission',
+    ]);
+  });
+
+  it('sends a member who somehow stored a manager tab back to Home', async () => {
+    state.isManager = false;
+    setActiveTab('T1', 'U3', 'advanced');
+
+    const blocks = await buildHomeView(makeClient([], []), logger, 'T1', 'U3');
+
+    expect(actionIdsOf(blocks)).not.toContain('toggle_logging');
+    expect(actionIdsOf(blocks)).toContain('start_chat_url');
+  });
+
+  it('paints at most one green button per tab, outside the bar', async () => {
+    for (const tab of managerTabs) {
+      const blocks = await renderTab(tab);
+      const content = blocks.filter((block: any) => block !== tabBarOf(blocks));
+
+      expect([tab, primaryButtons(content).length]).toEqual([tab, tab === 'home' ? 1 : 0]);
+    }
+  });
+
+  it('never repeats an action_id inside one block', async () => {
+    for (const tab of managerTabs) {
+      for (const block of await renderTab(tab)) {
+        const ids = (block.elements ?? []).map((element: any) => element.action_id).filter(Boolean);
+        expect([tab, ids.length]).toEqual([tab, new Set(ids).size]);
+      }
+    }
+  });
+});
+
+describe('Home setup card', () => {
+  it('collapses configured lines into one section', async () => {
+    const blocks = await buildHomeView(makeClient([], []), logger, 'T1', 'U1');
+    const setup = blocks.find((block: any) => block.text?.text?.startsWith(en('appHome.home.setup.label')));
+
+    expect(setup.text.text).toContain(en('appHome.home.setup.github.done', { login: 'octocat' }));
+    expect(setup.text.text).toContain(en('appHome.home.setup.channel.done', { channel: 'qa-channel' }));
+    expect(setup.accessory).toBeUndefined();
+  });
+
+  it('turns an unset Q&A channel into its own row with the channel picker', async () => {
+    state.qaChannel = null;
+    const blocks = await buildHomeView(makeClient([], []), logger, 'T1', 'U1');
+    const summary = blocks.find((block: any) => block.text?.text?.startsWith(en('appHome.home.setup.label')));
+    const fix = blocks.find((block: any) => block.text?.text === en('appHome.home.setup.channel.todo'));
+
+    // The configured lines stay collapsed; only the unset one becomes a row.
+    expect(summary.text.text).toContain(en('appHome.home.setup.github.done', { login: 'octocat' }));
+    expect(summary.text.text).not.toContain('Q&A');
+    expect(fix.accessory).toMatchObject({ type: 'channels_select', action_id: 'select_qa_channel' });
+    expect(fix.accessory.initial_channel).toBeUndefined();
+  });
+
+  it('makes Connect GitHub the green button while setup is unfinished', async () => {
+    state.userGithubInfo = null;
+    const blocks = await buildHomeView(makeClient([], []), logger, 'T1', 'U1');
+    const content = blocks.filter((block: any) => block !== tabBarOf(blocks));
+
+    expect(primaryButtons(content).map((button: any) => button.action_id)).toEqual(['connect_personal_github']);
   });
 });
 
@@ -235,6 +361,7 @@ describe('Korean rendering', () => {
     if (node.type === 'header') push(node.text?.text, 150, 'header');
     if (node.type === 'button') push(node.text?.text, 75, 'button');
     if (node.type === 'plain_text' && node.emoji !== undefined) push(node.text, 3000, 'plain_text');
+    if (node.type === 'mrkdwn') push(node.text, 3000, 'mrkdwn');
     if (node.placeholder) push(node.placeholder.text, 150, 'placeholder');
     if (node.options) for (const option of node.options) push(option.text?.text, 75, 'option');
     if (node.initial_option) push(node.initial_option.text?.text, 75, 'option');
@@ -259,35 +386,43 @@ describe('Korean rendering', () => {
     }
   };
 
-  it('speaks Korean across the whole manager home view', async () => {
+  it('speaks Korean on every manager tab, within Slack’s limits', async () => {
     state.locale = 'ko';
-    const client = makeClient([], []);
 
-    const blocks = await buildHomeView(client, logger, 'T1', 'U1');
-    const rendered = JSON.stringify(blocks);
+    for (const tab of ['home', 'documents', 'team', 'advanced'] as HomeTab[]) {
+      const blocks = await renderTab(tab);
+      const rendered = JSON.stringify(blocks);
 
-    expect(hasHangul(rendered)).toBe(true);
-    // Every English section heading is gone, not just the first one.
-    expect(rendered).not.toContain(en('appHome.choirManagement.header'));
-    expect(rendered).not.toContain(en('appHome.logs.header'));
-    expect(rendered).not.toContain(en('appHome.readOnly.header'));
-    expect(rendered).toContain(ko('appHome.choirManagement.header'));
-    expect(rendered).toContain(ko('appHome.logs.header'));
-    expectWithinLimits(blocks);
+      expect([tab, hasHangul(rendered)]).toEqual([tab, true]);
+      expect(rendered).toContain(ko(`appHome.tabs.${tab}` as 'appHome.tabs.home'));
+      expectWithinLimits(blocks);
+    }
+  });
+
+  it('translates the rows English used to own outright', async () => {
+    state.locale = 'ko';
+
+    const documents = JSON.stringify(await renderTab('documents'));
+    expect(documents).toContain(ko('appHome.documents.repo.change.button'));
+    expect(documents).not.toContain(en('appHome.documents.repo.change.button'));
+
+    const advanced = await renderTab('advanced');
+    const loggingRow = advanced.find((block: any) => block.accessory?.action_id === 'toggle_logging');
+    expect(loggingRow.text.text).toBe(ko('appHome.advanced.logging.enabled'));
+    expect(loggingRow.accessory.text.text).toBe(ko('appHome.logging.disable.button'));
   });
 
   it('speaks Korean in the non-manager home view too', async () => {
     state.locale = 'ko';
     state.isManager = false;
-    const client = makeClient([], []);
 
-    const blocks = await buildHomeView(client, logger, 'T1', 'U3');
+    const blocks = await buildHomeView(makeClient([], []), logger, 'T1', 'U3');
     const rendered = JSON.stringify(blocks);
 
     expect(rendered).toContain(ko('appHome.becomeManager.button'));
     expect(rendered).not.toContain(en('appHome.becomeManager.button'));
-    // The manager-only sections stay hidden, in any language.
-    expect(rendered).not.toContain(ko('appHome.choirManagement.header'));
+    // The manager-only rows stay hidden, in any language.
+    expect(rendered).not.toContain(ko('appHome.home.setup.label'));
     expectWithinLimits(blocks);
   });
 
@@ -302,31 +437,6 @@ describe('Korean rendering', () => {
     // The two 22-character English titles are the ones that could overflow.
     expect(modals.modalEditOrganizationName.title.text.length).toBeLessThanOrEqual(24);
     expect(modals.modalReadonlyFiles.title.text.length).toBeLessThanOrEqual(24);
-  });
-
-  it('renders the exported pure builders in the reader’s language', () => {
-    const organization = buildOrganizationNameBlocks(ko, true, false, 'Acme Labs');
-    const logs = buildLogDownloadBlocks(ko, true, false);
-    const logging = buildLoggingToggleBlocks(ko, true, false, true);
-    const insights = buildInsightsBlocks(ko, 'T1', true);
-    const becomeManager = buildBecomeManagerBlocks(ko, false, false);
-
-    expect(organization[0].text.text).toBe(ko('appHome.organization.header'));
-    expect(logs[2].elements[0].text.text).toBe(ko('appHome.logs.today.button'));
-    expect(logging[2].elements[0].text.text).toBe(ko('appHome.logging.disable.button'));
-    expect(insights[1].elements[0].text.text).toBe(ko('appHome.insights.open.button'));
-    expect(becomeManager[1].elements[0].text.text).toBe(ko('appHome.becomeManager.button'));
-
-    for (const blocks of [organization, logs, logging, insights, becomeManager]) {
-      expectWithinLimits(blocks);
-    }
-  });
-
-  it('hides the manager-only builders from a plain member, in Korean', () => {
-    expect(buildOrganizationNameBlocks(ko, false, false, 'Acme Labs')).toEqual([]);
-    expect(buildLogDownloadBlocks(ko, false, false)).toEqual([]);
-    expect(buildLoggingToggleBlocks(ko, false, false, true)).toEqual([]);
-    expect(buildBecomeManagerBlocks(ko, true, false)).toEqual([]);
   });
 });
 

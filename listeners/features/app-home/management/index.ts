@@ -8,6 +8,7 @@ import { registerManagersHandlers } from './managers-handlers';
 import { registerOpenAISettingsHandlers } from './openai-settings-handlers';
 import { registerQAChannelHandlers } from './qa-channel-handlers';
 import { registerReadonlyFilesHandlers } from './readonly-files-handlers';
+import { registerTabHandlers } from './tab-handlers';
 import { registerUrlActionHandlers } from './url-action-handlers';
 
 export const registerManagementHandlers = (app: App) => {
@@ -18,6 +19,7 @@ export const registerManagementHandlers = (app: App) => {
   registerOpenAISettingsHandlers(app);
   registerQAChannelHandlers(app);
   registerReadonlyFilesHandlers(app);
+  registerTabHandlers(app);
   registerUrlActionHandlers(app);
   registerContextKeyHandlers(app);
   registerLanguageHandlers(app);
