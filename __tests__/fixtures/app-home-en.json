@@ -46,14 +46,7 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Welcome, <@U1>* :wave:"
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "CHOIR answers questions from your team's docs and turns Slack conversations into document updates."
+        "text": "*Welcome, <@U1>* :wave:\nCHOIR answers questions from your team's docs and turns Slack conversations into document updates."
       }
     },
     {
@@ -761,14 +754,7 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Welcome, <@U3>* :wave:"
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "CHOIR answers questions from your team's docs and turns Slack conversations into document updates."
+        "text": "*Welcome, <@U3>* :wave:\nCHOIR answers questions from your team's docs and turns Slack conversations into document updates."
       }
     },
     {

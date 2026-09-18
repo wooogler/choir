@@ -109,10 +109,22 @@ import { createT } from '../src/i18n';
 const en = createT('en');
 const ko = createT('ko');
 
-const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'app-home-en.json'), 'utf-8')) as Record<
-  string,
-  any
->;
+const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'app-home-en.json');
+const fixtures = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf-8')) as Record<string, any>;
+
+/**
+ * Compares a rendered view with its recorded fixture — or, when the layout has
+ * been changed on purpose, re-records it: `UPDATE_FIXTURES=1 pnpm test
+ * app-home-i18n` rewrites the file, and the diff is the review.
+ */
+const matchFixture = (name: string, rendered: unknown) => {
+  if (process.env.UPDATE_FIXTURES) {
+    fixtures[name] = rendered;
+    fs.writeFileSync(FIXTURE_PATH, `${JSON.stringify(fixtures, null, 2)}\n`);
+    return;
+  }
+  expect([name, rendered]).toEqual([name, fixtures[name]]);
+};
 
 const logger: any = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
 
@@ -212,36 +224,42 @@ beforeEach(() => {
   process.env.SLACK_APP_ID = 'A123';
   process.env.DOCS_BASE_URL = 'https://docs.example.com';
   process.env.OPENAI_API_KEY = '';
+  process.env.MANAGER_PROMOTION_PASSWORD = 'secret';
+  state.contextKeyStatus = {
+    configured: true,
+    createdAt: '2025-01-02T03:04:05.000Z',
+    rotatedAt: '2025-03-04T05:06:07.000Z',
+  };
 });
 
 describe('English matches the recorded layout', () => {
   it('renders the manager home tab', async () => {
-    expect(await buildHomeView(makeClient([], []), logger, 'T1', 'U1')).toEqual(fixtures.homeManager);
+    matchFixture('homeManager', await buildHomeView(makeClient([], []), logger, 'T1', 'U1'));
   });
 
   it('renders the non-manager home tab', async () => {
     state.isManager = false;
 
-    expect(await buildHomeView(makeClient([], []), logger, 'T1', 'U3')).toEqual(fixtures.homeMember);
+    matchFixture('homeMember', await buildHomeView(makeClient([], []), logger, 'T1', 'U3'));
   });
 
   it('renders the Documents tab', async () => {
-    expect(await renderTab('documents')).toEqual(fixtures.homeManagerDocuments);
+    matchFixture('homeManagerDocuments', await renderTab('documents'));
   });
 
   it('renders the Team tab', async () => {
-    expect(await renderTab('team')).toEqual(fixtures.homeManagerTeam);
+    matchFixture('homeManagerTeam', await renderTab('team'));
   });
 
   it('renders the Advanced tab', async () => {
-    expect(await renderTab('advanced')).toEqual(fixtures.homeManagerAdvanced);
+    matchFixture('homeManagerAdvanced', await renderTab('advanced'));
   });
 
   it('opens every management modal exactly as before', async () => {
     const modals = await openModals('en');
 
     for (const [name, view] of Object.entries(modals)) {
-      expect([name, fixtures[name]]).toEqual([name, view]);
+      matchFixture(name, view);
     }
   });
 });
@@ -303,6 +321,48 @@ describe('tab structure', () => {
         expect([tab, ids.length]).toEqual([tab, new Set(ids).size]);
       }
     }
+  });
+});
+
+describe('controls that would lead nowhere are not drawn', () => {
+  it('drops the Manager Access button when no promotion password is configured', async () => {
+    state.isManager = false;
+    process.env.MANAGER_PROMOTION_PASSWORD = '';
+
+    const blocks = await buildHomeView(makeClient([], []), logger, 'T1', 'U3');
+    const hint = blocks.find((block: any) => block.text?.text === en('appHome.becomeManager.hint'));
+
+    expect(hint).toBeDefined();
+    expect(hint.accessory).toBeUndefined();
+    expect(actionIdsOf(blocks)).not.toContain('request_manager_permission');
+  });
+
+  it('shows the workspace repository to a manager whose own GitHub is not connected, without a Change button', async () => {
+    state.userGithubInfo = null;
+
+    const home = await buildHomeView(makeClient([], []), logger, 'T1', 'U1');
+    const summary = home.find((block: any) => block.text?.text?.startsWith(en('appHome.home.setup.label')));
+    expect(summary.text.text).toContain(en('appHome.home.setup.repo.done', { repo: 'acme/docs (Path: docs)' }));
+    expect(actionIdsOf(home)).not.toContain('browse_github_repositories');
+
+    const documents = await renderTab('documents');
+    const repoRow = documents.find((block: any) => block.text?.text?.startsWith('*Repository*'));
+    expect(repoRow.text.text).toContain('acme/docs');
+    expect(repoRow.accessory).toBeUndefined();
+    expect(actionIdsOf(documents)).toContain('connect_personal_github');
+    expect(actionIdsOf(documents)).not.toContain('browse_github_repositories');
+  });
+
+  it('keeps the rotation warning and key buttons for a key that exists, and hides them before one does', async () => {
+    const withKey = await renderTab('advanced');
+    expect(JSON.stringify(withKey)).toContain(en('appHome.contextKey.warning'));
+    expect(actionIdsOf(withKey)).toEqual(expect.arrayContaining(['backup_context_key', 'rotate_context_key']));
+
+    state.contextKeyStatus = { configured: false };
+    const withoutKey = await renderTab('advanced');
+    expect(JSON.stringify(withoutKey)).not.toContain(en('appHome.contextKey.warning'));
+    expect(actionIdsOf(withoutKey)).toContain('import_context_key');
+    expect(actionIdsOf(withoutKey)).not.toContain('rotate_context_key');
   });
 });
 

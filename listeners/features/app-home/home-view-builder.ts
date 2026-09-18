@@ -21,6 +21,7 @@ import {
   isWorkspaceOwner,
 } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
+import { AppConfig } from '../../../src/config';
 import { type Locale, type T, createT } from '../../../src/i18n';
 import { HOME_TABS, type HomeTab, getActiveTab } from './home-tabs';
 
@@ -165,8 +166,7 @@ const buildHomeTab = async (
   }
 
   const blocks: Block[] = [
-    row(t('appHome.welcome.greeting', { user: `<@${userId}>` })),
-    row(t('appHome.welcome.intro')),
+    row(`${t('appHome.welcome.greeting', { user: `<@${userId}>` })}\n${t('appHome.welcome.intro')}`),
     actions(elements),
     divider,
     buildMyLanguageRow(t, userLanguage),
@@ -176,8 +176,15 @@ const buildHomeTab = async (
   if (canManage) {
     blocks.push(...setupBlocks.blocks);
   } else {
+    // The promotion modal only ever succeeds when a password is configured, so
+    // without one the button would be a dead end; the hint alone still tells
+    // the member whom to ask.
+    const promotionAvailable = !!AppConfig.getManagerPromotionConfig().password;
     blocks.push(
-      row(t('appHome.becomeManager.hint'), button(t('appHome.becomeManager.button'), 'request_manager_permission')),
+      row(
+        t('appHome.becomeManager.hint'),
+        promotionAvailable ? button(t('appHome.becomeManager.button'), 'request_manager_permission') : undefined,
+      ),
     );
   }
 
@@ -221,18 +228,19 @@ const buildSetupBlocks = async (
     );
   }
 
-  // The repository fix is meaningless before GitHub is connected, so it waits.
-  if (userGithubInfo) {
-    if (repoInfo) {
-      done.push(t('appHome.home.setup.repo.done', { repo: repoLabel(t, repoInfo) }));
-    } else {
-      fixes.push(
-        row(
-          t('appHome.home.setup.repo.todo'),
-          button(t('appHome.documentConnection.browse.button'), 'browse_github_repositories', { style: 'primary' }),
-        ),
-      );
-    }
+  // The repository is workspace-wide while the GitHub account is the viewer's
+  // own, so a connected repository counts as done whoever connected it. The fix
+  // needs the viewer's token, though, and before they have one the GitHub row
+  // above already says "connect it to pick a repository".
+  if (repoInfo) {
+    done.push(t('appHome.home.setup.repo.done', { repo: repoLabel(t, repoInfo) }));
+  } else if (userGithubInfo) {
+    fixes.push(
+      row(
+        t('appHome.home.setup.repo.todo'),
+        button(t('appHome.documentConnection.browse.button'), 'browse_github_repositories', { style: 'primary' }),
+      ),
+    );
   }
 
   if (qaChannelName) {
@@ -291,21 +299,24 @@ const buildDocumentsTab = async (t: T, locale: Locale, workspaceId: string, user
     );
   }
 
-  // The repository row is hidden until GitHub is connected: there is nothing to
-  // browse without a token.
-  if (userGithubInfo) {
+  // The repository is workspace-wide, so it is shown to every manager; changing
+  // or choosing it browses with the viewer's own token, so those controls wait
+  // for their GitHub connection (the row above says so).
+  if (repoInfo) {
     blocks.push(
-      repoInfo
-        ? row(
-            // URLs never live in the catalog: the link is assembled here and the
-            // catalog only gets the finished `<url|label>` to place in a sentence.
-            t('appHome.documents.repo.connected', { repoLink: `<${repoInfo.url}|${repoLabel(t, repoInfo)}>` }),
-            button(t('appHome.documents.repo.change.button'), 'browse_github_repositories'),
-          )
-        : row(
-            t('appHome.documents.repo.notConnected'),
-            button(t('appHome.documentConnection.browse.button'), 'browse_github_repositories', { style: 'primary' }),
-          ),
+      row(
+        // URLs never live in the catalog: the link is assembled here and the
+        // catalog only gets the finished `<url|label>` to place in a sentence.
+        t('appHome.documents.repo.connected', { repoLink: `<${repoInfo.url}|${repoLabel(t, repoInfo)}>` }),
+        userGithubInfo ? button(t('appHome.documents.repo.change.button'), 'browse_github_repositories') : undefined,
+      ),
+    );
+  } else if (userGithubInfo) {
+    blocks.push(
+      row(
+        t('appHome.documents.repo.notConnected'),
+        button(t('appHome.documentConnection.browse.button'), 'browse_github_repositories', { style: 'primary' }),
+      ),
     );
   }
 
@@ -493,15 +504,17 @@ const buildAdvancedTab = async (t: T, workspaceId: string): Promise<any[]> => {
     row(contextKeyStatus(t, keyStatus), button(t('appHome.contextKey.import.button'), 'import_context_key')),
   );
 
+  // Back-up, rotate and the "this destroys old history" warning only mean
+  // something once there is a key — and history — to lose.
   if (keyStatus.configured) {
     blocks.push(
       actions([
         button(t('appHome.contextKey.backup.button'), 'backup_context_key'),
         button(t('appHome.contextKey.rotate.button'), 'rotate_context_key', { style: 'danger' }),
       ]),
+      context(t('appHome.contextKey.warning')),
     );
   }
-  blocks.push(context(t('appHome.contextKey.warning')));
 
   blocks.push(
     divider,

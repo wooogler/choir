@@ -52,7 +52,7 @@ Only the active tab's blocks are built, so a tab costs only its own lookups
 ### 🏠 Home — everyone
 
 ```
-*Welcome, @user* 👋
+*Welcome, @user* 👋                                         ← one section: greeting line + intro line
 CHOIR answers questions from your team's docs and turns Slack conversations into document updates.
 [💬 Start chatting]  [📊 Team Insights]          ← primary · url button, CHOIR users only when DOCS_BASE_URL is set
 ─────
@@ -73,10 +73,15 @@ one four-line section, no buttons:
 
 Any line that is *not* configured becomes its own row with the control that
 fixes it as the accessory — `Connect GitHub` (primary), `Choose repository`
-(primary; only once GitHub is connected), or the Q&A `channels_select`.
-Configured lines stay collapsed into the summary section above the fixes. A
-Q&A channel CHOIR can no longer read counts as unconfigured here, since the
-fix is the same picker.
+(primary), or the Q&A `channels_select`. Configured lines stay collapsed into
+the summary section above the fixes. A Q&A channel CHOIR can no longer read
+counts as unconfigured here, since the fix is the same picker.
+
+The repository is workspace-wide while the GitHub account is the viewer's own,
+so a repository another manager connected shows as done for everyone. Choosing
+one needs the viewer's token, so that fix row only appears once *their* GitHub
+is connected; before that the GitHub row already says "connect it to pick a
+repository".
 
 Members (non-managers) instead get one row:
 
@@ -85,14 +90,17 @@ Members (non-managers) instead get one row:
 🔒 Need manager access? Ask your workspace admin.        [ Manager access ]
 ```
 
+The button opens the password-promotion modal, which can only succeed when
+`MANAGER_PROMOTION_PASSWORD` is set. Without it the row keeps the hint and
+drops the button rather than offer a dead end.
+
 ### 📁 Documents — managers
 
 ```
 *GitHub account*  ✅ woogler · connected 8/30/2026                [ Disconnect ]   ← danger, keeps confirm
                   ❌ Not connected · connect to pick a repository  [ Connect GitHub ] ← primary
-*Repository*      ✅ echo-lab/assets (link)                        [ Change ]
-                  ❌ None · choose the repository CHOIR reads      [ Choose repository ] ← primary
-                  (hidden until GitHub is connected)
+*Repository*      ✅ echo-lab/assets (link)                        [ Change ]        ← Change only once the viewer's GitHub is connected
+                  ❌ None · choose the repository CHOIR reads      [ Choose repository ] ← primary; row hidden until the viewer's GitHub is connected
 *Read-only files* 0 of 23 files are excluded from updates          [ Manage ]
                   context: current list, at most 5 names then "and N more"
                   no repo → "Connect a repository first", no button
@@ -136,7 +144,7 @@ context: Classification model: gpt-5.4-nano-2026-03-17 (fixed)
 *Change history encryption*  ✅ Key configured · created 2026-01-02 · rotated 2026-03-04   [ Import key ]
                              🟡 Not yet generated · created on the first recorded change
 [Back up key] [Rotate key]                                    ← only when configured; Rotate is danger
-context: ⚠️ Rotating or importing a key makes earlier change history unreadable. Back up first.
+context: ⚠️ Rotating or importing a key makes earlier change history unreadable. Back up first.   ← only when configured
 ─────
 *Interaction logging*  ✅ Enabled · saved to log files for research      [ Disable ] / [ Enable ]
 *Download logs*                                               [Today's logs] [All logs]
