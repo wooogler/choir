@@ -49,6 +49,7 @@ export const appHome: LocaleCatalog = {
   'appHome.welcome.greeting': '*{user}님, 반가워요* :wave:',
   'appHome.welcome.intro': 'CHOIR는 팀 문서에서 답을 찾아 주고, Slack 대화를 문서 업데이트로 바꿔 줘요.',
   'appHome.welcome.startChat.button': '💬 CHOIR와 대화 시작하기',
+  'appHome.docs.open.button': '📖 문서 열기',
   'appHome.insights.open.button': '📊 팀 인사이트 열기',
 
   // --- 홈: 매니저용 설정 카드 -----------------------------------------------

@@ -155,6 +155,18 @@ const buildHomeTab = async (
     },
   ];
 
+  // The web viewer is the team's own docs, so the door is open to every member
+  // with a web host configured; the viewer signs them in through Slack itself.
+  const docsUrl = docsViewerUrl(workspaceId);
+  if (docsUrl) {
+    elements.push({
+      type: 'button',
+      text: { type: 'plain_text', text: t('appHome.docs.open.button'), emoji: true },
+      action_id: 'open_docs_url',
+      url: docsUrl,
+    });
+  }
+
   const dashboardUrl = teamInsightsUrl(workspaceId, choirUsers.includes(userId));
   if (dashboardUrl) {
     elements.push({
@@ -655,6 +667,12 @@ const resolveChannelName = async (
     logger.warn(`Could not get Q&A channel name for ${channelId}:`, error);
     return null;
   }
+};
+
+/** The web viewer's front door for this workspace; `null` without a web host. */
+const docsViewerUrl = (workspaceId: string): string | null => {
+  const baseUrl = process.env.DOCS_BASE_URL?.replace(/\/$/, '');
+  return baseUrl ? `${baseUrl}/docs/${encodeURIComponent(workspaceId)}` : null;
 };
 
 /**

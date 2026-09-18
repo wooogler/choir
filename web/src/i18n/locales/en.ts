@@ -46,6 +46,8 @@ export const en = {
   'viewer.confirm.unsavedChanges': 'Unsaved changes will be lost. Continue?',
   'viewer.confirm.discard': 'Discard all unsaved changes?',
   'viewer.loadingDocument': 'Loading document…',
+  'viewer.landing.noDocuments':
+    'This workspace has no markdown documents yet. Connect a repository from CHOIR’s App Home in Slack.',
   'viewer.notice.deletedLast': 'Document deleted. This repository has no markdown documents left.',
   'viewer.notice.committed': 'Committed {sha} and refreshed the index.',
   'viewer.notice.saved': 'Saved.',

@@ -43,6 +43,8 @@ export const ko: LocaleCatalog = {
   'viewer.confirm.unsavedChanges': '저장하지 않은 변경 사항이 사라집니다. 계속할까요?',
   'viewer.confirm.discard': '저장하지 않은 변경 사항을 모두 버릴까요?',
   'viewer.loadingDocument': '문서를 불러오는 중…',
+  'viewer.landing.noDocuments':
+    '이 워크스페이스에는 아직 마크다운 문서가 없어요. Slack의 CHOIR App Home에서 저장소를 연결해 주세요.',
   'viewer.notice.deletedLast': '문서를 삭제했습니다. 이 저장소에는 남은 마크다운 문서가 없습니다.',
   'viewer.notice.committed': '{sha} 커밋을 만들고 색인을 새로 고쳤습니다.',
   'viewer.notice.saved': '저장했습니다.',

@@ -17,15 +17,35 @@ export type Route =
 
 /** Top-level route for App: docs viewer vs the awareness dashboard. */
 export function parseRoute(): Route | null {
-  const match = window.location.pathname.match(/^\/docs\/([^/]+)\/(.+)$/);
+  const match = window.location.pathname.match(/^\/docs\/([^/]+)(?:\/(.*))?$/);
   if (!match) return null;
   const workspaceId = decodeURIComponent(match[1]);
-  const rest = decodeURIComponent(match[2]);
+  const rest = decodeURIComponent(match[2] ?? '');
   if (rest === 'dashboard') {
     const from = new URLSearchParams(window.location.search).get('from') || undefined;
     return { view: 'dashboard', workspaceId, from };
   }
+  // `/docs/:workspaceId` alone is the workspace's front door (what the App Home
+  // "Open Docs" button links to): an empty filePath, which DocViewer resolves to
+  // the landing document once it has the file listing.
   return { view: 'docs', workspaceId, filePath: rest };
+}
+
+/**
+ * The document a visitor lands on when the URL names only the workspace: the
+ * repository's README, else an index, else the shallowest file — folders before
+ * depth so a `docs/README.md` beats `a/b/c.md`, alphabetical within a depth.
+ */
+export function pickLandingFile(files: DocFile[]): DocFile | null {
+  if (files.length === 0) return null;
+  const depth = (file: DocFile) => file.path.split('/').length;
+  const byName = (pattern: RegExp) =>
+    [...files].filter((file) => pattern.test(file.name)).sort((a, b) => depth(a) - depth(b))[0];
+  return (
+    byName(/^readme$/i) ??
+    byName(/^index$/i) ??
+    [...files].sort((a, b) => depth(a) - depth(b) || a.path.localeCompare(b.path))[0]
+  );
 }
 
 export function docsPath(workspaceId: string, filePath: string): string {

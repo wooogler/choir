@@ -289,6 +289,7 @@ describe('tab structure', () => {
     expect(tabBarOf(blocks)).toBeUndefined();
     expect(actionIdsOf(blocks)).toEqual([
       'start_chat_url',
+      'open_docs_url',
       'open_dashboard_url',
       'set_my_language',
       'request_manager_permission',

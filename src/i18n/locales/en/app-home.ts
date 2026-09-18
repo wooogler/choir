@@ -54,6 +54,7 @@ export const appHome = {
   'appHome.welcome.intro':
     "CHOIR answers questions from your team's docs and turns Slack conversations into document updates.",
   'appHome.welcome.startChat.button': '💬 Start Chatting with CHOIR',
+  'appHome.docs.open.button': '📖 Open Docs',
   'appHome.insights.open.button': '📊 Open Team Insights',
 
   // --- Home: the manager's setup card ---------------------------------------

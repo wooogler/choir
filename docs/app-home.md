@@ -54,7 +54,9 @@ Only the active tab's blocks are built, so a tab costs only its own lookups
 ```
 *Welcome, @user* 👋                                         ← one section: greeting line + intro line
 CHOIR answers questions from your team's docs and turns Slack conversations into document updates.
-[💬 Start chatting]  [📊 Team Insights]          ← primary · url button, CHOIR users only when DOCS_BASE_URL is set
+[💬 Start chatting]  [📖 Open Docs]  [📊 Team Insights]
+   ← primary          ← url to the web viewer's front door, `/docs/<workspaceId>`, whenever DOCS_BASE_URL is set
+                                      ← url button, CHOIR users only, when DOCS_BASE_URL is set
 ─────
 *Your language*  The language CHOIR uses with you.        [ Automatic ▾ ]
 ```

@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type Locale, type ServerErrorPayload, describeServerError, useLocale, useT } from '../i18n';
 import type { DocFile, DocSectionUsage, LanguageSettings, RepoInfo, SessionInfo, TocItem } from '../types';
-import { docsPath, encodePath, extractToc, parseDocsUrl, scrollToAnchor, slugifyHeading } from '../utils/docs';
+import {
+  docsPath,
+  encodePath,
+  extractToc,
+  parseDocsUrl,
+  pickLandingFile,
+  scrollToAnchor,
+  slugifyHeading,
+} from '../utils/docs';
 import { inlineMarkdownToText } from '../utils/inline-markdown';
 import { CommitDialog } from './CommitDialog';
 import { CrepeEditor, type CrepeEditorHandle } from './CrepeEditor';
@@ -105,6 +113,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [error, setError] = useState('');
   const [filePath, setFilePath] = useState(initialFilePath);
   const [files, setFiles] = useState<DocFile[]>([]);
+  const [filesLoaded, setFilesLoaded] = useState(false);
   const [repo, setRepo] = useState<RepoInfo | null>(null);
   const [loadedMarkdown, setLoadedMarkdown] = useState<string | null>(null);
   const [currentMarkdown, setCurrentMarkdown] = useState<string>('');
@@ -238,12 +247,25 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
       .then(({ files, repo }) => {
         setFiles(files);
         setRepo(repo);
+        setFilesLoaded(true);
       })
       .catch(() => {
         setFiles([]);
         setRepo(null);
+        setFilesLoaded(true);
       });
   }, [workspaceId, t]);
+
+  // `/docs/:workspaceId` names no document. Once the listing is in, land on the
+  // repository's front page and rewrite the address so reload and share work;
+  // replaceState, not pushState, so Back leaves the viewer rather than bouncing.
+  useEffect(() => {
+    if (filePath !== '') return;
+    const landing = pickLandingFile(files);
+    if (!landing) return;
+    window.history.replaceState(null, '', docsPath(workspaceId, landing.path));
+    setFilePath(landing.path);
+  }, [filePath, files, workspaceId]);
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -308,6 +330,10 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
     setIsEditing(false);
     clearChangedBlockMarks();
     clearEditSession();
+
+    // No document yet (the workspace front door): the landing effect above
+    // picks one, or the page says the repository is empty.
+    if (filePath === '') return;
 
     fetch(`/api/docs/${encodeURIComponent(workspaceId)}/${encodePath(filePath)}`, { credentials: 'same-origin' })
       .then((r) => {
@@ -988,6 +1014,10 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         {error ? (
           <main className="doc-page error-page">
             <strong>{t('viewer.error.prefix')}</strong> {error}
+          </main>
+        ) : filePath === '' ? (
+          <main className="doc-page">
+            <p className="doc-loading">{filesLoaded ? t('viewer.landing.noDocuments') : t('viewer.loadingDocument')}</p>
           </main>
         ) : (
           <main className="doc-page">

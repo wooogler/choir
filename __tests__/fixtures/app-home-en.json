@@ -62,6 +62,16 @@
           "action_id": "start_chat_url",
           "url": "slack://app?team=T1&id=A123&tab=messages",
           "style": "primary"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "📖 Open Docs",
+            "emoji": true
+          },
+          "action_id": "open_docs_url",
+          "url": "https://docs.example.com/docs/T1"
         }
       ]
     },
@@ -770,6 +780,16 @@
           "action_id": "start_chat_url",
           "url": "slack://app?team=T1&id=A123&tab=messages",
           "style": "primary"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "📖 Open Docs",
+            "emoji": true
+          },
+          "action_id": "open_docs_url",
+          "url": "https://docs.example.com/docs/T1"
         },
         {
           "type": "button",
