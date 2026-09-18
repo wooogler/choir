@@ -124,6 +124,28 @@ export const DOCS_API_ERROR_MESSAGES = {
   import_empty: 'That document exported as empty',
   import_failed: 'Could not import that document: {message}',
   import_interrupted: 'The import stopped before it finished',
+
+  // ── PDF and web page import ─────────────────────────────────────────────
+  // Thrown as `ImportRefusal` by the conversion sources (services/import/
+  // sources/**) and answered by services/import/routes.ts with the status the
+  // refusal carries. Everything here is something the manager can act on — a
+  // file that is too big, a site that said no, an expired preview — as opposed
+  // to `import_conversion_failed`, which is the catch-all for a fault of ours.
+  import_busy: 'Another import is already running in this workspace — try again in a moment',
+  import_unsupported_file: 'Only PDF files can be imported this way',
+  import_too_large: 'The file is larger than {maxMb}MB',
+  import_too_many_pages: 'The PDF has {pages} pages; the limit is {max}',
+  import_too_many_tokens:
+    'The PDF is too long to convert in one go ({inputTokens} tokens; the limit is {max}) — split it or narrow the page range',
+  import_pdf_encrypted: 'The PDF is password-protected',
+  import_pdf_no_text: 'The PDF has no text layer and the LLM conversion is turned off',
+  import_url_invalid: 'Give a full http(s) URL',
+  import_url_blocked: 'That site refused the request ({status})',
+  import_url_unreadable:
+    'Nothing readable was found at that URL — for pages that render with JavaScript, save the page as PDF and import that instead',
+  import_conversion_failed: 'Could not convert that document: {message}',
+  import_draft_expired: 'This import has expired — convert the document again',
+  import_llm_unavailable: 'No OpenAI key is configured for this workspace, so PDFs cannot be converted',
 } as const;
 
 export type DocsApiErrorCode = keyof typeof DOCS_API_ERROR_MESSAGES;

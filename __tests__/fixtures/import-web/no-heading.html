@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Release notes 2026.9 | Example Corp</title>
+  </head>
+  <body>
+    <article>
+      <h2>What changed</h2>
+      <p>
+        This release is mostly maintenance. The scheduler no longer wakes every second when the queue is empty, which
+        takes a measurable bite out of idle CPU on small instances, and the exporter finally reports the queue depth it
+        has been computing internally since the spring. Neither change alters any interface, so an upgrade should be a
+        restart and nothing more. The notes below list the changes an operator is likely to notice.
+      </p>
+      <h2>Upgrading</h2>
+      <p>
+        Stop the service, replace the binary, and start it again. There is no migration, and a rollback to the previous
+        version works without one either. If you run more than one replica you can do this one replica at a time; the
+        two versions speak the same protocol and can run side by side for as long as the upgrade takes.
+      </p>
+      <p><img src="../img/queue.png" alt="Queue depth" /> <img src="https://cdn.example.com/badge.png" alt="" /></p>
+    </article>
+  </body>
+</html>

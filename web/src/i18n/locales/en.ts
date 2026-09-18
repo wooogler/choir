@@ -283,16 +283,130 @@ export const en = {
   'gdocs.import.aria.progress': 'Google Docs import',
   'gdocs.import.starting': 'Starting the import…',
 
-  // ── Import progress steps (services/google/import-steps.ts) ─────────────
+  // ── Import progress steps (services/import/progress.ts) ─────────────────
   // Keyed by the `step` the NDJSON stream carries, not by the `label` beside
   // it: the label is the server's own English, for logs and for anyone reading
-  // the stream by hand.
+  // the stream by hand. One list for every source, because a reader watching
+  // the bar does not care which of them is running.
   'import.step.checking': 'Checking the repository',
   'import.step.reading': 'Reading the Google Doc',
+  'import.step.fetching': 'Fetching the source',
+  'import.step.converting': 'Converting to markdown',
+  'import.step.ready': 'Preparing the preview',
   'import.step.committing': 'Committing to GitHub',
   'import.step.mirroring': 'Updating the local copy',
+  'import.step.indexing': 'Updating the search index',
   'import.step.linking': 'Linking the Google Doc',
   'import.step.done': 'Done',
+  // A long PDF spends most of its run on one step, so the chunk counter is the
+  // only thing that moves while it does.
+  'import.step.chunk': '{step} ({current}/{total})',
+
+  // ── Import menu (ImportMenu.tsx) ────────────────────────────────────────
+  'import.menu.button': 'Import…',
+  'import.menu.aria': 'Import a document',
+  'import.menu.aria.upload': 'Uploading the PDF',
+  'import.menu.uploading': 'Uploading the PDF…',
+  'import.menu.fromPdf': 'From a PDF file',
+  'import.menu.fromUrl': 'From a web page',
+
+  // ── Import from a web page (ImportMenu.tsx) ─────────────────────────────
+  'import.url.aria.dialog': 'Import a web page',
+  'import.url.aria.progress': 'Web page import',
+  'import.url.title': 'Import a web page',
+  'import.url.subtitle':
+    'The address of a page anyone can open. It is read once and turned into a document; it is not kept in sync afterwards.',
+  'import.url.label': 'Address',
+  'import.url.placeholder': 'https://example.com/handbook',
+  'import.url.starting': 'Starting the conversion…',
+  'import.url.button.convert': 'Convert',
+  'import.url.button.converting': 'Converting…',
+
+  // ── PDF conversion estimate (PdfEstimateDialog.tsx) ─────────────────────
+  // Shown before a single model call, because a 200-page scan and a 4-page
+  // memo are different decisions and this is the moment to make them.
+  'import.estimate.aria.dialog': 'PDF conversion estimate',
+  'import.estimate.aria.progress': 'PDF conversion',
+  'import.estimate.title': 'Convert this PDF?',
+  'import.estimate.label.pages': 'Pages',
+  'import.estimate.label.scannedPages': 'Pages with no text layer',
+  'import.estimate.label.chunks': 'Requests',
+  'import.estimate.label.inputTokens': 'Input tokens',
+  'import.estimate.label.outputTokens': 'Output tokens, estimated',
+  'import.estimate.label.cost': 'Estimated cost',
+  'import.estimate.label.model': 'Model',
+  'import.estimate.value.ofLimit': '{tokens} of {limit}',
+  'import.estimate.value.approxCost': 'about {amount}',
+  'import.estimate.value.model': '{model} ({tier})',
+  'import.estimate.billing':
+    'The conversion runs on this workspace’s own OpenAI key, so what it costs is billed to the workspace. The figure above is an estimate, not a quote.',
+  'import.estimate.textMode':
+    'No model is available for this workspace, so the PDF’s own text layer will be used. Nothing is billed, and tables and headings may not survive.',
+  'import.estimate.starting': 'Starting the conversion…',
+  'import.estimate.button.convert': 'Convert',
+  'import.estimate.button.converting': 'Converting…',
+
+  // ── Import preview (ImportPreviewDialog.tsx) ────────────────────────────
+  'import.preview.aria.dialog': 'Review the imported document',
+  'import.preview.aria.progress': 'Import progress',
+  'import.preview.title': 'Review before importing',
+  'import.preview.source.pdf': 'PDF · {name}',
+  'import.preview.source.pdfPages': {
+    one: 'PDF · {name} · {count} page',
+    other: 'PDF · {name} · {count} pages',
+  },
+  'import.preview.source.url': 'Web page · {name}',
+  'import.preview.warnings.title': 'Worth checking',
+  'import.preview.rejectedAssets': {
+    one: '{count} image was left out:',
+    other: '{count} images were left out:',
+  },
+  'import.preview.label.path': 'Save as',
+  'import.preview.expires': {
+    one: 'This draft expires in about {count} minute',
+    other: 'This draft expires in about {count} minutes',
+  },
+  'import.preview.expired': 'This draft has expired. Close this and convert the source again.',
+  'import.preview.droppedReferences': {
+    one: 'Imported, but {count} image reference was removed because the draft no longer held it:\n{references}',
+    other: 'Imported, but {count} image references were removed because the draft no longer held them:\n{references}',
+  },
+  'import.preview.starting': 'Starting the import…',
+  'import.preview.button.import': 'Import',
+  'import.preview.button.importing': 'Importing…',
+
+  // ── Import warnings (the `warnings` a conversion reports) ───────────────
+  // Advice, never a block: whether a fidelity score is good enough for this
+  // particular document is the manager's judgement to make in the preview.
+  // Each code that has a `{hole}` also has a plain sentence, for a server that
+  // sends the warning without the number it wants.
+  'import.warning.low_fidelity':
+    'Only about {score}% of the text in the file was found in the conversion. Read it through before importing.',
+  'import.warning.low_fidelity.plain':
+    'Some of the original text may be missing from the conversion. Read it through before importing.',
+  'import.warning.scanned_pages': {
+    one: '{count} page had no text layer and was read from its page image.',
+    other: '{count} pages had no text layer and were read from their page images.',
+  },
+  'import.warning.scanned_pages.plain': 'Some pages had no text layer and were read from their page images.',
+  'import.warning.readability_fallback':
+    'The page had no clear article, so its whole body was converted. Expect menus and footers in the result.',
+  'import.warning.images_rejected': {
+    one: '{count} image was left out of the document.',
+    other: '{count} images were left out of the document.',
+  },
+  'import.warning.images_rejected.plain': 'Some images were left out of the document.',
+  'import.warning.truncated': 'The source was longer than the import limits, so part of it was left out.',
+
+  // ── Import failures the viewer words itself (ImportMenu.tsx, dialogs) ───
+  'import.error.notPdf': 'Choose a PDF file.',
+  'import.error.tooLarge':
+    'That file is larger than the {limit} MB this workspace accepts. Split it, or export fewer pages.',
+  'import.error.upload': 'Could not read that file.',
+  'import.error.convert': 'Could not convert that source.',
+  'import.error.commit': 'Could not import that document.',
+  'import.error.path': 'Give a repository-relative path ending in .md',
+  'import.error.url': 'Give a full address starting with http:// or https://',
 
   // ── Google Picker (utils/picker.ts) ─────────────────────────────────────
   'picker.error.gapiMissing': 'Google API script loaded without gapi',
@@ -400,6 +514,25 @@ export const en = {
   'serverError.import_empty': 'That document exported as empty',
   'serverError.import_failed': 'Could not import that document: {message}',
   'serverError.import_interrupted': 'The import stopped before it finished',
+
+  // PDF and web-page import (services/import). A refusal here is usually
+  // something the manager can act on — a smaller file, a page range, a
+  // different address — so each sentence says what to do next.
+  'serverError.import_busy': 'Another import is already running in this workspace — try again in a moment',
+  'serverError.import_unsupported_file': 'Only PDF files can be imported this way',
+  'serverError.import_too_large': 'The file is larger than {maxMb}MB',
+  'serverError.import_too_many_pages': 'The PDF has {pages} pages; the limit is {max}',
+  'serverError.import_too_many_tokens':
+    'The PDF is too long to convert in one go ({inputTokens} tokens; the limit is {max}) — split it or narrow the page range',
+  'serverError.import_pdf_encrypted': 'The PDF is password-protected',
+  'serverError.import_pdf_no_text': 'The PDF has no text layer and the LLM conversion is turned off',
+  'serverError.import_url_invalid': 'Give a full http(s) URL',
+  'serverError.import_url_blocked': 'That site refused the request ({status})',
+  'serverError.import_url_unreadable':
+    'Nothing readable was found at that URL — for pages that render with JavaScript, save the page as PDF and import that instead',
+  'serverError.import_conversion_failed': 'Could not convert that document: {message}',
+  'serverError.import_draft_expired': 'This import has expired — convert the document again',
+  'serverError.import_llm_unavailable': 'No OpenAI key is configured for this workspace, so PDFs cannot be converted',
 
   // ── Milkdown/Crepe editor chrome (i18n/crepe.ts) ────────────────────────
   'editor.placeholder': 'Please enter...',

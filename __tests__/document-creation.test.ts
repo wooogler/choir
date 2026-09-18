@@ -250,9 +250,64 @@ describe('createDocument', () => {
       messages: [],
       diff: { before: '', after: '# new doc\n' },
     });
-    // No `source`: there is no thread and no Google Doc behind a document
-    // someone typed into the viewer, and `source.editor` means a person's name
-    // on the Google path.
-    expect(record.source).toBeUndefined();
+    // The `source` says only where it was typed: there is no thread and no
+    // Google Doc behind a document someone wrote in the viewer. An import goes
+    // through this same call and adds which source it came from on top.
+    expect(record.source).toEqual({ editor: 'web' });
+  });
+
+  it('carries an import’s assets in the same commit as the document', async () => {
+    // Committed separately, the document would be live on GitHub for as long as
+    // the second commit took — and forever, if it failed — pointing at images
+    // that are not in the repository.
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    await create({
+      content: '# Imported\n\n![a picture](assets/abc123.png)\n',
+      assets: [{ path: 'assets/abc123.png', bytes, contentType: 'image/png' }],
+      source: { import: 'url', name: 'Example page', url: 'https://example.com/page' },
+    });
+
+    const commit = commitFilesWithContext.mock.calls[0][0] as unknown as {
+      files: Array<{ path: string; content: string; encoding?: string }>;
+    };
+    expect(commit.files[0].path).toBe('policy/new-doc.md');
+    // Base64, not utf-8: the bytes would otherwise be committed as literal text.
+    expect(commit.files).toContainEqual({
+      path: 'assets/abc123.png',
+      content: bytes.toString('base64'),
+      encoding: 'base64',
+    });
+    expect(fs.readFileSync(path.join(repoRoot, 'assets/abc123.png'))).toEqual(bytes);
+
+    const record = (buildContextFile.mock.calls[0][0] as unknown as { record: Record<string, unknown> }).record;
+    expect(record.source).toEqual({
+      editor: 'web',
+      import: 'url',
+      name: 'Example page',
+      url: 'https://example.com/page',
+    });
+  });
+
+  it('refuses an asset path that is not under assets/, before committing', async () => {
+    await expect(
+      create({
+        assets: [{ path: '../../etc/evil.png', bytes: Buffer.from('x'), contentType: 'image/png' }],
+      }),
+    ).rejects.toThrow(/outside assets\//);
+    expect(commitFilesWithContext).not.toHaveBeenCalled();
+  });
+
+  it('reports its phases in order, and survives a listener that throws', async () => {
+    const steps: string[] = [];
+    await create({
+      onStep: (step) => {
+        steps.push(step);
+        // Progress is decoration on work that has already happened; a closed
+        // stream must not fail the save.
+        throw new Error('listener exploded');
+      },
+    });
+
+    expect(steps).toEqual(['checking', 'committing', 'mirroring', 'indexing', 'done']);
   });
 });

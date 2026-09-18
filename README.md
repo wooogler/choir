@@ -8,6 +8,7 @@ CHOIR is a Slack bot for organization knowledge workflows. It indexes markdown d
 - Suggest document updates from Slack conversations
 - Refresh the document index automatically from GitHub webhook events
 - Provide manager controls in Slack App Home
+- Import Google Docs, PDFs, and public web pages into the repository as new markdown documents, with a preview before committing (see [docs/pdf-web-import.md](docs/pdf-web-import.md))
 
 ## Stack
 

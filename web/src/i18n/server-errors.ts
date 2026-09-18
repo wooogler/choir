@@ -117,6 +117,21 @@ export const SERVER_ERROR_KEY = {
   import_empty: 'serverError.import_empty',
   import_failed: 'serverError.import_failed',
   import_interrupted: 'serverError.import_interrupted',
+
+  // PDF and web-page import (services/import).
+  import_busy: 'serverError.import_busy',
+  import_unsupported_file: 'serverError.import_unsupported_file',
+  import_too_large: 'serverError.import_too_large',
+  import_too_many_pages: 'serverError.import_too_many_pages',
+  import_too_many_tokens: 'serverError.import_too_many_tokens',
+  import_pdf_encrypted: 'serverError.import_pdf_encrypted',
+  import_pdf_no_text: 'serverError.import_pdf_no_text',
+  import_url_invalid: 'serverError.import_url_invalid',
+  import_url_blocked: 'serverError.import_url_blocked',
+  import_url_unreadable: 'serverError.import_url_unreadable',
+  import_conversion_failed: 'serverError.import_conversion_failed',
+  import_draft_expired: 'serverError.import_draft_expired',
+  import_llm_unavailable: 'serverError.import_llm_unavailable',
 } as const satisfies Record<DocsApiErrorCode, MessageKey>;
 
 export function isDocsApiErrorCode(value: unknown): value is DocsApiErrorCode {

@@ -44,7 +44,18 @@ export type ProvenanceRecord = {
   file: { path: string; name: string };
   createdAt: string;
   updatedBy: { userId?: string; name?: string };
-  source?: { channelId?: string; threadTs?: string; fileId?: string; editor?: string };
+  // Mirrors services/document/provenance/types.ts: a Slack thread, a Google Doc
+  // replica, or the file/page/Doc an imported document was converted from.
+  source?: {
+    channelId?: string;
+    threadTs?: string;
+    fileId?: string;
+    editor?: string;
+    import?: 'pdf' | 'url' | 'google-docs';
+    name?: string;
+    url?: string;
+    pages?: number;
+  };
   knowledge: string;
   messages: ProvenanceMessage[];
   diff: { before: string; after: string; sections?: string[]; nodeIds?: string[] };

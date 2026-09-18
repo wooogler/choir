@@ -47,11 +47,13 @@ Docs에서 발생한 사람 편집을 **관리자 승인을 거쳐** GitHub에 �
 
 `services/google/import-service.ts`. Picker로 고른 Google Doc을 **새 저장소 문서로 커밋**한다. replica 방향(GitHub→Docs)의 반대이며, 리뷰 없이 Docs 내용이 GitHub으로 넘어가는 유일한 경로 — 저장소에 아직 그 문서가 없으니 리뷰할 대상이 없기 때문이다.
 
-- **덮어쓰지 않는다.** 대상 경로가 이미 있으면 `exists`로 거부. import가 기존 문서를 소리 없이 교체하는 것은 리뷰를 우회하는 것과 같다.
+- **착지는 뷰어의 "새 문서" 경로와 공유한다**(`services/docs-editor/create-document.ts`). import는 "내용이 다른 데서 온 새 문서"일 뿐이므로 커밋·미러·provenance·인덱스 갱신은 PDF·URL import와 같은 한 곳을 쓴다(docs/pdf-web-import.md 결정 1). import-service에 남는 것은 Doc export 읽기 → `extractImportable` → 착지 호출 → replica 연결뿐이다.
+- **덮어쓰지 않는다.** 대상 경로가 이미 있으면 `exists`로 거부. import가 기존 문서를 소리 없이 교체하는 것은 리뷰를 우회하는 것과 같다. 미러 검사는 Drive를 건드리기 전에 먼저 하고(느린 export를 아낀다), 최종 판단은 착지가 GitHub에 직접 묻는다 — 미러는 캐시라 웹훅 한 번 놓치면 "없음"이라고 답한다. 착지의 거부(`CreateDocumentRefusal`)는 `exists`/`invalid-path` 결과로 그대로 번역된다.
 - **경로 검증은 `import-path.ts`** (순수 함수, 서비스 그래프 없음): 저장소 상대 경로 + `.md`만, `..` 금지, `assets/`·`.choir/` 금지. 미러는 자기 루트를 지키지만 커밋은 GitHub으로도 나간다.
-- **이미지는 델타 경로와 같은 처리를 공유한다** (`extractImportable` → `rekeyImagesByContent` → `collectNewAssets`). export의 base64 data URI를 content-addressed asset으로 만들어 본문과 같은 커밋에 싣는다. 거부된 이미지는 dangling reference를 남기지 않고 참조째 제거하고 사유를 보고한다.
-- **provenance 사이드카를 쓰지 않는다.** 기록은 변경의 *이유*이고(Slack 생성 경로는 추출된 지식과 원본 대화를 담는다), import에는 그게 없다 — `knowledge` 빈 값, `messages` 없음, `diff.after`에 문서 전체의 암호화된 두 번째 사본만 남아 뷰어가 문서를 그대로 되읊는 변경 목록으로 렌더한다. 출처는 커밋 메시지와 Doc 매핑에 이미 있다. 기록이 없는 문서는 정상 상태다(`readRecords`는 디렉터리가 없으면 `[]`).
-- **import 직후 replica로 연결**한다(`setGoogleDocMapping` + `publishReplica force`). 그래서 그 Doc은 이때부터 배너를 달고, 이후 편집은 평소의 drift→리뷰 경로를 탄다.
+- **이미지는 델타 경로와 같은 처리를 공유한다** (`extractImportable` → `rekeyImagesByContent` → `collectNewAssets`). export의 base64 data URI를 content-addressed asset으로 만들어 본문과 같은 커밋에 싣는다(착지의 `assets` 인자). 거부된 이미지는 dangling reference를 남기지 않고 참조째 제거하고 사유를 보고한다.
+- **인덱스를 바로 갱신한다.** 예전에는 커밋+미러만 해서, 방금 들여온 문서가 다음 전체 동기화 전까지 Q&A에 보이지 않았다. 착지를 공유하면서 `vectorStore` 갱신과 QMD warmup이 따라왔다.
+- **provenance 사이드카를 쓴다**(`new-file`). 예전 결정은 "쓰지 않는다"였고 이유는 뷰어가 모든 기록을 문서 전체 변경 목록으로 렌더해서 import 기록이 문서를 그대로 되읊었기 때문이다. `new-file` 타입이 생기고 뷰어가 이를 *생성*으로 렌더하면서 그 이유가 사라졌고, 대신 사이드카가 `source`(`{ editor: 'web', import: 'google-docs', name, url, fileId }`)로 **어디서 온 문서인지**를 담는다 — PDF·URL import와 같은 필드다. `knowledge`가 비고 `messages`가 없는 것은 그대로다(추출할 대화가 없다).
+- **import 직후 replica로 연결**한다(`setGoogleDocMapping` + `seedReplica`, `preserve` 모드). 이후 편집은 평소의 drift→리뷰 경로를 탄다. 착지 쪽 replica publish는 이 경로에서만 끈다(`skipReplicaPublish`) — 바로 아래에서 연결할 문서에 publish가 끼어들면 Doc이 이미 가진 내용을 "직접 반영하라"는 요청으로 올린다.
 - Picker nonce 필수. 없으면 임의 fileId를 POST해서 워크스페이스 계정이 접근 가능한 아무 문서나 저장소에 커밋시킬 수 있다.
 
 UI는 사이드바의 `Import from Google Docs`(`web/src/components/GoogleDocsImport.tsx`) — 만들어질 문서가 아직 없으므로 문서별이 아니라 워크스페이스 단위다.

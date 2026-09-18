@@ -8,18 +8,39 @@ const MAX_HTML_BYTES = 5 * 1024 * 1024;
 const MAX_TEXT_CHARS = 12000;
 const MAX_REDIRECTS = 5;
 
+/** Default request headers for an HTML fetch; overridable per call. */
+export const HTML_REQUEST_HEADERS: Record<string, string> = {
+  accept: 'text/html,application/xhtml+xml',
+  'user-agent': 'CHOIR-docs-bot/1.0',
+};
+
+export interface PublicFetchOptions {
+  /** Replaces the default HTML headers (accept / user-agent). */
+  headers?: Record<string, string>;
+  /** Injection point for tests; defaults to the global `fetch`. */
+  fetchImpl?: typeof fetch;
+}
+
 /**
  * Follows redirects manually, re-running the SSRF guard on every hop's target.
  * `redirect: 'follow'` would let an attacker-controlled public page 302 to an
  * internal host (cloud metadata, intranet) that the initial guard never saw.
+ *
+ * Exported because the URL import (`services/import/sources/web`) needs exactly
+ * this guarantee; reimplementing it there would be a second place to get wrong.
  */
-async function fetchFollowingPublicRedirects(startUrl: URL, signal: AbortSignal): Promise<Response | null> {
+export async function fetchFollowingPublicRedirects(
+  startUrl: URL,
+  signal: AbortSignal,
+  options: PublicFetchOptions = {},
+): Promise<Response | null> {
+  const doFetch = options.fetchImpl ?? fetch;
   let currentUrl = startUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
-    const response = await fetch(currentUrl, {
+    const response = await doFetch(currentUrl, {
       signal,
       redirect: 'manual',
-      headers: { accept: 'text/html,application/xhtml+xml', 'user-agent': 'CHOIR-docs-bot/1.0' },
+      headers: options.headers ?? HTML_REQUEST_HEADERS,
     });
 
     if (response.status < 300 || response.status >= 400) {

@@ -55,6 +55,7 @@ import {
   normalizeLocale,
   resolvePersonalLocaleCached,
 } from 'services/i18n';
+import { pdfUploadLimitBytes, registerImportRoutes } from 'services/import/routes';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { isCHOIRUser, isManager } from 'services/slack';
@@ -558,6 +559,28 @@ function setupPublicSite(): void {
       error: (message: string, err?: unknown) => app.logger.error(message, err as Error),
     },
     sanitizeNextPath,
+  });
+
+  // ── PDF and web page import ───────────────────────────────────────────────
+  // Registered here for the same reason as the Google routes above: the
+  // '/api/docs/:workspaceId/*splat' content route below would otherwise swallow
+  // every '/api/docs/<id>/import/...' path.
+  registerImportRoutes(router, {
+    readSession,
+    isManager,
+    // The commit body carries the manager's edited markdown, so it needs the
+    // same headroom the save route gives an edit rather than the 64kb the
+    // Google routes' small JSON bodies get.
+    jsonBody: expressForBodyParser.json({ limit: '5mb' }),
+    // The upload cap is the import's, not this file's: a larger limit here would
+    // let a body through that the PDF inspection refuses a moment later, after
+    // the whole file was read.
+    rawPdfBody: expressForBodyParser.raw({ type: 'application/pdf', limit: pdfUploadLimitBytes() }),
+    logger: {
+      info: (message: string, meta?: unknown) => app.logger.info(message, meta),
+      warn: (message: string, meta?: unknown) => app.logger.warn(message, meta),
+      error: (message: string, err?: unknown) => app.logger.error(message, err as Error),
+    },
   });
 
   router.get('/api/docs/:workspaceId', async (req: any, res: any) => {

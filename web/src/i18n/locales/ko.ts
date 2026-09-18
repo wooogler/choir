@@ -252,10 +252,98 @@ export const ko: LocaleCatalog = {
   // ── Import progress steps ───────────────────────────────────────────────
   'import.step.checking': '저장소를 확인하고 있어요',
   'import.step.reading': 'Google 문서를 읽고 있어요',
+  'import.step.fetching': '원본을 가져오고 있어요',
+  'import.step.converting': '마크다운으로 변환하고 있어요',
+  'import.step.ready': '미리보기를 준비하고 있어요',
   'import.step.committing': 'GitHub에 커밋하고 있어요',
   'import.step.mirroring': '로컬 사본을 갱신하고 있어요',
+  'import.step.indexing': '검색 색인을 갱신하고 있어요',
   'import.step.linking': 'Google 문서를 연결하고 있어요',
   'import.step.done': '완료',
+  'import.step.chunk': '{step} ({current}/{total})',
+
+  // ── Import menu ─────────────────────────────────────────────────────────
+  'import.menu.button': '가져오기…',
+  'import.menu.aria': '문서 가져오기',
+  'import.menu.aria.upload': 'PDF 올리는 중',
+  'import.menu.uploading': 'PDF를 올리는 중…',
+  'import.menu.fromPdf': 'PDF 파일에서',
+  'import.menu.fromUrl': '웹페이지에서',
+
+  // ── Import from a web page ──────────────────────────────────────────────
+  'import.url.aria.dialog': '웹페이지 가져오기',
+  'import.url.aria.progress': '웹페이지 가져오기',
+  'import.url.title': '웹페이지 가져오기',
+  'import.url.subtitle':
+    '누구나 열 수 있는 페이지의 주소를 적어 주세요. 한 번 읽어 문서로 만들 뿐, 이후에 동기화되지는 않아요.',
+  'import.url.label': '주소',
+  'import.url.placeholder': 'https://example.com/handbook',
+  'import.url.starting': '변환을 시작하는 중…',
+  'import.url.button.convert': '변환',
+  'import.url.button.converting': '변환하는 중…',
+
+  // ── PDF conversion estimate ─────────────────────────────────────────────
+  'import.estimate.aria.dialog': 'PDF 변환 견적',
+  'import.estimate.aria.progress': 'PDF 변환',
+  'import.estimate.title': '이 PDF를 변환할까요?',
+  'import.estimate.label.pages': '쪽수',
+  'import.estimate.label.scannedPages': '텍스트 레이어가 없는 쪽',
+  'import.estimate.label.chunks': '요청 횟수',
+  'import.estimate.label.inputTokens': '입력 토큰',
+  'import.estimate.label.outputTokens': '예상 출력 토큰',
+  'import.estimate.label.cost': '예상 비용',
+  'import.estimate.label.model': '모델',
+  'import.estimate.value.ofLimit': '{limit} 중 {tokens}',
+  'import.estimate.value.approxCost': '약 {amount}',
+  'import.estimate.value.model': '{model} ({tier})',
+  'import.estimate.billing':
+    '변환은 이 워크스페이스의 OpenAI 키로 실행돼서 비용도 워크스페이스에 청구돼요. 위 금액은 청구액이 아니라 추정치예요.',
+  'import.estimate.textMode':
+    '이 워크스페이스에서 쓸 수 있는 모델이 없어서 PDF의 텍스트 레이어만 사용해요. 비용은 들지 않지만 표나 제목 구조가 흐트러질 수 있어요.',
+  'import.estimate.starting': '변환을 시작하는 중…',
+  'import.estimate.button.convert': '변환',
+  'import.estimate.button.converting': '변환하는 중…',
+
+  // ── Import preview ──────────────────────────────────────────────────────
+  'import.preview.aria.dialog': '가져온 문서 검토',
+  'import.preview.aria.progress': '가져오기 진행 상황',
+  'import.preview.title': '가져오기 전에 확인하세요',
+  'import.preview.source.pdf': 'PDF · {name}',
+  'import.preview.source.pdfPages': { other: 'PDF · {name} · {count}쪽' },
+  'import.preview.source.url': '웹페이지 · {name}',
+  'import.preview.warnings.title': '확인할 점',
+  'import.preview.rejectedAssets': { other: '이미지 {count}개는 제외됐어요:' },
+  'import.preview.label.path': '저장할 경로',
+  'import.preview.expires': { other: '이 초안은 약 {count}분 뒤에 만료돼요' },
+  'import.preview.expired': '초안이 만료됐어요. 창을 닫고 원본을 다시 변환해 주세요.',
+  'import.preview.droppedReferences': {
+    other: '가져왔지만 초안에 없는 이미지 참조 {count}개는 제거했어요:\n{references}',
+  },
+  'import.preview.starting': '가져오기를 시작하는 중…',
+  'import.preview.button.import': '가져오기',
+  'import.preview.button.importing': '가져오는 중…',
+
+  // ── Import warnings ─────────────────────────────────────────────────────
+  'import.warning.low_fidelity':
+    '파일에 있는 글자 중 약 {score}%만 변환 결과에서 확인됐어요. 가져오기 전에 내용을 읽어 봐 주세요.',
+  'import.warning.low_fidelity.plain': '원본 내용 일부가 빠졌을 수 있어요. 가져오기 전에 내용을 읽어 봐 주세요.',
+  'import.warning.scanned_pages': { other: '{count}쪽은 텍스트 레이어가 없어서 페이지 이미지로 읽었어요.' },
+  'import.warning.scanned_pages.plain': '일부 쪽은 텍스트 레이어가 없어서 페이지 이미지로 읽었어요.',
+  'import.warning.readability_fallback':
+    '본문 영역을 찾지 못해 페이지 전체를 변환했어요. 메뉴나 바닥글이 섞여 있을 수 있어요.',
+  'import.warning.images_rejected': { other: '이미지 {count}개는 문서에서 빠졌어요.' },
+  'import.warning.images_rejected.plain': '일부 이미지는 문서에서 빠졌어요.',
+  'import.warning.truncated': '원본이 가져오기 한도보다 길어서 일부는 빠졌어요.',
+
+  // ── Import failures the viewer words itself ─────────────────────────────
+  'import.error.notPdf': 'PDF 파일을 선택해 주세요.',
+  'import.error.tooLarge':
+    '이 워크스페이스가 받는 {limit}MB보다 큰 파일이에요. 파일을 나누거나 쪽수를 줄여서 올려 주세요.',
+  'import.error.upload': '파일을 읽지 못했어요.',
+  'import.error.convert': '원본을 변환하지 못했어요.',
+  'import.error.commit': '문서를 가져오지 못했어요.',
+  'import.error.path': '.md로 끝나는 저장소 기준 상대 경로를 적어 주세요.',
+  'import.error.url': 'http:// 또는 https://로 시작하는 전체 주소를 적어 주세요.',
 
   // ── Google Picker ───────────────────────────────────────────────────────
   'picker.error.gapiMissing': 'Google API 스크립트를 불러왔지만 gapi가 없습니다',
@@ -362,6 +450,23 @@ export const ko: LocaleCatalog = {
   'serverError.import_empty': '그 문서는 내용이 빈 채로 내보내졌어요.',
   'serverError.import_failed': '문서를 가져오지 못했어요: {message}',
   'serverError.import_interrupted': '가져오기가 끝나기 전에 멈췄어요.',
+
+  // PDF·웹페이지 가져오기 (services/import)
+  'serverError.import_busy': '이 워크스페이스에서 다른 가져오기가 진행 중이에요. 잠시 뒤에 다시 시도해 주세요.',
+  'serverError.import_unsupported_file': '이 방식으로는 PDF 파일만 가져올 수 있어요.',
+  'serverError.import_too_large': '{maxMb}MB보다 큰 파일이에요.',
+  'serverError.import_too_many_pages': 'PDF가 {pages}쪽인데, 한도는 {max}쪽이에요.',
+  'serverError.import_too_many_tokens':
+    '한 번에 변환하기에는 너무 긴 PDF예요(토큰 {inputTokens}개, 한도 {max}개). 파일을 나누거나 쪽 범위를 좁혀 주세요.',
+  'serverError.import_pdf_encrypted': '암호가 걸린 PDF예요.',
+  'serverError.import_pdf_no_text': '텍스트 레이어가 없는 PDF인데 LLM 변환이 꺼져 있어요.',
+  'serverError.import_url_invalid': 'http:// 또는 https://로 시작하는 전체 주소를 적어 주세요.',
+  'serverError.import_url_blocked': '그 사이트가 요청을 거부했어요({status}).',
+  'serverError.import_url_unreadable':
+    '그 페이지에서 읽을 내용을 가져오지 못했어요. JavaScript로 그려지는 페이지라면 브라우저에서 PDF로 저장해 파일로 가져와 주세요.',
+  'serverError.import_conversion_failed': '문서를 변환하지 못했어요: {message}',
+  'serverError.import_draft_expired': '가져오기가 만료됐어요. 문서를 다시 변환해 주세요.',
+  'serverError.import_llm_unavailable': '이 워크스페이스에 설정된 OpenAI 키가 없어서 PDF를 변환할 수 없어요.',
 
   // ── Milkdown/Crepe editor chrome ────────────────────────────────────────
   'editor.placeholder': '내용을 입력하세요...',

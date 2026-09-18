@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GitHub - mozilla/readability: A standalone version of the readability lib used for Firefox Reader View</title>
+<meta property="og:title" content="GitHub - mozilla/readability: A standalone version of the readability lib used for Firefox Reader View">
+</head>
+<body>
+<header><a href="/mozilla">mozilla</a> / <a href="/mozilla/readability">readability</a></header>
+<nav aria-label="Repository"><a href="/mozilla/readability/issues">Issues</a> <a href="/mozilla/readability/pulls">Pull requests</a></nav>
+<main>
+<article class="markdown-body entry-content container-lg" itemprop="text"><div class="markdown-heading" dir="auto"><h1 tabindex="-1" class="heading-element" dir="auto">Readability.js</h1><a id="user-content-readabilityjs" class="anchor" aria-label="Permalink: Readability.js" href="#readabilityjs"><svg data-component="Octicon" class="octicon octicon-link" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M0 0h16v16H0z"></path></svg></a></div>
+<p dir="auto">A standalone version of the readability library used for <a href="https://support.mozilla.org/kb/firefox-reader-view-clutter-free-web-pages" rel="nofollow">Firefox Reader View</a>.</p>
+<div class="markdown-heading" dir="auto"><h2 tabindex="-1" class="heading-element" dir="auto">Installation</h2><a id="user-content-installation" class="anchor" aria-label="Permalink: Installation" href="#installation"><svg data-component="Octicon" class="octicon octicon-link" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M0 0h16v16H0z"></path></svg></a></div>
+<p dir="auto">Readability is available on npm:</p>
+<div class="highlight highlight-source-shell notranslate position-relative overflow-auto" dir="auto" data-snippet-clipboard-copy-content="npm install @mozilla/readability"><pre>npm install @mozilla/readability</pre></div>
+<p dir="auto">You can then <code>require()</code> it, or for web-based projects, load the <code>Readability.js</code> script from your webpage.</p>
+<div class="markdown-heading" dir="auto"><h2 tabindex="-1" class="heading-element" dir="auto">Basic usage</h2><a id="user-content-basic-usage" class="anchor" aria-label="Permalink: Basic usage" href="#basic-usage"><svg data-component="Octicon" class="octicon octicon-link" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M0 0h16v16H0z"></path></svg></a></div>
+<p dir="auto">To parse a document, you must create a new <code>Readability</code> object from a DOM document object, and then call the <a href="#parse"><code>parse()</code></a> method. Here's an example:</p>
+<div class="highlight highlight-source-js notranslate position-relative overflow-auto" dir="auto" data-snippet-clipboard-copy-content="var article = new Readability(document).parse();"><pre><span class="pl-k">var</span> <span class="pl-s1">article</span> <span class="pl-c1">=</span> <span class="pl-k">new</span> <span class="pl-v">Readability</span><span class="pl-kos">(</span><span class="pl-smi">document</span><span class="pl-kos">)</span><span class="pl-kos">.</span><span class="pl-en">parse</span><span class="pl-kos">(</span><span class="pl-kos">)</span><span class="pl-kos">;</span></pre></div>
+<p dir="auto">If you use Readability in a web browser, you will likely be able to use a <code>document</code> reference from elsewhere (e.g. fetched via XMLHttpRequest, in a same-origin <code>&lt;iframe&gt;</code> you have access to, etc.). In Node.js, you can <a href="#nodejs-usage">use an external DOM library</a>.</p>
+</article>
+</main>
+<footer>© 2026 GitHub, Inc. <a href="/site/terms">Terms</a></footer>
+</body>
+</html>

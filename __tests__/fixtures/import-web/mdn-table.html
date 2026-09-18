@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en" prefix="og: https://ogp.me/ns#">
+<head>
+<meta charset="utf-8">
+<title>&lt;table&gt;: The Table element - HTML | MDN</title>
+<meta name="og:title" content="&lt;table&gt; HTML table element - HTML | MDN">
+</head>
+<body>
+<header><a href="/en-US/">MDN</a></header>
+<nav class="reference-toc"><h2>In this article</h2><ul><li><a href="#try_it">Try it</a></li><li><a href="#technical_summary">Technical summary</a></li></ul></nav>
+<main id="content">
+<article class="main-page-content">
+<section class="content-section"><p>The <strong><code>&lt;table&gt;</code></strong> <a href="/en-US/docs/Web/HTML">HTML</a> element represents tabular data—that is, information presented in a two-dimensional table comprised of rows and columns of cells containing data.</p></section>
+<section class="content-section">
+<!--lit-node 0--><h2 id="visual_layout_of_table_contents" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#visual_layout_of_table_contents">Visual layout of table contents</a></h2><!--/lit-part-->
+<p>Following elements are part of the table structure:</p>
+<ul>
+<li><a href="/en-US/docs/Web/HTML/Reference/Elements/caption"><code>&lt;caption&gt;</code></a></li>
+<li><a href="/en-US/docs/Web/HTML/Reference/Elements/thead"><code>&lt;thead&gt;</code></a></li>
+<li><a href="/en-US/docs/Web/HTML/Reference/Elements/colgroup"><code>&lt;colgroup&gt;</code></a></li>
+<li><a href="/en-US/docs/Web/HTML/Reference/Elements/col"><code>&lt;col&gt;</code></a></li>
+<li><a href="/en-US/docs/Web/HTML/Reference/Elements/th"><code>&lt;th&gt;</code></a></li>
+<li><a href="/en-US/docs/Web/HTML/Reference/Elements/tbody"><code>&lt;tbody&gt;</code></a></li>
+<li><a href="/en-US/docs/Web/HTML/Reference/Elements/tr"><code>&lt;tr&gt;</code></a></li>
+<li><a href="/en-US/docs/Web/HTML/Reference/Elements/td"><code>&lt;td&gt;</code></a></li>
+<li><a href="/en-US/docs/Web/HTML/Reference/Elements/tfoot"><code>&lt;tfoot&gt;</code></a></li>
+</ul>
+<p>The <code>&lt;table&gt;</code> box establishes a table formatting context. Elements inside the <code>&lt;table&gt;</code> generate rectangular boxes. Each box occupies a number of table cells according to the following rules:</p>
+<ol>
+<li>The row boxes fill the table in the source code order from top to bottom. Each row box occupies one row of cells.</li>
+<li>A row group box occupies one or more row boxes.</li>
+<li>Column boxes are placed next to each other in source code order. Depending on the value of the <a href="/en-US/docs/Web/HTML/Reference/Global_attributes/dir"><code>dir</code></a> attribute, the columns are laid in left-to-right or right-to-left direction. A column box occupies one or more columns of table cells.</li>
+<li>A column group box occupies one or more column boxes.</li>
+<li>A cell box may span over multiple rows and columns. User agents trim cells to fit in the available number of rows and columns.</li>
+</ol>
+<p>Table cells do have padding. Boxes that make up a table do not have margins.</p>
+</section>
+<section class="content-section">
+<div class="code-example"><pre class="brush: css interactive-example notranslate"><code>table {
+  border-collapse: collapse;
+  border: 2px solid rgb(140 140 140);
+  font-family: sans-serif;
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+}
+
+caption {
+  caption-side: bottom;
+  padding: 10px;
+  font-weight: bold;
+}
+
+thead,
+tfoot {
+  background-color: rgb(228 240 245);
+}
+
+th,
+td {
+  border: 1px solid rgb(160 160 160);
+  padding: 8px 10px;
+}
+
+td:last-of-type {
+  text-align: center;
+}
+
+tbody &gt; tr:nth-of-type(even) {
+  background-color: rgb(237 238 242);
+}
+
+tfoot th {
+  text-align: right;
+}
+
+tfoot td {
+  font-weight: bold;
+}
+</code></pre></div>
+</section>
+<section class="content-section">
+<!--lit-part CDzzWjQeQvU=--><!--lit-node 0--><h2 id="technical_summary" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#technical_summary">Technical summary</a></h2><!--/lit-part-->
+<figure class="table-container"><table class="properties">
+  <tbody>
+    <tr>
+      <th scope="row">
+        <a href="/en-US/docs/Web/HTML/Guides/Content_categories">Content categories</a>
+      </th>
+      <td>
+        <a href="/en-US/docs/Web/HTML/Guides/Content_categories#flow_content">Flow content</a>
+      </td>
+    </tr>
+    <tr>
+      <th scope="row">Permitted content</th>
+      <td>
+        In this order:
+        <ol>
+          <li>an optional <a href="/en-US/docs/Web/HTML/Reference/Elements/caption"><code>&lt;caption&gt;</code></a> element,</li>
+          <li>zero or more <a href="/en-US/docs/Web/HTML/Reference/Elements/colgroup"><code>&lt;colgroup&gt;</code></a> elements,</li>
+          <li>an optional <a href="/en-US/docs/Web/HTML/Reference/Elements/thead"><code>&lt;thead&gt;</code></a> element,</li>
+          <li>
+            either one of the following:
+            <ul>
+              <li>zero or more <a href="/en-US/docs/Web/HTML/Reference/Elements/tbody"><code>&lt;tbody&gt;</code></a> elements</li>
+              <li>one or more <a href="/en-US/docs/Web/HTML/Reference/Elements/tr"><code>&lt;tr&gt;</code></a> elements</li>
+            </ul>
+          </li>
+          <li>an optional <a href="/en-US/docs/Web/HTML/Reference/Elements/tfoot"><code>&lt;tfoot&gt;</code></a> element</li>
+        </ol>
+      </td>
+    </tr>
+    <tr>
+      <th scope="row">Tag omission</th>
+      <td>None, both the starting and ending tag are mandatory.</td>
+    </tr>
+    <tr>
+      <th scope="row">Permitted parents</th>
+      <td>Any element that accepts flow content</td>
+    </tr>
+    <tr>
+      <th scope="row">Implicit ARIA role</th>
+      <td>
+        <code><a href="/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/table_role">table</a></code>
+      </td>
+    </tr>
+    <tr>
+      <th scope="row">Permitted ARIA roles</th>
+      <td>Any</td>
+    </tr>
+    <tr>
+      <th scope="row">DOM interface</th>
+      <td><a href="/en-US/docs/Web/API/HTMLTableElement"><code>HTMLTableElement</code></a></td>
+    </tr>
+  </tbody>
+</table></figure>
+</section>
+</article>
+</main>
+<footer><a href="/en-US/about">About MDN</a></footer>
+</body>
+</html>

@@ -17,6 +17,7 @@ import { docUpdateExtract } from './doc-update-extract';
 import { docUpdateSuggestions } from './doc-update-suggestions';
 import { errors } from './errors';
 import { gdocs } from './gdocs';
+import { importStrings } from './import';
 import { indexManagement } from './index-management';
 import { notifications } from './notifications';
 import { qa } from './qa';
@@ -37,4 +38,5 @@ export const en = {
   ...indexManagement,
   ...errors,
   ...gdocs,
+  ...importStrings,
 } as const;

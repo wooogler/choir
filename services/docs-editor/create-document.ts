@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Logger } from 'services/common/logger';
+import type { ProvenanceRecord } from 'services/document/provenance';
 import { GithubService } from 'services/github';
+import type { ImportAsset } from 'services/import/types';
 import { getGithubRepo } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import type { DocsApiErrorCode, DocsApiErrorDetail } from './api-errors';
 import { documentTitleFromPath, normalizeDocumentPath } from './document-path';
-import { saveEditedDocument } from './save-document';
+import { type SaveStepListener, makeStepReporter, saveEditedDocument } from './save-document';
 
 export interface CreateDocumentResult {
   commitSha: string;
@@ -44,6 +46,13 @@ export class CreateDocumentRefusal extends Error {
  * goes through, so a document born here is indistinguishable from one edited
  * here. Only the provenance type differs — the viewer calls it a new file.
  *
+ * This is also where every import lands (PDF, a web page, a Google Doc): an
+ * import is a new document whose content came from somewhere else, so it needs
+ * the assets that travel with it in the same commit and a note in provenance of
+ * where it came from, and nothing else about the landing differs. One landing
+ * path rather than three is the point — the index refresh the Google Docs
+ * import used to be missing comes with it.
+ *
  * Refuses to overwrite, and refuses BEFORE anything is committed. A creation
  * that landed on an existing path would be a silent, unreviewed replacement of
  * a document someone else wrote; the manager meant to start a new one.
@@ -54,7 +63,18 @@ export async function createDocument(params: {
   filePath: string;
   content?: string;
   commitMessage?: string;
+  /** Images the content references; committed alongside it and mirrored. */
+  assets?: ImportAsset[];
+  /** Where the document came from, merged over `{ editor: 'web' }` in provenance. */
+  source?: ProvenanceRecord['source'];
+  /** Called as each phase begins. Best-effort: a listener that throws is ignored. */
+  onStep?: SaveStepListener;
+  /** See `saveEditedDocument`: for a caller that links the replica itself. */
+  skipReplicaPublish?: boolean;
 }): Promise<CreateDocumentResult> {
+  const report = makeStepReporter(params.onStep);
+
+  report('checking');
   const filePath = normalizeDocumentPath(params.filePath);
   if (!filePath) {
     throw new CreateDocumentRefusal(400, 'invalid_document_path');
@@ -102,6 +122,8 @@ export async function createDocument(params: {
   // An empty document has nothing to open onto, so it starts as its own title.
   const content = params.content?.trim() ? params.content : `# ${documentTitleFromPath(filePath)}\n`;
 
+  // 'committing', 'mirroring' and 'indexing' are reported from inside the save,
+  // which is where those phases actually happen.
   const { commitSha } = await saveEditedDocument({
     workspaceId: params.workspaceId,
     userId: params.userId,
@@ -109,15 +131,21 @@ export async function createDocument(params: {
     content,
     commitMessage: params.commitMessage?.trim() || `Create ${filePath}`,
     provenanceType: 'new-file',
+    assets: params.assets,
+    source: params.source,
+    onStep: params.onStep,
+    skipReplicaPublish: params.skipReplicaPublish,
   });
 
   Logger.info('createDocument: created document', {
     workspaceId: params.workspaceId,
     filePath,
     commitSha,
+    assetCount: params.assets?.length ?? 0,
     userId: params.userId,
   });
 
+  report('done');
   return { commitSha, filePath };
 }
 

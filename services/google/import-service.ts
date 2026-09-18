@@ -1,6 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { GithubService } from 'services/github';
+import { CreateDocumentRefusal, createDocument } from 'services/docs-editor/create-document';
 import { getGithubRepo } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
@@ -61,13 +60,16 @@ export async function importGoogleDoc(params: {
   const report = makeProgressReporter(params.onProgress);
   report('checking');
 
+  // The landing checks the path again, authoritatively (mirror, disk, and
+  // GitHub itself). These three run first anyway so an unusable path, an
+  // unconfigured workspace or an occupied path fails without exporting a Doc —
+  // a Drive round trip and, for a long document, a slow one.
   const githubPath = normalizeImportPath(params.githubPath);
   if (!githubPath) {
     return { outcome: 'invalid-path', detail: 'Give a repository-relative path ending in .md' };
   }
 
-  const repoInfo = await getGithubRepo(workspaceId);
-  if (!repoInfo) {
+  if (!(await getGithubRepo(workspaceId))) {
     return { outcome: 'failed', detail: 'No GitHub repository configured for this workspace' };
   }
 
@@ -102,42 +104,46 @@ export async function importGoogleDoc(params: {
       return { outcome: 'empty', detail: 'That document exported as empty' };
     }
 
-    // No provenance sidecar. A record is the *why* behind a change — the other
-    // new-file path carries the extracted knowledge and the conversation it came
-    // from — and an import has none of that: it would be an empty `knowledge`,
-    // no `messages`, and a `diff.after` holding a second encrypted copy of the
-    // document, which the viewer then renders as a change list restating the
-    // whole file. Where it came from is already on the commit message and in the
-    // Google Doc mapping. Documents with no records are an ordinary state:
-    // readRecords returns [] for a missing directory.
-    report('committing');
-    const { commitSha } = await GithubService.getInstance().commitFilesWithContext({
-      owner: repoInfo.owner,
-      repo: repoInfo.repo,
-      branch: repoInfo.branch,
-      message: `Import ${path.posix.basename(githubPath)} from Google Docs (${meta.name ?? fileId})`,
-      files: [
-        { path: githubPath, content: extraction.markdown },
-        ...extraction.assets.map((asset) => ({
-          path: assetRepoPath(asset),
-          content: asset.bytes.toString('base64'),
-          encoding: 'base64' as const,
-        })),
-      ],
+    // The landing — commit, mirror, index, provenance — is the viewer's "new
+    // document" path, shared with the PDF and URL imports so there is one way a
+    // document is born. What the import used to do by hand here it gets from
+    // there, including the vector-store refresh and QMD warmup it was missing.
+    //
+    // It writes a 'new-file' provenance sidecar, which this path used to refuse:
+    // the objection was that the viewer rendered every record as a whole-file
+    // change list, so a record for an import read as the document restating
+    // itself. With 'new-file' the viewer renders a creation instead, and the
+    // sidecar earns its place by carrying `source` — which Doc this came from,
+    // in the same field the PDF and URL imports use.
+    //
+    // The replica publish is skipped: this document is linked in `preserve` mode
+    // a few lines below, and a publish racing that linking would file a
+    // "apply this by hand" request for content the Doc already holds.
+    const { commitSha } = await createDocument({
       workspaceId,
       userId,
+      filePath: githubPath,
+      content: extraction.markdown,
+      commitMessage: `Import ${path.posix.basename(githubPath)} from Google Docs (${meta.name ?? fileId})`,
+      assets: extraction.assets.map((asset) => ({
+        path: assetRepoPath(asset),
+        bytes: asset.bytes,
+        contentType: asset.contentType,
+      })),
+      source: {
+        import: 'google-docs',
+        name: meta.name ?? fileId,
+        url: meta.webViewLink,
+        fileId,
+      },
+      onStep: (step) => {
+        // The import's own vocabulary is narrower: it reports `checking` and
+        // `done` itself around the whole operation, and the viewer's step
+        // catalog has no `indexing` label. Only the overlap is forwarded.
+        if (step === 'committing' || step === 'mirroring') report(step);
+      },
+      skipReplicaPublish: true,
     });
-
-    // The mirror is what the viewer reads, and the GitHub sync that would
-    // otherwise refresh it runs on its own schedule.
-    report('mirroring');
-    await mirror.writeMarkdownFile(workspaceId, githubPath, extraction.markdown);
-    const repoRoot = mirror.getRepoRoot(workspaceId);
-    for (const asset of extraction.assets) {
-      const absolute = path.join(repoRoot, assetRepoPath(asset));
-      await fs.promises.mkdir(path.dirname(absolute), { recursive: true });
-      await fs.promises.writeFile(absolute, asset.bytes);
-    }
 
     // Link it, so edits made in the Doc from here on come back through review.
     //
@@ -180,6 +186,16 @@ export async function importGoogleDoc(params: {
       rejectedAssets: extraction.rejected.length ? extraction.rejected : undefined,
     };
   } catch (error) {
+    // The landing's refusals are this import's own vocabulary under another
+    // name: the path is unusable, or something is already there. They are
+    // answers the manager can act on, not failures, and the route and the viewer
+    // already speak these two outcomes.
+    if (error instanceof CreateDocumentRefusal) {
+      if (error.apiCode === 'document_exists') {
+        return { outcome: 'exists', githubPath, detail: `${githubPath} already exists in this repository` };
+      }
+      return { outcome: 'invalid-path', detail: 'Give a repository-relative path ending in .md' };
+    }
     return { outcome: 'failed', detail: (error as Error).message };
   }
 }

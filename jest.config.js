@@ -24,7 +24,9 @@ module.exports = {
     // pnpm nests deps as .pnpm/<name>@<ver>/node_modules/<name>/. Ignore (skip
     // transform for) everything in .pnpm EXCEPT the ESM-only remark/unified/mdast
     // families, which must be transpiled to CJS for jest to load them.
-    '/node_modules/\\.pnpm/(?!(unified|remark[^/]*|mdast[^/]*|micromark[^/]*|unist-util-[^/]*|vfile[^/]*|bail|trough|is-plain-obj|decode-named-character-reference|character-entities|devlop|ccount|zwitch|longest-streak|markdown-table|escape-string-regexp)@)'
+    // The rehype/hast half of the list is what the web import needs: HTML in,
+    // mdast out (jsdom's own ESM-only dependencies are in there too).
+    '/node_modules/\\.pnpm/(?!(unified|trim-trailing-lines|rehype[^/]*|hast[^/]*|parse5[^/]*|entities|@exodus\\+[^/]*|@csstools\\+css-tokenizer|@asamuzakjp\\+css-color|@asamuzakjp\\+generational-cache|property-information|space-separated-tokens|comma-separated-tokens|web-namespaces|html-void-elements|html-whitespace-sensitive-tag-names|collapse-white-space|stringify-entities|character-entities[^/]*|trim-lines|remark[^/]*|mdast[^/]*|micromark[^/]*|unist-util-[^/]*|vfile[^/]*|bail|trough|is-plain-obj|decode-named-character-reference|character-entities|devlop|ccount|zwitch|longest-streak|markdown-table|escape-string-regexp)@)'
   ],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',

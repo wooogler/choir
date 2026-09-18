@@ -46,6 +46,8 @@ Service modules should not depend on Slack payload shapes unless they are explic
 - `services/document/`: markdown parsing, tree operations, update anchors, section utilities, and document update state.
 - `services/retrieval/` and `services/file-registry/`: document indexing and retrieval providers.
 - `services/llm/`: model calls, prompts, response generation, and content generation.
+- `services/import/`: bringing outside documents in as new markdown files — `sources/web` (URL → Readability → markdown), `sources/pdf` (pdfjs inspection + Responses API transcription), the draft store, source note, commit guard, and the `/api/docs/:workspaceId/import/*` routes (see [pdf-web-import.md](pdf-web-import.md)).
+- `services/google/`: Google Drive/Docs replica sync, review cards, and the Google Docs import.
 - `services/workspace/`: persisted workspace configuration, runtime mirrors, and cleanup.
 - `services/common/`: logging, sessions, timestamps, names, data paths, and shared error helpers.
 - `services/i18n/`: locale resolution, the Bolt locale middleware, and per-reader translators; catalogs live in `src/i18n/` (see [i18n.md](i18n.md)).

@@ -1709,3 +1709,128 @@ select.commit-dialog-input {
   display: flex;
   gap: 8px;
 }
+
+/* ── Import (ImportMenu, PdfEstimateDialog, ImportPreviewDialog) ── */
+
+/* One sidebar entry that opens three sources. The items sit under it rather
+   than floating over the file list: the sidebar is narrow, and a popover here
+   would cover the documents somebody is trying to import next to. */
+.import-menu {
+  display: contents;
+}
+
+.import-menu-items {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0 2px 18px;
+  padding-left: 8px;
+  border-left: 1px solid #e7e7e3;
+}
+
+.import-menu-item .file-label {
+  padding-left: 2px;
+}
+
+/* Opened by the "From a PDF file" item; never shown itself. */
+.import-file-input {
+  display: none;
+}
+
+/* The preview dialog is a document, not a form: it needs the width of a page
+   and a body that scrolls while the path field and the buttons stay put. */
+.commit-dialog-wide {
+  width: min(1040px, 100%);
+  max-height: min(86vh, 900px);
+}
+
+.import-preview-editor {
+  flex: 1 1 auto;
+  min-height: 200px;
+  overflow: auto;
+  border: 1px solid #e5e5e1;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.import-preview-editor .crepe-host {
+  margin-top: 0;
+}
+
+.import-preview-editor .milkdown .ProseMirror {
+  padding: 16px 16px 24px 64px;
+  font-size: 15px;
+}
+
+/* A draft lives for minutes, so the countdown is shown rather than discovered
+   at commit time. Pushed to the left of the buttons it qualifies. */
+.import-preview-expiry {
+  margin-right: auto;
+  align-self: center;
+  color: #8b8b86;
+  font-size: 12px;
+}
+
+/* Conversion warnings and dropped images: advice, so a note rather than an
+   error — the manager decides in the editor below. */
+.import-warnings {
+  border: 1px solid #f0e2b6;
+  background: #fdf8e9;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.import-warnings-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6e6e69;
+}
+
+.import-warnings-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.import-warnings-list li + li {
+  margin-top: 4px;
+}
+
+/* The pre-flight numbers, as a definition list: a label and a figure per row. */
+.import-estimate {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.import-estimate-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 0;
+  border-bottom: 1px solid #f0f0ec;
+  font-size: 13px;
+}
+
+.import-estimate-row:last-child {
+  border-bottom: none;
+}
+
+.import-estimate-row dt {
+  color: #6e6e69;
+}
+
+.import-estimate-row dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* The narrow-screen padding the document editor already uses; repeated because
+   the preview's own rule above would otherwise win over it. */
+@media (max-width: 820px) {
+  .import-preview-editor .milkdown .ProseMirror {
+    padding: 16px 12px 16px 48px;
+  }
+}

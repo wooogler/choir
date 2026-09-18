@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Deployment handbook — Example Corp</title>
+    <meta property="og:title" content="Deployment handbook" />
+    <script>window.analytics = { track: function () {} };</script>
+    <style>body { font: 16px/1.5 sans-serif; }</style>
+  </head>
+  <body>
+    <nav id="site-nav"><a href="/">Home</a> <a href="/docs">Docs</a> <a href="/pricing">Pricing</a></nav>
+    <header id="masthead"><span>Example Corp engineering</span></header>
+    <article>
+      <h1>Deployment handbook</h1>
+      <p>
+        This handbook describes how a service reaches production at Example Corp. It is written for engineers who
+        already have a service running locally and now need to put it in front of real traffic. Every step below has
+        been run by a person on the platform team at least once a week for the past year, so the surprises that remain
+        are mostly the ones your own service brings with it. Read the whole page once before you start; the order of
+        the steps matters more than any individual command does.
+      </p>
+      <h2>Before you start</h2>
+      <p>
+        Make sure you can reach the staging cluster and that your service builds from a clean checkout. If either of
+        those is not true, fix it first — every failure mode further down looks identical to a broken build, and you
+        will spend an afternoon reading logs that were never going to tell you anything useful.
+      </p>
+      <ul>
+        <li>A green build on the default branch</li>
+        <li>
+          Access to the cluster
+          <ul>
+            <li>Staging, for the rehearsal</li>
+            <li>Production, for the real thing</li>
+          </ul>
+        </li>
+        <li>An on-call rotation that knows you are shipping</li>
+      </ul>
+      <h3>Configuration</h3>
+      <p>
+        Configuration lives in the repository, not in the cluster. The deploy script reads it at build time, so a change
+        to a value requires a new build and a new rollout. See the <a href="/docs/config">configuration reference</a>
+        for the full list, and the <a href="https://status.example.com/">status page</a> when something looks wrong.
+      </p>
+      <pre><code class="language-ts">export const config = {
+  region: 'ap-northeast-2',
+  replicas: 3,
+};</code></pre>
+      <h2>Rollout stages</h2>
+      <table>
+        <thead>
+          <tr><th>Stage</th><th>Traffic</th><th>Hold</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Canary</td><td>1%</td><td>15 minutes</td></tr>
+          <tr><td>Partial</td><td>25%</td><td>1 hour</td></tr>
+          <tr><td>Full</td><td>100%</td><td>—</td></tr>
+        </tbody>
+      </table>
+      <p>The dashboard below is the one the on-call engineer watches during a rollout.</p>
+      <p><img src="/img/rollout.png" alt="Rollout dashboard" /></p>
+      <p>
+        <img srcset="/img/latency-480.png 480w, /img/latency-960.png 960w" alt="Latency by stage" />
+      </p>
+      <h2>Rollback</h2>
+      <table>
+        <tr><td>Symptom</td><td>Action</td></tr>
+        <tr><td>Error rate above 1%</td><td>Roll back immediately</td></tr>
+        <tr><td>Latency above 500ms</td><td>Hold the stage and page the owner</td></tr>
+      </table>
+      <blockquote>
+        <p>Rolling back is not a failure. Leaving a bad rollout in place because you hoped it would settle is.</p>
+      </blockquote>
+      <p>
+        Run <code>deploy rollback</code> and then tell the channel. The command is idempotent, so running it twice is
+        safe, and it is the only action in this document that never needs approval.
+        <a href="javascript:void(openHelp())">Need help?</a>
+      </p>
+    </article>
+    <aside class="related"><h4>Related</h4><p>See also the incident handbook.</p></aside>
+    <footer id="site-footer"><p>© Example Corp. <a href="/legal">Legal</a></p></footer>
+    <noscript>Enable JavaScript for the interactive diagram.</noscript>
+  </body>
+</html>

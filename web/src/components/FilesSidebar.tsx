@@ -1,7 +1,7 @@
 import { useT } from '../i18n';
 import type { DocFile, FolderNode, RepoInfo } from '../types';
 import { buildFolderTree, dashboardPath, encodePath, folderContainsPath, formatTitle, navigate } from '../utils/docs';
-import { GoogleDocsImport } from './GoogleDocsImport';
+import { ImportMenu } from './ImportMenu';
 
 type FilesSidebarProps = {
   files: DocFile[];
@@ -116,7 +116,9 @@ export function FilesSidebar({
             <span className="file-label">{t('sidebar.insights')}</span>
           </button>
         )}
-        <GoogleDocsImport workspaceId={workspaceId} />
+        {/* One entry for all three sources; it hides itself when this reader
+            may not import. The Google Docs button lives inside it. */}
+        <ImportMenu workspaceId={workspaceId} />
       </nav>
     </aside>
   );
