@@ -1,0 +1,1 @@
+> [Figure: GnuPG architecture diagram showing GPGME aware applications, GnuPG components, key and certificate objects, and a legend for link types and process/object boxes]
