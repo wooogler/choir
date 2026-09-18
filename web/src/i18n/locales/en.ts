@@ -33,6 +33,7 @@ export const en = {
   'sidebar.files': '{count} files',
   'sidebar.filesOnBranch': '{count} files on {branch}',
   'sidebar.insights': 'Insights',
+  'sidebar.newDocument': 'New document',
 
   // ── Floating outline (FloatingToc.tsx) ──────────────────────────────────
   'toc.aria.label': 'Table of contents',
@@ -43,6 +44,7 @@ export const en = {
   'viewer.error.loadFailed': 'Failed to load document',
   'viewer.error.saveFailed': 'Failed to save',
   'viewer.error.deleteFailed': 'Failed to delete',
+  'viewer.error.createFailed': 'Failed to create the document',
   'viewer.confirm.unsavedChanges': 'Unsaved changes will be lost. Continue?',
   'viewer.confirm.discard': 'Discard all unsaved changes?',
   'viewer.loadingDocument': 'Loading document…',
@@ -101,6 +103,17 @@ export const en = {
   'delete.label.confirm': 'Type {path} to confirm',
   'delete.button.submitting': 'Deleting…',
   'delete.button.submit': 'Delete document',
+
+  // ── New document dialog (NewDocumentDialog.tsx) ─────────────────────────
+  'newDoc.aria.dialog': 'New document',
+  'newDoc.title': 'New document',
+  'newDoc.body.onBranch':
+    'A document holding just its title is committed to {branch} and starts answering questions right away.',
+  'newDoc.label.title': 'Title',
+  'newDoc.label.path': 'Path in the repository',
+  'newDoc.error.path': 'Give a repository-relative path ending in .md',
+  'newDoc.button.submitting': 'Creating…',
+  'newDoc.button.submit': 'Create document',
 
   // ── Change history (HistoryPanel.tsx) ───────────────────────────────────
   'history.type.update': 'Update',
@@ -329,6 +342,8 @@ export const en = {
   'settings.button.save': 'Save',
   'settings.button.saving': 'Saving…',
   'settings.error.save': 'Could not save your settings. Please try again.',
+  'serverError.invalid_document_path': 'Give a repository-relative path ending in .md',
+  'serverError.document_exists': '{path} already exists in this repository',
   'serverError.document_not_found': 'File not found',
   'serverError.record_not_found': 'Record not found',
   'serverError.read_only_document': 'This document is marked read-only. Clear that in App Home before deleting it.',

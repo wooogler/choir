@@ -48,6 +48,8 @@ export const DOCS_API_ERROR_MESSAGES = {
   invalid_language: 'Unsupported language',
 
   // ── Documents ───────────────────────────────────────────────────────────
+  invalid_document_path: 'Give a repository-relative path ending in .md',
+  document_exists: '{path} already exists in this repository',
   document_not_found: 'File not found',
   record_not_found: 'Record not found',
   read_only_document: 'This document is marked read-only. Clear that in App Home before deleting it.',

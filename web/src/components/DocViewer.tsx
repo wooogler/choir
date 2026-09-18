@@ -20,6 +20,7 @@ import { FloatingToc } from './FloatingToc';
 import { GoogleDocsReview } from './GoogleDocsReview';
 import { GoogleDocsSync } from './GoogleDocsSync';
 import { HistoryPanel } from './HistoryPanel';
+import { NewDocumentDialog } from './NewDocumentDialog';
 import { SettingsDialog } from './SettingsDialog';
 
 type DocViewerProps = {
@@ -122,6 +123,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showNewDocumentDialog, setShowNewDocumentDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -1002,6 +1004,8 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         repo={repo}
         workspaceId={workspaceId}
         canSeeInsights={canSeeInsights}
+        canCreate={canEdit}
+        onNewDocument={() => setShowNewDocumentDialog(true)}
       />
       <div className="doc-main">
         <DocHeader
@@ -1101,6 +1105,14 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           submitting={saving}
           onCancel={() => setShowDeleteDialog(false)}
           onConfirm={handleDeleteDocument}
+        />
+      )}
+      {showNewDocumentDialog && (
+        <NewDocumentDialog
+          workspaceId={workspaceId}
+          currentPath={filePath}
+          branch={repo?.branch}
+          onCancel={() => setShowNewDocumentDialog(false)}
         />
       )}
       {showSettingsDialog && languageSettings && session?.authenticated === true && (

@@ -2,7 +2,12 @@ import { Logger } from 'services/common/logger';
 import { parseMarkdownToTree } from 'services/document';
 import { DocumentUpdateService } from 'services/document/document-update-service';
 import { enrichWorkspaceImageCaptions } from 'services/document/image-captions';
-import { type ProvenanceRecord, buildContextFile, persistContextToMirror } from 'services/document/provenance';
+import {
+  type ProvenanceRecord,
+  type ProvenanceType,
+  buildContextFile,
+  persistContextToMirror,
+} from 'services/document/provenance';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService, type MarkdownFile } from 'services/github';
 import { schedulePublish } from 'services/google/replica-publisher';
@@ -24,6 +29,12 @@ export async function saveEditedDocument(params: {
   filePath: string;
   content: string;
   commitMessage: string;
+  /**
+   * How the change is recorded in provenance. Creating a document runs through
+   * this same path — commit, mirror, index, publish — and differs only in that
+   * the viewer should call it a new file rather than an edit.
+   */
+  provenanceType?: ProvenanceType;
 }): Promise<SaveDocumentResult> {
   const repoInfo = await getGithubRepo(params.workspaceId);
   if (!repoInfo) {
@@ -42,10 +53,13 @@ export async function saveEditedDocument(params: {
 
   const trimmedMessage = params.commitMessage.trim() || `Update ${params.filePath}`;
 
-  // Manual web edit: provenance carries the manager + diff (no conversation).
+  // Manual web edit: provenance carries the manager + diff (no conversation),
+  // and no `source` — there is no thread or Doc behind it. A creation lands here
+  // as 'new-file', where `beforeContent` is already the empty string the type
+  // expects, because nothing was indexed under the path.
   const record: ProvenanceRecord = {
     version: 1,
-    type: 'web-edit',
+    type: params.provenanceType ?? 'web-edit',
     file: { path: params.filePath, name: editedFileName },
     createdAt: new Date().toISOString(),
     updatedBy: { userId: params.userId },

@@ -9,9 +9,20 @@ type FilesSidebarProps = {
   repo: RepoInfo | null;
   workspaceId: string;
   canSeeInsights: boolean;
+  /** Only a manager who can push is offered a way to add a document. */
+  canCreate: boolean;
+  onNewDocument: () => void;
 };
 
-export function FilesSidebar({ files, currentPath, repo, workspaceId, canSeeInsights }: FilesSidebarProps) {
+export function FilesSidebar({
+  files,
+  currentPath,
+  repo,
+  workspaceId,
+  canSeeInsights,
+  canCreate,
+  onNewDocument,
+}: FilesSidebarProps) {
   const t = useT();
   const tree = buildFolderTree(files);
   const repoLabel = repo ? `${repo.owner}/${repo.name}` : t('sidebar.repo.fallback');
@@ -71,6 +82,21 @@ export function FilesSidebar({ files, currentPath, repo, workspaceId, canSeeInsi
       <nav className="file-list">
         {tree.folders.map(renderFolder)}
         {tree.files.map(renderFile)}
+        {canCreate && (
+          // A button rather than a link, same as Insights below: DocViewer's
+          // link interceptor treats every <a> in here as a document navigation.
+          <button type="button" className="file-link insights-link" onClick={onNewDocument}>
+            <span className="file-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2Z"
+                />
+              </svg>
+            </span>
+            <span className="file-label">{t('sidebar.newDocument')}</span>
+          </button>
+        )}
         {canSeeInsights && (
           // A button (not an <a href="/docs/…/dashboard">) so DocViewer's link
           // interceptor doesn't mistake it for a document navigation.

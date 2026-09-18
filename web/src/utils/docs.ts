@@ -106,6 +106,37 @@ export function encodePath(pathValue: string): string {
   return pathValue.split('/').map(encodeURIComponent).join('/');
 }
 
+/**
+ * Repo-relative, markdown, no traversal — mirrors the server's own check
+ * (`normalizeDocumentPath`), so a path the viewer accepts is one the API will
+ * take. Shared by the Google Docs import and by "New document", which write to
+ * the same repository and must refuse the same paths.
+ */
+export function looksLikeRepoPath(candidate: string): boolean {
+  const trimmed = candidate.trim();
+  if (!trimmed || trimmed.startsWith('/')) return false;
+  if (trimmed.split('/').includes('..')) return false;
+  // `assets/` holds committed binaries and `.choir/` holds encrypted provenance,
+  // which the server refuses by the same names. Repeating them here is what
+  // turns a round-trip 400 into a hint under the field.
+  if (trimmed.startsWith('assets/') || trimmed.startsWith('.choir/')) return false;
+  return /\.md$/i.test(trimmed);
+}
+
+/**
+ * A title → the filename someone would have typed for it. Hangul is kept, which
+ * is ordinary in these documents. `fallback` is what an untitled (or entirely
+ * punctuation) document is called instead.
+ */
+export function suggestFileName(title: string, fallback: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return `${slug || fallback}.md`;
+}
+
 export function formatTitle(filePath: string): string {
   return (
     filePath

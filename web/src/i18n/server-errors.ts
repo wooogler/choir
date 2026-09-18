@@ -68,6 +68,8 @@ export const SERVER_ERROR_KEY = {
   expected_image_body: 'serverError.expected_image_body',
   invalid_language: 'serverError.invalid_language',
 
+  invalid_document_path: 'serverError.invalid_document_path',
+  document_exists: 'serverError.document_exists',
   document_not_found: 'serverError.document_not_found',
   record_not_found: 'serverError.record_not_found',
   read_only_document: 'serverError.read_only_document',

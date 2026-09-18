@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ImportStep } from '../../../services/google/import-steps';
 import { type ServerErrorPayload, type T, describeServerError, useT } from '../i18n';
-import { docsPath } from '../utils/docs';
+import { docsPath, looksLikeRepoPath, suggestFileName } from '../utils/docs';
 import { readNdjson } from '../utils/ndjson';
 import { pickGoogleDoc } from '../utils/picker';
 
@@ -60,24 +60,6 @@ function describeStep(t: T, progress: Progress): string {
   return key ? t(key) : progress.label;
 }
 
-/** Repo-relative, markdown, no traversal — mirrors the server's own check. */
-function looksLikeRepoPath(candidate: string): boolean {
-  const trimmed = candidate.trim();
-  if (!trimmed || trimmed.startsWith('/')) return false;
-  if (trimmed.split('/').includes('..')) return false;
-  return /\.md$/i.test(trimmed);
-}
-
-/** Doc title → a filename someone would have typed. */
-function suggestPath(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9가-힣]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-  return `${slug || 'imported-document'}.md`;
-}
-
 export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
   const t = useT();
   const [available, setAvailable] = useState(false);
@@ -127,7 +109,7 @@ export function GoogleDocsImport({ workspaceId }: { workspaceId: string }) {
 
       const target = window.prompt(
         t('gdocs.import.prompt', { name: picked.name || t('gdocs.import.thisDocument') }),
-        suggestPath(picked.name),
+        suggestFileName(picked.name, 'imported-document'),
       );
       if (target === null) return;
       if (!looksLikeRepoPath(target)) {

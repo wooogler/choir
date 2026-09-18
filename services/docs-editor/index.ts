@@ -1,3 +1,6 @@
+export { createDocument, CreateDocumentRefusal } from './create-document';
+export type { CreateDocumentResult } from './create-document';
+export { documentTitleFromPath, normalizeDocumentPath } from './document-path';
 export { deleteDocument } from './delete-document';
 export type { DeleteDocumentResult } from './delete-document';
 export { saveEditedDocument } from './save-document';

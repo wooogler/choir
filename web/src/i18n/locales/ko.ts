@@ -30,6 +30,7 @@ export const ko: LocaleCatalog = {
   'sidebar.files': '파일 {count}개',
   'sidebar.filesOnBranch': '{branch} 브랜치의 파일 {count}개',
   'sidebar.insights': '인사이트',
+  'sidebar.newDocument': '새 문서',
 
   // ── Floating outline ────────────────────────────────────────────────────
   'toc.aria.label': '목차',
@@ -40,6 +41,7 @@ export const ko: LocaleCatalog = {
   'viewer.error.loadFailed': '문서를 불러오지 못했습니다',
   'viewer.error.saveFailed': '저장하지 못했습니다',
   'viewer.error.deleteFailed': '삭제하지 못했습니다',
+  'viewer.error.createFailed': '문서를 만들지 못했습니다',
   'viewer.confirm.unsavedChanges': '저장하지 않은 변경 사항이 사라집니다. 계속할까요?',
   'viewer.confirm.discard': '저장하지 않은 변경 사항을 모두 버릴까요?',
   'viewer.loadingDocument': '문서를 불러오는 중…',
@@ -89,6 +91,16 @@ export const ko: LocaleCatalog = {
   'delete.label.confirm': '확인을 위해 {path} 을(를) 입력하세요',
   'delete.button.submitting': '삭제하는 중…',
   'delete.button.submit': '문서 삭제',
+
+  // ── New document dialog ─────────────────────────────────────────────────
+  'newDoc.aria.dialog': '새 문서 만들기',
+  'newDoc.title': '새 문서 만들기',
+  'newDoc.body.onBranch': '제목만 담긴 문서가 {branch} 브랜치에 커밋되고, 곧바로 질문에 답하기 시작합니다.',
+  'newDoc.label.title': '제목',
+  'newDoc.label.path': '저장소 안의 경로',
+  'newDoc.error.path': '.md로 끝나는 저장소 기준 경로를 적어 주세요.',
+  'newDoc.button.submitting': '만드는 중…',
+  'newDoc.button.submit': '문서 만들기',
 
   // ── Change history ──────────────────────────────────────────────────────
   'history.type.update': '수정',
@@ -290,6 +302,8 @@ export const ko: LocaleCatalog = {
   'settings.button.save': '저장',
   'settings.button.saving': '저장하는 중…',
   'settings.error.save': '설정을 저장하지 못했어요. 다시 시도해 주세요.',
+  'serverError.invalid_document_path': '.md로 끝나는 저장소 기준 경로를 적어 주세요.',
+  'serverError.document_exists': '{path}는 이미 이 저장소에 있어요.',
   'serverError.document_not_found': '문서를 찾을 수 없어요.',
   'serverError.record_not_found': '기록을 찾을 수 없어요.',
   'serverError.read_only_document': '이 문서는 읽기 전용으로 표시돼 있어요. 삭제하려면 앱 홈에서 먼저 해제해 주세요.',

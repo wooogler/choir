@@ -13,6 +13,7 @@ import { clusterAllWorkspaces } from 'services/dashboard/topic-clusterer';
 import type { DocsApiErrorBody } from 'services/docs-editor';
 import {
   ALLOWED_IMAGE_TYPES,
+  CreateDocumentRefusal,
   IMAGE_EXTENSIONS,
   MAX_ASSET_BYTES,
   OAUTH_NONCE_COOKIE,
@@ -21,6 +22,7 @@ import {
   buildClearSessionCookieHeader,
   buildSessionCookieHeader,
   buildSlackAuthorizeUrl,
+  createDocument,
   deleteDocument,
   exchangeSlackOidcCode,
   getDocsWriteAccess,
@@ -28,6 +30,7 @@ import {
   issueOAuthState,
   issueSessionCookieValue,
   needsManager,
+  normalizeDocumentPath,
   parseLanguageUpdate,
   parseSessionCookie,
   sanitizeNextPath,
@@ -763,6 +766,78 @@ function setupPublicSite(): void {
   ) {
     app.logger.warn('dev-login is enabled: /docs/auth/dev-login will mint a session for any known user');
   }
+
+  // API: create a new markdown document. Auth: signed session cookie + manager
+  // + GitHub push access, the same ladder as the save route below.
+  //
+  // A literal segment rather than a path in the URL, and registered ahead of the
+  // `*splat` routes: the document does not exist yet, so the path it should take
+  // is a request body field, not the resource being addressed.
+  router.post(
+    '/api/docs/:workspaceId/documents',
+    expressForBodyParser.json({ limit: '5mb' }),
+    async (req: any, res: any) => {
+      try {
+        const workspaceId = String(req.params.workspaceId);
+        const { filePath, content, commitMessage } = req.body || {};
+
+        if (typeof filePath !== 'string' || !filePath.trim()) {
+          return apiError(res, 400, 'file_path_required');
+        }
+
+        const session = await readSession(req);
+        if (!session) {
+          return apiError(res, 401, 'not_signed_in');
+        }
+        if (session.workspaceId !== workspaceId) {
+          return apiError(res, 403, 'workspace_mismatch');
+        }
+
+        const managerCheck = await isManager(workspaceId, session.userId);
+        if (!managerCheck) {
+          return apiError(res, 403, 'not_a_manager');
+        }
+
+        const writeAccess = await getDocsWriteAccess(workspaceId, session.userId);
+        if (!writeAccess.canPush) {
+          return res.status(403).json(writeAccessErrorBody(writeAccess.reason, writeAccess.detail));
+        }
+
+        const normalized = normalizeDocumentPath(filePath);
+        if (!normalized) {
+          return apiError(res, 400, 'invalid_document_path');
+        }
+
+        // The same containment check the save and delete routes make. The
+        // normalizer already refuses traversal; this catches whatever a future
+        // platform quirk lets through, on the resolved path rather than the text.
+        const repoRoot = WorkspaceMirrorService.getInstance().getRepoRoot(workspaceId);
+        const repoRootResolved = path.resolve(repoRoot);
+        const resolved = path.resolve(repoRootResolved, normalized);
+        if (!resolved.startsWith(repoRootResolved + path.sep)) {
+          return apiError(res, 403, 'forbidden');
+        }
+
+        const result = await createDocument({
+          workspaceId,
+          userId: session.userId,
+          filePath: normalized,
+          content: typeof content === 'string' ? content : undefined,
+          commitMessage: typeof commitMessage === 'string' ? commitMessage : undefined,
+        });
+
+        return res.json({ ok: true, commitSha: result.commitSha, filePath: result.filePath });
+      } catch (err) {
+        // An unusable path or an occupied one is an answer, not a fault: the
+        // manager can fix either from the dialog, so neither is worth a log line.
+        if (err instanceof CreateDocumentRefusal) {
+          return apiError(res, err.status, err.apiCode, err.detail);
+        }
+        app.logger.error('POST /api/docs documents failed', err as Error);
+        return res.status(apiErrorStatus(err, 500)).json(apiErrorBody(err));
+      }
+    },
+  );
 
   // API: save edited markdown back to the workspace mirror and GitHub.
   // Auth: signed session cookie + manager check.

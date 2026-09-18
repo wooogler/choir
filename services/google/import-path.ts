@@ -1,20 +1,12 @@
-import path from 'node:path';
+import { normalizeDocumentPath } from 'services/docs-editor/document-path';
 
 /**
  * Where an imported Google Doc may land in the repository.
  *
- * Kept apart from import-service so it stays a pure function with no service
- * graph behind it: this is the check standing between a caller-supplied string
- * and a commit, and it should be cheap to test.
+ * The rule itself lives in `services/docs-editor/document-path`, because an
+ * import and a document created in the viewer write to the same repository and
+ * must refuse the same paths. This module stays as the import's name for it.
  */
-
-/**
- * `assets/` holds committed binaries and `.choir/` holds encrypted provenance.
- * Neither is a place a document may be written by name. (The former mirrors
- * ASSETS_DIR in services/docs-editor/save-asset, which is not imported here to
- * keep this module free of the GitHub client.)
- */
-const RESERVED_PREFIXES = ['assets/', '.choir/'];
 
 /**
  * A repository-relative markdown path, or null. Rejects absolute paths, parent
@@ -22,15 +14,7 @@ const RESERVED_PREFIXES = ['assets/', '.choir/'];
  * but the commit goes to GitHub too, which does not.
  */
 export function normalizeImportPath(candidate: string): string | null {
-  const trimmed = candidate.trim().replace(/^\/+/, '');
-  if (!trimmed) return null;
-
-  const normalized = path.posix.normalize(trimmed);
-  if (normalized.startsWith('..') || normalized.split('/').includes('..')) return null;
-  if (!/\.md$/i.test(normalized)) return null;
-  if (RESERVED_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return null;
-
-  return normalized;
+  return normalizeDocumentPath(candidate);
 }
 
 /** A filename suggestion from the Doc's title, for the viewer to pre-fill. */
