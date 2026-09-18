@@ -28,14 +28,26 @@ PODMAN_NETWORK_SUBNET="${PODMAN_NETWORK_SUBNET:-10.1.0.0/24}"
 # Used only when PODMAN_RUNTIME_NETWORK=bridge.
 CONTAINER_DNS="${CONTAINER_DNS:-198.82.247.98}"
 
-if [ -z "$DOMAIN" ]; then
-  echo "Usage: $0 <public-domain>"
-  echo "Example: $0 choir.example.com"
-  echo "Or set DOMAIN=... in the environment before invoking."
-  exit 1
+cd "$PROJECT_ROOT"
+
+# An already-configured deployment carries its own domain in DOCS_BASE_URL, so
+# fall back to that instead of making every redeploy repeat it on the command
+# line. An explicit argument or DOMAIN= still wins.
+if [ -z "$DOMAIN" ] && [ -f .env ]; then
+  DOMAIN="$(grep -E '^DOCS_BASE_URL=' .env | tail -n1 | cut -d= -f2- \
+    | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/' \
+    | sed -E 's#^https?://##; s#/.*$##' || true)"
+  if [ -n "$DOMAIN" ]; then
+    echo "Using domain ${DOMAIN} from DOCS_BASE_URL in .env"
+  fi
 fi
 
-cd "$PROJECT_ROOT"
+if [ -z "$DOMAIN" ]; then
+  echo "Usage: $0 [public-domain]"
+  echo "Example: $0 choir.example.com"
+  echo "The domain may also come from DOMAIN=... or DOCS_BASE_URL in .env."
+  exit 1
+fi
 
 echo "Deploying CHOIR for https://${DOMAIN}"
 echo "Podman runtime network: ${PODMAN_RUNTIME_NETWORK}"

@@ -153,6 +153,8 @@ For production, run CHOIR in HTTP mode behind a reverse proxy on a public hostna
    ./scripts/deploy-podman.sh your-domain.example
    ```
 
+   Once `DOCS_BASE_URL` is set in `.env`, later redeploys can omit the argument and the script reuses that domain.
+
    The script builds `choir:latest`, installs a `choir.service` systemd unit, mounts `./data` into the container, binds the app to `127.0.0.1:3000`, and waits on `/healthz`. It refuses non-loopback `HOST_BIND` values by default so the app port is not exposed directly to the network.
 
 ### Useful commands
