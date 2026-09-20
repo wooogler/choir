@@ -3,6 +3,7 @@ import { enrichWorkspaceImageCaptions } from 'services/document/image-captions';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService, type MarkdownFile } from 'services/github';
 import { schedulePublishAll } from 'services/google/replica-publisher';
+import { invalidateProjectIndex } from 'services/projects/project-index';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { WorkspaceMirrorMarkdownLoader } from 'services/workspace/mirror-markdown-loader';
 import { WorkspaceMirrorService, type WorkspaceSyncSource } from 'services/workspace/mirror-service';
@@ -44,6 +45,9 @@ export class GitHubSyncService {
       ...params,
       branch,
     });
+    // Project settings live in the mirror too, so a `.choir/project.json`
+    // edited on GitHub must not wait out the index's TTL after a sync.
+    invalidateProjectIndex(params.workspaceId);
 
     Logger.info(`GitHubSyncService: synced ${params.markdownFiles.length} markdown files to workspace mirror`, {
       workspaceId: params.workspaceId,

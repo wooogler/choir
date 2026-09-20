@@ -62,6 +62,7 @@ export const en = {
   'viewer.button.doneEditing': 'Done editing',
   'viewer.button.editDocument': 'Edit document',
   'viewer.button.delete': 'Delete…',
+  'viewer.button.rename': 'Rename…',
   'viewer.button.discard': 'Discard',
   'viewer.button.save': 'Save…',
   'viewer.button.noChanges': 'No changes',
@@ -114,6 +115,30 @@ export const en = {
   'newDoc.error.path': 'Give a repository-relative path ending in .md',
   'newDoc.button.submitting': 'Creating…',
   'newDoc.button.submit': 'Create document',
+
+  // ── Suggested file names (utils/file-names.ts, both dialogs) ────────────
+  'fileName.hint.siblings': 'Files in this folder: {examples}',
+
+  // ── Rename dialog (RenameDocumentDialog.tsx) ────────────────────────────
+  'rename.aria.dialog': 'Rename document',
+  'rename.title': 'Rename or move this document',
+  'rename.body':
+    'The file is renamed in a single commit, along with its change history. Type a different folder in front of the name to move it there.',
+  'rename.label.current': 'Current path',
+  'rename.label.path': 'New path',
+  'rename.checking': 'Checking the new path…',
+  'rename.folder.root': 'the repository root',
+  'rename.note.moveFolder': 'This moves the document to {folder}.',
+  'rename.warning.inboundLinks': {
+    one: '{count} link points at this document and will not be fixed automatically.',
+    other: '{count} links point at this document and will not be fixed automatically.',
+  },
+  'rename.error.path': 'Give a repository-relative path ending in .md',
+  'rename.error.exists': '{path} already exists in this repository.',
+  'rename.error.reviewPending': 'This document has a Google Docs review waiting. Handle that first, then rename it.',
+  'rename.error.failed': 'Could not rename the document.',
+  'rename.button.submitting': 'Renaming…',
+  'rename.button.submit': 'Rename document',
 
   // ── Change history (HistoryPanel.tsx) ───────────────────────────────────
   'history.type.update': 'Update',
@@ -540,6 +565,17 @@ export const en = {
   'serverError.import_conversion_failed': 'Could not convert that document: {message}',
   'serverError.import_draft_expired': 'This import has expired — convert the document again',
   'serverError.import_llm_unavailable': 'No OpenAI key is configured for this workspace, so PDFs cannot be converted',
+  'serverError.rename_review_pending': 'This document has an open Google Docs review — resolve it before renaming',
+  'serverError.project_folder_invalid': 'Give a repository-relative folder path',
+  'serverError.project_not_found': 'No project is defined for {folder}',
+  'serverError.project_invalid': 'Project settings are invalid: {message}',
+  'serverError.project_channel_taken': 'Channel {channel} already belongs to the project at {folder}',
+  'serverError.slack_scope_missing': 'The Slack app is missing the {scope} permission — reinstall it to grant it',
+  'serverError.slack_unavailable': 'Slack did not respond: {message}',
+  'serverError.meeting_transcript_empty': 'No usable text was found in the transcript',
+  'serverError.meeting_meta_invalid': 'Check the meeting details: {message}',
+  'serverError.glossary_no_terms': 'No glossary terms were found in that document',
+  'serverError.glossary_file_invalid': 'The glossary file path must be a markdown file inside the repository',
 
   // ── Milkdown/Crepe editor chrome (i18n/crepe.ts) ────────────────────────
   'editor.placeholder': 'Please enter...',

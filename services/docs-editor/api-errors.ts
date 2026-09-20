@@ -148,6 +148,21 @@ export const DOCS_API_ERROR_MESSAGES = {
   import_conversion_failed: 'Could not convert that document: {message}',
   import_draft_expired: 'This import has expired — convert the document again',
   import_llm_unavailable: 'No OpenAI key is configured for this workspace, so PDFs cannot be converted',
+
+  // ── Document rename and project folders ─────────────────────────────────
+  rename_review_pending: 'This document has an open Google Docs review — resolve it before renaming',
+  project_folder_invalid: 'Give a repository-relative folder path',
+  project_not_found: 'No project is defined for {folder}',
+  project_invalid: 'Project settings are invalid: {message}',
+  project_channel_taken: 'Channel {channel} already belongs to the project at {folder}',
+  slack_scope_missing: 'The Slack app is missing the {scope} permission — reinstall it to grant it',
+  slack_unavailable: 'Slack did not respond: {message}',
+
+  // ── Meeting notes and glossary ──────────────────────────────────────────
+  meeting_transcript_empty: 'No usable text was found in the transcript',
+  meeting_meta_invalid: 'Check the meeting details: {message}',
+  glossary_no_terms: 'No glossary terms were found in that document',
+  glossary_file_invalid: 'The glossary file path must be a markdown file inside the repository',
 } as const;
 
 export type DocsApiErrorCode = keyof typeof DOCS_API_ERROR_MESSAGES;

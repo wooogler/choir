@@ -15,6 +15,7 @@ import { getDocState, mutateDocState, readBaseline, readSourceSnapshot } from '.
 import { getWorkspaceClient } from './google-auth-service';
 import { docKey, replicaLock } from './keyed-mutex';
 import { publishReplica } from './replica-publisher';
+import type { GdocsDocStatus } from './types';
 
 /**
  * Turns a drifted replica into something a manager can decide about, and carries
@@ -133,6 +134,42 @@ async function gatherMaterials(
       editor: meta.lastModifyingUser,
     },
   };
+}
+
+/**
+ * The states in which a decision about this document is still outstanding.
+ *
+ * `applying` is in the set because a decision is mid-flight; `baseline-lost`,
+ * `orphaned` and `error` are not, because nobody can decide anything about them
+ * until the replica is repaired or unlinked.
+ */
+const OPEN_REVIEW_STATES: ReadonlySet<GdocsDocStatus> = new Set<GdocsDocStatus>([
+  'drifted',
+  'pending-review',
+  'applying',
+]);
+
+/**
+ * Whether a document has a Google Docs decision waiting on somebody.
+ *
+ * Rename refuses one of these rather than carrying it across (docs/
+ * meeting-notes-and-glossary.md: 제안 — 거부). Delete can retire the cards
+ * because the document is going away and there is nothing left to decide about;
+ * a rename leaves the document and the pending edit both alive, and every fence
+ * the decision is checked against — the reviewed Doc version, the GitHub blob
+ * sha, the baseline — is keyed to the path it was rendered at. Moving the path
+ * underneath an open Approve button would either fail it or, worse, apply an
+ * edit that was reviewed against a document at a different address.
+ *
+ * Live cards count on their own: a card can outlive the status that posted it
+ * (a sweep that found no change clears the status but leaves the buttons), and
+ * a button somebody can still click is an open decision.
+ */
+export async function hasOpenReview(workspaceId: string, githubPath: string): Promise<boolean> {
+  const state = await getDocState(workspaceId, githubPath);
+  if (!state) return false;
+  if (OPEN_REVIEW_STATES.has(state.status)) return true;
+  return (state.reviewCards?.length ?? 0) > 0 || (state.manualCards?.length ?? 0) > 0;
 }
 
 /**

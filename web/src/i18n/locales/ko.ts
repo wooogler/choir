@@ -59,6 +59,7 @@ export const ko: LocaleCatalog = {
   'viewer.button.doneEditing': '편집 완료',
   'viewer.button.editDocument': '문서 편집',
   'viewer.button.delete': '삭제…',
+  'viewer.button.rename': '이름 변경…',
   'viewer.button.discard': '되돌리기',
   'viewer.button.save': '저장…',
   'viewer.button.noChanges': '변경 없음',
@@ -101,6 +102,29 @@ export const ko: LocaleCatalog = {
   'newDoc.error.path': '.md로 끝나는 저장소 기준 경로를 적어 주세요.',
   'newDoc.button.submitting': '만드는 중…',
   'newDoc.button.submit': '문서 만들기',
+
+  // ── 파일명 추천 ─────────────────────────────────────────────────────────
+  'fileName.hint.siblings': '이 폴더의 파일: {examples}',
+
+  // ── 이름 변경 대화상자 ──────────────────────────────────────────────────
+  'rename.aria.dialog': '문서 이름 변경',
+  'rename.title': '문서 이름을 바꾸거나 옮깁니다',
+  'rename.body': '파일과 변경 이력이 한 커밋에서 함께 옮겨져요. 이름 앞에 다른 폴더를 적으면 그 폴더로 옮겨집니다.',
+  'rename.label.current': '지금 경로',
+  'rename.label.path': '새 경로',
+  'rename.checking': '새 경로를 확인하는 중…',
+  'rename.folder.root': '저장소 최상위',
+  'rename.note.moveFolder': '이 문서가 {folder} 로 옮겨져요.',
+  'rename.warning.inboundLinks': {
+    other: '이 문서를 가리키는 링크 {count}개는 자동으로 고쳐지지 않아요.',
+  },
+  'rename.error.path': '.md로 끝나는 저장소 기준 경로를 적어 주세요.',
+  'rename.error.exists': '{path} 은(는) 이미 저장소에 있어요.',
+  'rename.error.reviewPending':
+    '이 문서에 처리하지 않은 Google Docs 리뷰가 있어요. 먼저 처리한 뒤에 이름을 바꿔 주세요.',
+  'rename.error.failed': '문서 이름을 바꾸지 못했어요.',
+  'rename.button.submitting': '이름 바꾸는 중…',
+  'rename.button.submit': '이름 변경',
 
   // ── Change history ──────────────────────────────────────────────────────
   'history.type.update': '수정',
@@ -204,7 +228,8 @@ export const ko: LocaleCatalog = {
   'gdocs.sync.button.create': 'Google Docs로 발행',
   'gdocs.sync.title.create': '이 문서로 새 Google 문서를 만들고 GitHub 기준으로 동기화합니다',
   'gdocs.sync.error.create': 'Google 문서를 만들지 못했습니다',
-  'gdocs.sync.notice.notShared': '문서는 만들었지만 링크 공유를 설정하지 못했어요. Google Drive에서 직접 공유해 주세요.',
+  'gdocs.sync.notice.notShared':
+    '문서는 만들었지만 링크 공유를 설정하지 못했어요. Google Drive에서 직접 공유해 주세요.',
 
   // ── Google Docs review ──────────────────────────────────────────────────
   'gdocs.review.conflict.codeBlock':
@@ -474,6 +499,18 @@ export const ko: LocaleCatalog = {
   'serverError.import_conversion_failed': '문서를 변환하지 못했어요: {message}',
   'serverError.import_draft_expired': '가져오기가 만료됐어요. 문서를 다시 변환해 주세요.',
   'serverError.import_llm_unavailable': '이 워크스페이스에 설정된 OpenAI 키가 없어서 PDF를 변환할 수 없어요.',
+  'serverError.rename_review_pending':
+    '이 문서에 처리되지 않은 Google Docs 리뷰가 있어요. 먼저 리뷰를 처리한 뒤 이름을 바꿔 주세요.',
+  'serverError.project_folder_invalid': '저장소 기준 폴더 경로를 입력해 주세요.',
+  'serverError.project_not_found': '{folder}에 정의된 프로젝트가 없어요.',
+  'serverError.project_invalid': '프로젝트 설정이 올바르지 않아요: {message}',
+  'serverError.project_channel_taken': '채널 {channel}은 이미 {folder} 프로젝트에 연결되어 있어요.',
+  'serverError.slack_scope_missing': 'Slack 앱에 {scope} 권한이 없어요. 앱을 다시 설치해 권한을 부여해 주세요.',
+  'serverError.slack_unavailable': 'Slack이 응답하지 않았어요: {message}',
+  'serverError.meeting_transcript_empty': 'transcript에서 쓸 수 있는 텍스트를 찾지 못했어요.',
+  'serverError.meeting_meta_invalid': '회의 정보를 확인해 주세요: {message}',
+  'serverError.glossary_no_terms': '그 문서에서 용어집에 넣을 용어를 찾지 못했어요.',
+  'serverError.glossary_file_invalid': '용어집 파일 경로는 저장소 안의 마크다운 파일이어야 해요.',
 
   // ── Milkdown/Crepe editor chrome ────────────────────────────────────────
   'editor.placeholder': '내용을 입력하세요...',

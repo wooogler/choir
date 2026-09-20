@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts } from 'pdf-lib';
+import type { GlossaryEntry } from 'services/glossary';
 import { slicePdf } from 'services/import/sources/pdf/chunk';
 import { DEFAULT_PDF_IMPORT_CONFIG, type PdfImportConfig } from 'services/import/sources/pdf/config';
 import type { PdfInspection } from 'services/import/sources/pdf/inspect';
@@ -205,6 +206,55 @@ describe('convertPdfChunks', () => {
     expect(promptOf(client.requests[0])).not.toContain('scans');
     expect(promptOf(client.requests[1])).toContain('scans');
     expect(promptOf(client.requests[1])).toContain('transcribe it in full');
+  });
+
+  it('carries the organization glossary into every chunk prompt', async () => {
+    const bytes = await buildPdf(2);
+    const client = fakeClient(['# Handbook']);
+    const glossary: GlossaryEntry[] = [
+      { term: 'CHOIR', aliases: ['코이어', '콰이어'], description: 'The Slack knowledge bot', file: 'GLOSSARY.md' },
+      { term: 'QMD', aliases: ['큐엠디'], description: 'The local search index', file: 'GLOSSARY.md' },
+    ];
+
+    await convertPdfChunks({
+      workspaceId: 'W1',
+      bytes,
+      filename: 'handbook.pdf',
+      inspection: inspection(2),
+      plan: PLAN_ONE,
+      config: config(),
+      client,
+      model: 'gpt-5.4-mini',
+      glossary,
+      language: 'ko',
+    });
+
+    const prompt = promptOf(client.requests[0]);
+    // Without this a scanned "코이어" is transcribed by ear and never found again.
+    expect(prompt).toContain('CHOIR (코이어, 콰이어): The Slack knowledge bot');
+    expect(prompt).toContain('QMD (큐엠디): The local search index');
+    expect(prompt).toContain('정식 표기');
+    // It is an addition, not a replacement: the transcription rules still lead.
+    expect(prompt.indexOf('Transcribe')).toBeLessThan(prompt.indexOf('CHOIR'));
+  });
+
+  it('says nothing about a glossary when the workspace has none', async () => {
+    const bytes = await buildPdf(2);
+    const client = fakeClient(['# Handbook']);
+
+    await convertPdfChunks({
+      workspaceId: 'W1',
+      bytes,
+      filename: 'handbook.pdf',
+      inspection: inspection(2),
+      plan: PLAN_ONE,
+      config: config(),
+      client,
+      model: 'gpt-5.4-mini',
+      glossary: [],
+    });
+
+    expect(promptOf(client.requests[0])).not.toContain("organization's own terms");
   });
 
   it('strips a code fence the model wrapped the answer in', async () => {

@@ -12,6 +12,7 @@
  */
 
 import { Logger } from 'services/common/logger';
+import type { GlossaryEntry, GlossaryLanguage } from 'services/glossary';
 import type { ImportProgressListener } from 'services/import/types';
 import { resolveLLMConfig } from 'services/llm/llm-config';
 import { getOpenAIClient } from 'services/llm/openai-client-factory';
@@ -151,6 +152,17 @@ export async function resolvePdfLlm(
   };
 }
 
+/**
+ * The text pdfjs extracted for a chunk's pages.
+ *
+ * Exported because the estimate must derive it exactly as the conversion does:
+ * it picks which glossary entries fit under the cap, so a different string here
+ * is a different prompt there, and the counted tokens stop being the bill.
+ */
+export function chunkSourceText(inspection: PdfInspection, chunk: { from: number; to: number }): string {
+  return inspection.pageTexts.slice(chunk.from - 1, chunk.to).join('\n');
+}
+
 export interface ConvertPdfChunksParams {
   workspaceId: string;
   /** The whole uploaded PDF; chunks are sliced out of it here. */
@@ -162,6 +174,10 @@ export interface ConvertPdfChunksParams {
   onProgress?: ImportProgressListener;
   client?: PdfLlmClient;
   model?: string;
+  /** The organization's terms, so a scanned page is not read by ear. */
+  glossary?: GlossaryEntry[];
+  /** Language of the glossary instruction line. */
+  language?: GlossaryLanguage;
 }
 
 export async function convertPdfChunks(
@@ -197,6 +213,9 @@ export async function convertPdfChunks(
       scannedPages: countScannedPages(chunk, params.inspection.scannedPages),
       serviceTier: config.serviceTier,
       usage,
+      glossary: params.glossary,
+      glossaryText: chunkSourceText(params.inspection, chunk),
+      language: params.language,
     });
 
     pieces.push(markdown);
@@ -218,6 +237,9 @@ async function convertChunk(params: {
   scannedPages: number;
   serviceTier: 'flex' | 'default';
   usage: PdfLlmUsage;
+  glossary?: GlossaryEntry[];
+  glossaryText?: string;
+  language?: GlossaryLanguage;
 }): Promise<string> {
   const pdfBytes = await slicePdf(params.bytes, params.chunk.from, params.chunk.to);
   const prompt = buildTranscriptionPrompt({
@@ -227,6 +249,9 @@ async function convertChunk(params: {
     isFirstChunk: params.isFirstChunk,
     previousHeadingPath: params.previousHeadingPath,
     scannedPages: params.scannedPages,
+    glossary: params.glossary,
+    glossaryText: params.glossaryText,
+    language: params.language,
   });
 
   const request = buildChunkRequest({

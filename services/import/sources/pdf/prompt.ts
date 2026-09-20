@@ -9,9 +9,30 @@
  * See docs/pdf-web-import.md, 결정 4 ("프롬프트 원칙은 전사").
  */
 
+// The submodules rather than the barrel: this builder stays a pure function,
+// and the barrel would drag the mirror-reading loader in behind it.
+import type { GlossaryEntry, GlossaryLanguage } from 'services/glossary/parse';
+import { glossaryPromptBlock } from 'services/glossary/prompt-block';
+
+/** Matches the meeting-note path, and the estimate counts the same budget. */
+export const GLOSSARY_MAX_TOKENS = 1500;
+
 export interface TranscriptionPromptParams {
   /** Original upload name, used only as a title hint. */
   filename: string;
+  /**
+   * The organization's own terms. A scan is read by eye and a proper noun read
+   * by eye is a guess, so the glossary is the only thing standing between
+   * "CHOIR" and "Choir Inc." in a committed document.
+   */
+  glossary?: GlossaryEntry[];
+  /**
+   * The chunk's extracted text, used only to pick which glossary entries fit
+   * under the cap. Not sent: the PDF itself is already attached.
+   */
+  glossaryText?: string;
+  /** Language of the glossary instruction line; the rules stay English. */
+  language?: GlossaryLanguage;
   /** PDF metadata title, when it has one. */
   title?: string;
   /** Label for the pages in this chunk, e.g. `pp. 21–40`. */
@@ -73,6 +94,13 @@ export function buildTranscriptionPrompt(params: TranscriptionPromptParams): str
       'If the page range begins mid-sentence or mid-table, continue from where it starts without an introductory line.',
     );
   }
+
+  const glossary = glossaryPromptBlock(params.glossary ?? [], {
+    text: params.glossaryText,
+    maxTokens: GLOSSARY_MAX_TOKENS,
+    language: params.language,
+  });
+  if (glossary) parts.push(glossary);
 
   return parts.join('\n');
 }

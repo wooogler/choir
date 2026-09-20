@@ -838,6 +838,22 @@ a {
   line-height: 1.45;
 }
 
+/* Rename dialog: a caution that does not block, and the path as it stands. */
+.commit-dialog-warning {
+  margin: 0;
+  color: #8a5a00;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.commit-dialog-readonly {
+  margin: -6px 0 0;
+  color: #6e6e69;
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
 .settings-divider {
   border: none;
   border-top: 1px solid #e7e7e3;

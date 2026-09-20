@@ -11,6 +11,11 @@ const DEFAULT_SLACK_SCOPES = [
   'channels:read',
   'chat:write',
   'groups:history',
+  // Private channels the bot belongs to: needed to list them in the project
+  // settings GUI and to read their members (docs/project-folders.md 5).
+  // Workspaces installed before this was added keep their old grant until a
+  // manager re-authorizes the app.
+  'groups:read',
   'im:history',
   'im:read',
   'im:write',

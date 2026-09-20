@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts } from 'pdf-lib';
+import type { GlossaryEntry } from 'services/glossary';
 import { DEFAULT_PDF_IMPORT_CONFIG, type PdfImportConfig } from 'services/import/sources/pdf/config';
 import { estimatePdfImport, estimateUsd, priceFor } from 'services/import/sources/pdf/estimate';
 import type { PdfInspection } from 'services/import/sources/pdf/inspect';
@@ -183,6 +184,55 @@ describe('estimatePdfImport', () => {
 
     // The first chunk's prompt is identical; the second differs only in the
     // heading path, which the estimate stands in for.
+    expect(JSON.stringify(sent[0])).toBe(JSON.stringify(estimateClient.calls[0].body.input));
+  });
+
+  it('counts the glossary block, because the conversion will send it too', async () => {
+    const bytes = await buildPdf(4);
+    const inspected = inspection(4, 300, [3, 4]);
+    const plan = { chunks: PLAN_TWO.chunks, scannedPages: [3, 4] };
+    const glossary: GlossaryEntry[] = [
+      { term: 'CHOIR', aliases: ['코이어'], description: 'The Slack knowledge bot', file: 'GLOSSARY.md' },
+    ];
+
+    const estimateClient = fakeClient([10, 10]);
+    await estimatePdfImport({
+      workspaceId: 'W1',
+      bytes,
+      filename: 'handbook.pdf',
+      inspection: inspected,
+      plan,
+      config: config(),
+      client: estimateClient,
+      model: 'gpt-5.4-mini',
+      glossary,
+    });
+
+    const promptOf = (input: unknown[]) => (input[0] as { content: Array<Record<string, string>> }).content[0].text;
+    expect(promptOf(estimateClient.calls[0].body.input)).toContain('CHOIR (코이어): The Slack knowledge bot');
+
+    const sent: unknown[] = [];
+    await convertPdfChunks({
+      workspaceId: 'W1',
+      bytes,
+      filename: 'handbook.pdf',
+      inspection: inspected,
+      plan,
+      config: config(),
+      model: 'gpt-5.4-mini',
+      glossary,
+      client: {
+        responses: {
+          create: async (request) => {
+            sent.push(request.input);
+            return { output_text: '# Handbook', usage: { input_tokens: 1, output_tokens: 1 } };
+          },
+        },
+        post: async () => ({ input_tokens: 0 }),
+      },
+    });
+
+    // The counted payload and the paid one are the same bytes, glossary and all.
     expect(JSON.stringify(sent[0])).toBe(JSON.stringify(estimateClient.calls[0].body.input));
   });
 

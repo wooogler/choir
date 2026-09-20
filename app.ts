@@ -6,6 +6,7 @@ import { SlackUsageMonitor, usageMonitoringMiddleware } from 'services/slack/usa
 import registerListeners from './listeners';
 
 import { AppConfig } from '@/config';
+import { WebClient } from '@slack/web-api';
 import { sweepExpiredSessions } from 'services/common';
 import { CHOIRError } from 'services/common/error-handler';
 import { getDocUsage, getGaps, getSummary, getTopics } from 'services/dashboard/dashboard-api';
@@ -33,6 +34,7 @@ import {
   normalizeDocumentPath,
   parseLanguageUpdate,
   parseSessionCookie,
+  registerRenameRoutes,
   sanitizeNextPath,
   saveEditedDocument,
   saveUploadedAsset,
@@ -57,6 +59,7 @@ import {
 } from 'services/i18n';
 import { pdfUploadLimitBytes, registerImportRoutes } from 'services/import/routes';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
+import { registerProjectRoutes } from 'services/projects/routes';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { isCHOIRUser, isManager } from 'services/slack';
 import { getGithubRepo } from 'services/slack';
@@ -581,6 +584,66 @@ function setupPublicSite(): void {
       warn: (message: string, meta?: unknown) => app.logger.warn(message, meta),
       error: (message: string, err?: unknown) => app.logger.error(message, err as Error),
     },
+  });
+
+  // ── Document rename and move ──────────────────────────────────────────────
+  // Registered before the '/api/docs/:workspaceId/*splat' content route below,
+  // which would otherwise swallow '/api/docs/<id>/documents/rename'.
+  registerRenameRoutes(router, {
+    readSession,
+    isManager,
+    jsonBody: expressForBodyParser.json({ limit: '64kb' }),
+    logger: {
+      info: (message: string, meta?: unknown) => app.logger.info(message, meta),
+      warn: (message: string, meta?: unknown) => app.logger.warn(message, meta),
+      error: (message: string, err?: unknown) => app.logger.error(message, err as Error),
+    },
+  });
+
+  // ── Project folders ───────────────────────────────────────────────────────
+  // Registered before '/api/docs/:workspaceId/*splat', which would otherwise
+  // swallow every '/api/docs/<id>/projects/...' path.
+  const projectInstallationStore = new SqliteSlackInstallationStore();
+  const projectSlackClients = new Map<string, WebClient>();
+
+  /**
+   * A bot-token client for one workspace. In `single` mode the app's own client
+   * already carries the only workspace's token; in `oauth` mode `app.client` has
+   * no token at all, so the installation has to be read per team.
+   */
+  const slackClientFor = async (workspaceId: string): Promise<WebClient | null> => {
+    if (slackConfig.mode !== 'oauth') return app.client;
+
+    const cached = projectSlackClients.get(workspaceId);
+    if (cached) return cached;
+    try {
+      const installation = await projectInstallationStore.fetchInstallation({
+        teamId: workspaceId,
+        enterpriseId: undefined,
+        isEnterpriseInstall: false,
+      });
+      const token = installation.bot?.token;
+      if (!token) return null;
+      const client = new WebClient(token, clientOptions);
+      projectSlackClients.set(workspaceId, client);
+      return client;
+    } catch {
+      // An uninstalled or unknown workspace: the route answers 503, which the
+      // GUI shows as "channels are unavailable".
+      return null;
+    }
+  };
+
+  registerProjectRoutes(router, {
+    readSession,
+    isManager,
+    jsonBody: expressForBodyParser.json({ limit: '256kb' }),
+    logger: {
+      info: (message: string, meta?: unknown) => app.logger.info(message, meta),
+      warn: (message: string, meta?: unknown) => app.logger.warn(message, meta),
+      error: (message: string, err?: unknown) => app.logger.error(message, err as Error),
+    },
+    slackClientFor,
   });
 
   router.get('/api/docs/:workspaceId', async (req: any, res: any) => {

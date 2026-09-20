@@ -10,6 +10,7 @@
  */
 
 import { Logger } from 'services/common/logger';
+import type { GlossaryEntry, GlossaryLanguage } from 'services/glossary';
 import type { ConvertedDocument, ImportProgressListener, ImportWarning } from 'services/import/types';
 import { ImportRefusal } from 'services/import/types';
 import { type PdfImportConfig, loadPdfImportConfig } from './config';
@@ -30,6 +31,7 @@ export type { PdfImportEstimate } from './estimate';
 export { fidelityScore, stripMarkdownSyntax } from './fidelity';
 export { textFallbackMarkdown, pageFurnitureFilter } from './text-fallback';
 export type { PdfLlmClient } from './llm-convert';
+export { buildTranscriptionPrompt, GLOSSARY_MAX_TOKENS } from './prompt';
 
 export interface ConvertPdfParams {
   workspaceId: string;
@@ -41,6 +43,14 @@ export interface ConvertPdfParams {
   /** Injected in tests; production resolves the workspace's own client. */
   client?: PdfLlmClient;
   model?: string;
+  /**
+   * The organization's terms, from `loadAllGlossaries(workspaceId)`. The target
+   * folder is not known at convert time (the draft has no path yet), so the
+   * whole repository's glossary is what there is to correct a scan against.
+   */
+  glossary?: GlossaryEntry[];
+  /** Language of the glossary instruction line. */
+  language?: GlossaryLanguage;
 }
 
 export async function convertPdf(params: ConvertPdfParams): Promise<ConvertedDocument> {
@@ -85,6 +95,8 @@ export async function convertPdf(params: ConvertPdfParams): Promise<ConvertedDoc
         onProgress: params.onProgress,
         client: params.client,
         model: params.model,
+        glossary: params.glossary,
+        language: params.language,
       });
       markdown = converted.markdown;
       transcribed = true;

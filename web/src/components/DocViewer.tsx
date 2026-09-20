@@ -5,9 +5,11 @@ import {
   docsPath,
   encodePath,
   extractToc,
+  folderOf,
   parseDocsUrl,
   pickLandingFile,
   scrollToAnchor,
+  siblingNames,
   slugifyHeading,
 } from '../utils/docs';
 import { inlineMarkdownToText } from '../utils/inline-markdown';
@@ -21,6 +23,7 @@ import { GoogleDocsReview } from './GoogleDocsReview';
 import { GoogleDocsSync } from './GoogleDocsSync';
 import { HistoryPanel } from './HistoryPanel';
 import { NewDocumentDialog } from './NewDocumentDialog';
+import { RenameDocumentDialog } from './RenameDocumentDialog';
 import { SettingsDialog } from './SettingsDialog';
 
 type DocViewerProps = {
@@ -124,6 +127,7 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showNewDocumentDialog, setShowNewDocumentDialog] = useState(false);
+  const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -188,6 +192,10 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const editorReady = loadedMarkdown !== null;
 
   const breadcrumb = useMemo(() => filePath, [filePath]);
+
+  // What a new document's name should follow: the basenames already sitting in
+  // the folder of the document being read, which is where it will be created.
+  const newDocumentSiblings = useMemo(() => siblingNames(files, folderOf(filePath)), [files, filePath]);
 
   // Dismissing the read-only notice is per-visit: a new reason (or a reload
   // after access is granted) should speak up again. The header keeps the
@@ -933,6 +941,16 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           {t('viewer.button.editDocument')}
         </button>
       )}
+      {canEdit && !isEditing && !dirty && filePath && (
+        <button
+          type="button"
+          className="doc-button doc-button-ghost"
+          onClick={() => setShowRenameDialog(true)}
+          disabled={saving}
+        >
+          {t('viewer.button.rename')}
+        </button>
+      )}
       {canEdit && !isEditing && !dirty && (
         <button
           type="button"
@@ -1111,8 +1129,17 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         <NewDocumentDialog
           workspaceId={workspaceId}
           currentPath={filePath}
+          siblings={newDocumentSiblings}
           branch={repo?.branch}
           onCancel={() => setShowNewDocumentDialog(false)}
+        />
+      )}
+      {showRenameDialog && canEdit && (
+        <RenameDocumentDialog
+          workspaceId={workspaceId}
+          currentPath={filePath}
+          files={files}
+          onCancel={() => setShowRenameDialog(false)}
         />
       )}
       {showSettingsDialog && languageSettings && session?.authenticated === true && (

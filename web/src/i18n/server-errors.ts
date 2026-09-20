@@ -134,6 +134,18 @@ export const SERVER_ERROR_KEY = {
   import_conversion_failed: 'serverError.import_conversion_failed',
   import_draft_expired: 'serverError.import_draft_expired',
   import_llm_unavailable: 'serverError.import_llm_unavailable',
+
+  rename_review_pending: 'serverError.rename_review_pending',
+  project_folder_invalid: 'serverError.project_folder_invalid',
+  project_not_found: 'serverError.project_not_found',
+  project_invalid: 'serverError.project_invalid',
+  project_channel_taken: 'serverError.project_channel_taken',
+  slack_scope_missing: 'serverError.slack_scope_missing',
+  slack_unavailable: 'serverError.slack_unavailable',
+  meeting_transcript_empty: 'serverError.meeting_transcript_empty',
+  meeting_meta_invalid: 'serverError.meeting_meta_invalid',
+  glossary_no_terms: 'serverError.glossary_no_terms',
+  glossary_file_invalid: 'serverError.glossary_file_invalid',
 } as const satisfies Record<DocsApiErrorCode, MessageKey>;
 
 export function isDocsApiErrorCode(value: unknown): value is DocsApiErrorCode {

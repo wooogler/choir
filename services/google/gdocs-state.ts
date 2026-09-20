@@ -120,6 +120,51 @@ export async function removeDocState(workspaceId: string, githubPath: string): P
 }
 
 /**
+ * Re-keys a document's replica bookkeeping when the document is renamed or moved.
+ *
+ * Every piece of it is keyed by repository path — the state entry by the path
+ * itself, the baseline and its source snapshot by a hash OF that path — so a
+ * rename that only moved the mapping would leave the replica with no baseline,
+ * which reads as `baseline-lost`: drift can no longer be measured, and the next
+ * sweep asks a manager about a document it cannot compare. Moving the files is
+ * the difference between "renamed" and "quietly unlinked".
+ *
+ * A no-op when the document has no state, which is the ordinary case: most
+ * documents were never linked to a Doc.
+ */
+export async function renameDocState(workspaceId: string, from: string, to: string): Promise<void> {
+  const moved = await replicaLock.run(workspaceKey(workspaceId), async () => {
+    const file = await readSyncFile(workspaceId);
+    const state = file.docs[from];
+    if (!state) return false;
+
+    delete file.docs[from];
+    file.docs[to] = { ...state, updatedAt: new Date().toISOString() };
+    file.updatedAt = new Date().toISOString();
+    await writeSyncFile(workspaceId, file);
+    return true;
+  });
+
+  if (!moved) return;
+
+  // Outside the lock: these are per-document files, and the state entry above is
+  // what two writers would race on.
+  await moveIfPresent(baselinePath(workspaceId, from), baselinePath(workspaceId, to));
+  await moveIfPresent(sourceSnapshotPath(workspaceId, from), sourceSnapshotPath(workspaceId, to));
+}
+
+/** Renames a state file, treating "it was not there" as nothing to do. */
+async function moveIfPresent(from: string, to: string): Promise<void> {
+  try {
+    await fs.promises.mkdir(path.dirname(to), { recursive: true });
+    await fs.promises.rename(from, to);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    Logger.warn(`Google Docs state file could not be re-keyed: ${from} → ${to}`, error as Error);
+  }
+}
+
+/**
  * The markdown export taken immediately after a push. Drift is `current export
  * !== baseline`; a missing baseline is not "no drift" but "cannot tell", which
  * callers must surface as `baseline-lost` rather than silently republishing over

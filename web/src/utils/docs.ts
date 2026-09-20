@@ -123,10 +123,30 @@ export function looksLikeRepoPath(candidate: string): boolean {
   return /\.md$/i.test(trimmed);
 }
 
+/** The folder part of a repo path, '' at the repository root. */
+export function folderOf(filePath: string): string {
+  const cut = filePath.lastIndexOf('/');
+  return cut === -1 ? '' : filePath.slice(0, cut);
+}
+
+/**
+ * The basenames of the documents sitting directly in `folder` — what a folder's
+ * naming convention is read off. Nested folders are not siblings, and `exclude`
+ * drops the document being renamed so it cannot vote on its own new name.
+ */
+export function siblingNames(files: DocFile[], folder: string, exclude?: string): string[] {
+  return files
+    .filter((file) => file.path !== exclude && folderOf(file.path) === folder)
+    .map((file) => file.path.slice(folder ? folder.length + 1 : 0));
+}
+
 /**
  * A title → the filename someone would have typed for it. Hangul is kept, which
  * is ordinary in these documents. `fallback` is what an untitled (or entirely
  * punctuation) document is called instead.
+ *
+ * `suggestFileNameFromSiblings` in `./file-names` is the folder-aware version:
+ * use it wherever the sibling list is at hand, and this where it is not.
  */
 export function suggestFileName(title: string, fallback: string): string {
   const slug = title

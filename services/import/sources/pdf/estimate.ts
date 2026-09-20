@@ -17,11 +17,12 @@
  * scripts/spike-import/RESULTS.md.
  */
 
+import type { GlossaryEntry, GlossaryLanguage } from 'services/glossary';
 import { ImportRefusal } from 'services/import/types';
 import { slicePdf } from './chunk';
 import { type PdfImportConfig, loadPdfImportConfig } from './config';
 import type { PdfInspection } from './inspect';
-import { type PdfLlmClient, buildChunkInput, resolvePdfLlm } from './llm-convert';
+import { type PdfLlmClient, buildChunkInput, chunkSourceText, resolvePdfLlm } from './llm-convert';
 import { type PdfImportPlan, countScannedPages, pageRangeLabel } from './plan';
 import { buildTranscriptionPrompt } from './prompt';
 
@@ -91,6 +92,12 @@ export interface EstimatePdfImportParams {
   config?: PdfImportConfig;
   client?: PdfLlmClient;
   model?: string;
+  /**
+   * Must be the same glossary the conversion will be given: the block is real
+   * prompt text, and counting a payload without it under-quotes the bill.
+   */
+  glossary?: GlossaryEntry[];
+  language?: GlossaryLanguage;
 }
 
 export async function estimatePdfImport(params: EstimatePdfImportParams): Promise<PdfImportEstimate> {
@@ -113,6 +120,11 @@ export async function estimatePdfImport(params: EstimatePdfImportParams): Promis
       // Must match the conversion: the scan instruction is a real chunk of
       // prompt, and a chunk that gets it costs more than one that does not.
       scannedPages: countScannedPages(chunk, params.inspection.scannedPages),
+      // Same glossary, same chunk text, same cap as the conversion — the block
+      // it selects is therefore byte-identical.
+      glossary: params.glossary,
+      glossaryText: chunkSourceText(params.inspection, chunk),
+      language: params.language,
     });
     const input = buildChunkInput({ prompt, filename: params.filename, pdfBytes, detail: chunk.detail });
     inputTokens += await countInputTokens(client, model, input);

@@ -9,6 +9,7 @@ import {
 } from 'services/docs-editor/api-errors';
 import { CreateDocumentRefusal, createDocument } from 'services/docs-editor/create-document';
 import { getDocsWriteAccess } from 'services/docs-editor/write-access';
+import { loadAllGlossaries } from 'services/glossary';
 import { suggestImportPath } from 'services/google/import-path';
 import { isOpenAIEnabled } from 'services/llm/llm-config';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
@@ -250,7 +251,12 @@ export function registerImportRoutes(router: Router, deps: ImportRouteDeps): voi
         const { inspectPdf, planPdfImport, estimatePdfImport } = await import('./sources/pdf');
         const inspection = await inspectPdf(bytes, config);
         const plan = planPdfImport(inspection, config);
-        const estimate = await estimatePdfImport({ workspaceId, bytes, filename, inspection, plan, config });
+        // The whole repository's glossaries, because the target folder is not
+        // chosen until the preview: the block is what tells the model how this
+        // organization spells its own terms. Counted here so the quoted tokens
+        // match the paid request byte for byte.
+        const glossary = (await loadAllGlossaries(workspaceId)).entries;
+        const estimate = await estimatePdfImport({ workspaceId, bytes, filename, inspection, plan, config, glossary });
         return { inspection, plan, estimate };
       });
 
@@ -316,6 +322,7 @@ export function registerImportRoutes(router: Router, deps: ImportRouteDeps): voi
           workspaceId,
           bytes: upload.bytes,
           filename: upload.filename,
+          glossary: (await loadAllGlossaries(workspaceId)).entries,
           onProgress,
         });
       });
