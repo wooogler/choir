@@ -16,6 +16,7 @@ import { importGoogleDoc } from './import-service';
 import type { ImportProgress } from './import-steps';
 import { retireAllManualCards, retireManualCards } from './manual-apply';
 import { issuePickerNonce, verifyPickerNonce } from './picker-nonce';
+import { publishAsNewDoc } from './publish-new-doc';
 import { publishReplica } from './replica-publisher';
 import { retireAllReviewCards, retireReviewCards } from './review-cards';
 import { approveReview, buildReview, rejectReview } from './review-service';
@@ -344,6 +345,54 @@ export function registerGoogleDriveRoutes(router: Router, deps: GoogleRouteDeps)
    * commit from a fileId the caller supplies, so it must follow a deliberate
    * pick rather than an arbitrary id posted at the endpoint.
    */
+  /**
+   * Publishes a repository document as a new Google Doc. No Picker and no
+   * nonce: nothing existing is chosen or overwritten, so the only thing to
+   * protect is that a manager of this workspace asked for it.
+   */
+  router.post('/api/docs/:workspaceId/google/create', deps.jsonBody, async (req: Req, res: Res) => {
+    const workspaceId = req.params.workspaceId;
+    const session = await requireManagerOf(req, res, workspaceId);
+    if (!session) return;
+
+    const filePath = String(req.body?.filePath || '').trim();
+    if (!filePath) {
+      return apiError(res, 400, 'file_path_required');
+    }
+
+    const result = await publishAsNewDoc({ workspaceId, githubPath: filePath, userId: session.userId });
+
+    switch (result.outcome) {
+      case 'created':
+        deps.logger.info('Published a GitHub document as a new Google Doc', {
+          workspaceId,
+          filePath,
+          fileId: result.fileId,
+          shared: result.shared,
+        });
+        return res.json({
+          ok: true,
+          fileId: result.fileId,
+          webViewLink: result.webViewLink,
+          published: result.published,
+          shared: result.shared,
+        });
+      case 'already-linked':
+        return apiError(res, 409, 'google_path_already_linked');
+      case 'missing-in-repo':
+        return apiError(res, 404, 'google_doc_missing_in_repo');
+      case 'not-connected':
+        return apiError(res, 409, 'google_not_connected');
+      default:
+        return res.status(500).json({
+          ...apiErrorBodyFor('google_doc_create_failed', { message: result.detail ?? 'unknown error' }),
+          // When the Doc was created but not linked, the manager needs the link
+          // to find and remove it.
+          webViewLink: result.webViewLink,
+        });
+    }
+  });
+
   router.post('/api/docs/:workspaceId/google/import', deps.jsonBody, async (req: Req, res: Res) => {
     try {
       const workspaceId = String(req.params.workspaceId);

@@ -199,7 +199,12 @@ export const ko: LocaleCatalog = {
   'gdocs.sync.title.connect': '이 문서를 Google 문서로 발행하고 GitHub 기준으로 동기화합니다',
   'gdocs.sync.button.busy': '처리 중…',
   'gdocs.sync.button.reconnect': 'Google 다시 연결',
-  'gdocs.sync.button.sync': 'Google Docs로 동기화',
+  'gdocs.sync.button.sync': '기존 Doc과 동기화…',
+  'gdocs.sync.title.pick': '이미 있는 Google 문서를 고릅니다. 그 문서의 내용은 이 문서로 대체됩니다',
+  'gdocs.sync.button.create': 'Google Docs로 발행',
+  'gdocs.sync.title.create': '이 문서로 새 Google 문서를 만들고 GitHub 기준으로 동기화합니다',
+  'gdocs.sync.error.create': 'Google 문서를 만들지 못했습니다',
+  'gdocs.sync.notice.notShared': '문서는 만들었지만 링크 공유를 설정하지 못했어요. Google Drive에서 직접 공유해 주세요.',
 
   // ── Google Docs review ──────────────────────────────────────────────────
   'gdocs.review.conflict.codeBlock':
@@ -442,6 +447,8 @@ export const ko: LocaleCatalog = {
   'serverError.google_doc_trashed': '그 문서는 휴지통에 있어요.',
   'serverError.google_doc_already_linked': 'Google 문서 {fileId}는 이미 {conflictPath}에 연결돼 있어요.',
   'serverError.google_doc_not_linked': '이 문서는 Google 문서와 연결돼 있지 않아요.',
+  'serverError.google_path_already_linked': '이 문서에는 이미 Google 문서가 연결돼 있어요.',
+  'serverError.google_doc_create_failed': 'Google 문서를 만들지 못했어요: {message}',
   'serverError.github_document_gone': 'GitHub 문서가 더 이상 없어요. 대신 이 사본의 연결을 해제해 주세요.',
   'serverError.republish_failed': 'GitHub에서 이 문서를 다시 게시하지 못했어요: {message}',
   'serverError.review_declined_not_restored': '누군가 되돌리기 전까지는 거절된 내용이 문서에 그대로 남아 있어요.',

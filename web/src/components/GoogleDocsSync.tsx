@@ -13,6 +13,11 @@ import { pickGoogleDoc } from '../utils/picker';
  * Linking here always produces a `replica`, which is what the warning is about.
  * A document that must keep its own formatting arrives through the import
  * control instead, and this panel then only reports on it.
+ *
+ * Two ways in. "Publish" creates a fresh Google Doc from the document, which is
+ * the common case and needs no warning: nothing existing is touched. "Sync to
+ * existing Doc" is for a Doc people already share around; it goes through the
+ * Picker and replaces that Doc's content, hence the confirmation.
  */
 
 type GoogleStatus = {
@@ -48,6 +53,7 @@ export function GoogleDocsSync({
   const [status, setStatus] = useState<GoogleStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -100,6 +106,32 @@ export function GoogleDocsSync({
     },
     [workspaceId, filePath, refresh, t],
   );
+
+  const create = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/docs/${encodeURIComponent(workspaceId)}/google/create`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ filePath }),
+      });
+      const body = (await response.json()) as ServerErrorPayload & { shared?: boolean };
+      if (!response.ok) {
+        throw new Error(describeServerError(t, body) ?? t('gdocs.sync.error.create'));
+      }
+      // The Doc exists and is linked either way; this only tells the manager
+      // that people will not be able to open it until they share it.
+      if (body.shared === false) setNotice(t('gdocs.sync.notice.notShared'));
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('gdocs.sync.error.create'));
+    } finally {
+      setBusy(false);
+    }
+  }, [workspaceId, filePath, refresh, t]);
 
   const pick = useCallback(async () => {
     if (!window.confirm(t('gdocs.sync.replaceWarning'))) return;
@@ -183,27 +215,53 @@ export function GoogleDocsSync({
             {t('gdocs.sync.button.unlink')}
           </button>
         )}
+        {notice && (
+          <span className="doc-change-count" title={notice}>
+            {notice}
+          </span>
+        )}
       </span>
     );
   }
 
   if (!isManager) return null;
 
+  const ready = status.connected && !status.broken;
+
   return (
     <span className="doc-gdocs">
-      <button
-        type="button"
-        className="doc-button doc-button-ghost"
-        onClick={status.connected && !status.broken ? pick : connect}
-        disabled={busy}
-        title={status.broken ? t('gdocs.sync.title.broken') : t('gdocs.sync.title.connect')}
-      >
-        {busy
-          ? t('gdocs.sync.button.busy')
-          : status.broken
-            ? t('gdocs.sync.button.reconnect')
-            : t('gdocs.sync.button.sync')}
-      </button>
+      {ready ? (
+        <>
+          <button
+            type="button"
+            className="doc-button doc-button-ghost"
+            onClick={create}
+            disabled={busy}
+            title={t('gdocs.sync.title.create')}
+          >
+            {busy ? t('gdocs.sync.button.busy') : t('gdocs.sync.button.create')}
+          </button>
+          <button
+            type="button"
+            className="doc-button doc-button-ghost"
+            onClick={pick}
+            disabled={busy}
+            title={t('gdocs.sync.title.pick')}
+          >
+            {t('gdocs.sync.button.sync')}
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          className="doc-button doc-button-ghost"
+          onClick={connect}
+          disabled={busy}
+          title={status.broken ? t('gdocs.sync.title.broken') : t('gdocs.sync.title.connect')}
+        >
+          {status.broken ? t('gdocs.sync.button.reconnect') : t('gdocs.sync.button.create')}
+        </button>
+      )}
       {/* Already in the reader's language: `link` and `pick` translate the
           server's code before it ever reaches this state. */}
       {error && (

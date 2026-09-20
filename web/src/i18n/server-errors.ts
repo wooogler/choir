@@ -108,6 +108,8 @@ export const SERVER_ERROR_KEY = {
   google_doc_trashed: 'serverError.google_doc_trashed',
   google_doc_already_linked: 'serverError.google_doc_already_linked',
   google_doc_not_linked: 'serverError.google_doc_not_linked',
+  google_path_already_linked: 'serverError.google_path_already_linked',
+  google_doc_create_failed: 'serverError.google_doc_create_failed',
   github_document_gone: 'serverError.github_document_gone',
   republish_failed: 'serverError.republish_failed',
   review_declined_not_restored: 'serverError.review_declined_not_restored',

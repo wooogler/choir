@@ -58,6 +58,31 @@ Docs에서 발생한 사람 편집을 **관리자 승인을 거쳐** GitHub에 �
 
 UI는 사이드바의 `Import from Google Docs`(`web/src/components/GoogleDocsImport.tsx`) — 만들어질 문서가 아직 없으므로 문서별이 아니라 워크스페이스 단위다.
 
+## 저장소 → 새 Doc 발행
+
+`services/google/publish-new-doc.ts`, 라우트 `POST /api/docs/:ws/google/create`, 뷰어의 문서 헤더
+`Publish to Google Docs`(`GoogleDocsSync.tsx`). 저장소 문서를 **새 Google Doc으로 만들어 replica로
+연결**한다. 기존 link 라우트는 Picker로 고른 Doc의 내용을 대체하는 경로라 "이미 돌려 보는 Doc이
+있는" 경우에 맞고, 이 경로는 Google Docs에 한 번도 없던 문서를 위한 것이다.
+
+- **Picker·nonce 없음.** 고르는 것도, 덮어쓰는 것도 없으므로 보호할 것은 "이 워크스페이스의
+  관리자가 요청했다"는 사실뿐이다. 이미 매핑이 있는 경로는 `google_path_already_linked`(409)로 거부.
+- **Doc 이름**은 첫 `# ` 제목, 없으면 파일명(`.md` 제거).
+- **`drive.file`로 충분하다.** 앱이 만든 파일은 per-file grant 없이 완전히 접근 가능하다(P0 검증 A
+  체크 9). 저장 위치는 연결 계정 Drive 루트 — 폴더 선택은 Picker 폴더 모드가 하나 더 필요해서 v1에서
+  제외.
+- **링크 열람 공유**(`permissions.create`, `anyone`/`reader`, P0 검증 A 체크 8)를 건다. Doc은
+  워크스페이스 연결 계정 소유이므로 이게 없으면 Slack에서 링크를 받은 사람이 열 수 없다. reader만
+  주는 이유: replica는 다음 GitHub 변경에서 내용이 교체되므로 편집 권한은 잃어버릴 글을 쓰라는
+  초대가 된다. 공유 실패는 **best effort** — 생성·연결은 유효하고 응답의 `shared:false`로 뷰어가
+  "Drive에서 직접 공유하라"고 안내한다.
+- 생성 후는 **link 라우트와 동일**: 매핑 `mode:'replica'` → `publishReplica({force:true})`가 배너를
+  쓰고 baseline을 기록하고 `synced`로 둔다. 이후 양방향 흐름(아래 동작 모델)이 그대로 적용된다.
+- 생성은 됐는데 매핑 저장이 실패하면 응답에 `webViewLink`를 실어 관리자가 Drive의 고아 파일을 찾아
+  지울 수 있게 한다.
+
+---
+
 ## 동작 모델
 
 문서별 상태 기계 (매핑 하나당):

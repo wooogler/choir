@@ -114,6 +114,8 @@ export const DOCS_API_ERROR_MESSAGES = {
   google_doc_trashed: 'That document is in the trash',
   google_doc_already_linked: 'Google Doc {fileId} is already linked to {conflictPath}',
   google_doc_not_linked: 'This document is not linked to a Google Doc',
+  google_path_already_linked: 'This document already has a Google Doc',
+  google_doc_create_failed: 'Could not create the Google Doc: {message}',
   github_document_gone: 'The GitHub document no longer exists. Unlink this replica instead.',
   republish_failed: 'Could not republish this document from GitHub: {message}',
   review_declined_not_restored: 'The document keeps the rejected text until someone reverts it',

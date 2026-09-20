@@ -6,6 +6,7 @@ import { getDocMeta } from 'services/google/drive-client';
 import { getWorkspaceClient } from 'services/google/google-auth-service';
 import { importGoogleDoc } from 'services/google/import-service';
 import { issuePickerNonce } from 'services/google/picker-nonce';
+import { publishAsNewDoc } from 'services/google/publish-new-doc';
 import { publishReplica } from 'services/google/replica-publisher';
 import { approveReview, buildReview, rejectReview } from 'services/google/review-service';
 import { registerGoogleDriveRoutes } from 'services/google/routes';
@@ -23,6 +24,7 @@ jest.mock('services/google/replica-publisher', () => ({ publishReplica: jest.fn(
 // Same reason as the review service: its own suite covers what it does, and it
 // reaches the GitHub client, which jest cannot load.
 jest.mock('services/google/import-service', () => ({ importGoogleDoc: jest.fn() }));
+jest.mock('services/google/publish-new-doc', () => ({ publishAsNewDoc: jest.fn() }));
 jest.mock('services/google/google-auth-service', () => ({
   getWorkspaceClient: jest.fn(),
   disconnectWorkspace: jest.fn(),
@@ -38,6 +40,7 @@ const mockBuildReview = buildReview as jest.MockedFunction<typeof buildReview>;
 const mockApprove = approveReview as jest.MockedFunction<typeof approveReview>;
 const mockReject = rejectReview as jest.MockedFunction<typeof rejectReview>;
 const mockImport = importGoogleDoc as jest.MockedFunction<typeof importGoogleDoc>;
+const mockPublishNew = publishAsNewDoc as jest.MockedFunction<typeof publishAsNewDoc>;
 
 interface Captured {
   method: string;
@@ -473,6 +476,77 @@ describe('Google Drive routes', () => {
       await route('post', '/api/docs/:workspaceId/google/link')(linkBody(), res);
 
       expect(res.statusCode).toBe(409);
+    });
+  });
+
+  describe('publishing as a new Google Doc', () => {
+    const createBody = (filePath = 'docs/a.md') => ({ params: { workspaceId: 'T1' }, body: { filePath } });
+
+    it('creates and links as the signed-in manager, and reports the link', async () => {
+      mockPublishNew.mockResolvedValue({
+        outcome: 'created',
+        fileId: 'new-doc',
+        webViewLink: 'https://docs.google.com/document/d/new-doc/edit',
+        published: 'published',
+        shared: true,
+      });
+      const route = collectRoutes();
+      const res = makeRes();
+
+      await route('post', '/api/docs/:workspaceId/google/create')(createBody(), res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({ ok: true, fileId: 'new-doc', published: 'published', shared: true });
+      expect(mockPublishNew).toHaveBeenCalledWith({ workspaceId: 'T1', githubPath: 'docs/a.md', userId: 'U-manager' });
+    });
+
+    it('refuses a non-manager before anything is created', async () => {
+      const route = collectRoutes(false);
+      const res = makeRes();
+
+      await route('post', '/api/docs/:workspaceId/google/create')(createBody(), res);
+
+      expect(res.statusCode).toBe(403);
+      expect(mockPublishNew).not.toHaveBeenCalled();
+    });
+
+    it('requires a file path', async () => {
+      const route = collectRoutes();
+      const res = makeRes();
+
+      await route('post', '/api/docs/:workspaceId/google/create')(createBody(''), res);
+
+      expect(res.statusCode).toBe(400);
+      expect(mockPublishNew).not.toHaveBeenCalled();
+    });
+
+    it('answers a path that already has a Doc with a conflict', async () => {
+      mockPublishNew.mockResolvedValue({ outcome: 'already-linked' });
+      const route = collectRoutes();
+      const res = makeRes();
+
+      await route('post', '/api/docs/:workspaceId/google/create')(createBody(), res);
+
+      expect(res.statusCode).toBe(409);
+      expect(res.body).toMatchObject({ error: 'google_path_already_linked' });
+    });
+
+    it('hands back the orphaned link when the Doc was created but not linked', async () => {
+      mockPublishNew.mockResolvedValue({
+        outcome: 'failed',
+        webViewLink: 'https://docs.google.com/document/d/orphan/edit',
+        detail: 'store unavailable',
+      });
+      const route = collectRoutes();
+      const res = makeRes();
+
+      await route('post', '/api/docs/:workspaceId/google/create')(createBody(), res);
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body).toMatchObject({
+        error: 'google_doc_create_failed',
+        webViewLink: 'https://docs.google.com/document/d/orphan/edit',
+      });
     });
   });
 

@@ -117,6 +117,23 @@ export async function createDocFromMarkdown(
 }
 
 /**
+ * Lets anyone holding the link read the document. Reader only: a replica's edits
+ * go through review, and an editor grant would invite people to type into a
+ * document whose text CHOIR replaces on the next GitHub change.
+ *
+ * Confirmed in the P0 spike (check 8) as within `drive.file` for app-created
+ * files.
+ */
+export async function shareByLink(auth: OAuth2Client, fileId: string): Promise<void> {
+  await withRetry('permissions.create', async () => {
+    await client(auth).permissions.create({
+      fileId,
+      requestBody: { type: 'anyone', role: 'reader' },
+    });
+  });
+}
+
+/**
  * Replaces a document's entire content, keeping its fileId and URL — verified in
  * the P0 spike, and the reason replica links stay stable across syncs.
  *

@@ -218,7 +218,12 @@ export const en = {
   'gdocs.sync.title.connect': 'Publish this document as a Google Doc, kept in sync from GitHub',
   'gdocs.sync.button.busy': 'Working…',
   'gdocs.sync.button.reconnect': 'Reconnect Google',
-  'gdocs.sync.button.sync': 'Sync to Google Docs',
+  'gdocs.sync.button.sync': 'Sync to existing Doc…',
+  'gdocs.sync.title.pick': 'Pick a Google Doc you already have; its content is replaced with this document',
+  'gdocs.sync.button.create': 'Publish to Google Docs',
+  'gdocs.sync.title.create': 'Create a new Google Doc from this document, kept in sync from GitHub',
+  'gdocs.sync.error.create': 'Could not create the Google Doc',
+  'gdocs.sync.notice.notShared': 'Created, but the Doc could not be shared by link. Share it from Google Drive.',
 
   // ── Google Docs review (GoogleDocsReview.tsx) ───────────────────────────
   'gdocs.review.conflict.codeBlock':
@@ -506,6 +511,8 @@ export const en = {
   'serverError.google_doc_trashed': 'That document is in the trash',
   'serverError.google_doc_already_linked': 'Google Doc {fileId} is already linked to {conflictPath}',
   'serverError.google_doc_not_linked': 'This document is not linked to a Google Doc',
+  'serverError.google_path_already_linked': 'This document already has a Google Doc',
+  'serverError.google_doc_create_failed': 'Could not create the Google Doc: {message}',
   'serverError.github_document_gone': 'The GitHub document no longer exists. Unlink this replica instead.',
   'serverError.republish_failed': 'Could not republish this document from GitHub: {message}',
   'serverError.review_declined_not_restored': 'The document keeps the rejected text until someone reverts it',
