@@ -32,19 +32,35 @@ export const UPLOAD_MAX_PER_USER = 2;
 /** Ceiling across every workspace in this process; PM2 runs several instances. */
 export const UPLOAD_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
 
-export interface PendingUpload {
-  id: string;
+/**
+ * What every parked upload has in common: an owner, and the bytes that decide
+ * what holding it costs the process. Everything else is the source's own —
+ * a PDF parks its inspection and plan, a meeting parks its parsed transcript —
+ * so the store is generic over the payload rather than knowing about either.
+ */
+export interface UploadPayload {
   workspaceId: string;
   userId: string;
-  /** The raw PDF, as uploaded. */
+  /** The upload as it arrived; its length is what the byte ceiling counts. */
   bytes: Buffer;
+}
+
+/** A PDF waiting for "convert": the bytes plus what the estimate was built from. */
+export interface PdfUploadPayload extends UploadPayload {
   filename: string;
   inspection: PdfInspection;
   plan: PdfImportPlan;
   estimate: PdfImportEstimate;
+}
+
+/** A payload once the store owns it. */
+export type StoredUpload<P extends UploadPayload> = P & {
+  id: string;
   createdAt: number;
   expiresAt: number;
-}
+};
+
+export type PendingUpload = StoredUpload<PdfUploadPayload>;
 
 /** Who is asking. Both halves must match the upload's owner. */
 export interface UploadOwner {
@@ -65,10 +81,10 @@ export interface CreatedUpload {
   expiresAt: number;
 }
 
-export type CreateUploadParams = Omit<PendingUpload, 'id' | 'createdAt' | 'expiresAt'>;
+export type CreateUploadParams = PdfUploadPayload;
 
-export class UploadStore {
-  private readonly uploads = new Map<string, PendingUpload>();
+export class UploadStore<P extends UploadPayload = PdfUploadPayload> {
+  private readonly uploads = new Map<string, StoredUpload<P>>();
   private readonly ttlMs: number;
   private readonly maxTotalBytes: number;
   private readonly maxPerUser: number;
@@ -85,7 +101,7 @@ export class UploadStore {
     this.now = options.now ?? Date.now;
   }
 
-  create(params: CreateUploadParams): CreatedUpload {
+  create(params: P): CreatedUpload {
     const bytes = params.bytes.length;
 
     // A file that cannot fit even in an empty store would evict everyone else's
@@ -99,7 +115,7 @@ export class UploadStore {
     this.evictForBytes(bytes);
 
     const createdAt = this.now();
-    const upload: PendingUpload = {
+    const upload: StoredUpload<P> = {
       ...params,
       id: crypto.randomBytes(24).toString('base64url'),
       createdAt,
@@ -113,7 +129,7 @@ export class UploadStore {
   }
 
   /** The upload, or `null` — missing, expired and not-yours are one answer on purpose. */
-  get(id: string, owner: UploadOwner): PendingUpload | null {
+  get(id: string, owner: UploadOwner): StoredUpload<P> | null {
     const upload = this.uploads.get(id);
     if (!upload) return null;
 

@@ -27,6 +27,19 @@ interface AnswerResult {
   response: string;
 }
 
+/**
+ * What the question's project folder contributes to the prompt, when the
+ * channel it was asked in belongs to one (docs/project-folders.md 3). Both are
+ * optional and both are simply absent for an unlinked channel, so the prompt
+ * for a workspace without projects is byte-for-byte what it was.
+ */
+export interface AnswerQuestionContext {
+  /** The project's own description, next to the organization's. */
+  projectDescription?: string;
+  /** Pre-rendered by `glossaryPromptBlock`; empty means "no glossary". */
+  glossaryBlock?: string;
+}
+
 // Generate completion with context
 export const answerQuestion = async (
   userMessage: string,
@@ -37,6 +50,7 @@ export const answerQuestion = async (
   organizationName?: string,
   organizationDescription?: string,
   workspaceId?: string,
+  projectContext?: AnswerQuestionContext,
 ): Promise<AnswerResult> => {
   const context = formatContext(relevantDocs);
   const messages = await processMessageHistory(messageHistory, client);
@@ -67,15 +81,22 @@ export const answerQuestion = async (
   const orgInfo = [
     organizationName ? `- Organization: ${organizationName}` : '',
     organizationDescription ? `- About: ${organizationDescription}` : '',
+    projectContext?.projectDescription ? `- Project: ${projectContext.projectDescription}` : '',
     `- Today's date: ${today}`,
     workspaceName ? `- Workspace: ${workspaceName}` : '',
   ]
     .filter(Boolean)
     .join('\n');
 
+  // The glossary goes above the references: it tells the model what the words
+  // in them mean, so it has to be read first.
+  const glossarySection = projectContext?.glossaryBlock
+    ? `\n==== GLOSSARY ====\n${projectContext.glossaryBlock}\n`
+    : '';
+
   const prompt = `Organization Information:
 ${orgInfo}
-
+${glossarySection}
 ==== REFERENCES ====
 ${context}
 

@@ -1,6 +1,8 @@
 import type { WebClient } from '@slack/web-api';
 import { SessionType, generateSessionId, storeSessionData } from 'services/common';
 import { logKnowledgeExtraction, logUpdateRequestProcessing } from 'services/common/interaction-tracker';
+import { resolveUpdateScope } from 'services/document/update-scope';
+import { glossaryPromptBlock, loadGlossary } from 'services/glossary';
 import { describeError, tForUser, tForWorkspace } from 'services/i18n';
 import { extractKnowledgeFromMessages } from 'services/llm/knowledge-extractor';
 import {
@@ -19,6 +21,36 @@ import {
 import { createEnhancedMessage } from 'services/slack/message-text-utils';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { CHOIRMessageType, createCHOIRBlockId, getCHOIRMessageTypeFromBlocks } from 'types/message-types';
+
+/** How much of the extraction prompt the glossary may take. */
+const GLOSSARY_PROMPT_TOKENS = 800;
+
+/**
+ * The glossary lines the extractor should see: the project folder's chain when
+ * the conversation belongs to a project, the root chain otherwise.
+ *
+ * A glossary that cannot be read is not a reason to abandon the extraction —
+ * the worst case is the model spelling a term the way the conversation did.
+ */
+async function buildGlossaryBlock(
+  workspaceId: string,
+  folderPrefix: string | null,
+  messages: SlackMessage[],
+  logger: any,
+): Promise<string | undefined> {
+  try {
+    // `loadGlossary` reads a trailing slash as "this is the folder itself";
+    // `/` is the repository root chain.
+    const glossary = await loadGlossary(workspaceId, folderPrefix ? `${folderPrefix}/` : '/');
+    if (glossary.entries.length === 0) return undefined;
+
+    const text = messages.map((message) => message.text || '').join('\n');
+    return glossaryPromptBlock(glossary.entries, { text, maxTokens: GLOSSARY_PROMPT_TOKENS }) || undefined;
+  } catch (error) {
+    logger.warn('Could not load the glossary for knowledge extraction:', error);
+    return undefined;
+  }
+}
 
 /**
  * Handle update request message with automatic knowledge extraction
@@ -208,10 +240,18 @@ export async function handleUpdateRequestMessage(client: WebClient, event: any, 
         conversationDate = `${new Date(triggerMs).toISOString().slice(0, 10)} (UTC)`;
       }
 
+      // The conversation's channel decides which project — and so which folder's
+      // glossary and description — this extraction is written against
+      // (docs/project-folders.md 4).
+      const updateScope = await resolveUpdateScope(workspaceId, originalChannelId);
+      const glossaryBlock = await buildGlossaryBlock(workspaceId, updateScope.folderPrefix, filteredMessages, logger);
+
       // Build organizational context
       const organizationalContext = {
         organizationName: workspaceConfig?.organizationName,
         organizationDescription: workspaceConfig?.organizationDescription,
+        projectDescription: updateScope.project?.settings.description || undefined,
+        glossaryBlock,
         isUserManager,
         managerText,
         channelType,

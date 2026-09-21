@@ -438,6 +438,91 @@ export const en = {
   'import.error.path': 'Give a repository-relative path ending in .md',
   'import.error.url': 'Give a full address starting with http:// or https://',
 
+  // ── Project folders (ProjectSettingsDialog.tsx, FilesSidebar.tsx) ───────
+  // One folder declared a project: which Slack channels belong to it, who its
+  // people are, and how wide a question from those channels searches.
+  // See docs/project-folders.md.
+  'project.aria.settings': 'Project settings',
+  'project.badge.title': 'This folder is a project',
+  'project.badge.label': 'P',
+  'project.aria.dialog': 'Project settings',
+  'project.aria.tabs': 'Project settings sections',
+  'project.title.new': 'Make this folder a project',
+  'project.title.edit': 'Project settings',
+  'project.subtitle': '{folder} — saved as {file} in that folder.',
+  'project.tab.basic': 'Basics',
+  'project.tab.channels': 'Channels',
+  'project.tab.members': 'Members',
+  'project.tab.scope': 'Scope',
+  'project.tab.glossary': 'Glossary',
+
+  'project.basic.name.label': 'Name',
+  'project.basic.description.label': 'Description',
+  'project.basic.description.hint':
+    'Goes into the prompt when CHOIR answers a question from this project — a sentence or two about what the project is.',
+  'project.basic.meetings.label': 'Meeting notes folder',
+  'project.basic.meetings.hint': 'Relative to this folder. Meeting notes are created here by default.',
+  'project.error.nameRequired': 'Give the project a name.',
+
+  'project.channels.filter.placeholder': 'Filter channels',
+  'project.channels.loading': 'Reading channels from Slack…',
+  'project.channels.empty': 'CHOIR cannot see any channels in this workspace.',
+  'project.channels.noMatch': 'No channel matches that.',
+  'project.channels.error': 'Could not read the channel list from Slack.',
+  'project.channels.private': 'Private',
+  'project.channels.archived': 'Archived',
+  'project.channels.linked': '→ {folder}',
+  'project.channels.privateUnreadable':
+    'Private channels are not listed: the Slack app is missing the groups:read permission. Reinstall it to grant it.',
+  'project.channels.memberCount': { one: '{count} member', other: '{count} members' },
+  'project.channels.selected': { one: '{count} channel linked', other: '{count} channels linked' },
+
+  'project.members.curatedToggle': 'Core members only',
+  'project.members.curatedHint':
+    'Off, everyone in the linked channels is a project member. On, only the people ticked below.',
+  'project.members.aliases.hint':
+    'Aliases correct transcripts and speaker labels — "Speaker 1", "Sangwook". Separate them with commas.',
+  'project.members.aliases.placeholder': 'Speaker 1, Sangwook',
+  'project.members.aliases.aria': 'Aliases for {name}',
+  'project.members.curated.aria': 'Include {name}',
+  'project.members.loading': 'Reading members from Slack…',
+  'project.members.noChannels': 'Link a channel first — members come from the channels, not from a list kept here.',
+  'project.members.empty': 'No people were found in the linked channels.',
+  'project.members.gone': 'No longer in a linked channel',
+  'project.members.channelWarning': 'A channel could not be read: {message}',
+  'project.members.error': 'Could not read the member list from Slack.',
+
+  'project.scope.retrieval.label': 'Search scope',
+  'project.scope.retrieval.boost': 'Prefer this folder',
+  'project.scope.retrieval.boost.hint':
+    'Search the whole repository, but rank documents in this folder higher. The default.',
+  'project.scope.retrieval.exclusive': 'This folder only',
+  'project.scope.retrieval.exclusive.hint':
+    'Answer from this folder and the repository root; if nothing is found, widen the search and say so in the answer.',
+  'project.scope.retrieval.off': 'No preference',
+  'project.scope.retrieval.off.hint': 'Search the whole repository, exactly as CHOIR does without a project.',
+  'project.scope.updates.label': 'Update scope',
+  'project.scope.updates.folder': 'This folder',
+  'project.scope.updates.folder.hint':
+    'Knowledge from these channels updates documents in this folder, and new documents land here.',
+  'project.scope.updates.workspace': 'The whole repository',
+  'project.scope.updates.workspace.hint': 'Any document in the repository may be suggested for an update.',
+
+  'project.glossary.label': 'Glossary file',
+  'project.glossary.hint': 'The project glossary is read from {path}.',
+  'project.glossary.soon': 'Building a glossary from your documents is coming soon.',
+
+  'project.button.delete': 'Delete project',
+  'project.button.deleteConfirm': 'Delete',
+  'project.button.deleting': 'Deleting…',
+  'project.delete.confirm': 'Remove the project settings? The folder and its documents stay where they are.',
+  'project.button.save': 'Save',
+  'project.button.saving': 'Saving…',
+  'project.button.create': 'Create project',
+  'project.button.creating': 'Creating…',
+  'project.error.saveFailed': 'Could not save the project settings.',
+  'project.error.deleteFailed': 'Could not delete the project settings.',
+
   // ── Google Picker (utils/picker.ts) ─────────────────────────────────────
   'picker.error.gapiMissing': 'Google API script loaded without gapi',
   'picker.error.scriptFailed': 'Could not load the Google file picker',

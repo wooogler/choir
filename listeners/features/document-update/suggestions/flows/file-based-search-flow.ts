@@ -5,6 +5,7 @@ import {
   initializeFileSelectionState,
 } from 'services/document/document-store';
 import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
+import { searchWithFolderFallback } from 'services/document/update-scope';
 import type { DocumentMetadata } from 'services/file-registry/types';
 import { getWorkspaceId } from 'services/slack';
 import { CHOIRMessageType, createCHOIRBlockId } from 'types/message-types';
@@ -24,10 +25,22 @@ export async function runFileBasedSearch(params: {
   knowledgeContent: string;
   client: any;
   logger: any;
+  /** The project folder this conversation updates, or null for the whole workspace. */
+  folderPrefix?: string | null;
   /** The reviewing manager's translator: the "nothing here" notice is their DM. */
   t: T;
 }): Promise<FileBasedSearchResult> {
-  const { parsedValue, userId, currentWorkspaceId, currentDmChannelId, knowledgeContent, client, logger, t } = params;
+  const {
+    parsedValue,
+    userId,
+    currentWorkspaceId,
+    currentDmChannelId,
+    knowledgeContent,
+    client,
+    logger,
+    folderPrefix = null,
+    t,
+  } = params;
 
   logger.info(
     `Performing file-based search for file: ${parsedValue.selectedFile}, isFileBasedReview: ${parsedValue.isFileBasedReview}, isDefaultFile: ${parsedValue.isDefaultFile}`,
@@ -43,11 +56,19 @@ export async function runFileBasedSearch(params: {
   );
   logger.info(`[SEARCH DEBUG] Query used for file search: "${knowledgeContent}"`);
 
-  const fileSpecificResults = await QmdUpdateAnchorService.getInstance().search({
-    workspaceId,
-    query: knowledgeContent,
-    selectedFile: parsedValue.selectedFile,
-    limit: 5,
+  // The folder scope is applied with a fallback rather than as a hard filter:
+  // the manager may have switched the review to a file outside the project
+  // folder on purpose, and their explicit choice outranks the default scope.
+  const { results: fileSpecificResults } = await searchWithFolderFallback({
+    folderPrefix,
+    search: (prefix) =>
+      QmdUpdateAnchorService.getInstance().search({
+        workspaceId,
+        query: knowledgeContent,
+        selectedFile: parsedValue.selectedFile,
+        limit: 5,
+        ...(prefix ? { folderPrefix: prefix } : {}),
+      }),
   });
 
   logger.info(`=== FILE-SPECIFIC SEARCH RESULTS (${parsedValue.selectedFile}) ===`);

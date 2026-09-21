@@ -122,6 +122,21 @@ export const appHome = {
   'appHome.documents.readOnly.currentNone': 'Nothing is excluded right now.',
   'appHome.documents.readOnly.more': 'and {count} more',
   'appHome.documents.readOnly.needsRepo': '*Read-only files*\n🟡 Connect a repository first',
+  // Project folders, listed read-only: the editing lives in the web viewer
+  // (docs/project-folders.md 6), so these rows report and hand over.
+  'appHome.documents.projects.summary': {
+    one: '*Projects*\n{count} folder is linked to Slack channels',
+    other: '*Projects*\n{count} folders are linked to Slack channels',
+  },
+  'appHome.documents.projects.none': '*Projects*\nNo project folders yet',
+  'appHome.documents.projects.item': '*{name}*\n`{folder}` · {channels}',
+  'appHome.documents.projects.channels': {
+    one: '{count} channel',
+    other: '{count} channels',
+  },
+  'appHome.documents.projects.context':
+    'A project keeps its channels\u2019 questions and updates inside its folder. Settings open in the docs viewer.',
+  'appHome.projects.settings.button': 'Settings',
   'appHome.documents.readOnly.loading': '*Read-only files*\n🟡 Loading files from GitHub…',
   'appHome.documentConnection.disconnect.button': 'Disconnect GitHub',
   'appHome.documentConnection.disconnect.confirm.title': 'Disconnect GitHub',
@@ -259,7 +274,7 @@ export const appHome = {
   'appHome.management.readOnly.label': 'Select files to mark as read-only',
   'appHome.management.readOnly.placeholder': 'Search files to mark as read-only...',
   'appHome.management.readOnly.tip':
-    "💡 *Tip:* Read-only files can still be searched and referenced, but they won't be modified during document updates.",
+    "💡 *Tip:* Read-only files can still be searched and referenced, but they won't be modified during document updates. Pick a folder (it ends in `/`) to protect everything inside it.",
   'appHome.management.readOnly.updated': {
     one: '✅ Read-only files updated successfully! {count} file is now marked as read-only. Please refresh your app home to see the changes.',
     other:

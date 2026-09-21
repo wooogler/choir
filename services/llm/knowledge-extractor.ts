@@ -14,6 +14,15 @@ interface KnowledgeExtractionResult {
 interface OrganizationalContext {
   organizationName?: string;
   organizationDescription?: string;
+  /**
+   * The project folder this conversation belongs to, in its own words
+   * (docs/project-folders.md 4). Sits beside the organization description
+   * because it is the same kind of context, only narrower — and the narrower
+   * one is the one that disambiguates a term used differently per project.
+   */
+  projectDescription?: string;
+  /** Pre-rendered glossary lines from `glossaryPromptBlock`; already token-capped. */
+  glossaryBlock?: string;
   isUserManager?: boolean;
   managerText?: string;
   channelType?: string;
@@ -193,6 +202,12 @@ export async function extractKnowledgeFromMessages(
       if (context.organizationName) {
         contextSection += `- Organization: ${context.organizationName}\n`;
       }
+      if (context.organizationDescription) {
+        contextSection += `- About: ${context.organizationDescription}\n`;
+      }
+      if (context.projectDescription) {
+        contextSection += `- Project: ${context.projectDescription}\n`;
+      }
       if (context.managerText) {
         // Anonymize manager names and format properly
         const anonymizedManagerText = anonymizeText(context.managerText, workspaceId);
@@ -206,6 +221,11 @@ export async function extractKnowledgeFromMessages(
       }
       contextSection += '\n';
     }
+
+    // The glossary is many lines rather than one bullet, so it gets its own
+    // labelled block instead of being folded into the context list above.
+    const glossaryBlock = context?.glossaryBlock?.trim();
+    const glossarySection = glossaryBlock ? `\n**Glossary**:\n${glossaryBlock}\n` : '';
 
     // Add Q&A context (there can only be one Q&A per conversation due to SESSION_START_TYPES)
     let qaContextSection = '';
@@ -223,7 +243,7 @@ export async function extractKnowledgeFromMessages(
     }
 
     const prompt = `Extract knowledge from this conversation. Base your response directly on what is mentioned in the messages.
-${contextSection}${qaContextSection}
+${contextSection}${glossarySection}${qaContextSection}
 
 Conversation:
 ${formattedMessages}

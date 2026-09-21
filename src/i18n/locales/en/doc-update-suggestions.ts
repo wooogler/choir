@@ -86,6 +86,11 @@ export const docUpdateSuggestions = {
   'docUpdate.suggestions.error.noRelevantDocuments':
     'No relevant documents found for the extracted knowledge. Please try with different knowledge or contact an administrator.',
 
+  // --- The project folder had nothing, so the search was widened ----------
+  // One line, in the manager's DM, before the first candidate from outside the
+  // project folder arrives (docs/project-folders.md 4).
+  'docUpdate.suggestions.scope.widened': '_Nothing in `{folder}` matched, so I searched the whole repository._',
+
   // --- Nothing in the index matched, so we offer a brand new section -------
   'docUpdate.suggestions.empty.fallback':
     "💡 Since you don't have any existing content in your vector store, I'll help you create a new section for this knowledge!",

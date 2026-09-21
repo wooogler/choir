@@ -51,7 +51,7 @@ export type ProvenanceRecord = {
     threadTs?: string;
     fileId?: string;
     editor?: string;
-    import?: 'pdf' | 'url' | 'google-docs';
+    import?: 'pdf' | 'url' | 'google-docs' | 'meeting';
     name?: string;
     url?: string;
     pages?: number;

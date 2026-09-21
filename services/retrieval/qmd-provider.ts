@@ -19,11 +19,18 @@ import {
 } from './qmd-embed-guard';
 import { buildQmdStructuredSearchQueries, searchQmdLexWithFallback } from './qmd-lex-search';
 import { detectRepositoryLanguage } from './repository-language';
-import type { RetrievalDocument, RetrievalProvider, RetrievalSearchParams, RetrievalWarmupParams } from './types';
+import { applyRetrievalScope, overFetchLimit } from './scope';
+import type {
+  RetrievalDocument,
+  RetrievalProvider,
+  RetrievalSearchParams,
+  RetrievalSearchResult,
+  RetrievalWarmupParams,
+} from './types';
 
 type QmdSearchMode = 'lex' | 'hybrid';
 
-interface QmdStore {
+export interface QmdStore {
   searchLex(query: string, options?: { limit?: number; collection?: string }): Promise<QmdSearchResult[]>;
   search(options: {
     query?: string;
@@ -71,7 +78,7 @@ interface QmdHybridQueryResult {
   score: number;
 }
 
-interface QmdModule {
+export interface QmdModule {
   createStore(options: {
     dbPath: string;
     config: {
@@ -99,7 +106,12 @@ export class QmdRetrievalProvider implements RetrievalProvider {
   private readonly storeCache = new Map<string, StoreCacheEntry>();
   private qmdModulePromise?: Promise<QmdModule>;
 
-  private async loadQmdModule(): Promise<QmdModule> {
+  /**
+   * `protected` so a test can hand the provider a fake store: the real one is
+   * reached through a `new Function` dynamic import (QMD is ESM-only), which no
+   * module mock can intercept.
+   */
+  protected async loadQmdModule(): Promise<QmdModule> {
     if (!this.qmdModulePromise) {
       const importQmd = new Function('specifier', 'return import(specifier);') as (
         specifier: string,
@@ -463,21 +475,35 @@ export class QmdRetrievalProvider implements RetrievalProvider {
   }
 
   async search(params: RetrievalSearchParams): Promise<RetrievalDocument[]> {
+    return (await this.searchWithMeta(params)).documents;
+  }
+
+  async searchWithMeta(params: RetrievalSearchParams): Promise<RetrievalSearchResult> {
     if (!params.workspaceId) {
       Logger.warn('QmdRetrievalProvider: workspaceId missing, returning empty results');
-      return [];
+      return { documents: [], widened: false };
     }
     // Capture the narrowed value so the nested map closures below don't need a
     // non-null assertion (control-flow narrowing is lost inside closures).
     const workspaceId = params.workspaceId;
 
+    const limit = params.limit ?? 5;
+    const scope = params.scope;
+    // With a scope in play the index is asked for more than the caller wants,
+    // because the filter runs after the ranking: see services/retrieval/scope.
+    const fetchLimit = scope ? overFetchLimit(limit) : limit;
+    const finish = (documents: RetrievalDocument[]): RetrievalSearchResult => {
+      if (!scope) return { documents: documents.slice(0, limit), widened: false };
+      const scoped = applyRetrievalScope(documents, scope, limit);
+      return { documents: scoped.results, widened: scoped.widened };
+    };
+
     try {
       const storeEntry = await this.getOrCreateStore(params.workspaceId);
       if (!storeEntry) {
-        return [];
+        return { documents: [], widened: false };
       }
 
-      const limit = params.limit ?? 5;
       const searchMode = this.getSearchMode();
 
       Logger.info(
@@ -485,6 +511,8 @@ export class QmdRetrievalProvider implements RetrievalProvider {
         {
           workspaceId: params.workspaceId,
           limit,
+          fetchLimit,
+          scope: scope ? { mode: scope.mode, pathPrefixes: scope.pathPrefixes } : undefined,
           searchMode,
         },
       );
@@ -503,7 +531,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
         try {
           results = await storeEntry.store.search({
             queries,
-            limit,
+            limit: fetchLimit,
             collections: ['docs'],
             rerank: this.isRerankEnabled(),
           });
@@ -521,15 +549,17 @@ export class QmdRetrievalProvider implements RetrievalProvider {
         }
 
         if (results.length > 0) {
-          return results.map((result) =>
-            this.mapHybridResultToDocument({
-              result,
-              sectionsRoot: storeEntry.sectionsRoot,
-              owner: storeEntry.owner,
-              repo: storeEntry.repo,
-              branch: storeEntry.branch,
-              workspaceId,
-            }),
+          return finish(
+            results.map((result) =>
+              this.mapHybridResultToDocument({
+                result,
+                sectionsRoot: storeEntry.sectionsRoot,
+                owner: storeEntry.owner,
+                repo: storeEntry.repo,
+                branch: storeEntry.branch,
+                workspaceId,
+              }),
+            ),
           );
         }
 
@@ -546,7 +576,7 @@ export class QmdRetrievalProvider implements RetrievalProvider {
       const { results, matchedCandidate, queryCandidates } = await searchQmdLexWithFallback({
         store: storeEntry.store,
         query: params.query,
-        limit,
+        limit: fetchLimit,
         collection: 'docs',
       });
 
@@ -560,22 +590,24 @@ export class QmdRetrievalProvider implements RetrievalProvider {
         });
       }
 
-      return results.map((result) =>
-        this.mapLexResultToDocument({
-          result,
-          sectionsRoot: storeEntry.sectionsRoot,
-          owner: storeEntry.owner,
-          repo: storeEntry.repo,
-          branch: storeEntry.branch,
-          workspaceId,
-        }),
+      return finish(
+        results.map((result) =>
+          this.mapLexResultToDocument({
+            result,
+            sectionsRoot: storeEntry.sectionsRoot,
+            owner: storeEntry.owner,
+            repo: storeEntry.repo,
+            branch: storeEntry.branch,
+            workspaceId,
+          }),
+        ),
       );
     } catch (error) {
       Logger.warn(
         `QmdRetrievalProvider: search failed for query "${params.query.substring(0, 50)}${params.query.length > 50 ? '...' : ''}".`,
         error as Error,
       );
-      return [];
+      return { documents: [], widened: false };
     }
   }
 

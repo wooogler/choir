@@ -79,9 +79,15 @@ export const createFileSubmissionCallback = async ({
       return;
     }
 
-    // Validate file name format (basic checks)
-    const fileNameRegex = /^[a-zA-Z0-9._-]+\.md$/;
-    if (!fileNameRegex.test(fileName)) {
+    // Validate the name, which may now carry a folder: the modal prefills the
+    // project folder for a project channel (docs/project-folders.md 4), so
+    // `projects/alpha/notes.md` is a legitimate answer. Each segment keeps the
+    // old character set, and `.`/`..` are refused so a path can never climb out
+    // of the repository.
+    const segmentRegex = /^[a-zA-Z0-9._-]+$/;
+    const segments = fileName.split('/');
+    const validPath = segments.every((segment) => segmentRegex.test(segment) && segment !== '.' && segment !== '..');
+    if (!validPath) {
       await ack({
         response_action: 'errors',
         errors: {
@@ -143,6 +149,9 @@ export const createFileSubmissionCallback = async ({
 
     // Create the file in GitHub
     const filePath = path ? `${path}/${fileName}` : fileName;
+    // `fileName` may carry a folder now, but a MarkdownFile's `name` is its
+    // basename everywhere else in the registry, so split the two apart here.
+    const baseName = fileName.split('/').pop() || fileName;
 
     // The Git Data API tree write would silently overwrite an existing path, so
     // guard explicitly (createFile used to reject duplicates internally).
@@ -183,7 +192,7 @@ export const createFileSubmissionCallback = async ({
     const record: ProvenanceRecord = {
       version: 1,
       type: 'new-file',
-      file: { path: filePath, name: fileName },
+      file: { path: filePath, name: baseName },
       createdAt: new Date().toISOString(),
       updatedBy: { userId, name: updatedByName },
       source: { channelId: knowledgeSourceChannelId, threadTs: knowledgeSourceThreadTs },
@@ -239,7 +248,7 @@ export const createFileSubmissionCallback = async ({
         // Create MarkdownFile object similar to initial load
         const { parseMarkdownToTree } = await import('services/document/markdown');
         const markdownFile: any = {
-          name: fileName,
+          name: baseName,
           path: filePath,
           content: createdFile.content,
           githubUrl: `https://github.com/${owner}/${repo}/blob/${branchName}/${filePath}`,
@@ -259,11 +268,9 @@ export const createFileSubmissionCallback = async ({
           const currentFiles = (await workspaceStore.getMarkdownFilesCache(workspaceId)) || [];
 
           // Add the new file to the list if not already present
-          const fileExists = currentFiles.some(
-            (f: { name: string; path: string }) => f.name === fileName || f.path === filePath,
-          );
+          const fileExists = currentFiles.some((f: { name: string; path: string }) => f.path === filePath);
           if (!fileExists) {
-            const updatedFiles = [...currentFiles, { name: fileName, path: filePath }];
+            const updatedFiles = [...currentFiles, { name: baseName, path: filePath }];
             await workspaceStore.setMarkdownFilesCache(workspaceId, updatedFiles);
             logger.info(`Updated workspace config with new file: ${fileName}`);
           }

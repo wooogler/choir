@@ -118,6 +118,12 @@ export const qa = {
   'qa.answer.reference.source': '*Source:* {sources}\n',
   'qa.answer.error': 'Sorry, I encountered an error while processing your question. Please try again later.',
 
+  // --- Project search scope ------------------------------------------------
+  // Appended to the answer when this channel's project searches its own folder
+  // only (`scope.retrieval: exclusive`) and nothing there matched, so the
+  // search was widened. See docs/project-folders.md 3.
+  'qa.scope.widened': "_I couldn't find this in the project's documents, so I searched all of the documentation._",
+
   // --- Turning replies into a document update ------------------------------
   'qa.managers.fallback': 'managers',
   'qa.managers.andOthers': '{name} and other managers',

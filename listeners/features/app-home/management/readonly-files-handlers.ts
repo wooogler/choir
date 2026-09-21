@@ -2,6 +2,7 @@ import type { App } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
 import { tForRequest } from 'services/i18n';
 import { getWorkspaceId } from 'services/slack';
+import { isReadOnlyFolderEntry } from 'services/workspace/read-only';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import {
   logManagementButtonError,
@@ -15,6 +16,29 @@ const OPTION_TEXT_LIMIT = 75;
 const truncateOptionText = (text: string): string =>
   text.length > OPTION_TEXT_LIMIT ? `${text.slice(0, OPTION_TEXT_LIMIT - 1)}…` : text;
 
+/**
+ * Every folder that holds a markdown file, as a `folder/` entry.
+ *
+ * Folders are not stored anywhere — the file list is the only inventory CHOIR
+ * has — so they are derived from the paths, every level of them, so that
+ * `projects/` can be protected as readily as `projects/alpha/meetings/`.
+ * The trailing slash is what `isReadOnlyFile` reads as "this is a prefix"
+ * (docs/project-folders.md 6).
+ */
+const folderEntriesOf = (files: ReadonlyArray<{ path: string }>): string[] => {
+  const folders = new Set<string>();
+  for (const file of files) {
+    const segments = file.path.split('/');
+    segments.pop();
+    let prefix = '';
+    for (const segment of segments) {
+      prefix = prefix ? `${prefix}/${segment}` : segment;
+      folders.add(`${prefix}/`);
+    }
+  }
+  return [...folders].sort();
+};
+
 export const registerReadonlyFilesHandlers = (app: App) => {
   // Typeahead options for the read-only file picker. Using an external select (vs
   // a static one) avoids Slack's 100-option cap, which broke the modal — and the
@@ -24,14 +48,17 @@ export const registerReadonlyFilesHandlers = (app: App) => {
       const workspaceId = await getWorkspaceId(client);
       const files = (await new WorkspaceStore().getCachedMarkdownFiles(workspaceId)) || [];
       const query = (options.value || '').toLowerCase();
-      const matched = files
+      // Folders first: someone typing "meetings" almost always means the folder
+      // when both exist, and the file is right underneath it either way.
+      const folders = folderEntriesOf(files).filter((folder) => !query || folder.toLowerCase().includes(query));
+      const paths = files
         .filter((file) => !query || file.name.toLowerCase().includes(query) || file.path.toLowerCase().includes(query))
-        .slice(0, 100)
-        .map((file) => ({
-          // Key by full path so two files with the same basename are distinct.
-          text: { type: 'plain_text' as const, text: truncateOptionText(file.path) },
-          value: file.path,
-        }));
+        .map((file) => file.path);
+      const matched = [...folders, ...paths].slice(0, 100).map((entry) => ({
+        // Key by full path so two files with the same basename are distinct.
+        text: { type: 'plain_text' as const, text: truncateOptionText(entry) },
+        value: entry,
+      }));
       await ack({ options: matched });
     } catch {
       await ack({ options: [] });
@@ -109,23 +136,28 @@ export const registerReadonlyFilesHandlers = (app: App) => {
                 action_id: 'readonly_files_select',
                 min_query_length: 0,
                 ...(readOnlyFiles.length > 0 && {
-                  // Reflect currently-marked files. Entries are paths going
-                  // forward but may be legacy basenames; resolve each to the
-                  // matching file so the picker shows (and re-saves) its path.
-                  // Dedup by path — a legacy basename can resolve to the same file
-                  // as an explicit path entry, and Slack rejects duplicate options.
+                  // Reflect currently-marked entries. A `folder/` entry stands
+                  // for itself; a file entry is a path going forward but may be
+                  // a legacy basename, so resolve it to the matching file and
+                  // the picker re-saves it as a path. Dedup — a legacy basename
+                  // can resolve to the same file as an explicit path entry, and
+                  // Slack rejects duplicate options.
                   initial_options: [
                     ...new Set(
                       readOnlyFiles
-                        .map((entry) => markdownFiles.find((file) => file.path === entry || file.name === entry)?.path)
-                        .filter((filePath): filePath is string => !!filePath),
+                        .map((entry) =>
+                          isReadOnlyFolderEntry(entry)
+                            ? entry
+                            : markdownFiles.find((file) => file.path === entry || file.name === entry)?.path,
+                        )
+                        .filter((entry): entry is string => !!entry),
                     ),
-                  ].map((filePath) => ({
+                  ].map((entry) => ({
                     text: {
                       type: 'plain_text',
-                      text: truncateOptionText(filePath),
+                      text: truncateOptionText(entry),
                     },
-                    value: filePath,
+                    value: entry,
                   })),
                 }),
                 placeholder: {

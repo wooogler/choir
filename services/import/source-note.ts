@@ -60,6 +60,28 @@ function sentence(source: ImportSourceInfo, ctx: { language: Locale; date: strin
     return translate(language, 'import.sourceNote.googleDoc', { name: label, date });
   }
 
+  if (source.kind === 'meeting') {
+    // How long it ran and how many people spoke, in that order — the two facts
+    // that tell a reader whether the note stands for the whole meeting. Either
+    // may be missing (a pasted transcript has no clock), and with neither this
+    // is just a file, so it falls through to the plain sentence.
+    const detail = [
+      typeof source.minutes === 'number' && source.minutes > 0
+        ? translate(language, 'import.sourceNote.minutes', { count: source.minutes })
+        : '',
+      typeof source.speakers === 'number' && source.speakers > 0
+        ? translate(language, 'import.sourceNote.speakers', { count: source.speakers })
+        : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+
+    if (detail) {
+      return translate(language, 'import.sourceNote.fileWithDetail', { name, detail, date });
+    }
+    return translate(language, 'import.sourceNote.file', { name, date });
+  }
+
   if (typeof source.pages === 'number' && source.pages > 0) {
     const pages = translate(language, 'import.sourceNote.pages', { count: source.pages });
     return translate(language, 'import.sourceNote.fileWithPages', { name, pages, date });

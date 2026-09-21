@@ -27,7 +27,7 @@ export interface ProvenanceRecord {
     fileId?: string;
     editor?: string;
     /** Which import source produced the document ('new-file' records only). */
-    import?: 'pdf' | 'url' | 'google-docs';
+    import?: 'pdf' | 'url' | 'google-docs' | 'meeting';
     /** What the source called it: a filename, a page title, a Doc name. */
     name?: string;
     url?: string;

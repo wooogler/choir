@@ -6,6 +6,7 @@ import {
   storeSessionData,
 } from 'services/common';
 import { clearFileSelectionState } from 'services/document/document-store';
+import { prefixNewFilePath } from 'services/document/update-scope';
 import { GithubService } from 'services/github';
 import { getWorkspaceId } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
@@ -23,6 +24,8 @@ export async function handleCompletion(params: {
   knowledgeSourceChannelId: string | undefined;
   knowledgeSourceThreadTs: string | undefined;
   sessionId: string;
+  /** The project folder this conversation updates, or null for the whole workspace. */
+  folderPrefix?: string | null;
   /** The reviewing manager's translator: this lands in their DM. */
   t: T;
 }): Promise<void> {
@@ -36,6 +39,7 @@ export async function handleCompletion(params: {
     knowledgeSourceChannelId,
     knowledgeSourceThreadTs,
     sessionId,
+    folderPrefix = null,
     t,
   } = params;
 
@@ -127,7 +131,13 @@ export async function handleCompletion(params: {
           );
         }
 
-        completionNewFileDefaults = await generateNewFileDefaults(knowledgeContent, fileList || [], workspaceId);
+        const generated = await generateNewFileDefaults(knowledgeContent, fileList || [], workspaceId);
+        // Same rule as the inline "Create New File" button: a project channel's
+        // new documents default into that project's folder.
+        completionNewFileDefaults = {
+          ...generated,
+          fileName: prefixNewFilePath(folderPrefix, generated.fileName),
+        };
         logger.info(`Generated completion new file defaults: ${completionNewFileDefaults.fileName}`);
       }
     } catch (error) {

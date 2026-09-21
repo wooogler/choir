@@ -12,6 +12,10 @@ type FilesSidebarProps = {
   /** Only a manager who can push is offered a way to add a document. */
   canCreate: boolean;
   onNewDocument: () => void;
+  /** Folders that already carry a `.choir/project.json`, so they can be marked. */
+  projectFolders: Set<string>;
+  /** Opens the project settings dialog for a folder. Same right as `canCreate`. */
+  onProjectSettings?: (folder: string) => void;
 };
 
 export function FilesSidebar({
@@ -22,6 +26,8 @@ export function FilesSidebar({
   canSeeInsights,
   canCreate,
   onNewDocument,
+  projectFolders,
+  onProjectSettings,
 }: FilesSidebarProps) {
   const t = useT();
   const tree = buildFolderTree(files);
@@ -52,6 +58,41 @@ export function FilesSidebar({
           &gt;
         </span>
         <span className="folder-label">{folder.name}</span>
+        <span className="folder-actions">
+          {/* A project is worth recognising at a glance — which folder a
+              channel's questions land in is otherwise invisible here. */}
+          {projectFolders.has(folder.path) && (
+            <span className="folder-project-badge" title={t('project.badge.title')}>
+              {t('project.badge.label')}
+            </span>
+          )}
+          {onProjectSettings && (
+            // Inside a <summary>, so the default action (toggling the folder)
+            // has to be stopped as well as the bubbling.
+            <button
+              type="button"
+              className="folder-project-gear"
+              aria-label={t('project.aria.settings')}
+              title={t('project.aria.settings')}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onProjectSettings(folder.path);
+              }}
+            >
+              <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Zm0 1.5a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"
+                />
+                <path
+                  fill="currentColor"
+                  d="M6.94 1.5a.75.75 0 0 0-.73.58l-.2.87a5.5 5.5 0 0 0-.94.55l-.85-.28a.75.75 0 0 0-.88.33l-1.06 1.84a.75.75 0 0 0 .15.93l.66.59a5.6 5.6 0 0 0 0 1.08l-.66.59a.75.75 0 0 0-.15.93l1.06 1.84c.18.31.55.45.88.33l.85-.28c.29.22.6.4.94.55l.2.87c.08.34.38.58.73.58h2.12c.35 0 .65-.24.73-.58l.2-.87c.34-.15.65-.33.94-.55l.85.28c.33.12.7-.02.88-.33l1.06-1.84a.75.75 0 0 0-.15-.93l-.66-.59a5.6 5.6 0 0 0 0-1.08l.66-.59a.75.75 0 0 0 .15-.93l-1.06-1.84a.75.75 0 0 0-.88-.33l-.85.28a5.5 5.5 0 0 0-.94-.55l-.2-.87a.75.75 0 0 0-.73-.58H6.94Zm.6 1.5h.92l.16.68c.06.27.26.48.52.56.34.1.66.29.94.53.21.18.5.24.76.15l.66-.22.46.8-.51.46c-.2.18-.3.46-.25.73.03.18.05.37.05.56s-.02.38-.05.56c-.05.27.04.55.25.73l.51.46-.46.8-.66-.22a.75.75 0 0 0-.76.15c-.28.24-.6.42-.94.53a.75.75 0 0 0-.52.56l-.16.68h-.92l-.16-.68a.75.75 0 0 0-.52-.56 4 4 0 0 1-.94-.53.75.75 0 0 0-.76-.15l-.66.22-.46-.8.51-.46c.2-.18.3-.46.25-.73A3.6 3.6 0 0 1 4.5 8c0-.19.02-.38.05-.56a.75.75 0 0 0-.25-.73l-.51-.46.46-.8.66.22c.26.09.55.03.76-.15.28-.24.6-.43.94-.53a.75.75 0 0 0 .52-.56l.16-.68Z"
+                />
+              </svg>
+            </button>
+          )}
+        </span>
       </summary>
       <div className="folder-children">
         {folder.folders.map(renderFolder)}

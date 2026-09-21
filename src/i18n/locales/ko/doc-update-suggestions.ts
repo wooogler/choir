@@ -66,6 +66,8 @@ export const docUpdateSuggestions: LocaleCatalog = {
   'docUpdate.suggestions.error.noRelevantDocuments':
     '추출한 지식과 관련된 문서를 찾지 못했어요. 다른 내용으로 시도하시거나 관리자에게 문의해 주세요.',
 
+  'docUpdate.suggestions.scope.widened': '_`{folder}`에서는 맞는 문서를 찾지 못해 저장소 전체에서 찾았어요._',
+
   'docUpdate.suggestions.empty.fallback':
     '💡 벡터 스토어에 기존 내용이 없어서, 이 지식을 담을 새 섹션을 만들어 드릴게요!',
   'docUpdate.suggestions.empty.body':

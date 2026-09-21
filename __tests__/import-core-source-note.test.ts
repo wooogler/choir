@@ -66,6 +66,29 @@ describe('buildSourceNote', () => {
     );
   });
 
+  it('sizes a meeting by its clock and its speakers, not by pages', () => {
+    const meeting: ImportSourceInfo = { kind: 'meeting', name: 'weekly.vtt', minutes: 58, speakers: 4 };
+
+    expect(buildSourceNote(meeting, { language: 'ko', date: DAY })).toBe(
+      `> 출처: weekly.vtt (58분, 화자 4명, 2026-09-18 가져옴) ${SOURCE_NOTE_MARKER}`,
+    );
+    expect(buildSourceNote(meeting, { language: 'en', date: DAY })).toBe(
+      `> Source: weekly.vtt (58 minutes, 4 speakers, imported 2026-09-18) ${SOURCE_NOTE_MARKER}`,
+    );
+  });
+
+  it('names only what it knows about a meeting', () => {
+    // A transcript with one speaker and no clock — a pasted wall of text.
+    expect(
+      buildSourceNote({ kind: 'meeting', name: 'pasted transcript', speakers: 1 }, { language: 'en', date: DAY }),
+    ).toContain('pasted transcript (1 speaker, imported 2026-09-18)');
+
+    // Neither: the plain file sentence, rather than an empty pair of brackets.
+    expect(buildSourceNote({ kind: 'meeting', name: 'pasted transcript' }, { language: 'ko', date: DAY })).toBe(
+      `> 출처: pasted transcript (2026-09-18 가져옴) ${SOURCE_NOTE_MARKER}`,
+    );
+  });
+
   it('keeps a multi-line name on one line', () => {
     const messy: ImportSourceInfo = { kind: 'pdf', name: 'a\nvery   long\tname.pdf' };
     expect(buildSourceNote(messy, { language: 'en', date: DAY })).toBe(

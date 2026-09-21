@@ -15,7 +15,8 @@
  * See docs/pdf-web-import.md.
  */
 
-import { type ServerErrorPayload, type T, describeServerError } from '../i18n';
+import type { ServerErrorPayload, T } from '../i18n';
+import { ApiError, describeApiError, errorPayload } from './api-error';
 import { encodePath } from './docs';
 import { readNdjson } from './ndjson';
 
@@ -118,30 +119,22 @@ export interface ImportCommitResult {
  * A refusal carrying the server's code, so the call site can hand it to
  * `describeServerError` rather than showing the server's English.
  */
-export class ImportApiError extends Error {
-  readonly payload: ServerErrorPayload;
-  readonly status?: number;
-
+export class ImportApiError extends ApiError {
   constructor(payload: ServerErrorPayload, status?: number) {
-    super(payload.error ?? payload.message ?? 'import failed');
+    super(payload, status);
     this.name = 'ImportApiError';
-    this.payload = payload;
-    this.status = status;
   }
 }
 
 /**
  * The sentence to show for a failed import call.
  *
- * Anything that is not an `ImportApiError` — a dropped connection, a parse
- * failure — gets the caller's fallback rather than its own English message:
- * those strings were written for a console, not for a reader.
+ * Anything that is not an `ApiError` — a dropped connection, a parse failure —
+ * gets the caller's fallback rather than its own English message: those strings
+ * were written for a console, not for a reader.
  */
 export function describeImportError(t: T, error: unknown, fallback: string): string {
-  if (error instanceof ImportApiError) {
-    return describeServerError(t, error.payload) ?? fallback;
-  }
-  return fallback;
+  return describeApiError(t, error, fallback);
 }
 
 function importBase(workspaceId: string): string {
@@ -149,8 +142,7 @@ function importBase(workspaceId: string): string {
 }
 
 async function failureFrom(response: Response): Promise<ImportApiError> {
-  const body = (await response.json().catch(() => ({}))) as ServerErrorPayload;
-  return new ImportApiError(body, response.status);
+  return new ImportApiError(await errorPayload(response), response.status);
 }
 
 type StreamEvent<TResult> =

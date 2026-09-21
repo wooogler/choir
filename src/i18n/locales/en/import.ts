@@ -21,4 +21,32 @@ export const importStrings = {
     one: '{count} page',
     other: '{count} pages',
   },
+  /** A meeting's detail is a list ("58 minutes, 4 speakers"), not a page count. */
+  'import.sourceNote.fileWithDetail': 'Source: {name} ({detail}, imported {date})',
+  'import.sourceNote.minutes': {
+    one: '{count} minute',
+    other: '{count} minutes',
+  },
+  'import.sourceNote.speakers': {
+    one: '{count} speaker',
+    other: '{count} speakers',
+  },
+
+  // ── Meeting note template (services/import/sources/meeting/template.ts) ──
+  // Headings and table labels of a generated meeting note. Document text, so
+  // they follow the same content-language rule as the source note above.
+  'meeting.section.summary': 'Summary',
+  'meeting.section.decisions': 'Decisions',
+  'meeting.section.actionItems': 'Action items',
+  'meeting.section.discussion': 'Discussion',
+  'meeting.section.fullRecord': 'Full record',
+  'meeting.section.date': 'Date',
+  'meeting.section.participants': 'Participants',
+  'meeting.section.related': 'Related',
+  /** Column headers of the action-item table, under `meeting.section.actionItems`. */
+  'meeting.section.actionTask': 'Task',
+  'meeting.section.actionOwner': 'Owner',
+  'meeting.section.actionDue': 'Due',
+  /** What a section says when the meeting produced nothing for it. */
+  'meeting.section.none': 'None',
 } as const;

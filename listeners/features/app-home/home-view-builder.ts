@@ -10,7 +10,9 @@
 
 import type { Logger } from '@slack/bolt';
 import type { WebClient } from '@slack/web-api';
+import { getCachedChannelName } from 'services/common/name-cache';
 import { resolveLocaleForUser } from 'services/i18n';
+import { type ProjectRecord, listProjects } from 'services/projects/project-index';
 import {
   getCHOIRUsers,
   getGithubRepo,
@@ -87,7 +89,7 @@ export const buildHomeView = async (
 
   switch (activeTab) {
     case 'documents':
-      return [...tabBar, ...(await buildDocumentsTab(t, locale, workspaceId, userId))];
+      return [...tabBar, ...(await buildDocumentsTab(t, locale, client, logger, workspaceId, userId))];
     case 'team':
       return [...tabBar, ...(await buildTeamTab(t, client, logger, workspaceId))];
     case 'advanced':
@@ -271,7 +273,14 @@ const buildSetupBlocks = async (
 
 // --- 📁 Documents ----------------------------------------------------------
 
-const buildDocumentsTab = async (t: T, locale: Locale, workspaceId: string, userId: string): Promise<any[]> => {
+const buildDocumentsTab = async (
+  t: T,
+  locale: Locale,
+  client: WebClient,
+  logger: Logger,
+  workspaceId: string,
+  userId: string,
+): Promise<any[]> => {
   const workspaceStore = new WorkspaceStore();
   const [userGithubInfo, repoInfo, readOnlyFiles, markdownFiles, workspaceConfig, contentLanguage] = await Promise.all([
     workspaceStore.getUserGithubInfo(workspaceId, userId),
@@ -336,11 +345,100 @@ const buildDocumentsTab = async (t: T, locale: Locale, workspaceId: string, user
 
   blocks.push(buildContentLanguageRow(t, contentLanguage));
 
+  blocks.push(...(await buildProjectsSection(t, client, logger, workspaceId)));
+
   if (repoInfo) {
     blocks.push(divider, row(t('appHome.documentConnection.indexManagement.summary')), buildIndexJobs(t));
   }
 
   return blocks;
+};
+
+/**
+ * The project folders, read-only.
+ *
+ * Block Kit cannot do the multi-select channel table a project needs, so the
+ * editing lives in the web viewer and Slack only reports (docs/project-folders.md
+ * 6). Each row therefore carries a URL button rather than an action: it hands the
+ * manager over to the viewer instead of pretending to be a control.
+ */
+const buildProjectsSection = async (t: T, client: WebClient, logger: Logger, workspaceId: string): Promise<Block[]> => {
+  let projects: ProjectRecord[];
+  try {
+    projects = await listProjects(workspaceId);
+  } catch (error) {
+    // A workspace whose mirror has not synced yet has no projects, not a broken
+    // Home tab.
+    logger.warn('Could not list project folders for the Documents tab:', error);
+    return [];
+  }
+
+  const docsUrl = docsViewerUrl(workspaceId);
+  const blocks: Block[] = [divider];
+
+  if (projects.length === 0) {
+    blocks.push(row(t('appHome.documents.projects.none')));
+    return blocks;
+  }
+
+  blocks.push(row(t('appHome.documents.projects.summary', { count: projects.length })));
+
+  // Sorted by folder so the list does not reshuffle between renders — the index
+  // is a directory walk, and its order is the filesystem's, not a person's.
+  const sorted = [...projects].sort((a, b) => a.folder.localeCompare(b.folder));
+  const names = await resolveProjectChannelNames(client, logger, workspaceId, sorted);
+
+  for (const project of sorted) {
+    const channels = project.settings.channels;
+    const named = channels.map((id) => names.get(id)).filter((name): name is string => !!name);
+    const channelText =
+      named.length === channels.length && named.length > 0
+        ? named.map((name) => `#${name}`).join(', ')
+        : t('appHome.documents.projects.channels', { count: channels.length });
+
+    blocks.push(
+      row(
+        t('appHome.documents.projects.item', {
+          name: project.settings.name || project.folder,
+          folder: project.folder,
+          channels: channelText,
+        }),
+        // No folder deep link exists in the viewer — `/docs/:workspaceId/:filePath`
+        // names a document — so the button opens the viewer's front door, where
+        // the folder's gear icon is one click away.
+        docsUrl
+          ? button(t('appHome.projects.settings.button'), 'open_project_settings_url', { url: docsUrl })
+          : undefined,
+      ),
+    );
+  }
+
+  blocks.push(context(t('appHome.documents.projects.context')));
+  return blocks;
+};
+
+/** Channel names for every linked channel, best-effort: an unreadable one is simply absent. */
+const resolveProjectChannelNames = async (
+  client: WebClient,
+  logger: Logger,
+  workspaceId: string,
+  projects: readonly ProjectRecord[],
+): Promise<Map<string, string>> => {
+  const ids = [...new Set(projects.flatMap((project) => project.settings.channels))];
+  const names = new Map<string, string>();
+  if (ids.length === 0) return names;
+
+  await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const name = await getCachedChannelName(id, workspaceId, client);
+        if (name) names.set(id, name);
+      } catch (error) {
+        logger.warn(`Could not resolve the name of project channel ${id}:`, error);
+      }
+    }),
+  );
+  return names;
 };
 
 const buildReadOnlyRow = (

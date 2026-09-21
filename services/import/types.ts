@@ -11,7 +11,7 @@ import type { RejectedAsset } from 'services/google/gdocs-delta';
  * See docs/pdf-web-import.md for the design this implements.
  */
 
-export type ImportSourceKind = 'pdf' | 'url' | 'google-docs';
+export type ImportSourceKind = 'pdf' | 'url' | 'google-docs' | 'meeting';
 
 /** A binary that travels with the document and lands in the same commit. */
 export interface ImportAsset {
@@ -45,6 +45,14 @@ export interface ImportSourceInfo {
   name: string;
   url?: string;
   pages?: number;
+  /**
+   * A meeting's size, for its source note. Pages are what tells a reader how
+   * much of a PDF a document stands for; for a transcript that job falls to how
+   * long the meeting ran and how many people spoke, so both travel here rather
+   * than being squeezed into `pages`.
+   */
+  minutes?: number;
+  speakers?: number;
 }
 
 export interface ConvertedDocument {

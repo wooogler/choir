@@ -21,6 +21,7 @@ COPY web ./web
 COPY src/i18n/supported-locales.ts ./src/i18n/supported-locales.ts
 COPY services/docs-editor/api-errors.ts ./services/docs-editor/api-errors.ts
 COPY services/google/import-steps.ts ./services/google/import-steps.ts
+COPY services/projects/schema.ts ./services/projects/schema.ts
 
 RUN --mount=type=cache,target=/pnpm/store,id=pnpm-store-web,sharing=locked \
     pnpm --filter choir-web install --frozen-lockfile --store-dir=/pnpm/store

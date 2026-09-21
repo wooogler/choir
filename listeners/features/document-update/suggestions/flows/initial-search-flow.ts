@@ -2,6 +2,7 @@ import type { Document } from '@langchain/core/documents';
 import { SessionType, getSessionData, storeSessionData } from 'services/common';
 import { initializeFileSelectionState, storeSearchResults } from 'services/document/document-store';
 import { QmdUpdateAnchorService } from 'services/document/qmd-update-anchor-service';
+import { prefixNewFilePath, searchWithFolderFallback } from 'services/document/update-scope';
 import type { DocumentMetadata } from 'services/file-registry/types';
 import { getWorkspaceId } from 'services/slack';
 import { isReadOnlyFile } from 'services/workspace/read-only';
@@ -29,6 +30,8 @@ export async function runInitialSearch(params: {
   vectorStore: { getAllMarkdownFiles: (workspaceId: string) => any[] };
   client: any;
   logger: any;
+  /** The project folder this conversation updates, or null for the whole workspace. */
+  folderPrefix?: string | null;
   /** The reviewing manager's translator: every message below is their DM. */
   t: T;
 }): Promise<InitialSearchResult> {
@@ -43,6 +46,7 @@ export async function runInitialSearch(params: {
     vectorStore,
     client,
     logger,
+    folderPrefix = null,
     t,
   } = params;
 
@@ -57,8 +61,12 @@ export async function runInitialSearch(params: {
       if (fileList.length > 0) {
         const { generateNewFileDefaults } = await import('services/llm/content-generator');
         const defaults = await generateNewFileDefaults(knowledgeContent, fileList, currentWorkspaceId);
-        logger.info(`Generated new file defaults: ${defaults.fileName}`);
-        return defaults;
+        // A project channel's new documents belong in that project's folder, so
+        // the modal opens with the folder already typed in front of the name
+        // (docs/project-folders.md 4).
+        const fileName = prefixNewFilePath(folderPrefix, defaults.fileName);
+        logger.info(`Generated new file defaults: ${fileName}`);
+        return { ...defaults, fileName };
       }
     } catch (error) {
       logger.warn('Failed to generate new file defaults:', error);
@@ -66,14 +74,31 @@ export async function runInitialSearch(params: {
     return undefined;
   };
 
-  const [rawSearchResults, newFileDefaults] = await Promise.all([
-    QmdUpdateAnchorService.getInstance().search({
-      workspaceId,
-      query: knowledgeContent,
-      limit: 5,
-    }) as Promise<Document<DocumentMetadata>[]>,
+  const [scopedSearch, newFileDefaults] = await Promise.all([
+    searchWithFolderFallback<Document<DocumentMetadata>>({
+      folderPrefix,
+      search: (prefix) =>
+        QmdUpdateAnchorService.getInstance().search({
+          workspaceId,
+          query: knowledgeContent,
+          limit: 5,
+          ...(prefix ? { folderPrefix: prefix } : {}),
+        }) as Promise<Document<DocumentMetadata>[]>,
+    }),
     computeNewFileDefaults(),
   ]);
+  const rawSearchResults = scopedSearch.results;
+
+  // The manager declared a project folder and is about to be shown a document
+  // from outside it; one line says why before the first suggestion lands.
+  if (scopedSearch.widened && folderPrefix) {
+    const widenedText = t('docUpdate.suggestions.scope.widened', { folder: folderPrefix });
+    await client.chat.postMessage({
+      channel: currentDmChannelId,
+      text: widenedText,
+      blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: widenedText }] }],
+    });
+  }
 
   // Read-only files are protected from updates, so exclude them from the review
   // suggestions AND the auto-selected review target below (they used to slip
@@ -229,6 +254,9 @@ export async function runInitialSearch(params: {
     knowledgeContent,
     client,
     logger,
+    // Once the search has been widened the recommended file is outside the
+    // folder by definition; re-applying the prefix here would find nothing.
+    folderPrefix: scopedSearch.widened ? null : folderPrefix,
     t,
   });
 

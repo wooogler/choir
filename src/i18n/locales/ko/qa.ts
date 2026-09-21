@@ -97,6 +97,8 @@ export const qa: LocaleCatalog = {
   'qa.answer.reference.source': '*출처:* {sources}\n',
   'qa.answer.error': '질문을 처리하는 중에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
 
+  'qa.scope.widened': '_프로젝트 문서에는 없어서 전체 문서에서 찾았어요._',
+
   'qa.managers.fallback': '매니저',
   'qa.managers.andOthers': '{name}님과 다른 매니저들',
   'qa.anonReply.analysis.text':

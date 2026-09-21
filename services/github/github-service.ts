@@ -355,6 +355,95 @@ class GithubService {
     }
   }
 
+  /**
+   * Text blobs the caller picks out of the repository tree by path.
+   *
+   * `getAllMarkdownFiles` above is the documentation loader — it parses every
+   * file into a `DocumentTree` and is the wrong shape for anything that is not
+   * a document. This is the small sibling for the repository's own machinery
+   * (`.choir/project.json` today): the same tree listing and blob fetch, no
+   * markdown assumptions, and the raw text handed back.
+   *
+   * Returns an empty list rather than throwing: these files are metadata, and
+   * a workspace whose documentation synced fine must not fail its sync because
+   * a settings file could not be read.
+   */
+  async getMatchingFiles(params: {
+    owner: string;
+    repo: string;
+    ref?: string;
+    workspaceId?: string;
+    userId?: string;
+    /** Repository-relative path (`projects/alpha/.choir/project.json`). */
+    match: (filePath: string) => boolean;
+    /** Guards against a pathological tree; the caller's filter is usually tiny. */
+    maxFiles?: number;
+  }): Promise<Array<{ path: string; content: string }>> {
+    try {
+      const octokit = await this.getOctokit(params.workspaceId, params.userId);
+      const actualRef =
+        params.ref || (await this.getDefaultBranch(params.owner, params.repo, params.workspaceId, params.userId));
+
+      const treeResponse = await this.throttledRequest(() =>
+        octokit.rest.git.getTree({
+          owner: params.owner,
+          repo: params.repo,
+          tree_sha: actualRef,
+          recursive: true,
+        }),
+      );
+      const tree = (treeResponse as any).data;
+
+      const items = (tree.tree as any[]).filter(
+        (item) => item?.type === 'blob' && typeof item.path === 'string' && params.match(item.path),
+      ) as FileTreeItem[];
+
+      const wanted = params.maxFiles === undefined ? items : items.slice(0, params.maxFiles);
+      if (wanted.length === 0) {
+        return [];
+      }
+
+      const files: Array<{ path: string; content: string }> = [];
+      for (const chunk of this.chunkArray(wanted, this.throttleOptions.maxConcurrent)) {
+        const results = await Promise.all(
+          chunk.map(async (item) => {
+            const cacheKey = `${params.owner}/${params.repo}/${item.path}:${item.sha}`;
+            const cached = this.fileContentCache.get(cacheKey);
+            if (cached && cached.sha === item.sha) {
+              return { path: item.path, content: cached.content };
+            }
+
+            try {
+              const blobResponse = await this.throttledRequest(() =>
+                octokit.rest.git.getBlob({ owner: params.owner, repo: params.repo, file_sha: item.sha }),
+              );
+              const content = Buffer.from((blobResponse as any).data.content, 'base64').toString('utf-8');
+              GithubService.setBounded(
+                this.fileContentCache,
+                cacheKey,
+                { sha: item.sha, content, lastModified: new Date() },
+                GithubService.MAX_FILE_CONTENT_CACHE,
+              );
+              return { path: item.path, content };
+            } catch (error) {
+              Logger.warn(`Could not read repository file ${item.path}`, error as Error);
+              return null;
+            }
+          }),
+        );
+
+        for (const result of results) {
+          if (result) files.push(result);
+        }
+      }
+
+      return files;
+    } catch (error) {
+      Logger.warn(`Could not list repository files for ${params.owner}/${params.repo}`, error as Error);
+      return [];
+    }
+  }
+
   async getMarkdownFile(params: {
     owner: string;
     repo: string;

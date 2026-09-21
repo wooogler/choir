@@ -111,6 +111,7 @@ export async function handleQuestionMessage(
       client,
       logger,
       event.user, // 사용자 ID 전달
+      event.channel, // 이 채널이 속한 프로젝트가 검색 범위를 정한다
     );
     if (longRunningNoticeTimer) {
       clearTimeout(longRunningNoticeTimer);
@@ -123,11 +124,17 @@ export async function handleQuestionMessage(
       workspaceName,
       organizationName,
       organizationDescription,
+      scopeWidened,
     } = processingResult;
     relevantDocs = processedDocs;
 
+    // 프로젝트 폴더 안에서 답을 찾지 못해 전체 문서로 넓혔으면 그 사실을 한 줄로
+    // 알린다 — 인용된 문서가 다른 프로젝트의 것일 수 있기 때문이다.
+    const answerText = answerResult.response || '';
+    const answerWithScopeNote = scopeWidened && answerText ? `${answerText}\n\n${t('qa.scope.widened')}` : answerText;
+
     // 마크다운을 Slack 형식으로 변환
-    const response = await convertMarkdownToSlackText(answerResult.response || '');
+    const response = await convertMarkdownToSlackText(answerWithScopeNote);
 
     // 공유용 깔끔한 응답 (참조 문구 없이)
     const cleanResponseForSharing = response;

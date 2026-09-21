@@ -315,6 +315,59 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
+        "text": "*Projects*\n2 folders are linked to Slack channels"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Alpha*\n`projects/alpha` · #alpha-dev, #alpha-paper"
+      },
+      "accessory": {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Settings",
+          "emoji": true
+        },
+        "action_id": "open_project_settings_url",
+        "url": "https://docs.example.com/docs/T1"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Beta*\n`projects/beta` · #beta"
+      },
+      "accessory": {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Settings",
+          "emoji": true
+        },
+        "action_id": "open_project_settings_url",
+        "url": "https://docs.example.com/docs/T1"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "A project keeps its channels’ questions and updates inside its folder. Settings open in the docs viewer."
+        }
+      ]
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
         "text": "*Index maintenance*\nRun after editing markdown files or when answers look stale."
       }
     },
@@ -1101,7 +1154,7 @@
         "elements": [
           {
             "type": "mrkdwn",
-            "text": "💡 *Tip:* Read-only files can still be searched and referenced, but they won't be modified during document updates."
+            "text": "💡 *Tip:* Read-only files can still be searched and referenced, but they won't be modified during document updates. Pick a folder (it ends in `/`) to protect everything inside it."
           }
         ]
       }

@@ -36,7 +36,26 @@ const state: any = {
   workspaceConfig: { githubRepo: { owner: 'acme', repo: 'docs' } },
   openAISettings: { apiKey: 'sk-abcdefghijklmnop', qaModel: 'gpt-5.4', documentUpdateModel: 'gpt-5.4' },
   contextKeyStatus: { configured: true, createdAt: '2025-01-02T03:04:05.000Z', rotatedAt: '2025-03-04T05:06:07.000Z' },
+  projects: [
+    {
+      folder: 'projects/alpha',
+      settings: { name: 'Alpha', description: 'Experiment platform.', channels: ['C_A1', 'C_A2'] },
+    },
+    { folder: 'projects/beta', settings: { name: 'Beta', description: '', channels: ['C_B1'] } },
+  ],
+  channelNames: { C_A1: 'alpha-dev', C_A2: 'alpha-paper', C_B1: 'beta' } as Record<string, string>,
 };
+
+// Project folders are read-only in Slack: the Documents tab lists them and the
+// editing happens in the viewer, so the index is stubbed and only its output is
+// under test (docs/project-folders.md 6).
+jest.mock('services/projects/project-index', () => ({
+  listProjects: jest.fn(async () => state.projects),
+}));
+
+jest.mock('services/common/name-cache', () => ({
+  getCachedChannelName: jest.fn(async (id: string) => state.channelNames[id] ?? ''),
+}));
 
 // `services/i18n` is stubbed rather than required-actual so the resolver (the
 // handlers' only network-ish dependency) is controllable, while `tForRequest`
@@ -230,6 +249,14 @@ beforeEach(() => {
     createdAt: '2025-01-02T03:04:05.000Z',
     rotatedAt: '2025-03-04T05:06:07.000Z',
   };
+  state.projects = [
+    {
+      folder: 'projects/alpha',
+      settings: { name: 'Alpha', description: 'Experiment platform.', channels: ['C_A1', 'C_A2'] },
+    },
+    { folder: 'projects/beta', settings: { name: 'Beta', description: '', channels: ['C_B1'] } },
+  ];
+  state.channelNames = { C_A1: 'alpha-dev', C_A2: 'alpha-paper', C_B1: 'beta' };
 });
 
 describe('English matches the recorded layout', () => {
@@ -554,5 +581,65 @@ describe('counted strings', () => {
     expect(ko('appHome.management.managers.status', { count: 1 })).toBe(
       ko('appHome.management.managers.status', { count: 2 }).replace('2', '1'),
     );
+  });
+});
+
+// --- The Documents tab's project list --------------------------------------
+
+describe('project folders on the Documents tab', () => {
+  const projectRows = (blocks: any[]) =>
+    blocks.filter((block: any) => block.type === 'section' && /^\*(Alpha|Beta)\*/.test(block.text?.text ?? ''));
+
+  /** Every rendered section/context string, so mrkdwn newlines survive the comparison. */
+  const textsOf = (blocks: any[]): string[] =>
+    blocks.flatMap((block: any) => [
+      ...(block.text?.text ? [block.text.text as string] : []),
+      ...((block.elements ?? []).map((element: any) => element.text?.text ?? element.text).filter(Boolean) as string[]),
+    ]);
+
+  it('lists every project with its folder and its channel names', async () => {
+    const documents = await renderTab('documents');
+    const rows = projectRows(documents);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0].text.text).toBe('*Alpha*\n`projects/alpha` · #alpha-dev, #alpha-paper');
+    expect(rows[1].text.text).toBe('*Beta*\n`projects/beta` · #beta');
+    expect(textsOf(documents)).toContain(en('appHome.documents.projects.summary', { count: 2 }));
+  });
+
+  it('gives each one a link into the viewer and no way to edit it in Slack', async () => {
+    const rows = projectRows(await renderTab('documents'));
+
+    for (const row of rows) {
+      expect(row.accessory).toMatchObject({
+        type: 'button',
+        action_id: 'open_project_settings_url',
+        url: 'https://docs.example.com/docs/T1',
+      });
+      expect(row.accessory.text.text).toBe(en('appHome.projects.settings.button'));
+    }
+  });
+
+  it('falls back to a channel count when a name cannot be resolved', async () => {
+    state.channelNames = { C_A1: 'alpha-dev' };
+
+    const rows = projectRows(await renderTab('documents'));
+    expect(rows[0].text.text).toBe('*Alpha*\n`projects/alpha` · 2 channels');
+  });
+
+  it('says so plainly when there are no projects yet', async () => {
+    state.projects = [];
+
+    const documents = await renderTab('documents');
+    expect(projectRows(documents)).toHaveLength(0);
+    expect(textsOf(documents)).toContain(en('appHome.documents.projects.none'));
+  });
+
+  it('renders the section in Korean too', async () => {
+    state.locale = 'ko';
+
+    const documents = await renderTab('documents');
+    expect(JSON.stringify(documents)).toContain(ko('appHome.projects.settings.button'));
+    expect(textsOf(documents)).toContain(ko('appHome.documents.projects.summary', { count: 2 }));
   });
 });

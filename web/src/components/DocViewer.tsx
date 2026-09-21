@@ -13,6 +13,7 @@ import {
   slugifyHeading,
 } from '../utils/docs';
 import { inlineMarkdownToText } from '../utils/inline-markdown';
+import { type ProjectSummary, listProjects } from '../utils/project-api';
 import { CommitDialog } from './CommitDialog';
 import { CrepeEditor, type CrepeEditorHandle } from './CrepeEditor';
 import { DeleteDocumentDialog } from './DeleteDocumentDialog';
@@ -23,6 +24,7 @@ import { GoogleDocsReview } from './GoogleDocsReview';
 import { GoogleDocsSync } from './GoogleDocsSync';
 import { HistoryPanel } from './HistoryPanel';
 import { NewDocumentDialog } from './NewDocumentDialog';
+import { ProjectSettingsDialog } from './ProjectSettingsDialog';
 import { RenameDocumentDialog } from './RenameDocumentDialog';
 import { SettingsDialog } from './SettingsDialog';
 
@@ -129,6 +131,11 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [showNewDocumentDialog, setShowNewDocumentDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  // Which folders are projects, and their settings — one request per mount (and
+  // again after a save), because the sidebar marks every folder it draws.
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [projectsEpoch, setProjectsEpoch] = useState(0);
+  const [projectSettingsFolder, setProjectSettingsFolder] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -196,6 +203,33 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   // What a new document's name should follow: the basenames already sitting in
   // the folder of the document being read, which is where it will be created.
   const newDocumentSiblings = useMemo(() => siblingNames(files, folderOf(filePath)), [files, filePath]);
+
+  // The project list is a manager-only endpoint and the gear it feeds is a
+  // manager-only control, so an ordinary reader never makes this request. A
+  // failure is silent: the sidebar simply draws no badges, which is the same
+  // thing it did before projects existed.
+  //
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `projectsEpoch` is not read here — bumping it is how a save asks for a re-read
+  useEffect(() => {
+    if (!canEdit) return;
+    let cancelled = false;
+    listProjects(workspaceId)
+      .then((result) => {
+        if (!cancelled) setProjects(result.projects);
+      })
+      .catch(() => {
+        if (!cancelled) setProjects([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, canEdit, projectsEpoch]);
+
+  const projectFolders = useMemo(() => new Set(projects.map((project) => project.folder)), [projects]);
+  const projectBeingEdited = useMemo(
+    () => projects.find((project) => project.folder === projectSettingsFolder) ?? null,
+    [projects, projectSettingsFolder],
+  );
 
   // Dismissing the read-only notice is per-visit: a new reason (or a reload
   // after access is granted) should speak up again. The header keeps the
@@ -1024,6 +1058,8 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         canSeeInsights={canSeeInsights}
         canCreate={canEdit}
         onNewDocument={() => setShowNewDocumentDialog(true)}
+        projectFolders={projectFolders}
+        onProjectSettings={canEdit ? setProjectSettingsFolder : undefined}
       />
       <div className="doc-main">
         <DocHeader
@@ -1140,6 +1176,22 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           currentPath={filePath}
           files={files}
           onCancel={() => setShowRenameDialog(false)}
+        />
+      )}
+      {projectSettingsFolder !== null && canEdit && (
+        <ProjectSettingsDialog
+          // Remounts when the folder changes, so the form is always seeded from
+          // the project it is about rather than from the last one opened.
+          key={projectSettingsFolder}
+          workspaceId={workspaceId}
+          folder={projectSettingsFolder}
+          existing={projectBeingEdited}
+          onClose={(saved) => {
+            setProjectSettingsFolder(null);
+            // A save or a delete changes which folders are projects, and the
+            // badge beside them, so the list is re-read rather than patched.
+            if (saved) setProjectsEpoch((epoch) => epoch + 1);
+          }}
         />
       )}
       {showSettingsDialog && languageSettings && session?.authenticated === true && (

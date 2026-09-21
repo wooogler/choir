@@ -176,6 +176,18 @@ export class WorkspaceMirrorService {
   }
 
   /**
+   * Deletes a non-markdown repo file from the mirror. The sibling of
+   * `writeContextFile`, for the full-sync pass that drops what GitHub no longer
+   * has — a project folder deleted or renamed upstream would otherwise keep
+   * claiming its Slack channels from a stale `.choir/project.json`.
+   */
+  public async removeContextFile(workspaceId: string, relativePath: string): Promise<void> {
+    const targetPath = this.resolveMirrorPath(workspaceId, relativePath);
+    await fs.promises.rm(targetPath, { force: true });
+    Logger.info(`Workspace mirror removed context file: ${relativePath}`, { workspaceId });
+  }
+
+  /**
    * One-time, self-healing migration: if the on-disk section layout predates the
    * current SECTIONS_FORMAT_VERSION (or is unstamped), wipe the existing section
    * directories so the caller rebuilds them in the current layout, then stamp the

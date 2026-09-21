@@ -2,6 +2,7 @@ import type { Document } from '@langchain/core/documents';
 import { Logger } from '../common/logger';
 import type { MarkdownFile } from '../github';
 import { getRetrievalProvider } from '../retrieval';
+import type { RetrievalScope } from '../retrieval/types';
 import type { DocumentMetadata } from './types';
 
 interface VectorWorkspaceState {
@@ -111,30 +112,55 @@ export class VectorStoreService {
     }
   }
 
+  /**
+   * `scope` is forwarded rather than applied here: this store keeps markdown
+   * metadata but no vectors of its own, so the project-folder filter belongs
+   * where the ranking happens (services/retrieval/scope).
+   */
   public async similaritySearchByFile(
     query: string,
     filePath: string,
     k = 5,
     workspaceId?: string,
+    scope?: RetrievalScope,
   ): Promise<Document<DocumentMetadata>[]> {
     if (!workspaceId) return [];
-    const results = await getRetrievalProvider().search({ query, limit: k * 3, workspaceId });
+    const results = await getRetrievalProvider().search({ query, limit: k * 3, workspaceId, scope });
     const fileName = filePath.split('/').pop() || filePath;
     return results.filter((doc) => doc.metadata.fileName?.endsWith(fileName)).slice(0, k);
   }
 
+  /**
+   * Writable candidates for a document update.
+   *
+   * `folderPrefix` restricts them to one project folder
+   * (docs/project-folders.md 4). It is a post-filter, like the read-only one
+   * beside it, so the over-fetch widens to match: a repository whose best hits
+   * all sit outside the folder would otherwise return far fewer than `k`.
+   */
   public async similaritySearchWritableFiles(
     query: string,
     workspaceId: string,
     k = 5,
+    scope?: RetrievalScope,
+    folderPrefix?: string,
   ): Promise<Document<DocumentMetadata>[]> {
     const { WorkspaceStore } = await import('services/workspace/workspace-store');
     const { isReadOnlyFile } = await import('services/workspace/read-only');
+    const { isUnderFolder } = await import('services/document/update-scope');
     const readOnlyFiles = await new WorkspaceStore().getReadOnlyFiles(workspaceId);
-    const results = await getRetrievalProvider().search({ query, limit: k * 3, workspaceId });
+    const results = await getRetrievalProvider().search({
+      query,
+      limit: k * (folderPrefix ? 8 : 3),
+      workspaceId,
+      scope,
+    });
     // metadata.fileName carries the full repo path; match read-only entries
     // path-first (with a legacy basename fallback).
-    return results.filter((doc) => !isReadOnlyFile(readOnlyFiles, { path: doc.metadata.fileName })).slice(0, k);
+    return results
+      .filter((doc) => !isReadOnlyFile(readOnlyFiles, { path: doc.metadata.fileName }))
+      .filter((doc) => !folderPrefix || isUnderFolder(doc.metadata.fileName, folderPrefix))
+      .slice(0, k);
   }
 
   public async addNewSection(

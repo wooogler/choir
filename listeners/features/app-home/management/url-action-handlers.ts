@@ -21,6 +21,11 @@ export const registerUrlActionHandlers = (app: App) => {
     logger.info('Open docs URL button clicked - handled by link');
   });
 
+  app.action('open_project_settings_url', async ({ ack, logger }) => {
+    await ack();
+    logger.info('Project settings URL button clicked - handled by link');
+  });
+
   app.action('open_dashboard_url', async ({ ack, logger }) => {
     await ack();
     logger.info('Open dashboard URL button clicked - handled by link');

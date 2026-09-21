@@ -21,6 +21,7 @@ import {
   storeDocumentUpdates,
 } from 'services/document/document-store';
 import { type ProcessedDocument, processDocument } from 'services/document/update-processor';
+import { resolveUpdateScope } from 'services/document/update-scope';
 import { VectorStoreService } from 'services/file-registry/main-service';
 import type { DocumentMetadata } from 'services/file-registry/types';
 import { describeError } from 'services/i18n';
@@ -137,6 +138,13 @@ export const suggestUpdatesCallback = async ({
     const { knowledgeContent, validMessages, knowledgeSourceChannelId, knowledgeSourceThreadTs } =
       await loadSourceContext(parsedValue, userId, client, logger);
 
+    // Where channel → scope is decided for the whole review: the conversation
+    // the knowledge came from names the project, and so the folder that its
+    // candidate search and its "create new file" default are confined to
+    // (docs/project-folders.md 4). Resolved once here and threaded down rather
+    // than re-resolved per flow, so one review cannot change its mind halfway.
+    const { folderPrefix } = await resolveUpdateScope(currentWorkspaceId, knowledgeSourceChannelId);
+
     if (typeof parsedValue.index === 'number') {
       currentIndex = parsedValue.index;
 
@@ -152,6 +160,7 @@ export const suggestUpdatesCallback = async ({
           knowledgeContent,
           client,
           logger,
+          folderPrefix,
           t,
         });
         if (result.shouldReturn) return;
@@ -285,6 +294,7 @@ export const suggestUpdatesCallback = async ({
         vectorStore,
         client,
         logger,
+        folderPrefix,
         t,
       });
       if (init.shouldReturn) return;
@@ -315,6 +325,7 @@ export const suggestUpdatesCallback = async ({
         knowledgeSourceChannelId,
         knowledgeSourceThreadTs,
         sessionId,
+        folderPrefix,
         t,
       });
       return;

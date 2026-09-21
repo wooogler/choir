@@ -10,6 +10,7 @@ import { getGithubRepo } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
 import { PathMapService } from 'services/workspace/path-map-service';
 import { type UpdateAnchor, stripSnippetHeader } from './update-anchor';
+import { isUnderFolder } from './update-scope';
 
 interface QmdLexResult {
   filepath: string;
@@ -260,6 +261,13 @@ export class QmdUpdateAnchorService {
     query: string;
     limit?: number;
     selectedFile?: string;
+    /**
+     * Restrict candidates to this repository folder (docs/project-folders.md 4).
+     * The QMD `docs` collection is workspace-wide with no path filter, so this
+     * is a post-filter — hence the wider over-fetch below, so the limit still
+     * fills when most of the repository sits outside the folder.
+     */
+    folderPrefix?: string;
   }): Promise<RetrievalDocument[]> {
     const qmd = await this.loadQmdModule();
     const storeEntry = await this.getOrCreateStore(params.workspaceId);
@@ -268,10 +276,11 @@ export class QmdUpdateAnchorService {
     }
 
     const limit = params.limit ?? 5;
+    const overFetch = Math.max(limit * (params.folderPrefix ? 8 : 3), limit);
     const queries = buildQmdStructuredSearchQueries(params.query, 2);
     const hybridResults = await storeEntry.store.search({
       queries,
-      limit: Math.max(limit * 3, limit),
+      limit: overFetch,
       collections: ['docs'],
       rerank: false,
     });
@@ -283,12 +292,12 @@ export class QmdUpdateAnchorService {
             await searchQmdLexWithFallback({
               store: storeEntry.store,
               query: params.query,
-              limit: Math.max(limit * 3, limit),
+              limit: overFetch,
               collection: 'docs',
             })
           ).results;
 
-    const mappedResults = searchResults.map((result) => ({
+    const allMapped = searchResults.map((result) => ({
       result,
       relativePath: this.getRelativePath(
         storeEntry.sectionsRoot,
@@ -296,6 +305,13 @@ export class QmdUpdateAnchorService {
         result.displayPath,
       ),
     }));
+
+    // Folder scope first, so `selectedFile`'s basename fallback can never reach
+    // back out of the project folder.
+    const folderPrefix = params.folderPrefix;
+    const mappedResults = folderPrefix
+      ? allMapped.filter(({ relativePath }) => isUnderFolder(relativePath, folderPrefix))
+      : allMapped;
 
     let filteredResults: typeof mappedResults;
     if (params.selectedFile) {

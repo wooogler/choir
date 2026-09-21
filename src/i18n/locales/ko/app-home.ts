@@ -118,6 +118,17 @@ export const appHome: LocaleCatalog = {
   'appHome.documents.readOnly.currentNone': '지금은 빠진 파일이 없어요.',
   'appHome.documents.readOnly.more': '외 {count}개',
   'appHome.documents.readOnly.needsRepo': '*읽기 전용 파일*\n🟡 저장소를 먼저 연결해 주세요',
+  'appHome.documents.projects.summary': {
+    other: '*프로젝트*\n폴더 {count}개가 Slack 채널과 연결돼 있어요',
+  },
+  'appHome.documents.projects.none': '*프로젝트*\n아직 프로젝트 폴더가 없어요',
+  'appHome.documents.projects.item': '*{name}*\n`{folder}` · {channels}',
+  'appHome.documents.projects.channels': {
+    other: '채널 {count}개',
+  },
+  'appHome.documents.projects.context':
+    '프로젝트는 연결된 채널의 질문과 갱신을 그 폴더 안에서 처리해요. 설정은 문서 뷰어에서 열려요.',
+  'appHome.projects.settings.button': '설정',
   'appHome.documents.readOnly.loading': '*읽기 전용 파일*\n🟡 GitHub에서 파일을 불러오는 중이에요…',
   'appHome.documentConnection.disconnect.button': 'GitHub 연결 해제',
   'appHome.documentConnection.disconnect.confirm.title': 'GitHub 연결 해제',
@@ -244,7 +255,7 @@ export const appHome: LocaleCatalog = {
   'appHome.management.readOnly.label': '읽기 전용으로 지정할 파일 선택',
   'appHome.management.readOnly.placeholder': '읽기 전용으로 지정할 파일을 검색해 주세요...',
   'appHome.management.readOnly.tip':
-    '💡 *팁:* 읽기 전용 파일도 검색하고 참조할 수 있지만, 문서 업데이트 때 수정되지는 않아요.',
+    '💡 *팁:* 읽기 전용 파일도 검색하고 참조할 수 있지만, 문서 업데이트 때 수정되지는 않아요. `/`로 끝나는 폴더를 고르면 그 안의 문서 전부가 보호돼요.',
   'appHome.management.readOnly.updated': {
     other:
       '✅ 읽기 전용 파일을 업데이트했어요! 지금은 파일 {count}개가 읽기 전용이에요. 앱 홈을 새로고침하면 바뀐 내용을 볼 수 있어요.',

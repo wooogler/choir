@@ -7,6 +7,7 @@ import { invalidateProjectIndex } from 'services/projects/project-index';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { WorkspaceMirrorMarkdownLoader } from 'services/workspace/mirror-markdown-loader';
 import { WorkspaceMirrorService, type WorkspaceSyncSource } from 'services/workspace/mirror-service';
+import { syncProjectFiles } from './project-file-sync';
 
 export class GitHubSyncService {
   private static instance: GitHubSyncService;
@@ -45,8 +46,25 @@ export class GitHubSyncService {
       ...params,
       branch,
     });
-    // Project settings live in the mirror too, so a `.choir/project.json`
-    // edited on GitHub must not wait out the index's TTL after a sync.
+
+    // The mirror only receives the markdown it is handed, so the project files
+    // are fetched separately — otherwise a `.choir/project.json` that never
+    // passed through the viewer's GUI (a fresh instance, or an edit made on
+    // GitHub) would never reach this instance at all. Best-effort: a question
+    // answered workspace-wide is a worse answer, a failed sync is no answer.
+    try {
+      await syncProjectFiles({
+        workspaceId: params.workspaceId,
+        owner: params.owner,
+        repo: params.repo,
+        branch,
+      });
+    } catch (error) {
+      Logger.warn('GitHubSyncService: project file sync failed', error as Error);
+    }
+
+    // After both writes: the index is rebuilt from whatever the mirror holds,
+    // so invalidating it earlier would just cache the pre-sync tree again.
     invalidateProjectIndex(params.workspaceId);
 
     Logger.info(`GitHubSyncService: synced ${params.markdownFiles.length} markdown files to workspace mirror`, {

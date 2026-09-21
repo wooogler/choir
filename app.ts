@@ -48,6 +48,7 @@ import { getLineProvenance, getProvenanceRecord, listProvenanceForDoc } from 'se
 import { VectorStoreService } from 'services/file-registry/main-service';
 import { handleGitHubPushEvent, verifyGitHubSignature } from 'services/github/webhook-handler';
 import { docsApiCodeForGitHubError } from 'services/github/write-error';
+import { registerGlossaryRoutes } from 'services/glossary/routes';
 import { startDriftPoller } from 'services/google/poller';
 import { registerGoogleDriveRoutes } from 'services/google/routes';
 import {
@@ -57,6 +58,7 @@ import {
   normalizeLocale,
   resolvePersonalLocaleCached,
 } from 'services/i18n';
+import { registerMeetingRoutes } from 'services/import/meeting-routes';
 import { pdfUploadLimitBytes, registerImportRoutes } from 'services/import/routes';
 import { getAIProvider, validateCurrentProvider } from 'services/llm';
 import { registerProjectRoutes } from 'services/projects/routes';
@@ -586,6 +588,23 @@ function setupPublicSite(): void {
     },
   });
 
+  // ── Meeting notes ("회의록 만들기") ─────────────────────────────────────────
+  // Same placement rule as the import routes above: '/api/docs/:workspaceId/*splat'
+  // would otherwise swallow every '/api/docs/<id>/import/meeting...' path.
+  registerMeetingRoutes(router, {
+    readSession,
+    isManager,
+    // The transcript travels base64 in the JSON body beside the meeting details,
+    // so this needs more headroom than the Google routes' 64kb: a 5MB transcript
+    // is about 6.7MB once encoded.
+    jsonBody: expressForBodyParser.json({ limit: '8mb' }),
+    logger: {
+      info: (message: string, meta?: unknown) => app.logger.info(message, meta),
+      warn: (message: string, meta?: unknown) => app.logger.warn(message, meta),
+      error: (message: string, err?: unknown) => app.logger.error(message, err as Error),
+    },
+  });
+
   // ── Document rename and move ──────────────────────────────────────────────
   // Registered before the '/api/docs/:workspaceId/*splat' content route below,
   // which would otherwise swallow '/api/docs/<id>/documents/rename'.
@@ -593,6 +612,21 @@ function setupPublicSite(): void {
     readSession,
     isManager,
     jsonBody: expressForBodyParser.json({ limit: '64kb' }),
+    logger: {
+      info: (message: string, meta?: unknown) => app.logger.info(message, meta),
+      warn: (message: string, meta?: unknown) => app.logger.warn(message, meta),
+      error: (message: string, err?: unknown) => app.logger.error(message, err as Error),
+    },
+  });
+
+  // ── Glossary: build one from seed documents, or add rows to the nearest one ──
+  // Registered before the '/api/docs/:workspaceId/*splat' content route below,
+  // which would otherwise swallow '/api/docs/<id>/glossary'.
+  registerGlossaryRoutes(router, {
+    readSession,
+    isManager,
+    // The commit body carries the manager's edited candidate table.
+    jsonBody: expressForBodyParser.json({ limit: '1mb' }),
     logger: {
       info: (message: string, meta?: unknown) => app.logger.info(message, meta),
       warn: (message: string, meta?: unknown) => app.logger.warn(message, meta),
