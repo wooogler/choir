@@ -1,6 +1,6 @@
 # 회의록 만들기(Meeting note)와 용어집
 
-> 상태: **R1·G1·G2·M1 서버 구현 완료 (2026-09-21)**, M1·G2 웹 UI와 M2(용어집 companion 커밋) 진행 중. 아래 "구현 현황" 참고.
+> 상태: **R1·G1·G2·M1·M2 구현 완료 (2026-09-21)** — 웹 대화상자(`MeetingNoteDialog`, `GlossaryBuilderDialog`)와 용어집 companion 커밋 포함. 미착수: App Home의 회의록 폴더·용어집 파일명 설정(기본값 사용), M3의 `.docx` 외 확장, P3 항목. 아래 "구현 현황" 참고.
 
 ## 구현 현황 (2026-09-21)
 
@@ -9,6 +9,8 @@
 - **용어집(G1)**: `services/glossary/{parse,load,prompt-block,table}.ts`. 스캔 PDF 전사 프롬프트와 견적에 동일하게 주입. 미러 mtime+size 캐시.
 - **용어집 만들기(G2)**: `extract.ts`(Responses API json_schema, 12k 토큰 청크, 기존 항목 제외, 150개 상한), `commit.ts`, `routes.ts`(`GET /glossary`, `POST /glossary/extract`, `POST /glossary/commit`). 씨앗 문서는 기존 import draft(PDF·URL)다. `services/glossary/index.ts`는 `commit`을 재export하지 않는다(octokit 유입 방지).
 - **회의록 만들기(M1 서버)**: `services/import/sources/text/`(vtt/srt/transcript-text/docx/plain 감지·파싱; 60% 규칙은 줄 수가 아니라 **커버리지**로 잰다), `services/import/sources/meeting/`(meta 검증, 템플릿, 청크·리듀스 프롬프트, 변환, 견적). 라우트 `POST /import/meeting`(업로드+견적) → `POST /import/meeting/:id/convert`(NDJSON) → 기존 `/import/commit`. 충실도는 화자 이름을 포함한 원문과 비교한다(그렇지 않으면 정상 회의록도 0.8 아래로 떨어졌다).
+- **M2**: `saveEditedDocument`/`createDocument`의 `companionEdits`(같은 커밋, 사이드카 없음, 벡터 스토어 갱신)와 `POST /import/commit`의 `glossary` 필드(`services/import/glossary-companion.ts`). 미리보기의 "용어집에 추가할까요?" 카드가 체크한 항목을 보낸다.
+- **웹**: `MeetingNoteDialog.tsx`(파일/붙여넣기, 회의 정보, 프로젝트 멤버 기본 참석자, 견적 → 변환 → 미리보기), `GlossaryBuilderDialog.tsx`(PDF·URL 씨앗 → 후보 표 편집 → 가장 가까운 용어집/새 파일), 프로젝트 설정의 용어집 탭에서 상태·빌더 진입.
 - 계획과 다른 점: `PEOPLE.md` 없음(프로젝트 멤버로 대체), `IMPORT_PDF_*` 설정을 회의록도 그대로 쓴다(`IMPORT_LLM_*`로 일반화하지 않음), App Home 설정 없음(기본 `meetings/`, `GLOSSARY.md`). `docs/pdf-web-import.md`의 import 파이프라인(draft → 미리보기 → `createDocument`)을 재사용하되, 사용자에게는 "import"가 아니라 **"회의록 만들기"** 라는 하나의 기능으로 보인다.
 
 ## 왜
