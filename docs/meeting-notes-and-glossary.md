@@ -1,6 +1,15 @@
 # 회의록 만들기(Meeting note)와 용어집
 
-> 상태: **설계 (2026-09-20)**. 구현 전. `docs/pdf-web-import.md`의 import 파이프라인(draft → 미리보기 → `createDocument`)을 재사용하되, 사용자에게는 "import"가 아니라 **"회의록 만들기"** 라는 하나의 기능으로 보인다.
+> 상태: **R1·G1·G2·M1 서버 구현 완료 (2026-09-21)**, M1·G2 웹 UI와 M2(용어집 companion 커밋) 진행 중. 아래 "구현 현황" 참고.
+
+## 구현 현황 (2026-09-21)
+
+- **이름 변경(R1)**: `services/docs-editor/rename-document.ts` + `rename-route.ts`(`/documents/rename/check`, `/documents/rename`). 한 커밋에 새 경로·이동한 사이드카 추가와 옛 경로 삭제; 미러·경로 맵·벡터 스토어(새 GitHub URL)·Google Doc 매핑/상태/baseline·읽기 전용 항목 재기록; 열린 리뷰가 있으면 `rename_review_pending`. `inboundLinks`는 링크하는 **문서 수**. 뷰어 `RenameDocumentDialog`는 헤더의 삭제 옆.
+- **파일명 추천**: `web/src/utils/file-names.ts`의 `suggestFileNameFromSiblings`. New document·Rename·회의록 만들기가 공유. 빈 제목은 폴더 접두를 유지하고 단어 부분만 fallback.
+- **용어집(G1)**: `services/glossary/{parse,load,prompt-block,table}.ts`. 스캔 PDF 전사 프롬프트와 견적에 동일하게 주입. 미러 mtime+size 캐시.
+- **용어집 만들기(G2)**: `extract.ts`(Responses API json_schema, 12k 토큰 청크, 기존 항목 제외, 150개 상한), `commit.ts`, `routes.ts`(`GET /glossary`, `POST /glossary/extract`, `POST /glossary/commit`). 씨앗 문서는 기존 import draft(PDF·URL)다. `services/glossary/index.ts`는 `commit`을 재export하지 않는다(octokit 유입 방지).
+- **회의록 만들기(M1 서버)**: `services/import/sources/text/`(vtt/srt/transcript-text/docx/plain 감지·파싱; 60% 규칙은 줄 수가 아니라 **커버리지**로 잰다), `services/import/sources/meeting/`(meta 검증, 템플릿, 청크·리듀스 프롬프트, 변환, 견적). 라우트 `POST /import/meeting`(업로드+견적) → `POST /import/meeting/:id/convert`(NDJSON) → 기존 `/import/commit`. 충실도는 화자 이름을 포함한 원문과 비교한다(그렇지 않으면 정상 회의록도 0.8 아래로 떨어졌다).
+- 계획과 다른 점: `PEOPLE.md` 없음(프로젝트 멤버로 대체), `IMPORT_PDF_*` 설정을 회의록도 그대로 쓴다(`IMPORT_LLM_*`로 일반화하지 않음), App Home 설정 없음(기본 `meetings/`, `GLOSSARY.md`). `docs/pdf-web-import.md`의 import 파이프라인(draft → 미리보기 → `createDocument`)을 재사용하되, 사용자에게는 "import"가 아니라 **"회의록 만들기"** 라는 하나의 기능으로 보인다.
 
 ## 왜
 

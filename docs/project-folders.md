@@ -1,6 +1,18 @@
 # 프로젝트 폴더 — 폴더 · Slack 채널 · 검색 범위를 한 단위로
 
-> 상태: **설계 (2026-09-20)**. 구현 전. `docs/meeting-notes-and-glossary.md`의 참석자·용어집 설계가 이 문서 위에 올라간다.
+> 상태: **PF1~PF4 구현 완료 (2026-09-21)**. 아래 "구현 현황"이 코드와 계획의 차이를 적는다.
+
+## 구현 현황 (2026-09-21)
+
+- `services/projects/` — `schema.ts`(검증·직렬화, 알 수 없는 키 거부), `project-index.ts`(미러 스캔, 60초 TTL, `resolveProjectForPath`/`resolveProjectForChannel`), `project-store.ts`(커밋 + 미러 + 무효화), `slack-directory.ts`(채널·멤버, 10분 캐시, `missing_scope` → `slack_scope_missing`), `routes.ts`. 라우트는 `app.ts`의 `registerProjectRoutes`로 등록되며 oauth 모드에서는 설치 저장소에서 워크스페이스별 봇 토큰을 읽는다.
+- **미러는 git clone이 아니라 GitHub API로 받은 파일 집합**이라, `.choir/project.json`을 별도로 가져오는 `services/sync/project-file-sync.ts`를 두었다(트리에서 `<folder>/.choir/project.json`만 골라 미러에 쓰고, 전체 동기화 때 사라진 것을 지운다). `.choir/context/**`는 의도적으로 제외.
+- 검색 범위: `RetrievalSearchParams.scope` + `services/retrieval/scope.ts`(순수), QMD 제공자는 4배(최대 50) 과다 조회 뒤 적용. `widened`는 새 선택 메서드 `searchWithMeta`로 노출된다. Slack 질문 경로(`question-processor.ts`, 6번째 인자 `channelId`)만 연결됐고 뷰어 Q&A는 미연결.
+- 갱신 범위: `services/document/update-scope.ts`. 채널→범위 해석은 `suggest-updates-handler.ts`와 `update-request-handler.ts` 두 곳에서만. 폴더에 후보가 없으면 전체로 넓히고 DM에 한 줄 안내. 새 파일 경로 검증이 폴더를 허용하도록 바뀌었다(세그먼트별 검사).
+- 읽기 전용 목록은 `folder/` 항목을 접두로 해석한다. App Home 선택기가 폴더 항목을 제공한다.
+- App Home Documents 탭의 프로젝트 목록은 읽기 전용이고 "설정" 버튼은 뷰어 루트를 연다 — 뷰어에 폴더 딥링크가 없다.
+- 뷰어 GUI: `ProjectSettingsDialog.tsx`(기본·채널·멤버·범위·용어집 탭), 사이드바 폴더에 "P" 배지와 hover 톱니. 멤버 탭은 저장 전 선택을 반영하기 위해 채널별 멤버 API를 합쳐 쓴다.
+- `groups:read`는 매니페스트·기본 스코프에 추가됐고, 설치된 워크스페이스는 재승인이 필요하다.
+- 미착수: 프로젝트별 QMD 컬렉션, 뷰어 Q&A·대시보드의 프로젝트 선택기, App Home의 회의록 폴더·용어집 파일명 설정(기본값 사용).
 
 ## 한 문장
 
