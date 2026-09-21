@@ -12,6 +12,10 @@ type FilesSidebarProps = {
   /** Only a manager who can push is offered a way to add a document. */
   canCreate: boolean;
   onNewDocument: () => void;
+  /** "회의록 만들기" — a transcript becomes a meeting note. Same right as `canCreate`. */
+  onMeetingNote: () => void;
+  /** "용어집 만들기" — seed documents become a `GLOSSARY.md`. Same right. */
+  onGlossary: () => void;
   /** Folders that already carry a `.choir/project.json`, so they can be marked. */
   projectFolders: Set<string>;
   /** Opens the project settings dialog for a folder. Same right as `canCreate`. */
@@ -26,6 +30,8 @@ export function FilesSidebar({
   canSeeInsights,
   canCreate,
   onNewDocument,
+  onMeetingNote,
+  onGlossary,
   projectFolders,
   onProjectSettings,
 }: FilesSidebarProps) {
@@ -136,6 +142,35 @@ export function FilesSidebar({
               </svg>
             </span>
             <span className="file-label">{t('sidebar.newDocument')}</span>
+          </button>
+        )}
+        {canCreate && (
+          // Its own entry rather than a row in the import menu: a meeting note
+          // is a feature with its own dialog, not a fourth source
+          // (docs/meeting-notes-and-glossary.md, 결정 1).
+          <button type="button" className="file-link insights-link" onClick={onMeetingNote}>
+            <span className="file-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M5.5 1.75a.75.75 0 0 1 1.5 0V3h2V1.75a.75.75 0 0 1 1.5 0V3h1.75c.97 0 1.75.78 1.75 1.75v7.5c0 .97-.78 1.75-1.75 1.75H3.75C2.78 14 2 13.22 2 12.25v-7.5C2 3.78 2.78 3 3.75 3H5.5V1.75ZM3.5 6.5v5.75c0 .14.11.25.25.25h8.5a.25.25 0 0 0 .25-.25V6.5h-9Zm1.75 2h5.5a.75.75 0 0 1 0 1.5h-5.5a.75.75 0 0 1 0-1.5Z"
+                />
+              </svg>
+            </span>
+            <span className="file-label">{t('sidebar.meetingNote')}</span>
+          </button>
+        )}
+        {canCreate && (
+          <button type="button" className="file-link insights-link" onClick={onGlossary}>
+            <span className="file-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M3.75 2h8.5c.97 0 1.75.78 1.75 1.75v8.5c0 .97-.78 1.75-1.75 1.75h-8.5C2.78 14 2 13.22 2 12.25v-8.5C2 2.78 2.78 2 3.75 2Zm0 1.5a.25.25 0 0 0-.25.25v8.5c0 .14.11.25.25.25H6v-9H3.75Zm3.75 0v9h4.75a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25H7.5Zm1.25 2h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1 0-1.5Z"
+                />
+              </svg>
+            </span>
+            <span className="file-label">{t('sidebar.glossary')}</span>
           </button>
         )}
         {canSeeInsights && (

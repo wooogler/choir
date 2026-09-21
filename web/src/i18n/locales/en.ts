@@ -34,6 +34,8 @@ export const en = {
   'sidebar.filesOnBranch': '{count} files on {branch}',
   'sidebar.insights': 'Insights',
   'sidebar.newDocument': 'New document',
+  'sidebar.meetingNote': 'Meeting note',
+  'sidebar.glossary': 'Build a glossary',
 
   // ── Floating outline (FloatingToc.tsx) ──────────────────────────────────
   'toc.aria.label': 'Table of contents',
@@ -438,6 +440,177 @@ export const en = {
   'import.error.path': 'Give a repository-relative path ending in .md',
   'import.error.url': 'Give a full address starting with http:// or https://',
 
+  // ── Meeting notes (MeetingNoteDialog.tsx) ──────────────────────────────
+  // The details come from the person making the note, never from the model:
+  // which meeting it was, when, who was there and where it belongs are what
+  // make it findable afterwards (docs/meeting-notes-and-glossary.md, 결정 2).
+  'meeting.aria.dialog': 'Make a meeting note',
+  'meeting.aria.progress': 'Meeting note conversion',
+  'meeting.aria.sourceTabs': 'How the transcript arrives',
+  'meeting.title': 'Make a meeting note',
+  'meeting.subtitle':
+    'Upload a transcript and describe the meeting. The details you type are written into the note as they are.',
+
+  'meeting.source.tab.file': 'From a file',
+  'meeting.source.tab.paste': 'Paste the text',
+  'meeting.source.drop': 'Drop a transcript here',
+  'meeting.source.choose': 'Choose a file',
+  'meeting.source.chooseAnother': 'Choose another',
+  'meeting.source.formats': 'VTT, SRT, TXT, DOCX or Markdown, up to {limit} MB.',
+  'meeting.source.paste.label': 'Transcript',
+  'meeting.source.paste.placeholder': 'Paste the transcript here.',
+
+  'meeting.label.title': 'Title',
+  'meeting.label.date': 'Date',
+  'meeting.label.folder': 'Folder',
+  'meeting.label.fileName': 'File name',
+  'meeting.label.participants': 'Participants',
+  'meeting.label.context': 'One line of context',
+  'meeting.label.format': 'Format',
+  'meeting.hint.folder': 'Repository-relative. The note is committed here.',
+  'meeting.hint.path': 'Saved as {path}',
+  'meeting.context.placeholder': 'The weekly CHOIR project meeting',
+
+  'meeting.participants.placeholder': 'Type a name and press Enter',
+  'meeting.participants.remove.aria': 'Remove {name}',
+  'meeting.participants.loading': 'Reading the project’s members…',
+  'meeting.participants.fromProject': {
+    one: 'Filled in from {count} project member.',
+    other: 'Filled in from {count} project members.',
+  },
+  'meeting.participants.noProject':
+    'This folder is not a project, so there is nobody to fill in. Make it a project and its channel’s members appear here.',
+
+  'meeting.format.notes': 'Meeting note',
+  'meeting.format.notes.hint': 'Summary, decisions, tasks and topics, with the full record underneath.',
+  'meeting.format.transcript': 'Cleaned transcript',
+  'meeting.format.transcript.hint': 'The same document with the record only: no summary, no decisions.',
+
+  'meeting.kind.vtt': 'WebVTT captions',
+  'meeting.kind.srt': 'SubRip captions',
+  'meeting.kind.transcriptText': 'Transcript text',
+  'meeting.kind.docx': 'Word document',
+  'meeting.kind.markdown': 'Markdown',
+  'meeting.kind.plain': 'Plain text',
+
+  'meeting.estimate.label.kind': 'Read as',
+  'meeting.estimate.label.utterances': 'Utterances',
+  'meeting.estimate.label.speakers': 'Speakers',
+  'meeting.estimate.label.minutes': 'Minutes',
+  'meeting.estimate.label.path': 'Saved as',
+  'meeting.estimate.billing':
+    'The conversion runs on this workspace’s own OpenAI key, so what it costs is billed to the workspace. The figure above is an estimate, not a quote.',
+
+  'meeting.button.estimate': 'See the estimate',
+  'meeting.button.estimating': 'Reading the transcript…',
+  'meeting.button.create': 'Make it',
+  'meeting.button.creating': 'Making it…',
+  'meeting.starting': 'Starting the conversion…',
+
+  'meeting.preview.source': 'Meeting · {name}',
+  'meeting.preview.source.minutes': {
+    one: '{count} minute',
+    other: '{count} minutes',
+  },
+  'meeting.preview.source.speakers': {
+    one: '{count} speaker',
+    other: '{count} speakers',
+  },
+  'meeting.glossaryCard.title': {
+    one: 'Add {count} term to the glossary?',
+    other: 'Add {count} terms to the glossary?',
+  },
+  'meeting.glossaryCard.hint':
+    'Names the conversion did not recognise. Tick the ones worth keeping — they are committed with the note, in the same commit.',
+  'meeting.glossaryCard.picked': {
+    one: '{count} term will be added.',
+    other: '{count} terms will be added.',
+  },
+  'meeting.glossaryCard.description.placeholder': 'One line (optional)',
+  'meeting.glossaryCard.description.aria': 'Description for {term}',
+  'meeting.glossaryCard.target': 'They go into {path}.',
+  'meeting.glossaryCard.target.create': 'There is no glossary here yet, so {path} is created.',
+  'meeting.glossaryCard.committed': {
+    one: '{count} term added to {path}.',
+    other: '{count} terms added to {path}.',
+  },
+  'meeting.glossaryCard.committed.created': {
+    one: '{path} created with {count} term.',
+    other: '{path} created with {count} terms.',
+  },
+  'meeting.glossaryCard.committed.skipped': {
+    one: '{count} term was already there: {terms}',
+    other: '{count} terms were already there: {terms}',
+  },
+
+  'meeting.error.unsupported': 'Choose a VTT, SRT, TXT, DOCX or Markdown file.',
+  'meeting.error.tooLarge': 'That file is larger than the {limit} MB a transcript may be.',
+  'meeting.error.fileName': 'The file name must be a single name ending in .md.',
+  'meeting.error.date': 'Give the meeting date as YYYY-MM-DD.',
+  'meeting.error.estimate': 'Could not read that transcript.',
+  'meeting.error.convert': 'Could not make the meeting note.',
+
+  // ── Glossary builder (GlossaryBuilderDialog.tsx) ───────────────────────
+  // A glossary started from documents somebody already has, because nobody
+  // fills in an empty table (docs/meeting-notes-and-glossary.md §3a).
+  'glossaryBuilder.aria.dialog': 'Build a glossary',
+  'glossaryBuilder.aria.progress': 'Glossary build',
+  'glossaryBuilder.title': 'Build a glossary',
+  'glossaryBuilder.subtitle':
+    'Add the documents that define your vocabulary. The terms they hold are proposed as a table you edit before anything is committed.',
+  'glossaryBuilder.label.folder': 'Folder',
+  'glossaryBuilder.folder.rootPlaceholder': 'The repository root',
+  'glossaryBuilder.status.loading': 'Reading this folder’s glossaries…',
+  'glossaryBuilder.status.none': 'No glossary governs this folder yet.',
+  'glossaryBuilder.status.chain': {
+    one: '{files} · {count} term',
+    other: '{files} · {count} terms',
+  },
+  'glossaryBuilder.label.seeds': 'Seed documents',
+  'glossaryBuilder.seeds.empty': 'Add a PDF or a web page. They are read for terms and never committed.',
+  'glossaryBuilder.seed.pdf': 'PDF',
+  'glossaryBuilder.seed.url': 'Web',
+  'glossaryBuilder.seed.remove': 'Remove',
+  'glossaryBuilder.seed.addPdf': 'Add a PDF',
+  'glossaryBuilder.seed.addUrl': 'Add a page',
+  'glossaryBuilder.seed.pdfEstimate.title': 'Convert this PDF?',
+  'glossaryBuilder.seed.pdfEstimate.body':
+    '{name} · {pages} pages · about {tokens} input tokens, billed to this workspace’s OpenAI key.',
+  'glossaryBuilder.label.candidates': 'Proposed terms',
+  'glossaryBuilder.column.term': 'Term',
+  'glossaryBuilder.column.aliases': 'Other spellings',
+  'glossaryBuilder.column.description': 'Description',
+  'glossaryBuilder.column.actions': 'Remove',
+  'glossaryBuilder.aliases.placeholder': 'Comma-separated',
+  'glossaryBuilder.kind.acronym': 'acronym',
+  'glossaryBuilder.kind.properNoun': 'name',
+  'glossaryBuilder.kind.concept': 'concept',
+  'glossaryBuilder.row.add': 'Add a row',
+  'glossaryBuilder.row.delete': 'Remove this row',
+  'glossaryBuilder.row.delete.aria': 'Remove {term}',
+  'glossaryBuilder.label.target': 'Where to write them',
+  'glossaryBuilder.target.nearest': 'Add to the nearest glossary ({file})',
+  'glossaryBuilder.target.folder': 'Create a new glossary in this folder',
+  'glossaryBuilder.extracting': 'Reading the documents for terms…',
+  'glossaryBuilder.button.extract': 'Find terms',
+  'glossaryBuilder.button.extracting': 'Finding terms…',
+  'glossaryBuilder.button.save': 'Save',
+  'glossaryBuilder.button.saving': 'Saving…',
+  'glossaryBuilder.result.created': {
+    one: 'Glossary created with {count} term.',
+    other: 'Glossary created with {count} terms.',
+  },
+  'glossaryBuilder.result.added': {
+    one: '{count} term added.',
+    other: '{count} terms added.',
+  },
+  'glossaryBuilder.result.skipped': {
+    one: '{count} term was already there: {terms}',
+    other: '{count} terms were already there: {terms}',
+  },
+  'glossaryBuilder.error.extract': 'Could not read terms from those documents.',
+  'glossaryBuilder.error.save': 'Could not save the glossary.',
+
   // ── Project folders (ProjectSettingsDialog.tsx, FilesSidebar.tsx) ───────
   // One folder declared a project: which Slack channels belong to it, who its
   // people are, and how wide a question from those channels searches.
@@ -510,7 +683,9 @@ export const en = {
 
   'project.glossary.label': 'Glossary file',
   'project.glossary.hint': 'The project glossary is read from {path}.',
-  'project.glossary.soon': 'Building a glossary from your documents is coming soon.',
+  'project.glossary.build': 'Build a glossary…',
+  'project.glossary.build.hint':
+    'Start from documents you already have — a paper, a deck, a handbook page — and edit the terms before they are committed.',
 
   'project.button.delete': 'Delete project',
   'project.button.deleteConfirm': 'Delete',

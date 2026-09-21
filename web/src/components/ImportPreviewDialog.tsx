@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type T, describeServerError, useT } from '../i18n';
 import { docsPath, looksLikeRepoPath } from '../utils/docs';
 import {
   type DraftResult,
+  type ImportGlossaryRow,
   type ImportProgress,
   type ImportWarning,
   commitDraft,
@@ -33,6 +34,18 @@ import { ImportProgressBar } from './ImportProgress';
 type ImportPreviewDialogProps = {
   workspaceId: string;
   draft: DraftResult;
+  /**
+   * Cards to show under the warnings — the meeting note's unknown terms, and
+   * whatever a later source needs. Optional, so the PDF and URL flows that
+   * have nothing extra to say are unchanged.
+   */
+  extraCards?: ReactNode;
+  /**
+   * Glossary rows to commit alongside the document, asked for at the moment
+   * the manager presses Import — the card that produces them is live until
+   * then. An empty list sends no `glossary` field at all.
+   */
+  glossaryRowsProvider?: () => ImportGlossaryRow[];
   /** Closing without importing; the caller drops its draft state. */
   onCancel: () => void;
 };
@@ -44,6 +57,14 @@ function describeSource(t: T, draft: DraftResult): string {
     return draft.source.pages
       ? t('import.preview.source.pdfPages', { name, count: draft.source.pages })
       : t('import.preview.source.pdf', { name });
+  }
+  if (draft.source.kind === 'meeting') {
+    // The transcript's size, the way pages describe a PDF's: how long the
+    // meeting ran and how many people spoke.
+    const parts = [t('meeting.preview.source', { name })];
+    if (draft.source.minutes) parts.push(t('meeting.preview.source.minutes', { count: draft.source.minutes }));
+    if (draft.source.speakers) parts.push(t('meeting.preview.source.speakers', { count: draft.source.speakers }));
+    return parts.join(' · ');
   }
   return t('import.preview.source.url', { name });
 }
@@ -95,7 +116,13 @@ function minutesLeft(expiresAt: number, now: number): number {
   return Math.max(0, Math.ceil((expiresAt - now) / 60_000));
 }
 
-export function ImportPreviewDialog({ workspaceId, draft, onCancel }: ImportPreviewDialogProps) {
+export function ImportPreviewDialog({
+  workspaceId,
+  draft,
+  extraCards,
+  glossaryRowsProvider,
+  onCancel,
+}: ImportPreviewDialogProps) {
   const t = useT();
   const [filePath, setFilePath] = useState(draft.suggestedPath);
   const [submitting, setSubmitting] = useState(false);
@@ -154,11 +181,40 @@ export function ImportPreviewDialog({ workspaceId, draft, onCancel }: ImportPrev
     try {
       const edited = editorRef.current?.getMarkdown() ?? previewMarkdown;
       const markdown = restoreAssetPaths(edited, workspaceId, draft.draftId);
+      // Asked for now rather than held as state: the card is editable right up
+      // to this press, and what it holds at this moment is the answer.
+      const glossaryRows = glossaryRowsProvider?.() ?? [];
       const result = await commitDraft(
         workspaceId,
-        { draftId: draft.draftId, filePath: trimmedPath, markdown },
+        {
+          draftId: draft.draftId,
+          filePath: trimmedPath,
+          markdown,
+          ...(glossaryRows.length > 0 ? { glossary: { rows: glossaryRows } } : {}),
+        },
         setProgress,
       );
+
+      // Both of these land before the navigation below, which tears the page
+      // down: a sentence shown after it would never be read.
+      if (result.glossary) {
+        const committed = result.glossary;
+        window.alert(
+          [
+            committed.created
+              ? t('meeting.glossaryCard.committed.created', { count: committed.added, path: committed.path })
+              : t('meeting.glossaryCard.committed', { count: committed.added, path: committed.path }),
+            committed.skipped.length > 0
+              ? t('meeting.glossaryCard.committed.skipped', {
+                  count: committed.skipped.length,
+                  terms: committed.skipped.join(', '),
+                })
+              : '',
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        );
+      }
 
       if (result.droppedReferences?.length) {
         window.alert(
@@ -232,6 +288,8 @@ export function ImportPreviewDialog({ workspaceId, draft, onCancel }: ImportPrev
             </ul>
           </div>
         )}
+
+        {extraCards}
 
         <label className="commit-dialog-label" htmlFor="import-preview-path">
           {t('import.preview.label.path')}

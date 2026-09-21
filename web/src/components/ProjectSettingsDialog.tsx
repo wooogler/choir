@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fillNodes, useT } from '../i18n';
+import { type GlossaryStatus, fetchGlossaryStatus } from '../utils/glossary-api';
 import {
   ProjectApiError,
   type ProjectSettingsInput,
@@ -14,6 +15,7 @@ import {
   listChannels,
   saveProject,
 } from '../utils/project-api';
+import { GlossaryBuilderDialog } from './GlossaryBuilderDialog';
 
 /**
  * Declaring a folder a project, and editing the declaration afterwards.
@@ -115,6 +117,11 @@ export function ProjectSettingsDialog({ workspaceId, folder, existing, onClose }
   // make five requests. Slack caches server-side too, but not the round trip.
   const memberCache = useRef(new Map<string, { members: SlackMember[]; warning?: string }>());
 
+  // ── The folder's glossary chain, read when the tab is opened ─────────────
+  const [glossaryStatus, setGlossaryStatus] = useState<GlossaryStatus | null>(null);
+  const [glossaryStatusLoading, setGlossaryStatusLoading] = useState(false);
+  const [glossaryBuilderOpen, setGlossaryBuilderOpen] = useState(false);
+
   // ── Saving ───────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -132,11 +139,12 @@ export function ProjectSettingsDialog({ workspaceId, folder, existing, onClose }
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) onClose();
+      // The builder is on top and closes itself; this dialog must not go with it.
+      if (event.key === 'Escape' && !busy && !glossaryBuilderOpen) onClose();
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [onClose, busy]);
+  }, [onClose, busy, glossaryBuilderOpen]);
 
   // The channel list is wanted by both the Channels tab and the Basic tab's
   // summary line, and it is one request, so it is fetched on open rather than
@@ -156,6 +164,32 @@ export function ProjectSettingsDialog({ workspaceId, folder, existing, onClose }
       cancelled = true;
     };
   }, [workspaceId, t]);
+
+  // The glossary chain is a read, and a cheap one, but it belongs to a tab
+  // most managers never open — so it waits until they do, and again after the
+  // builder has committed something.
+  //
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `glossaryBuilderOpen` is not read here — closing the builder is how a commit asks for a re-read
+  useEffect(() => {
+    if (tab !== 'glossary') return;
+    let cancelled = false;
+    setGlossaryStatusLoading(true);
+    fetchGlossaryStatus(workspaceId, folder)
+      .then((status) => {
+        if (!cancelled) setGlossaryStatus(status);
+      })
+      .catch(() => {
+        // A failure leaves the file field and its hint, which is what this tab
+        // was before the chain was readable at all.
+        if (!cancelled) setGlossaryStatus(null);
+      })
+      .finally(() => {
+        if (!cancelled) setGlossaryStatusLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, workspaceId, folder, glossaryBuilderOpen]);
 
   const selectedKey = [...selectedChannels].sort().join(',');
 
@@ -310,351 +344,387 @@ export function ProjectSettingsDialog({ workspaceId, folder, existing, onClose }
   const panelId = 'project-settings-panel';
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: matches CommitDialog — a native <dialog> would need showModal()
-    <div className="commit-dialog-backdrop" role="dialog" aria-modal="true" aria-label={t('project.aria.dialog')}>
-      <form className="commit-dialog commit-dialog-wide project-dialog" onSubmit={handleSave}>
-        <h2 className="commit-dialog-title">{existing ? t('project.title.edit') : t('project.title.new')}</h2>
-        <p className="commit-dialog-subtitle">
-          {fillNodes(t('project.subtitle'), {
-            folder: <code>{folder}</code>,
-            file: <code>.choir/project.json</code>,
-          })}
-        </p>
+    <>
+      {/* biome-ignore lint/a11y/useSemanticElements: matches CommitDialog — a native <dialog> would need showModal() */}
+      <div className="commit-dialog-backdrop" role="dialog" aria-modal="true" aria-label={t('project.aria.dialog')}>
+        <form className="commit-dialog commit-dialog-wide project-dialog" onSubmit={handleSave}>
+          <h2 className="commit-dialog-title">{existing ? t('project.title.edit') : t('project.title.new')}</h2>
+          <p className="commit-dialog-subtitle">
+            {fillNodes(t('project.subtitle'), {
+              folder: <code>{folder}</code>,
+              file: <code>.choir/project.json</code>,
+            })}
+          </p>
 
-        <div className="project-tabs" role="tablist" aria-label={t('project.aria.tabs')}>
-          {TABS.map((entry) => (
-            <button
-              key={entry}
-              type="button"
-              role="tab"
-              id={`project-tab-${entry}`}
-              aria-selected={tab === entry}
-              aria-controls={panelId}
-              className={`project-tab${tab === entry ? ' active' : ''}`}
-              onClick={() => setTab(entry)}
-            >
-              {t(TAB_LABEL[entry])}
-            </button>
-          ))}
-        </div>
+          <div className="project-tabs" role="tablist" aria-label={t('project.aria.tabs')}>
+            {TABS.map((entry) => (
+              <button
+                key={entry}
+                type="button"
+                role="tab"
+                id={`project-tab-${entry}`}
+                aria-selected={tab === entry}
+                aria-controls={panelId}
+                className={`project-tab${tab === entry ? ' active' : ''}`}
+                onClick={() => setTab(entry)}
+              >
+                {t(TAB_LABEL[entry])}
+              </button>
+            ))}
+          </div>
 
-        <div className="project-panel" id={panelId} role="tabpanel" aria-labelledby={`project-tab-${tab}`}>
-          {tab === 'basic' && (
-            <>
-              <label className="commit-dialog-label" htmlFor="project-name">
-                {t('project.basic.name.label')}
-              </label>
-              <input
-                ref={nameRef}
-                id="project-name"
-                className="commit-dialog-input"
-                type="text"
-                autoComplete="off"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                disabled={busy}
-              />
-              {!trimmedName && <p className="commit-dialog-error">{t('project.error.nameRequired')}</p>}
-
-              <label className="commit-dialog-label" htmlFor="project-description">
-                {t('project.basic.description.label')}
-              </label>
-              <textarea
-                id="project-description"
-                className="commit-dialog-input"
-                rows={3}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                disabled={busy}
-              />
-              <p className="commit-dialog-hint">{t('project.basic.description.hint')}</p>
-
-              <label className="commit-dialog-label" htmlFor="project-meetings">
-                {t('project.basic.meetings.label')}
-              </label>
-              <input
-                id="project-meetings"
-                className="commit-dialog-input"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                value={meetingsFolder}
-                placeholder={DEFAULT_MEETINGS_FOLDER}
-                onChange={(event) => setMeetingsFolder(event.target.value)}
-                disabled={busy}
-              />
-              <p className="commit-dialog-hint">{t('project.basic.meetings.hint')}</p>
-            </>
-          )}
-
-          {tab === 'channels' && (
-            <>
-              {!privateReadable && <p className="commit-dialog-warning">{t('project.channels.privateUnreadable')}</p>}
-              <input
-                className="commit-dialog-input"
-                type="search"
-                autoComplete="off"
-                aria-label={t('project.channels.filter.placeholder')}
-                placeholder={t('project.channels.filter.placeholder')}
-                value={channelFilter}
-                onChange={(event) => setChannelFilter(event.target.value)}
-                // Enter in a filter box means "filter", not "commit this file".
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') event.preventDefault();
-                }}
-                disabled={busy}
-              />
-              {channelsError && <p className="commit-dialog-error">{channelsError}</p>}
-              {!channels && !channelsError && <p className="commit-dialog-hint">{t('project.channels.loading')}</p>}
-              {channels && channels.length === 0 && <p className="commit-dialog-hint">{t('project.channels.empty')}</p>}
-              {channels && channels.length > 0 && visibleChannels.length === 0 && (
-                <p className="commit-dialog-hint">{t('project.channels.noMatch')}</p>
-              )}
-              {visibleChannels.length > 0 && (
-                <ul className="project-channel-list">
-                  {visibleChannels.map((channel) => {
-                    const takenBy =
-                      channel.linkedFolder && channel.linkedFolder !== folder ? channel.linkedFolder : null;
-                    const checked = selectedChannels.includes(channel.id);
-                    return (
-                      <li
-                        key={channel.id}
-                        className={`project-channel${takenBy ? ' disabled' : ''}${
-                          takenChannel === channel.id ? ' flagged' : ''
-                        }`}
-                      >
-                        <label className="project-channel-main">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={busy || Boolean(takenBy)}
-                            onChange={() => toggleChannel(channel.id)}
-                          />
-                          <span className="project-channel-name">#{channel.name}</span>
-                          {channel.isPrivate && <span className="project-tag">{t('project.channels.private')}</span>}
-                          {channel.isArchived && (
-                            <span className="project-tag warn">{t('project.channels.archived')}</span>
-                          )}
-                          {takenBy && (
-                            <span className="project-tag">{t('project.channels.linked', { folder: takenBy })}</span>
-                          )}
-                        </label>
-                        {typeof channel.memberCount === 'number' && (
-                          <span className="project-channel-count">
-                            {t('project.channels.memberCount', { count: channel.memberCount })}
-                          </span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              <p className="commit-dialog-hint">{t('project.channels.selected', { count: selectedChannels.length })}</p>
-            </>
-          )}
-
-          {tab === 'members' && (
-            <>
-              <label className="project-toggle">
+          <div className="project-panel" id={panelId} role="tabpanel" aria-labelledby={`project-tab-${tab}`}>
+            {tab === 'basic' && (
+              <>
+                <label className="commit-dialog-label" htmlFor="project-name">
+                  {t('project.basic.name.label')}
+                </label>
                 <input
-                  type="checkbox"
-                  checked={curatedOnly}
-                  onChange={(event) => setCuratedOnly(event.target.checked)}
+                  ref={nameRef}
+                  id="project-name"
+                  className="commit-dialog-input"
+                  type="text"
+                  autoComplete="off"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
                   disabled={busy}
                 />
-                <span>{t('project.members.curatedToggle')}</span>
-              </label>
-              <p className="commit-dialog-hint">{t('project.members.curatedHint')}</p>
-              <p className="commit-dialog-hint">{t('project.members.aliases.hint')}</p>
+                {!trimmedName && <p className="commit-dialog-error">{t('project.error.nameRequired')}</p>}
 
-              {membersError && <p className="commit-dialog-error">{membersError}</p>}
-              {memberWarnings.map((warning) => (
-                <p className="commit-dialog-warning" key={warning}>
-                  {t('project.members.channelWarning', { message: warning })}
+                <label className="commit-dialog-label" htmlFor="project-description">
+                  {t('project.basic.description.label')}
+                </label>
+                <textarea
+                  id="project-description"
+                  className="commit-dialog-input"
+                  rows={3}
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  disabled={busy}
+                />
+                <p className="commit-dialog-hint">{t('project.basic.description.hint')}</p>
+
+                <label className="commit-dialog-label" htmlFor="project-meetings">
+                  {t('project.basic.meetings.label')}
+                </label>
+                <input
+                  id="project-meetings"
+                  className="commit-dialog-input"
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={meetingsFolder}
+                  placeholder={DEFAULT_MEETINGS_FOLDER}
+                  onChange={(event) => setMeetingsFolder(event.target.value)}
+                  disabled={busy}
+                />
+                <p className="commit-dialog-hint">{t('project.basic.meetings.hint')}</p>
+              </>
+            )}
+
+            {tab === 'channels' && (
+              <>
+                {!privateReadable && <p className="commit-dialog-warning">{t('project.channels.privateUnreadable')}</p>}
+                <input
+                  className="commit-dialog-input"
+                  type="search"
+                  autoComplete="off"
+                  aria-label={t('project.channels.filter.placeholder')}
+                  placeholder={t('project.channels.filter.placeholder')}
+                  value={channelFilter}
+                  onChange={(event) => setChannelFilter(event.target.value)}
+                  // Enter in a filter box means "filter", not "commit this file".
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.preventDefault();
+                  }}
+                  disabled={busy}
+                />
+                {channelsError && <p className="commit-dialog-error">{channelsError}</p>}
+                {!channels && !channelsError && <p className="commit-dialog-hint">{t('project.channels.loading')}</p>}
+                {channels && channels.length === 0 && (
+                  <p className="commit-dialog-hint">{t('project.channels.empty')}</p>
+                )}
+                {channels && channels.length > 0 && visibleChannels.length === 0 && (
+                  <p className="commit-dialog-hint">{t('project.channels.noMatch')}</p>
+                )}
+                {visibleChannels.length > 0 && (
+                  <ul className="project-channel-list">
+                    {visibleChannels.map((channel) => {
+                      const takenBy =
+                        channel.linkedFolder && channel.linkedFolder !== folder ? channel.linkedFolder : null;
+                      const checked = selectedChannels.includes(channel.id);
+                      return (
+                        <li
+                          key={channel.id}
+                          className={`project-channel${takenBy ? ' disabled' : ''}${
+                            takenChannel === channel.id ? ' flagged' : ''
+                          }`}
+                        >
+                          <label className="project-channel-main">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={busy || Boolean(takenBy)}
+                              onChange={() => toggleChannel(channel.id)}
+                            />
+                            <span className="project-channel-name">#{channel.name}</span>
+                            {channel.isPrivate && <span className="project-tag">{t('project.channels.private')}</span>}
+                            {channel.isArchived && (
+                              <span className="project-tag warn">{t('project.channels.archived')}</span>
+                            )}
+                            {takenBy && (
+                              <span className="project-tag">{t('project.channels.linked', { folder: takenBy })}</span>
+                            )}
+                          </label>
+                          {typeof channel.memberCount === 'number' && (
+                            <span className="project-channel-count">
+                              {t('project.channels.memberCount', { count: channel.memberCount })}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                <p className="commit-dialog-hint">
+                  {t('project.channels.selected', { count: selectedChannels.length })}
                 </p>
-              ))}
-              {membersLoading && <p className="commit-dialog-hint">{t('project.members.loading')}</p>}
-              {!membersLoading && selectedChannels.length === 0 && (
-                <p className="commit-dialog-hint">{t('project.members.noChannels')}</p>
-              )}
-              {!membersLoading && selectedChannels.length > 0 && memberRows.length === 0 && (
-                <p className="commit-dialog-hint">{t('project.members.empty')}</p>
-              )}
+              </>
+            )}
 
-              {memberRows.length > 0 && (
-                <ul className="project-member-list">
-                  {memberRows.map((row) => (
-                    <li className={`project-member${row.present ? '' : ' gone'}`} key={row.id}>
-                      {curatedOnly && (
+            {tab === 'members' && (
+              <>
+                <label className="project-toggle">
+                  <input
+                    type="checkbox"
+                    checked={curatedOnly}
+                    onChange={(event) => setCuratedOnly(event.target.checked)}
+                    disabled={busy}
+                  />
+                  <span>{t('project.members.curatedToggle')}</span>
+                </label>
+                <p className="commit-dialog-hint">{t('project.members.curatedHint')}</p>
+                <p className="commit-dialog-hint">{t('project.members.aliases.hint')}</p>
+
+                {membersError && <p className="commit-dialog-error">{membersError}</p>}
+                {memberWarnings.map((warning) => (
+                  <p className="commit-dialog-warning" key={warning}>
+                    {t('project.members.channelWarning', { message: warning })}
+                  </p>
+                ))}
+                {membersLoading && <p className="commit-dialog-hint">{t('project.members.loading')}</p>}
+                {!membersLoading && selectedChannels.length === 0 && (
+                  <p className="commit-dialog-hint">{t('project.members.noChannels')}</p>
+                )}
+                {!membersLoading && selectedChannels.length > 0 && memberRows.length === 0 && (
+                  <p className="commit-dialog-hint">{t('project.members.empty')}</p>
+                )}
+
+                {memberRows.length > 0 && (
+                  <ul className="project-member-list">
+                    {memberRows.map((row) => (
+                      <li className={`project-member${row.present ? '' : ' gone'}`} key={row.id}>
+                        {curatedOnly && (
+                          <input
+                            type="checkbox"
+                            className="project-member-check"
+                            aria-label={t('project.members.curated.aria', { name: row.name })}
+                            checked={curated.includes(row.id)}
+                            onChange={() => toggleCurated(row.id)}
+                            disabled={busy}
+                          />
+                        )}
+                        {row.avatar ? (
+                          <img className="project-member-avatar" src={row.avatar} alt="" />
+                        ) : (
+                          <span className="project-member-avatar placeholder" aria-hidden="true">
+                            {row.name.slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                        <span className="project-member-identity">
+                          <span className="project-member-name">{row.name}</span>
+                          <span className="project-member-title">
+                            {row.present ? (row.title ?? '') : t('project.members.gone')}
+                          </span>
+                        </span>
                         <input
-                          type="checkbox"
-                          className="project-member-check"
-                          aria-label={t('project.members.curated.aria', { name: row.name })}
-                          checked={curated.includes(row.id)}
-                          onChange={() => toggleCurated(row.id)}
+                          className="project-member-aliases"
+                          type="text"
+                          autoComplete="off"
+                          aria-label={t('project.members.aliases.aria', { name: row.name })}
+                          placeholder={t('project.members.aliases.placeholder')}
+                          value={aliasText[row.id] ?? ''}
+                          onChange={(event) =>
+                            setAliasText((current) => ({ ...current, [row.id]: event.target.value }))
+                          }
                           disabled={busy}
                         />
-                      )}
-                      {row.avatar ? (
-                        <img className="project-member-avatar" src={row.avatar} alt="" />
-                      ) : (
-                        <span className="project-member-avatar placeholder" aria-hidden="true">
-                          {row.name.slice(0, 1).toUpperCase()}
-                        </span>
-                      )}
-                      <span className="project-member-identity">
-                        <span className="project-member-name">{row.name}</span>
-                        <span className="project-member-title">
-                          {row.present ? (row.title ?? '') : t('project.members.gone')}
-                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+
+            {tab === 'scope' && (
+              <>
+                <span className="commit-dialog-label">{t('project.scope.retrieval.label')}</span>
+                {(['boost', 'exclusive', 'off'] as RetrievalScope[]).map((value) => (
+                  <label className="project-radio" key={value}>
+                    <input
+                      type="radio"
+                      name="project-retrieval"
+                      checked={retrieval === value}
+                      onChange={() => setRetrieval(value)}
+                      disabled={busy}
+                    />
+                    <span>
+                      <span className="project-radio-title">
+                        {value === 'boost'
+                          ? t('project.scope.retrieval.boost')
+                          : value === 'exclusive'
+                            ? t('project.scope.retrieval.exclusive')
+                            : t('project.scope.retrieval.off')}
                       </span>
-                      <input
-                        className="project-member-aliases"
-                        type="text"
-                        autoComplete="off"
-                        aria-label={t('project.members.aliases.aria', { name: row.name })}
-                        placeholder={t('project.members.aliases.placeholder')}
-                        value={aliasText[row.id] ?? ''}
-                        onChange={(event) => setAliasText((current) => ({ ...current, [row.id]: event.target.value }))}
-                        disabled={busy}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
+                      <span className="project-radio-hint">
+                        {value === 'boost'
+                          ? t('project.scope.retrieval.boost.hint')
+                          : value === 'exclusive'
+                            ? t('project.scope.retrieval.exclusive.hint')
+                            : t('project.scope.retrieval.off.hint')}
+                      </span>
+                    </span>
+                  </label>
+                ))}
 
-          {tab === 'scope' && (
-            <>
-              <span className="commit-dialog-label">{t('project.scope.retrieval.label')}</span>
-              {(['boost', 'exclusive', 'off'] as RetrievalScope[]).map((value) => (
-                <label className="project-radio" key={value}>
-                  <input
-                    type="radio"
-                    name="project-retrieval"
-                    checked={retrieval === value}
-                    onChange={() => setRetrieval(value)}
-                    disabled={busy}
-                  />
-                  <span>
-                    <span className="project-radio-title">
-                      {value === 'boost'
-                        ? t('project.scope.retrieval.boost')
-                        : value === 'exclusive'
-                          ? t('project.scope.retrieval.exclusive')
-                          : t('project.scope.retrieval.off')}
+                <span className="commit-dialog-label">{t('project.scope.updates.label')}</span>
+                {(['folder', 'workspace'] as UpdateScope[]).map((value) => (
+                  <label className="project-radio" key={value}>
+                    <input
+                      type="radio"
+                      name="project-updates"
+                      checked={updates === value}
+                      onChange={() => setUpdates(value)}
+                      disabled={busy}
+                    />
+                    <span>
+                      <span className="project-radio-title">
+                        {value === 'folder' ? t('project.scope.updates.folder') : t('project.scope.updates.workspace')}
+                      </span>
+                      <span className="project-radio-hint">
+                        {value === 'folder'
+                          ? t('project.scope.updates.folder.hint')
+                          : t('project.scope.updates.workspace.hint')}
+                      </span>
                     </span>
-                    <span className="project-radio-hint">
-                      {value === 'boost'
-                        ? t('project.scope.retrieval.boost.hint')
-                        : value === 'exclusive'
-                          ? t('project.scope.retrieval.exclusive.hint')
-                          : t('project.scope.retrieval.off.hint')}
-                    </span>
-                  </span>
+                  </label>
+                ))}
+              </>
+            )}
+
+            {tab === 'glossary' && (
+              <>
+                <label className="commit-dialog-label" htmlFor="project-glossary">
+                  {t('project.glossary.label')}
                 </label>
-              ))}
-
-              <span className="commit-dialog-label">{t('project.scope.updates.label')}</span>
-              {(['folder', 'workspace'] as UpdateScope[]).map((value) => (
-                <label className="project-radio" key={value}>
-                  <input
-                    type="radio"
-                    name="project-updates"
-                    checked={updates === value}
-                    onChange={() => setUpdates(value)}
-                    disabled={busy}
-                  />
-                  <span>
-                    <span className="project-radio-title">
-                      {value === 'folder' ? t('project.scope.updates.folder') : t('project.scope.updates.workspace')}
-                    </span>
-                    <span className="project-radio-hint">
-                      {value === 'folder'
-                        ? t('project.scope.updates.folder.hint')
-                        : t('project.scope.updates.workspace.hint')}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </>
-          )}
-
-          {tab === 'glossary' && (
-            <>
-              <label className="commit-dialog-label" htmlFor="project-glossary">
-                {t('project.glossary.label')}
-              </label>
-              <input
-                id="project-glossary"
-                className="commit-dialog-input"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                value={glossary}
-                placeholder={DEFAULT_GLOSSARY}
-                onChange={(event) => setGlossary(event.target.value)}
-                disabled={busy}
-              />
-              <p className="commit-dialog-hint">
-                {fillNodes(t('project.glossary.hint'), {
-                  path: <code>{`${folder}/${glossary.trim() || DEFAULT_GLOSSARY}`}</code>,
-                })}
-              </p>
-              <p className="commit-dialog-hint">{t('project.glossary.soon')}</p>
-            </>
-          )}
-        </div>
-
-        {/* Already in the reader's language: every failure above runs the
-            server's code through `describeServerError` first. */}
-        {error && <p className="commit-dialog-error">{error}</p>}
-
-        <div className="commit-dialog-actions">
-          {confirmingDelete ? (
-            <>
-              <span className="project-delete-confirm">{t('project.delete.confirm')}</span>
-              <button
-                type="button"
-                className="doc-button doc-button-ghost"
-                onClick={() => setConfirmingDelete(false)}
-                disabled={busy}
-              >
-                {t('common.button.cancel')}
-              </button>
-              <button type="button" className="doc-button doc-button-danger" onClick={handleDelete} disabled={busy}>
-                {deleting ? t('project.button.deleting') : t('project.button.deleteConfirm')}
-              </button>
-            </>
-          ) : (
-            <>
-              {existing && (
+                <input
+                  id="project-glossary"
+                  className="commit-dialog-input"
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={glossary}
+                  placeholder={DEFAULT_GLOSSARY}
+                  onChange={(event) => setGlossary(event.target.value)}
+                  disabled={busy}
+                />
+                <p className="commit-dialog-hint">
+                  {fillNodes(t('project.glossary.hint'), {
+                    path: <code>{`${folder}/${glossary.trim() || DEFAULT_GLOSSARY}`}</code>,
+                  })}
+                </p>
+                {glossaryStatusLoading && <p className="commit-dialog-hint">{t('glossaryBuilder.status.loading')}</p>}
+                {!glossaryStatusLoading && glossaryStatus && (
+                  <p className="commit-dialog-hint">
+                    {glossaryStatus.files.length === 0
+                      ? t('glossaryBuilder.status.none')
+                      : t('glossaryBuilder.status.chain', {
+                          files: glossaryStatus.files.join(', '),
+                          count: glossaryStatus.entries,
+                        })}
+                  </p>
+                )}
                 <button
                   type="button"
-                  className="doc-button doc-button-ghost project-delete-button"
-                  onClick={() => setConfirmingDelete(true)}
+                  className="doc-button doc-button-ghost project-glossary-build"
+                  onClick={() => setGlossaryBuilderOpen(true)}
                   disabled={busy}
                 >
-                  {t('project.button.delete')}
+                  {t('project.glossary.build')}
                 </button>
-              )}
-              <button type="button" className="doc-button doc-button-ghost" onClick={() => onClose()} disabled={busy}>
-                {t('common.button.cancel')}
-              </button>
-              <button type="submit" className="doc-button doc-button-primary" disabled={busy || !ready}>
-                {saving
-                  ? existing
-                    ? t('project.button.saving')
-                    : t('project.button.creating')
-                  : existing
-                    ? t('project.button.save')
-                    : t('project.button.create')}
-              </button>
-            </>
-          )}
-        </div>
-      </form>
-    </div>
+                <p className="commit-dialog-hint">{t('project.glossary.build.hint')}</p>
+              </>
+            )}
+          </div>
+
+          {/* Already in the reader's language: every failure above runs the
+            server's code through `describeServerError` first. */}
+          {error && <p className="commit-dialog-error">{error}</p>}
+
+          <div className="commit-dialog-actions">
+            {confirmingDelete ? (
+              <>
+                <span className="project-delete-confirm">{t('project.delete.confirm')}</span>
+                <button
+                  type="button"
+                  className="doc-button doc-button-ghost"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={busy}
+                >
+                  {t('common.button.cancel')}
+                </button>
+                <button type="button" className="doc-button doc-button-danger" onClick={handleDelete} disabled={busy}>
+                  {deleting ? t('project.button.deleting') : t('project.button.deleteConfirm')}
+                </button>
+              </>
+            ) : (
+              <>
+                {existing && (
+                  <button
+                    type="button"
+                    className="doc-button doc-button-ghost project-delete-button"
+                    onClick={() => setConfirmingDelete(true)}
+                    disabled={busy}
+                  >
+                    {t('project.button.delete')}
+                  </button>
+                )}
+                <button type="button" className="doc-button doc-button-ghost" onClick={() => onClose()} disabled={busy}>
+                  {t('common.button.cancel')}
+                </button>
+                <button type="submit" className="doc-button doc-button-primary" disabled={busy || !ready}>
+                  {saving
+                    ? existing
+                      ? t('project.button.saving')
+                      : t('project.button.creating')
+                    : existing
+                      ? t('project.button.save')
+                      : t('project.button.create')}
+                </button>
+              </>
+            )}
+          </div>
+        </form>
+      </div>
+      {/* A sibling rather than a child: this dialog is a <form>, and a form
+          inside a form is not markup a browser will honour. */}
+      {glossaryBuilderOpen && (
+        <GlossaryBuilderDialog
+          workspaceId={workspaceId}
+          folder={folder}
+          onClose={() => setGlossaryBuilderOpen(false)}
+        />
+      )}
+    </>
   );
 }

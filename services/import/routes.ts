@@ -10,11 +10,13 @@ import {
 import { CreateDocumentRefusal, createDocument } from 'services/docs-editor/create-document';
 import { getDocsWriteAccess } from 'services/docs-editor/write-access';
 import { loadAllGlossaries } from 'services/glossary';
+import type { GlossaryRowInput } from 'services/glossary/table';
 import { suggestImportPath } from 'services/google/import-path';
 import { isOpenAIEnabled } from 'services/llm/llm-config';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
 import { prepareCommit } from './commit-guard';
 import { type CreatedDraft, getDraftStore } from './draft-store';
+import { type GlossaryCompanionCreateAt, buildGlossaryCompanion } from './glossary-companion';
 import { isImportBusy, runExclusiveImport } from './mutex';
 import { type ImportStepProgress, makeCommitReporter, makeConvertReporter } from './progress';
 import { buildSourceNote, pickDocumentLanguage, prependSourceNote } from './source-note';
@@ -353,6 +355,12 @@ export function registerImportRoutes(router: Router, deps: ImportRouteDeps): voi
    * The body's markdown is trusted for its prose and not for its images: what
    * `assets/…` may mean is decided by `prepareCommit` against the draft, because
    * the binaries only exist there.
+   *
+   * `glossary` is the other half of the preview: the terms the conversion did
+   * not recognise, as the manager ticked and described them. They land in the
+   * SAME commit as the document (docs/meeting-notes-and-glossary.md, 용어집 §5),
+   * so they are built into a file before `createDocument` is called and travel
+   * as a companion edit.
    */
   router.post('/api/docs/:workspaceId/import/commit', deps.jsonBody, async (req: Req, res: Res) => {
     const workspaceId = String(req.params.workspaceId);
@@ -385,6 +393,24 @@ export function registerImportRoutes(router: Router, deps: ImportRouteDeps): voi
       const language = await pickDocumentLanguage(workspaceId, prepared.markdown);
       const content = prependSourceNote(prepared.markdown, buildSourceNote(draft.document.source, { language }));
 
+      // Before the commit: a glossary that cannot be built must not leave the
+      // document committed with the rows lost. `null` here is the ordinary
+      // "nothing to add" — no rows, or every one of them already in the file —
+      // and is reported as `glossary: null` rather than refused.
+      const glossaryRequest = parseGlossaryRequest(body.glossary);
+      const companion = glossaryRequest
+        ? await buildGlossaryCompanion({
+            workspaceId,
+            targetPath: filePath,
+            rows: glossaryRequest.rows,
+            fileName: glossaryRequest.fileName,
+            createAt: glossaryRequest.createAt,
+            // A glossary this has to create is headed in the document's own
+            // language; the rows are a poor sample when there are only one or two.
+            language,
+          })
+        : null;
+
       const result = await createDocument({
         workspaceId,
         userId: session.userId,
@@ -398,6 +424,7 @@ export function registerImportRoutes(router: Router, deps: ImportRouteDeps): voi
           url: draft.document.source.url,
           pages: draft.document.source.pages,
         },
+        companionEdits: companion ? [{ path: companion.path, content: companion.content }] : undefined,
         onStep: report,
       });
 
@@ -410,12 +437,19 @@ export function registerImportRoutes(router: Router, deps: ImportRouteDeps): voi
         filePath: result.filePath,
         commitSha: result.commitSha,
         source: draft.document.source.kind,
+        glossaryPath: companion?.path,
+        glossaryAdded: companion?.added ?? 0,
       });
 
       const payload = {
         githubPath: result.filePath,
         commitSha: result.commitSha,
         droppedReferences: prepared.droppedReferences,
+        // `null` when no rows were asked for or none were new; the commit sha
+        // above covers both files, so there is nothing else to report.
+        glossary: companion
+          ? { path: companion.path, added: companion.added, skipped: companion.skipped, created: companion.created }
+          : null,
       };
       if (streaming) {
         return res.end(`${JSON.stringify({ type: 'result', ...payload })}\n`);
@@ -481,6 +515,83 @@ export function registerImportRoutes(router: Router, deps: ImportRouteDeps): voi
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+interface GlossaryRequest {
+  rows: GlossaryRowInput[];
+  fileName?: string;
+  createAt?: GlossaryCompanionCreateAt;
+}
+
+/**
+ * The `glossary` half of a commit body, or null when there is none.
+ *
+ * Two codes, picked for what the manager can do about each:
+ *
+ * - a `rows` that is not an array of `{ term, aliases, description }` is a
+ *   malformed request, not an empty one, and is refused 400 `glossary_no_terms`
+ *   with the offending shape in `detail.message`. Answering it as an empty set
+ *   would commit the document and quietly lose every term the manager ticked.
+ * - a `fileName` that is not a plain markdown basename is 400
+ *   `glossary_file_invalid`, the same code `commitGlossaryRows` uses for an
+ *   unusable glossary path, because it is the same mistake.
+ *
+ * An empty or all-duplicate set is neither: it yields no companion, and the
+ * response says `glossary: null`.
+ */
+function parseGlossaryRequest(value: unknown): GlossaryRequest | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new ImportRefusal(400, 'glossary_no_terms', { message: 'glossary must be an object' });
+  }
+
+  const request = value as Record<string, unknown>;
+  if (!Array.isArray(request.rows)) {
+    throw new ImportRefusal(400, 'glossary_no_terms', { message: 'glossary.rows must be an array' });
+  }
+
+  const rows = request.rows.map((row, index) => parseGlossaryRow(row, index));
+
+  let fileName: string | undefined;
+  if (request.fileName !== undefined && request.fileName !== null) {
+    if (typeof request.fileName !== 'string' || /[\\/]/.test(request.fileName) || !request.fileName.trim()) {
+      throw new ImportRefusal(400, 'glossary_file_invalid', { path: String(request.fileName) });
+    }
+    fileName = request.fileName.trim();
+  }
+
+  return {
+    rows,
+    fileName,
+    // Anything but the explicit override means the ordinary rule, so a client
+    // that sends nothing — or a stale one that sends a word this server does
+    // not know — gets the nearest glossary rather than a refusal.
+    createAt: request.createAt === 'folder' ? 'folder' : 'nearest',
+  };
+}
+
+function parseGlossaryRow(row: unknown, index: number): GlossaryRowInput {
+  if (typeof row !== 'object' || row === null || Array.isArray(row)) {
+    throw new ImportRefusal(400, 'glossary_no_terms', { message: `glossary.rows[${index}] must be an object` });
+  }
+
+  const candidate = row as Record<string, unknown>;
+  if (typeof candidate.term !== 'string') {
+    throw new ImportRefusal(400, 'glossary_no_terms', { message: `glossary.rows[${index}].term must be a string` });
+  }
+  if (candidate.aliases !== undefined && !Array.isArray(candidate.aliases)) {
+    throw new ImportRefusal(400, 'glossary_no_terms', { message: `glossary.rows[${index}].aliases must be an array` });
+  }
+
+  return {
+    term: candidate.term.trim(),
+    // A missing alias list and a missing description are ordinary: the card
+    // lets a manager tick a term and write nothing.
+    aliases: Array.isArray(candidate.aliases)
+      ? candidate.aliases.filter((alias): alias is string => typeof alias === 'string')
+      : [],
+    description: typeof candidate.description === 'string' ? candidate.description : '',
+  };
+}
 
 /** Manager plus push access, with every failure answered as `false`. */
 async function canImportHere(workspaceId: string, userId: string, deps: ImportRouteDeps): Promise<boolean> {

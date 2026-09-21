@@ -67,10 +67,14 @@ export interface ImportRejectedAsset {
 }
 
 export interface ImportSourceInfo {
-  kind: 'pdf' | 'url';
+  /** `google-docs` and `meeting` share the draft pipeline, so they share this shape. */
+  kind: 'pdf' | 'url' | 'google-docs' | 'meeting';
   name: string;
   url?: string;
   pages?: number;
+  /** A meeting's size: how long it ran and how many people spoke. */
+  minutes?: number;
+  speakers?: number;
 }
 
 /** What a conversion produces: a draft held on the server, not a document yet. */
@@ -108,11 +112,45 @@ export interface PdfUpload {
   estimate: PdfEstimate;
 }
 
+/**
+ * A glossary row travelling with a commit: the manager ticked a term the
+ * conversion did not recognise. `aliases` and `description` are optional
+ * because ticking a term and writing nothing is the ordinary case.
+ */
+export interface ImportGlossaryRow {
+  term: string;
+  aliases?: string[];
+  description?: string;
+}
+
+/** What `/import/commit` accepts beside the document (`glossary`). */
+export interface ImportGlossaryRequest {
+  rows: ImportGlossaryRow[];
+  /** Basename of the glossary; the server's default unless this says otherwise. */
+  fileName?: string;
+  /** `folder` forces a new glossary beside the document even if a parent has one. */
+  createAt?: 'nearest' | 'folder';
+}
+
+/** Where the rows landed. Absent rows — or none of them new — answer `null`. */
+export interface ImportGlossaryCommit {
+  path: string;
+  added: number;
+  /** Terms the file already had, by name. */
+  skipped: string[];
+  created: boolean;
+}
+
 export interface ImportCommitResult {
   githubPath: string;
   commitSha: string;
   /** Image references the commit dropped because the draft did not hold them. */
   droppedReferences: string[];
+  /**
+   * The glossary half of the same commit, or `null` when nothing was asked for
+   * or nothing was new. Optional so an older server's answer still parses.
+   */
+  glossary?: ImportGlossaryCommit | null;
 }
 
 /**
@@ -156,8 +194,11 @@ type StreamEvent<TResult> =
  * The status line goes out before the first step runs, so a streaming endpoint
  * reports its outcome on the last line instead of in the status — and a
  * response that ends without one is an interruption, not a success.
+ *
+ * Exported for `meeting-api.ts`, whose conversion streams the same lines from
+ * a route of its own: one reader for every NDJSON endpoint the viewer calls.
  */
-async function requestStream<TResult>(
+export async function requestStream<TResult>(
   url: string,
   init: RequestInit,
   onProgress?: ImportProgressHandler,
@@ -251,9 +292,14 @@ export function convertPdf(
   );
 }
 
+/**
+ * Lands the draft as a document. `glossary`, when present, is committed in the
+ * same commit (docs/meeting-notes-and-glossary.md, 용어집 §5) — one commit for
+ * the note and the terms it taught us.
+ */
 export function commitDraft(
   workspaceId: string,
-  body: { draftId: string; filePath: string; markdown: string },
+  body: { draftId: string; filePath: string; markdown: string; glossary?: ImportGlossaryRequest },
   onProgress?: ImportProgressHandler,
 ): Promise<ImportCommitResult> {
   return requestStream<ImportCommitResult>(

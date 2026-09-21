@@ -12,7 +12,9 @@ import path from 'node:path';
 const commitFilesWithContext = jest.fn(async () => ({ commitSha: 'deadbeefcafe' }));
 const getFile = jest.fn(async (): Promise<{ content: string; sha: string } | null> => null);
 const buildContextFile = jest.fn(async () => ({ path: '.choir/context/a.json.enc', content: 'v1:enc' }));
-const readMirrorFile = jest.fn(async (): Promise<string | null> => null);
+const readMirrorFile = jest.fn(async (_workspaceId: string, _filePath: string): Promise<string | null> => null);
+const writeMarkdownFile = jest.fn(async (): Promise<string> => '');
+const setLoadedMarkdownFiles = jest.fn();
 
 const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'choir-create-'));
 
@@ -22,7 +24,7 @@ jest.mock('services/slack', () => ({
 
 jest.mock('services/workspace/mirror-service', () => ({
   WorkspaceMirrorService: {
-    getInstance: () => ({ readMirrorFile, getRepoRoot: () => repoRoot }),
+    getInstance: () => ({ readMirrorFile, writeMarkdownFile, getRepoRoot: () => repoRoot }),
   },
 }));
 
@@ -42,7 +44,7 @@ jest.mock('services/file-registry/main-service', () => ({
       // Nothing is indexed under a path that does not exist yet.
       getMarkdownFile: () => undefined,
       getAllMarkdownFiles: () => [],
-      setLoadedMarkdownFiles: jest.fn(),
+      setLoadedMarkdownFiles,
     }),
   },
 }));
@@ -295,6 +297,86 @@ describe('createDocument', () => {
       }),
     ).rejects.toThrow(/outside assets\//);
     expect(commitFilesWithContext).not.toHaveBeenCalled();
+  });
+
+  describe('companion edits', () => {
+    // The glossary loop: a manager who commits an imported document also ticks
+    // the terms it taught, and those rows have to be in the SAME commit — two
+    // commits would leave the document citing a vocabulary the repository does
+    // not have yet, or never, if the second one failed.
+    const GLOSSARY = 'policy/GLOSSARY.md';
+    const ROWS =
+      '# Glossary\n\n| Term | Also known as | Description |\n| --- | --- | --- |\n| CHOIR | choir | the bot |\n';
+
+    type CommitCall = { files: Array<{ path: string; content: string; encoding?: string }> };
+
+    const commitCall = () => commitFilesWithContext.mock.calls[0][0] as unknown as CommitCall;
+
+    it('commits the companion beside the document and stages it in the mirror', async () => {
+      await create({ companionEdits: [{ path: GLOSSARY, content: ROWS }] });
+
+      const commit = commitCall();
+      // The document still leads: everything that reads this call by index does.
+      expect(commit.files[0].path).toBe('policy/new-doc.md');
+      expect(commit.files).toContainEqual({ path: GLOSSARY, content: ROWS });
+      expect(writeMarkdownFile).toHaveBeenCalledWith('T1', GLOSSARY, ROWS);
+    });
+
+    it('normalizes the path and commits one entry per file', async () => {
+      // Two tree entries for one path would leave GitHub keeping whichever came
+      // last, which is not something the caller could have meant.
+      await create({
+        companionEdits: [
+          { path: `/${GLOSSARY}`, content: ROWS },
+          { path: GLOSSARY, content: `${ROWS}| QMD |  | index |\n` },
+        ],
+      });
+
+      expect(commitCall().files.filter((file) => file.path === GLOSSARY)).toEqual([{ path: GLOSSARY, content: ROWS }]);
+    });
+
+    it('files no provenance sidecar for the companion', async () => {
+      // The record belongs to the document; a second one would show the same
+      // manager making the same edit twice in the viewer's history.
+      await create({ companionEdits: [{ path: GLOSSARY, content: ROWS }] });
+
+      expect(buildContextFile).toHaveBeenCalledTimes(1);
+      expect(buildContextFile.mock.calls[0][0]).toMatchObject({ docPath: 'policy/new-doc.md' });
+    });
+
+    it('refreshes the companion in the index, like the document', async () => {
+      // A glossary is what answers "what does X mean?", so leaving it out of the
+      // in-memory store would make the terms unsearchable until the next sync.
+      await create({ companionEdits: [{ path: GLOSSARY, content: ROWS }] });
+
+      expect(setLoadedMarkdownFiles).toHaveBeenCalledTimes(1);
+      expect(setLoadedMarkdownFiles.mock.calls[0][0]).toEqual([
+        expect.objectContaining({ path: 'policy/new-doc.md' }),
+        expect.objectContaining({ path: GLOSSARY, content: ROWS }),
+      ]);
+    });
+
+    it('skips a companion the mirror already holds byte for byte', async () => {
+      readMirrorFile.mockImplementation(async (_workspaceId, filePath) => (filePath === GLOSSARY ? ROWS : null));
+
+      await create({ companionEdits: [{ path: GLOSSARY, content: ROWS }] });
+
+      expect(commitCall().files.some((file) => file.path === GLOSSARY)).toBe(false);
+      expect(writeMarkdownFile).not.toHaveBeenCalled();
+    });
+
+    it('refuses the document’s own path, and anything that is not a document path', async () => {
+      await expect(create({ companionEdits: [{ path: 'policy/new-doc.md', content: ROWS }] })).rejects.toThrow(
+        /document's own path/,
+      );
+      await expect(create({ companionEdits: [{ path: 'notes.txt', content: ROWS }] })).rejects.toThrow(
+        /repository markdown path/,
+      );
+      await expect(create({ companionEdits: [{ path: '../outside.md', content: ROWS }] })).rejects.toThrow(
+        /repository markdown path/,
+      );
+      expect(commitFilesWithContext).not.toHaveBeenCalled();
+    });
   });
 
   it('reports its phases in order, and survives a listener that throws', async () => {

@@ -17,9 +17,28 @@ import type { ImportAsset } from 'services/import/types';
 import { scheduleQmdWarmup } from 'services/retrieval/warmup';
 import { getGithubRepo } from 'services/slack';
 import { WorkspaceMirrorService } from 'services/workspace/mirror-service';
+import { normalizeDocumentPath } from './document-path';
 
 export interface SaveDocumentResult {
   commitSha: string;
+}
+
+/**
+ * Another markdown file that belongs to the same change as the document.
+ *
+ * The case this exists for is the glossary: a manager who commits a meeting
+ * note also ticks the terms the transcript taught, and those rows have to land
+ * in the same commit as the note — two commits would mean a moment (or, if the
+ * second one fails, forever) where the document cites a vocabulary the
+ * repository does not have. The file may already exist (rows appended to a
+ * `GLOSSARY.md`) or not (the folder's first glossary); both are one tree entry.
+ *
+ * See docs/meeting-notes-and-glossary.md, 용어집 §5.
+ */
+export interface CompanionEdit {
+  /** Repository-relative markdown path; not the document's own path. */
+  path: string;
+  content: string;
 }
 
 /**
@@ -80,6 +99,14 @@ export async function saveEditedDocument(params: {
    * import fills in which source it came from and what it was called there.
    */
   source?: ProvenanceRecord['source'];
+  /**
+   * Other markdown files that change with this one, in the SAME commit. See
+   * {@link CompanionEdit}: a path that is unusable or is the document's own is
+   * refused before anything is committed, a duplicate is committed once, and a
+   * companion whose content the mirror already holds is dropped rather than
+   * committed as an empty diff.
+   */
+  companionEdits?: CompanionEdit[];
   /** Called as each phase begins. Best-effort; see `makeStepReporter`. */
   onStep?: SaveStepListener;
   /**
@@ -109,6 +136,11 @@ export async function saveEditedDocument(params: {
     assertSafeAssetPath(asset.path);
   }
 
+  // Same rule, same moment, for the companions: their paths become tree entries
+  // and mirror writes too, and one that is unusable has to be refused before a
+  // commit rather than after it.
+  const companions = await resolveCompanionEdits(params.workspaceId, params.filePath, params.companionEdits ?? []);
+
   // Capture pre-save content for the provenance diff before the mirror/index is
   // overwritten below. Look up by full path so nested docs (and siblings sharing
   // a basename) resolve to the correct entry.
@@ -134,6 +166,11 @@ export async function saveEditedDocument(params: {
     messages: [],
     diff: { before: beforeContent, after: params.content },
   };
+  // One record, for the document. The companions get no sidecar of their own:
+  // the change being recorded is "this document was written, and these terms
+  // came with it", and a second record under `.choir/context/GLOSSARY.md/`
+  // would show the same manager making the same edit twice in the viewer's
+  // history, with a diff nobody asked to review.
   const contextFile = await buildContextFile({
     workspaceId: params.workspaceId,
     docPath: params.filePath,
@@ -162,6 +199,8 @@ export async function saveEditedDocument(params: {
         content: asset.bytes.toString('base64'),
         encoding: 'base64' as const,
       })),
+      // Last, so `files[0]` stays the document for everyone who reads the call.
+      ...companions.map((companion) => ({ path: companion.path, content: companion.content })),
     ],
     workspaceId: params.workspaceId,
     userId: params.userId,
@@ -178,6 +217,7 @@ export async function saveEditedDocument(params: {
   });
   await persistContextToMirror(params.workspaceId, contextFile);
   await writeAssetsToMirror(params.workspaceId, assets);
+  await writeCompanionsToMirror(params.workspaceId, companions);
 
   await documentUpdateService.markGithubSyncSuccess({
     workspaceId: params.workspaceId,
@@ -188,34 +228,14 @@ export async function saveEditedDocument(params: {
     commitSha,
   });
 
+  // Every file this commit wrote, document first. A companion is a document to
+  // Q&A like any other — a glossary that answers "what does X mean?" is the
+  // clearest case — so it is refreshed and published by the same rules.
+  const savedFiles = [{ path: params.filePath, content: params.content }, ...companions];
+
   report('indexing');
   try {
-    const fileName = params.filePath.split('/').pop() || params.filePath;
-    const tree = parseMarkdownToTree(params.content, fileName);
-    const existing = vectorStore.getMarkdownFile(params.filePath, params.workspaceId);
-    const branchSegment = repoInfo.branch || 'main';
-    const encodedPath = params.filePath
-      .split('/')
-      .map((segment) => encodeURIComponent(segment))
-      .join('/');
-    const githubUrl =
-      existing?.githubUrl ??
-      `https://github.com/${repoInfo.owner}/${repoInfo.repo}/blob/${branchSegment}/${encodedPath}`;
-
-    const allFiles = vectorStore.getAllMarkdownFiles(params.workspaceId);
-    const updatedFile: MarkdownFile = {
-      name: fileName,
-      path: params.filePath,
-      content: params.content,
-      githubUrl,
-      tree,
-    };
-    // De-dupe by full path so a sibling doc that merely shares this basename
-    // (e.g. another README.md in a different folder) is not dropped from the
-    // in-memory store.
-    const next = allFiles.filter((file) => file.path !== params.filePath);
-    next.push(updatedFile);
-    vectorStore.setLoadedMarkdownFiles(next, params.workspaceId);
+    refreshIndexedFiles(vectorStore, params.workspaceId, repoInfo, savedFiles);
   } catch (error) {
     Logger.warn('saveEditedDocument: failed to refresh in-memory vector store entry', error as Error);
   }
@@ -223,12 +243,14 @@ export async function saveEditedDocument(params: {
   // The commit above is marked [choir-auto], so the GitHub webhook skips it and
   // the full-sync replica hook never runs for web edits. Publish here instead.
   if (!params.skipReplicaPublish) {
-    schedulePublish({
-      workspaceId: params.workspaceId,
-      githubPath: params.filePath,
-      markdown: params.content,
-      reason: 'docs-editor-save',
-    });
+    for (const file of savedFiles) {
+      schedulePublish({
+        workspaceId: params.workspaceId,
+        githubPath: file.path,
+        markdown: file.content,
+        reason: 'docs-editor-save',
+      });
+    }
   }
 
   scheduleQmdWarmup({
@@ -247,10 +269,127 @@ export async function saveEditedDocument(params: {
     workspaceId: params.workspaceId,
     filePath: params.filePath,
     commitSha,
+    companions: companions.map((companion) => companion.path),
     userId: params.userId,
   });
 
   return { commitSha };
+}
+
+/**
+ * Puts the files this save wrote back into the in-memory store Q&A reads from.
+ *
+ * Extracted verbatim from the block that did this for the document alone: the
+ * companions need exactly the same treatment, and doing them in one pass means
+ * one `setLoadedMarkdownFiles` — a second call built from a list read before
+ * the first one landed would drop whatever the first one added.
+ */
+function refreshIndexedFiles(
+  vectorStore: ReturnType<typeof VectorStoreService.getInstance>,
+  workspaceId: string,
+  repoInfo: { owner: string; repo: string; branch?: string },
+  files: Array<{ path: string; content: string }>,
+): void {
+  const branchSegment = repoInfo.branch || 'main';
+
+  const updated: MarkdownFile[] = files.map(({ path: filePath, content }) => {
+    const fileName = filePath.split('/').pop() || filePath;
+    const existing = vectorStore.getMarkdownFile(filePath, workspaceId);
+    const encodedPath = filePath
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+
+    return {
+      name: fileName,
+      path: filePath,
+      content,
+      githubUrl:
+        existing?.githubUrl ??
+        `https://github.com/${repoInfo.owner}/${repoInfo.repo}/blob/${branchSegment}/${encodedPath}`,
+      tree: parseMarkdownToTree(content, fileName),
+    };
+  });
+
+  // De-dupe by full path so a sibling doc that merely shares a basename (e.g.
+  // another README.md in a different folder) is not dropped from the in-memory
+  // store.
+  const written = new Set(updated.map((file) => file.path));
+  const next = vectorStore.getAllMarkdownFiles(workspaceId).filter((file) => !written.has(file.path));
+  next.push(...updated);
+  vectorStore.setLoadedMarkdownFiles(next, workspaceId);
+}
+
+/**
+ * The companion paths this save will actually commit.
+ *
+ * Runs before the commit, and refuses rather than drops: a caller that named an
+ * unusable path (not markdown, outside the repository, inside `.choir/`) or the
+ * document's own path has a bug, and committing the document while silently
+ * losing the rows that were meant to travel with it is the one outcome this
+ * whole option exists to prevent. What it does drop is a companion the mirror
+ * already holds byte for byte — there is nothing to commit, and the commit
+ * message would claim a change that is not in the diff.
+ */
+async function resolveCompanionEdits(
+  workspaceId: string,
+  documentPath: string,
+  edits: CompanionEdit[],
+): Promise<CompanionEdit[]> {
+  if (edits.length === 0) return [];
+
+  const ownPath = normalizeDocumentPath(documentPath) ?? documentPath;
+  const resolved: CompanionEdit[] = [];
+  const seen = new Set<string>();
+
+  for (const edit of edits) {
+    const normalized = normalizeDocumentPath(edit.path);
+    if (!normalized) {
+      throw new Error(`Refusing to commit a companion that is not a repository markdown path: ${edit.path}`);
+    }
+    if (normalized === ownPath) {
+      throw new Error(`Refusing to commit a companion at the document's own path: ${normalized}`);
+    }
+    // Two edits to one file would make two tree entries for it, and GitHub
+    // would keep whichever came last. The first wins, as it is written.
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+
+    if (await isUnchanged(workspaceId, normalized, edit.content)) continue;
+    resolved.push({ path: normalized, content: edit.content });
+  }
+
+  return resolved;
+}
+
+/**
+ * Whether the mirror already holds exactly this content. A mirror that cannot
+ * be read is answered `false`: committing a file whose blob is identical is a
+ * no-op to GitHub, whereas skipping a change that was really there is a loss.
+ */
+async function isUnchanged(workspaceId: string, filePath: string, content: string): Promise<boolean> {
+  try {
+    return (await WorkspaceMirrorService.getInstance().readMirrorFile(workspaceId, filePath)) === content;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Stages the companions in the mirror, beside the document.
+ *
+ * `writeMarkdownFile` rather than `stageMarkdownUpdate`: the file has just been
+ * committed, so marking it dirty would queue a push of a change that is already
+ * on GitHub. The section split and the path-map entry that come with this call
+ * are what the viewer and QMD need to see it.
+ */
+async function writeCompanionsToMirror(workspaceId: string, companions: CompanionEdit[]): Promise<void> {
+  if (companions.length === 0) return;
+
+  const mirror = WorkspaceMirrorService.getInstance();
+  for (const companion of companions) {
+    await mirror.writeMarkdownFile(workspaceId, companion.path, companion.content);
+  }
 }
 
 /**

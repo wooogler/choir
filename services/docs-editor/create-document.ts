@@ -5,7 +5,7 @@ import { getGithubRepo } from 'services/slack';
 import type { DocsApiErrorCode, DocsApiErrorDetail } from './api-errors';
 import { documentExists } from './document-exists';
 import { documentTitleFromPath, normalizeDocumentPath } from './document-path';
-import { type SaveStepListener, makeStepReporter, saveEditedDocument } from './save-document';
+import { type CompanionEdit, type SaveStepListener, makeStepReporter, saveEditedDocument } from './save-document';
 
 export interface CreateDocumentResult {
   commitSha: string;
@@ -64,6 +64,14 @@ export async function createDocument(params: {
   assets?: ImportAsset[];
   /** Where the document came from, merged over `{ editor: 'web' }` in provenance. */
   source?: ProvenanceRecord['source'];
+  /**
+   * Existing or new markdown files that belong to this creation and land in the
+   * same commit — the glossary rows a manager approved while importing the
+   * document that taught them. See {@link CompanionEdit}; the overwrite check
+   * above deliberately does not apply to them, because appending to a file that
+   * is already there is the point.
+   */
+  companionEdits?: CompanionEdit[];
   /** Called as each phase begins. Best-effort: a listener that throws is ignored. */
   onStep?: SaveStepListener;
   /** See `saveEditedDocument`: for a caller that links the replica itself. */
@@ -111,6 +119,7 @@ export async function createDocument(params: {
     provenanceType: 'new-file',
     assets: params.assets,
     source: params.source,
+    companionEdits: params.companionEdits,
     onStep: params.onStep,
     skipReplicaPublish: params.skipReplicaPublish,
   });
@@ -120,6 +129,7 @@ export async function createDocument(params: {
     filePath,
     commitSha,
     assetCount: params.assets?.length ?? 0,
+    companionCount: params.companionEdits?.length ?? 0,
     userId: params.userId,
   });
 

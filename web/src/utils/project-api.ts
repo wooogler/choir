@@ -16,7 +16,6 @@
  * See docs/project-folders.md sections 1 and 6.
  */
 
-import type { T } from '../i18n';
 import type {
   MemberSource,
   ProjectMembersSettings,
@@ -25,6 +24,7 @@ import type {
   RetrievalScope,
   UpdateScope,
 } from '../../../services/projects/schema';
+import type { T } from '../i18n';
 import { ApiError, describeApiError, errorPayload } from './api-error';
 import { encodePath } from './docs';
 
@@ -108,6 +108,40 @@ export interface ProjectSaveResult {
 /** The sentence to show for a failed project call, in the reader's language. */
 export function describeProjectError(t: T, error: unknown, fallback: string): string {
   return describeApiError(t, error, fallback);
+}
+
+/** The default `meetingsFolder`, repeated from `services/projects/schema.ts`. */
+const DEFAULT_MEETINGS_FOLDER = 'meetings';
+
+/**
+ * The project a document (or a folder) belongs to: the longest declared folder
+ * that contains it, so `projects/alpha/meetings` is read as alpha's rather
+ * than as the repository-wide project somebody declared at the root.
+ *
+ * Generic in the project so a caller holding a narrower row — a folder and
+ * nothing else — can use it too.
+ */
+export function nearestProject<TProject extends { folder: string }>(
+  projects: TProject[],
+  path: string,
+): TProject | null {
+  let best: TProject | null = null;
+  for (const project of projects) {
+    const folder = project.folder;
+    const contains = folder === '' || path === folder || path.startsWith(`${folder}/`);
+    if (contains && (best === null || folder.length > best.folder.length)) best = project;
+  }
+  return best;
+}
+
+/**
+ * Where this project keeps its meeting notes, as a repository path.
+ * `meetingsFolder` is relative to the project folder (docs/project-folders.md).
+ */
+export function meetingsFolderOf(project: { folder: string; meetingsFolder?: string }): string {
+  const relative = (project.meetingsFolder ?? DEFAULT_MEETINGS_FOLDER).trim().replace(/^\/+|\/+$/g, '');
+  const parts = [project.folder, relative || DEFAULT_MEETINGS_FOLDER].filter(Boolean);
+  return parts.join('/');
 }
 
 function docsBase(workspaceId: string): string {

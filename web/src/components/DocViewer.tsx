@@ -20,9 +20,11 @@ import { DeleteDocumentDialog } from './DeleteDocumentDialog';
 import { DocHeader } from './DocHeader';
 import { FilesSidebar } from './FilesSidebar';
 import { FloatingToc } from './FloatingToc';
+import { GlossaryBuilderDialog } from './GlossaryBuilderDialog';
 import { GoogleDocsReview } from './GoogleDocsReview';
 import { GoogleDocsSync } from './GoogleDocsSync';
 import { HistoryPanel } from './HistoryPanel';
+import { MeetingNoteDialog } from './MeetingNoteDialog';
 import { NewDocumentDialog } from './NewDocumentDialog';
 import { ProjectSettingsDialog } from './ProjectSettingsDialog';
 import { RenameDocumentDialog } from './RenameDocumentDialog';
@@ -129,6 +131,9 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showNewDocumentDialog, setShowNewDocumentDialog] = useState(false);
+  const [showMeetingDialog, setShowMeetingDialog] = useState(false);
+  // The folder the glossary builder was opened for; null when it is closed.
+  const [glossaryFolder, setGlossaryFolder] = useState<string | null>(null);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   // Which folders are projects, and their settings — one request per mount (and
@@ -1058,6 +1063,8 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
         canSeeInsights={canSeeInsights}
         canCreate={canEdit}
         onNewDocument={() => setShowNewDocumentDialog(true)}
+        onMeetingNote={() => setShowMeetingDialog(true)}
+        onGlossary={() => setGlossaryFolder(folderOf(filePath))}
         projectFolders={projectFolders}
         onProjectSettings={canEdit ? setProjectSettingsFolder : undefined}
       />
@@ -1168,6 +1175,23 @@ export function DocViewer({ workspaceId, initialFilePath }: DocViewerProps) {
           siblings={newDocumentSiblings}
           branch={repo?.branch}
           onCancel={() => setShowNewDocumentDialog(false)}
+        />
+      )}
+      {showMeetingDialog && canEdit && (
+        <MeetingNoteDialog
+          workspaceId={workspaceId}
+          currentPath={filePath}
+          files={files}
+          projects={projects}
+          onCancel={() => setShowMeetingDialog(false)}
+        />
+      )}
+      {glossaryFolder !== null && canEdit && (
+        <GlossaryBuilderDialog
+          key={glossaryFolder}
+          workspaceId={workspaceId}
+          folder={glossaryFolder}
+          onClose={() => setGlossaryFolder(null)}
         />
       )}
       {showRenameDialog && canEdit && (
