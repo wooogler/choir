@@ -73,6 +73,50 @@ Generate content for this section:`,
   return response?.trim() || '';
 }
 
+/** A GFM delimiter row: `|---|---|`, `| :--- | ---: |`, `---|:-:`. */
+const GFM_DELIMITER_ROW = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+
+/**
+ * What kind of block the existing content is, so the edit prompt can tell the
+ * model to keep that shape.
+ *
+ * A GFM table used to fall through to 'paragraph', and the prompt then told the
+ * model to append "additional paragraphs" — which produced prose glued under the
+ * table, or the table rewritten as prose. Since the caller replaces the whole
+ * block with whatever comes back (see `applyAnchorReplacement`), that reshaping
+ * landed in the committed file.
+ */
+export function detectExistingContentType(markdown: string): 'list' | 'table' | 'paragraph' {
+  const lines = markdown.split('\n').filter((line) => line.trim());
+
+  // A table needs a header row with a pipe and a delimiter row right under it.
+  // The delimiter row must itself contain a pipe, so a `---` rule (or a setext
+  // underline) below a line that merely happens to contain a `|` is not a table.
+  if (
+    lines.length >= 2 &&
+    lines[0].includes('|') &&
+    lines[1].includes('|') &&
+    GFM_DELIMITER_ROW.test(lines[1].trim())
+  ) {
+    return 'table';
+  }
+
+  return markdown.trim().match(/^(\s*[-*+]|\s*\d+\.)\s/) ? 'list' : 'paragraph';
+}
+
+/**
+ * Room for the answer. 500 tokens truncated any table bigger than a handful of
+ * rows, and because the caller replaces the whole block with the reply, the
+ * truncated table overwrote the complete one in the commit. The model has to be
+ * able to echo the whole input back plus its edits, so scale the budget with the
+ * input (~2 chars/token, a deliberately pessimistic ratio that also covers CJK
+ * tables) with a floor for short blocks and a cap so a huge section cannot bill
+ * an unbounded completion.
+ */
+function outputTokenBudget(markdown: string): number {
+  return Math.min(4000, Math.max(1500, Math.ceil(markdown.length / 2) + 500));
+}
+
 /**
  * 기존 내용을 knowledge로 향상 (업데이트 우선, 필요시 추가)
  */
@@ -85,7 +129,27 @@ async function enhanceExistingContent(
   const contextInfo = context?.headingPath || context?.sectionName || 'Unknown section';
 
   // 기존 markdown 내용을 분석해서 타입 감지
-  const contentType = markdown.trim().match(/^(\s*[-*+]|\s*\d+\.)\s/) ? 'list' : 'paragraph';
+  const contentType = detectExistingContentType(markdown);
+
+  const matchingFormat =
+    contentType === 'list'
+      ? 'as additional list items (- format)'
+      : contentType === 'table'
+        ? 'as additional rows of the existing table, using the same columns in the same order'
+        : 'as additional paragraphs';
+
+  const tableRules =
+    contentType === 'table'
+      ? `
+
+The existing content is a GFM markdown table. These table rules override anything above that would reshape it:
+- Keep the exact table structure: the same columns in the same order, the same header row, the same delimiter row, one row per line, cells separated by \`|\`
+- When the knowledge changes a value, update that cell in place
+- When the knowledge adds entries, add new rows in the same column layout
+- Never convert the table into prose or into a list, and never drop, add or reorder columns
+- Do not add paragraphs above or below the table unless the knowledge genuinely cannot be expressed as a row; in that case a single short paragraph after the table is acceptable
+- Return the COMPLETE table — every original row plus your changes — never a partial or truncated table`
+      : '';
 
   const languageDirective = contentLanguageDirective(await getContentLanguagePolicy(workspaceId), {
     source: 'existing-content',
@@ -103,12 +167,12 @@ Rules:
 ${languageDirective}
 - PRIORITIZE updating/replacing existing content when knowledge provides better, more accurate, or more comprehensive information
 - If knowledge contradicts existing content, prefer the knowledge (assume it's more current/accurate)
-- If knowledge complements existing content without contradiction, add it in matching format: ${contentType === 'list' ? 'as additional list items (- format)' : 'as additional paragraphs'}
+- If knowledge complements existing content without contradiction, add it in matching format: ${matchingFormat}
 - If knowledge provides more specific details about existing points, merge them into improved versions
 - Preserve all URLs from the knowledge
 - Use single-level lists only (no nested bullets)
 - No headings or section titles
-- Return original only if knowledge adds no meaningful value
+- Return original only if knowledge adds no meaningful value${tableRules}
 
 Approach: Update first, then add if needed. Create the most accurate and comprehensive version.
 
@@ -129,7 +193,7 @@ ${knowledgeContent}`,
       workspaceId,
       purpose: 'document-update',
       temperature: 0,
-      max_tokens: 500,
+      max_tokens: outputTokenBudget(markdown),
       function_name: 'enhanceExistingContent',
     },
   );
