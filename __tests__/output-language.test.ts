@@ -5,6 +5,9 @@ const mockChat = jest.fn();
 const mockStructured = jest.fn();
 jest.mock('services/llm/completions', () => ({
   createChatCompletion: (...args: any[]) => mockChat(...args),
+  // The table editor needs the API's truncation flag alongside the text; these
+  // tests only assert on prompts, so the flag is always false here.
+  createChatCompletionWithMeta: async (...args: any[]) => ({ text: await mockChat(...args), truncated: false }),
   createStructuredResponse: (...args: any[]) => mockStructured(...args),
 }));
 

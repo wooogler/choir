@@ -91,10 +91,22 @@ function normalizeMaxOutputTokens(maxTokens: number | undefined): number {
   return Math.max(MIN_RESPONSE_OUTPUT_TOKENS, maxTokens ?? 1000);
 }
 
-async function createResponseText(
+export interface ChatCompletionResult {
+  text: string;
+  /**
+   * The Responses API stopped the reply because it hit `max_output_tokens`
+   * (`status: 'incomplete'` with `incomplete_details.reason ===
+   * 'max_output_tokens'`). Callers that ask the model to echo a whole block back
+   * — the table editor — need this: a cut-off answer is indistinguishable from a
+   * deliberately shorter one by shape alone.
+   */
+  truncated: boolean;
+}
+
+export async function createChatCompletionWithMeta(
   messages: ChatCompletionMessageParam[],
   options: ChatCompletionOptions = {},
-): Promise<string> {
+): Promise<ChatCompletionResult> {
   const {
     workspaceId,
     purpose = 'qa',
@@ -142,7 +154,10 @@ async function createResponseText(
     });
   }
 
-  return finalResponse;
+  return {
+    text: finalResponse,
+    truncated: response.status === 'incomplete' && response.incomplete_details?.reason === 'max_output_tokens',
+  };
 }
 
 export async function createStructuredResponse<T>(
@@ -208,4 +223,4 @@ export async function createStructuredResponse<T>(
 export const createChatCompletion = async (
   messages: ChatCompletionMessageParam[],
   options: ChatCompletionOptions = {},
-) => await createResponseText(messages, options);
+) => (await createChatCompletionWithMeta(messages, options)).text;

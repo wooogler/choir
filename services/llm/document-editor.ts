@@ -3,7 +3,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { Logger } from 'services/common/logger';
 import { anonymizeText } from 'services/common/name-cache';
 import { processMessageHistory } from 'services/slack/conversation-history';
-import { createChatCompletion, createStructuredResponse } from './completions';
+import { createChatCompletion, createChatCompletionWithMeta, createStructuredResponse } from './completions';
 import { contentLanguageDirective, getContentLanguagePolicy } from './content-language';
 
 export async function editMarkdownWithKnowledge(
@@ -203,7 +203,18 @@ export type TableEditValidation = { ok: true } | { ok: false; reason: string };
  * This re-checks the answer against the original and, when it fails, hands back
  * a reason short enough to put in both the log and the retry prompt.
  */
-export function validateTableEdit(original: string, candidate: string): TableEditValidation {
+export function validateTableEdit(
+  original: string,
+  candidate: string,
+  meta?: { truncated?: boolean },
+): TableEditValidation {
+  // The API knows the reply was cut off by the output budget; shape rules can
+  // only guess at it (and row deletion is legitimate, so a shorter table is not
+  // itself evidence). Check the signal first so the retry gets the real reason.
+  if (meta?.truncated) {
+    return { ok: false, reason: 'the reply was cut off by the output token limit' };
+  }
+
   const before = parseLeadingTable(original, true);
   if (!before) {
     // Not a table to begin with — nothing for this guard to protect.
@@ -276,13 +287,6 @@ export function validateTableEdit(original: string, candidate: string): TableEdi
     }
   }
 
-  if (after.body.length < before.body.length) {
-    return {
-      ok: false,
-      reason: `the table has ${after.body.length} rows but the original has ${before.body.length}; every original row must be kept`,
-    };
-  }
-
   // A completion cut off mid-row leaves that row without its closing pipe, which
   // is only a signal when the original closed every row.
   const originalRowsClosed = before.body.length > 0 && before.body.every((line) => line.trim().endsWith('|'));
@@ -343,7 +347,8 @@ The existing content is a GFM markdown table. These table rules override anythin
 - When the knowledge adds entries, add new rows in the same column layout
 - Never convert the table into prose or into a list, and never drop, add or reorder columns
 - Do not add paragraphs above or below the table unless the knowledge genuinely cannot be expressed as a row; in that case a single short paragraph after the table is acceptable
-- Return the COMPLETE table — every original row plus your changes — never a partial or truncated table`
+- Remove a row only when the knowledge says that entry no longer applies; otherwise keep every original row
+- Return the COMPLETE table — every row that still applies plus your changes — never a partial or truncated table`
       : '';
 
   const languageDirective = contentLanguageDirective(await getContentLanguagePolicy(workspaceId), {
@@ -392,8 +397,8 @@ ${knowledgeContent}`,
     function_name: 'enhanceExistingContent',
   };
 
-  const response = await createChatCompletion(messages, options);
-  const edited = response?.trim() || markdown;
+  const response = await createChatCompletionWithMeta(messages, options);
+  const edited = response.text?.trim() || markdown;
 
   if (contentType !== 'table' || edited === markdown) {
     return edited;
@@ -401,7 +406,7 @@ ${knowledgeContent}`,
 
   // The prompt asks for the whole table back, but the caller commits whatever
   // comes out of here, so verify the shape before trusting it.
-  const firstCheck = validateTableEdit(markdown, edited);
+  const firstCheck = validateTableEdit(markdown, edited, { truncated: response.truncated });
   if (firstCheck.ok) {
     return edited;
   }
@@ -413,16 +418,21 @@ ${knowledgeContent}`,
     reason: firstCheck.reason,
   });
 
-  const retryResponse = await createChatCompletion(
-    [...messages, { role: 'user', content: tableRetryInstruction(firstCheck.reason) }],
-    { ...options, function_name: 'enhanceExistingContent.retry' },
+  // A reply the API cut off needs more room, not just a sterner instruction.
+  const retryResponse = await createChatCompletionWithMeta(
+    [...messages, { role: 'user', content: tableRetryInstruction(firstCheck.reason, response.truncated) }],
+    {
+      ...options,
+      max_tokens: response.truncated ? Math.min(8000, outputTokenBudget(markdown) * 2) : options.max_tokens,
+      function_name: 'enhanceExistingContent.retry',
+    },
   );
-  const retried = retryResponse?.trim();
+  const retried = retryResponse.text?.trim();
   if (!retried) {
     return markdown;
   }
 
-  const secondCheck = validateTableEdit(markdown, retried);
+  const secondCheck = validateTableEdit(markdown, retried, { truncated: retryResponse.truncated });
   if (secondCheck.ok) {
     return retried;
   }
@@ -438,8 +448,12 @@ ${knowledgeContent}`,
 }
 
 /** The corrective turn appended before the single retry of a failed table edit. */
-function tableRetryInstruction(reason: string): string {
-  return `Your previous reply did not keep the table structure: ${reason}. Return the complete table again with the same columns and header, every original row, one row per line. Return ONLY the table.`;
+function tableRetryInstruction(reason: string, truncated = false): string {
+  const opening = truncated
+    ? `Your previous reply was cut off before the table was complete: ${reason}.`
+    : `Your previous reply did not keep the table structure: ${reason}.`;
+
+  return `${opening} Return the complete table again with the same columns and header, every row that still applies, one row per line. Return ONLY the table.`;
 }
 
 export async function classifyMessageIntent(

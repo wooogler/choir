@@ -3,10 +3,20 @@
 // table of moderate size. The caller replaces the whole block with the reply,
 // so both failures landed in the commit.
 
+// `enhanceExistingContent` needs the API's truncation flag alongside the text,
+// so it calls `createChatCompletionWithMeta`; `mockChat` resolves either a bare
+// string (the common case) or `{ text, truncated }`.
 const mockChat = jest.fn();
 const mockStructured = jest.fn();
 jest.mock('services/llm/completions', () => ({
-  createChatCompletion: (...args: any[]) => mockChat(...args),
+  createChatCompletion: async (...args: any[]) => {
+    const result = await mockChat(...args);
+    return typeof result === 'string' ? result : result?.text;
+  },
+  createChatCompletionWithMeta: async (...args: any[]) => {
+    const result = await mockChat(...args);
+    return typeof result === 'string' ? { text: result, truncated: false } : result;
+  },
   createStructuredResponse: (...args: any[]) => mockStructured(...args),
 }));
 
@@ -96,7 +106,8 @@ describe('editMarkdownWithKnowledge with a table', () => {
     expect(prompt).toContain('update that cell in place');
     expect(prompt).toContain('add new rows in the same column layout');
     expect(prompt).toContain('Never convert the table into prose or into a list');
-    expect(prompt).toContain('Return the COMPLETE table');
+    expect(prompt).toContain('Remove a row only when the knowledge says that entry no longer applies');
+    expect(prompt).toContain('Return the COMPLETE table — every row that still applies plus your changes');
     expect(prompt).not.toContain('add it in matching format: as additional paragraphs');
 
     expect(options().max_tokens).toBeGreaterThanOrEqual(1500);
@@ -188,10 +199,21 @@ describe('validateTableEdit', () => {
     expect(expectFail(PIPED_TABLE, candidate)).toContain('cells but the table has 3 columns');
   });
 
-  it('rejects a table with fewer rows than the original', () => {
+  // Row deletion is legitimate: the knowledge can say an entry no longer
+  // applies. Truncation is detected from the API's own flag instead.
+  it('accepts a table with a row deleted', () => {
     const candidate =
       '| Environment | Host | Owner |\n| --- | --- | --- |\n| staging | staging.example.com | Platform |';
-    expect(expectFail(PIPED_TABLE, candidate)).toContain('every original row must be kept');
+    expect(validateTableEdit(PIPED_TABLE, candidate)).toEqual({ ok: true });
+  });
+
+  it('rejects a reply the API flagged as truncated, however well-formed the table looks', () => {
+    const candidate = PIPED_TABLE.replace('staging.example.com', 'stg.example.com');
+    expect(validateTableEdit(PIPED_TABLE, candidate)).toEqual({ ok: true });
+
+    const result = validateTableEdit(PIPED_TABLE, candidate, { truncated: true });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.reason).toContain('cut off by the output token limit');
   });
 
   it('rejects a last row cut off before its closing pipe', () => {
@@ -262,8 +284,43 @@ describe('editMarkdownWithKnowledge table guard', () => {
     expect(correction.role).toBe('user');
     expect(correction.content).toContain('did not keep the table structure');
     expect(correction.content).toContain('does not start with a table');
-    expect(correction.content).toContain('every original row');
+    expect(correction.content).toContain('every row that still applies');
     expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it('retries with a doubled budget and a cut-off wording when the API flagged truncation', async () => {
+    mockChat
+      .mockResolvedValueOnce({ text: VALID_EDIT, truncated: true })
+      .mockResolvedValueOnce({ text: VALID_EDIT, truncated: false });
+
+    const result = await editMarkdownWithKnowledge(PIPED_TABLE, 'Staging moved to stg.example.com', {
+      fileName: 'infra.md',
+    });
+
+    expect(result).toBe(VALID_EDIT);
+    expect(mockChat).toHaveBeenCalledTimes(2);
+
+    const firstBudget = mockChat.mock.calls[0][1].max_tokens as number;
+    const retryBudget = mockChat.mock.calls[1][1].max_tokens as number;
+    expect(retryBudget).toBe(Math.min(8000, firstBudget * 2));
+
+    const retryMessages = mockChat.mock.calls[1][0];
+    const correction = retryMessages[retryMessages.length - 1];
+    expect(correction.content).toContain('cut off');
+    expect(correction.content).toContain('output token limit');
+  });
+
+  it('accepts a deleted row in one call when the reply was not truncated', async () => {
+    const withRowRemoved =
+      '| Environment | Host | Owner |\n| --- | --- | --- |\n| staging | staging.example.com | Platform |';
+    mockChat.mockResolvedValue({ text: withRowRemoved, truncated: false });
+
+    const result = await editMarkdownWithKnowledge(PIPED_TABLE, 'Production was decommissioned', {
+      fileName: 'infra.md',
+    });
+
+    expect(result).toBe(withRowRemoved);
+    expect(mockChat).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the original content when the retry is malformed too', async () => {
@@ -293,6 +350,16 @@ describe('editMarkdownWithKnowledge table guard', () => {
     });
 
     expect(result).toBe('| Environment | Host |');
+    expect(mockChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the text of a list reply in one call, truncation flag and all', async () => {
+    mockChat.mockResolvedValue({ text: '- Vacation is 15 days', truncated: true });
+    const result = await editMarkdownWithKnowledge('- Vacation is 14 days', 'Vacation is 15 days', {
+      fileName: 'hr.md',
+    });
+
+    expect(result).toBe('- Vacation is 15 days');
     expect(mockChat).toHaveBeenCalledTimes(1);
   });
 });
