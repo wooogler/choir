@@ -1,4 +1,6 @@
 import type { WebClient } from '@slack/web-api';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import { Logger } from 'services/common/logger';
 import { anonymizeText } from 'services/common/name-cache';
 import { processMessageHistory } from 'services/slack/conversation-history';
 import { createChatCompletion, createStructuredResponse } from './completions';
@@ -104,6 +106,199 @@ export function detectExistingContentType(markdown: string): 'list' | 'table' | 
   return markdown.trim().match(/^(\s*[-*+]|\s*\d+\.)\s/) ? 'list' : 'paragraph';
 }
 
+/** A line that opens a list item: `- x`, `* x`, `+ x`, `1. x`. */
+const LIST_MARKER = /^\s*([-*+]|\d+\.)\s/;
+
+/**
+ * Split one GFM table row into trimmed cells.
+ *
+ * Optional leading and trailing pipes are dropped (so `| a | b |` and `a | b`
+ * both yield two cells) and `\|` stays inside the cell it escapes instead of
+ * splitting it.
+ */
+function splitTableCells(line: string): string[] {
+  const text = line.trim();
+  const cells: string[] = [];
+  let current = '';
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '\\' && text[i + 1] === '|') {
+      current += '\\|';
+      i++;
+      continue;
+    }
+    if (char === '|') {
+      cells.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  cells.push(current);
+
+  // `| a | b |` splits into ['', ' a ', ' b ', ''] — the pipes at the edges are
+  // delimiters, not empty cells.
+  if (cells.length > 1 && !cells[0].trim()) {
+    cells.shift();
+  }
+  if (cells.length > 1 && !cells[cells.length - 1].trim()) {
+    cells.pop();
+  }
+
+  return cells.map((cell) => cell.trim());
+}
+
+/** Cell text for comparison: trimmed, with runs of internal whitespace collapsed. */
+function normalizeCell(cell: string): string {
+  return cell.replace(/\s+/g, ' ').trim();
+}
+
+interface ParsedTable {
+  header: string;
+  delimiter: string;
+  body: string[];
+  /** Lines after the table block, in order, blank lines included. */
+  rest: string[];
+}
+
+/**
+ * Read a table off the top of `text`: a header row containing a pipe, a
+ * delimiter row, then consecutive lines that contain a pipe. Returns null when
+ * the text does not begin with a table.
+ *
+ * `ignoreBlankLines` is for the original block, which `detectExistingContentType`
+ * also reads with blank lines stripped; the candidate is parsed strictly so that
+ * a blank line genuinely ends the table block.
+ */
+function parseLeadingTable(text: string, ignoreBlankLines: boolean): ParsedTable | null {
+  const all = text.trim().split('\n');
+  const lines = ignoreBlankLines ? all.filter((line) => line.trim()) : all;
+  if (lines.length < 2 || !lines[0].includes('|') || !GFM_DELIMITER_ROW.test(lines[1].trim())) {
+    return null;
+  }
+
+  const body: string[] = [];
+  let index = 2;
+  for (; index < lines.length; index++) {
+    const line = lines[index];
+    if (!line.trim() || !line.includes('|')) {
+      break;
+    }
+    body.push(line);
+  }
+
+  return { header: lines[0], delimiter: lines[1], body, rest: lines.slice(index) };
+}
+
+export type TableEditValidation = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Hard guard on an LLM table edit.
+ *
+ * The prompt asks the model to return the complete table with the same shape,
+ * but the caller replaces the whole original block with the reply
+ * (`applyAnchorReplacement`, or the node splice in `document-updater`), so an
+ * instruction is not enough: a truncated or reshaped answer would be committed.
+ * This re-checks the answer against the original and, when it fails, hands back
+ * a reason short enough to put in both the log and the retry prompt.
+ */
+export function validateTableEdit(original: string, candidate: string): TableEditValidation {
+  const before = parseLeadingTable(original, true);
+  if (!before) {
+    // Not a table to begin with — nothing for this guard to protect.
+    return { ok: true };
+  }
+
+  const after = parseLeadingTable(candidate, false);
+  if (!after) {
+    return {
+      ok: false,
+      reason:
+        'the reply does not start with a table (a header row and a |---| delimiter row must come first, with nothing before them)',
+    };
+  }
+
+  const tail = [...after.rest];
+  while (tail.length && !tail[0].trim()) {
+    tail.shift();
+  }
+  while (tail.length && !tail[tail.length - 1].trim()) {
+    tail.pop();
+  }
+  if (tail.length) {
+    if (tail.some((line) => !line.trim())) {
+      return { ok: false, reason: 'content after the table: at most one short paragraph may follow it' };
+    }
+    if (tail.some((line) => line.includes('|'))) {
+      return { ok: false, reason: 'content after the table: the rows must all be inside the one table' };
+    }
+    if (tail.some((line) => LIST_MARKER.test(line) || line.trimStart().startsWith('#'))) {
+      return { ok: false, reason: 'content after the table: a list or heading follows the table' };
+    }
+  }
+
+  const expectedHeader = splitTableCells(before.header);
+  const actualHeader = splitTableCells(after.header);
+  const columns = expectedHeader.length;
+
+  if (actualHeader.length !== columns) {
+    return {
+      ok: false,
+      reason: `the header row has ${actualHeader.length} columns but the original has ${columns}`,
+    };
+  }
+
+  const expectedNames = expectedHeader.map(normalizeCell);
+  const actualNames = actualHeader.map(normalizeCell);
+  if (expectedNames.some((name, i) => name !== actualNames[i])) {
+    return {
+      ok: false,
+      reason: `the header row changed: it must stay exactly "${expectedNames.join(' | ')}"`,
+    };
+  }
+
+  const delimiterCells = splitTableCells(after.delimiter).length;
+  if (delimiterCells !== columns) {
+    return {
+      ok: false,
+      reason: `the delimiter row has ${delimiterCells} cells but the table has ${columns} columns`,
+    };
+  }
+
+  for (let i = 0; i < after.body.length; i++) {
+    const cells = splitTableCells(after.body[i]).length;
+    if (cells !== columns) {
+      return {
+        ok: false,
+        reason: `row ${i + 1} has ${cells} cells but the table has ${columns} columns`,
+      };
+    }
+  }
+
+  if (after.body.length < before.body.length) {
+    return {
+      ok: false,
+      reason: `the table has ${after.body.length} rows but the original has ${before.body.length}; every original row must be kept`,
+    };
+  }
+
+  // A completion cut off mid-row leaves that row without its closing pipe, which
+  // is only a signal when the original closed every row.
+  const originalRowsClosed = before.body.length > 0 && before.body.every((line) => line.trim().endsWith('|'));
+  if (originalRowsClosed) {
+    const unterminated = after.body.findIndex((line) => !line.trim().endsWith('|'));
+    if (unterminated !== -1) {
+      return {
+        ok: false,
+        reason: `row ${unterminated + 1} does not end with "|", so the table looks truncated`,
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
 /**
  * Room for the answer. 500 tokens truncated any table bigger than a handful of
  * rows, and because the caller replaces the whole block with the reply, the
@@ -155,11 +350,10 @@ The existing content is a GFM markdown table. These table rules override anythin
     source: 'existing-content',
   });
 
-  const response = await createChatCompletion(
-    [
-      {
-        role: 'system',
-        content: `You are a document editor. Improve existing content by integrating the provided knowledge.
+  const messages: ChatCompletionMessageParam[] = [
+    {
+      role: 'system',
+      content: `You are a document editor. Improve existing content by integrating the provided knowledge.
 
 Existing content type: ${contentType}
 
@@ -177,28 +371,75 @@ ${languageDirective}
 Approach: Update first, then add if needed. Create the most accurate and comprehensive version.
 
 Return ONLY the updated markdown content, nothing else.`,
-      },
-      {
-        role: 'user',
-        content: `File: ${context?.fileName || 'Unknown'} - Section: ${contextInfo}
+    },
+    {
+      role: 'user',
+      content: `File: ${context?.fileName || 'Unknown'} - Section: ${contextInfo}
 
 Existing content:
 ${markdown}
 
 Knowledge to integrate:
 ${knowledgeContent}`,
-      },
-    ],
-    {
-      workspaceId,
-      purpose: 'document-update',
-      temperature: 0,
-      max_tokens: outputTokenBudget(markdown),
-      function_name: 'enhanceExistingContent',
     },
-  );
+  ];
 
-  return response?.trim() || markdown;
+  const options = {
+    workspaceId,
+    purpose: 'document-update' as const,
+    temperature: 0,
+    max_tokens: outputTokenBudget(markdown),
+    function_name: 'enhanceExistingContent',
+  };
+
+  const response = await createChatCompletion(messages, options);
+  const edited = response?.trim() || markdown;
+
+  if (contentType !== 'table' || edited === markdown) {
+    return edited;
+  }
+
+  // The prompt asks for the whole table back, but the caller commits whatever
+  // comes out of here, so verify the shape before trusting it.
+  const firstCheck = validateTableEdit(markdown, edited);
+  if (firstCheck.ok) {
+    return edited;
+  }
+
+  Logger.warn('Table edit did not keep the table structure; retrying once', {
+    fileName: context?.fileName,
+    workspaceId,
+    operation: 'enhanceExistingContent',
+    reason: firstCheck.reason,
+  });
+
+  const retryResponse = await createChatCompletion(
+    [...messages, { role: 'user', content: tableRetryInstruction(firstCheck.reason) }],
+    { ...options, function_name: 'enhanceExistingContent.retry' },
+  );
+  const retried = retryResponse?.trim();
+  if (!retried) {
+    return markdown;
+  }
+
+  const secondCheck = validateTableEdit(markdown, retried);
+  if (secondCheck.ok) {
+    return retried;
+  }
+
+  Logger.warn('Table edit still malformed after retry; keeping the original content', {
+    fileName: context?.fileName,
+    workspaceId,
+    operation: 'enhanceExistingContent',
+    reason: secondCheck.reason,
+  });
+
+  return markdown;
+}
+
+/** The corrective turn appended before the single retry of a failed table edit. */
+function tableRetryInstruction(reason: string): string {
+  return `Your previous reply did not keep the table structure: ${reason}. Return the complete table again with the same columns and header, every original row, one row per line. Return ONLY the table.`;
 }
 
 export async function classifyMessageIntent(

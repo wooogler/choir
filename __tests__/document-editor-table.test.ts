@@ -21,7 +21,7 @@ jest.mock('services/i18n/resolve-locale', () => ({
   resolveContentLanguage: (...args: any[]) => mockContentLanguage(...args),
 }));
 
-import { detectExistingContentType, editMarkdownWithKnowledge } from 'services/llm/document-editor';
+import { detectExistingContentType, editMarkdownWithKnowledge, validateTableEdit } from 'services/llm/document-editor';
 
 const PIPED_TABLE = `| Environment | Host | Owner |
 | --- | --- | --- |
@@ -123,5 +123,176 @@ describe('editMarkdownWithKnowledge with a table', () => {
 
     expect(options().max_tokens).toBeGreaterThan(1500);
     expect(options().max_tokens).toBeLessThanOrEqual(4000);
+  });
+});
+
+// The prompt asking for the whole table back is only an instruction; the caller
+// commits whatever comes out, so the reply is re-checked against the original.
+describe('validateTableEdit', () => {
+  const expectFail = (original: string, candidate: string) => {
+    const result = validateTableEdit(original, candidate);
+    expect(result.ok).toBe(false);
+    return result.ok ? '' : result.reason;
+  };
+
+  it('accepts an edit that changes a cell', () => {
+    const candidate = PIPED_TABLE.replace('staging.example.com', 'stg.example.com');
+    expect(validateTableEdit(PIPED_TABLE, candidate)).toEqual({ ok: true });
+  });
+
+  it('accepts added rows', () => {
+    const candidate = `${PIPED_TABLE}\n| sandbox | sandbox.example.com | Platform |`;
+    expect(validateTableEdit(PIPED_TABLE, candidate)).toEqual({ ok: true });
+  });
+
+  it('accepts one short trailing paragraph after the table', () => {
+    const candidate = `${PIPED_TABLE}\n\nAll hosts sit behind the shared load balancer.`;
+    expect(validateTableEdit(PIPED_TABLE, candidate)).toEqual({ ok: true });
+  });
+
+  it('accepts a table without leading or trailing pipes on both sides', () => {
+    const candidate = `${BARE_TABLE}\nproduction | example.com | Platform`;
+    expect(validateTableEdit(BARE_TABLE, candidate)).toEqual({ ok: true });
+  });
+
+  it('counts an escaped pipe inside a cell as part of that cell', () => {
+    const original = '| Command | Meaning |\n| --- | --- |\n| a \\| b | either a or b |';
+    const candidate = '| Command | Meaning |\n| --- | --- |\n| a \\| b | either a or b |\n| c \\| d | either c or d |';
+    expect(validateTableEdit(original, candidate)).toEqual({ ok: true });
+  });
+
+  it('rejects prose before the table', () => {
+    const reason = expectFail(PIPED_TABLE, `Here is the updated table:\n\n${PIPED_TABLE}`);
+    expect(reason).toContain('does not start with a table');
+  });
+
+  it('rejects a dropped column', () => {
+    const candidate =
+      '| Environment | Host |\n| --- | --- |\n| staging | staging.example.com |\n| production | example.com |';
+    expect(expectFail(PIPED_TABLE, candidate)).toContain('2 columns but the original has 3');
+  });
+
+  it('rejects a renamed header cell', () => {
+    const candidate = PIPED_TABLE.replace('| Owner |', '| Team |');
+    expect(expectFail(PIPED_TABLE, candidate)).toContain('header row changed');
+  });
+
+  it('rejects reordered columns', () => {
+    const candidate =
+      '| Host | Environment | Owner |\n| --- | --- | --- |\n| staging.example.com | staging | Platform |\n| example.com | production | Platform |';
+    expect(expectFail(PIPED_TABLE, candidate)).toContain('header row changed');
+  });
+
+  it('rejects a body row with the wrong cell count', () => {
+    const candidate = `${PIPED_TABLE}\n| sandbox | sandbox.example.com |`;
+    expect(expectFail(PIPED_TABLE, candidate)).toContain('cells but the table has 3 columns');
+  });
+
+  it('rejects a table with fewer rows than the original', () => {
+    const candidate =
+      '| Environment | Host | Owner |\n| --- | --- | --- |\n| staging | staging.example.com | Platform |';
+    expect(expectFail(PIPED_TABLE, candidate)).toContain('every original row must be kept');
+  });
+
+  it('rejects a last row cut off before its closing pipe', () => {
+    const candidate = `${PIPED_TABLE}\n| sandbox | sandbox.example.com | Platf`;
+    expect(expectFail(PIPED_TABLE, candidate)).toContain('does not end with');
+  });
+
+  it('rejects a list after the table', () => {
+    const candidate = `${PIPED_TABLE}\n\n- staging moved hosts\n- production is unchanged`;
+    expect(expectFail(PIPED_TABLE, candidate)).toContain('content after the table');
+  });
+
+  it('rejects a heading after the table', () => {
+    const candidate = `${PIPED_TABLE}\n\n## Notes`;
+    expect(expectFail(PIPED_TABLE, candidate)).toContain('content after the table');
+  });
+
+  it('rejects two paragraphs after the table', () => {
+    const candidate = `${PIPED_TABLE}\n\nFirst note.\n\nSecond note.`;
+    expect(expectFail(PIPED_TABLE, candidate)).toContain('content after the table');
+  });
+
+  it('rejects the table rewritten as prose', () => {
+    const candidate = 'Staging runs on stg.example.com and production on example.com, both owned by Platform.';
+    expect(expectFail(PIPED_TABLE, candidate)).toContain('does not start with a table');
+  });
+
+  it('passes anything through when the original was not a table', () => {
+    expect(validateTableEdit('Vacation is 14 days.', 'Vacation is 15 days.')).toEqual({ ok: true });
+  });
+});
+
+describe('editMarkdownWithKnowledge table guard', () => {
+  const VALID_EDIT = PIPED_TABLE.replace('staging.example.com', 'stg.example.com');
+  const INVALID_EDIT = 'Staging now runs on stg.example.com.';
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it('returns a valid reply after a single call', async () => {
+    mockChat.mockResolvedValue(VALID_EDIT);
+    const result = await editMarkdownWithKnowledge(PIPED_TABLE, 'Staging moved to stg.example.com', {
+      fileName: 'infra.md',
+    });
+
+    expect(result).toBe(VALID_EDIT);
+    expect(mockChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries once with the reason and returns the corrected table', async () => {
+    mockChat.mockResolvedValueOnce(INVALID_EDIT).mockResolvedValueOnce(VALID_EDIT);
+    const result = await editMarkdownWithKnowledge(PIPED_TABLE, 'Staging moved to stg.example.com', {
+      fileName: 'infra.md',
+    });
+
+    expect(result).toBe(VALID_EDIT);
+    expect(mockChat).toHaveBeenCalledTimes(2);
+
+    const retryMessages = mockChat.mock.calls[1][0];
+    expect(retryMessages).toHaveLength(mockChat.mock.calls[0][0].length + 1);
+    const correction = retryMessages[retryMessages.length - 1];
+    expect(correction.role).toBe('user');
+    expect(correction.content).toContain('did not keep the table structure');
+    expect(correction.content).toContain('does not start with a table');
+    expect(correction.content).toContain('every original row');
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it('keeps the original content when the retry is malformed too', async () => {
+    mockChat.mockResolvedValueOnce(INVALID_EDIT).mockResolvedValueOnce('Still prose about staging.');
+    const result = await editMarkdownWithKnowledge(PIPED_TABLE, 'Staging moved to stg.example.com', {
+      fileName: 'infra.md',
+    });
+
+    expect(result).toBe(PIPED_TABLE);
+    expect(mockChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the original content when the retry comes back empty', async () => {
+    mockChat.mockResolvedValueOnce(INVALID_EDIT).mockResolvedValueOnce('');
+    const result = await editMarkdownWithKnowledge(PIPED_TABLE, 'Staging moved to stg.example.com', {
+      fileName: 'infra.md',
+    });
+
+    expect(result).toBe(PIPED_TABLE);
+    expect(mockChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not guard list content, however odd the reply', async () => {
+    mockChat.mockResolvedValue('| Environment | Host |');
+    const result = await editMarkdownWithKnowledge('- Vacation is 14 days', 'Vacation is 15 days', {
+      fileName: 'hr.md',
+    });
+
+    expect(result).toBe('| Environment | Host |');
+    expect(mockChat).toHaveBeenCalledTimes(1);
   });
 });
