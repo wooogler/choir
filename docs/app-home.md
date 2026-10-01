@@ -140,7 +140,7 @@ so the `users.info` lookup per manager and the `(Real Name)` suffix are gone.
 
 ```
 *AI models*  Key: server default · Q&A: server default · Updates: server default   [ Configure ]
-context: Classification model: gpt-5.4-nano-2026-03-17 (fixed)
+context: Classification model: gpt-6-luna (fixed)
 [Clear settings]                                              ← danger + confirm, only when a workspace key is set
 ─────
 *Change history encryption*  ✅ Key configured · created 2026-01-02 · rotated 2026-03-04   [ Import key ]

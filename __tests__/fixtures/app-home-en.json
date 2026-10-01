@@ -673,7 +673,7 @@
       "elements": [
         {
           "type": "mrkdwn",
-          "text": "Classification model: gpt-5.4-nano-2026-03-17 (fixed)"
+          "text": "Classification model: gpt-6-luna (fixed)"
         }
       ]
     },
@@ -1391,6 +1391,27 @@
             {
               "text": {
                 "type": "plain_text",
+                "text": "gpt-6-astra"
+              },
+              "value": "gpt-6-astra"
+            },
+            {
+              "text": {
+                "type": "plain_text",
+                "text": "gpt-6.1-sol"
+              },
+              "value": "gpt-6.1-sol"
+            },
+            {
+              "text": {
+                "type": "plain_text",
+                "text": "gpt-6-luna"
+              },
+              "value": "gpt-6-luna"
+            },
+            {
+              "text": {
+                "type": "plain_text",
                 "text": "gpt-5.5"
               },
               "value": "gpt-5.5"
@@ -1408,13 +1429,6 @@
                 "text": "gpt-5.4-mini"
               },
               "value": "gpt-5.4-mini"
-            },
-            {
-              "text": {
-                "type": "plain_text",
-                "text": "gpt-5.4-nano"
-              },
-              "value": "gpt-5.4-nano"
             }
           ],
           "initial_option": {
@@ -1445,6 +1459,27 @@
             {
               "text": {
                 "type": "plain_text",
+                "text": "gpt-6-astra"
+              },
+              "value": "gpt-6-astra"
+            },
+            {
+              "text": {
+                "type": "plain_text",
+                "text": "gpt-6.1-sol"
+              },
+              "value": "gpt-6.1-sol"
+            },
+            {
+              "text": {
+                "type": "plain_text",
+                "text": "gpt-6-luna"
+              },
+              "value": "gpt-6-luna"
+            },
+            {
+              "text": {
+                "type": "plain_text",
                 "text": "gpt-5.5"
               },
               "value": "gpt-5.5"
@@ -1462,13 +1497,6 @@
                 "text": "gpt-5.4-mini"
               },
               "value": "gpt-5.4-mini"
-            },
-            {
-              "text": {
-                "type": "plain_text",
-                "text": "gpt-5.4-nano"
-              },
-              "value": "gpt-5.4-nano"
             }
           ],
           "initial_option": {

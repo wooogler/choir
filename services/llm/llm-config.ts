@@ -9,9 +9,9 @@ export type LLMPurpose = 'qa' | 'document-update' | 'classification';
 
 // Classification model is intentionally fixed to keep intent routing cheap and
 // consistent across workspaces. Managers cannot change it from App Home.
-export const CLASSIFICATION_MODEL = 'gpt-5.4-nano-2026-03-17';
+export const CLASSIFICATION_MODEL = 'gpt-6-luna';
 
-const DEFAULT_MODEL = 'gpt-5.4-mini';
+const DEFAULT_MODEL = 'gpt-6-luna';
 
 export function validateOpenAIConfig(): boolean {
   if (!process.env.OPENAI_API_KEY) {

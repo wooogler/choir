@@ -1,7 +1,7 @@
 import type { App, BlockAction } from '@slack/bolt';
 import { logAppHomeButtonClick, logAppHomeModalSubmit } from 'services/common/interaction-tracker';
 import { tForRequest } from 'services/i18n';
-import { CURATED_GPT5_MODELS, invalidateModelCatalog, listGpt5Models } from 'services/llm/model-catalog';
+import { CURATED_MODELS, invalidateModelCatalog, listSelectableModels } from 'services/llm/model-catalog';
 import { invalidateClientCache, validateOpenAIKey } from 'services/llm/openai-client-factory';
 import { getWorkspaceId, isManager, isWorkspaceOwner } from 'services/slack';
 import { WorkspaceStore } from 'services/workspace/workspace-store';
@@ -52,8 +52,8 @@ export const registerOpenAISettingsHandlers = (app: App) => {
       // none is set, fall back to the curated list so the dropdowns still work
       // on first configuration.
       const lookupKey = existing?.apiKey || process.env.OPENAI_API_KEY;
-      const models = lookupKey ? await listGpt5Models(lookupKey) : CURATED_GPT5_MODELS;
-      const selectableModels = models.length > 0 ? models : CURATED_GPT5_MODELS;
+      const models = lookupKey ? await listSelectableModels(lookupKey) : CURATED_MODELS;
+      const selectableModels = models.length > 0 ? models : CURATED_MODELS;
 
       const findInitial = (value: string | undefined) => {
         if (!value || !selectableModels.includes(value)) return undefined;

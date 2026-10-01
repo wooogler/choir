@@ -4,6 +4,7 @@ import type { ResponseInput, ResponseInputContent } from 'openai/resources/respo
 import { anonymizeText, deAnonymizeText } from 'services/common/name-cache';
 import { type LLMPurpose, resolveLLMConfig } from './llm-config';
 import { getOpenAIClient } from './openai-client-factory';
+import { withTemperatureFallback } from './sampling-params';
 
 dotenv.config({ path: process.env.ENV_FILE || process.env.DOTENV_CONFIG_PATH || '.env' });
 
@@ -130,17 +131,19 @@ export async function createChatCompletionWithMeta(
       : anonymizeText(normalizeMessageContent(message.content), workspaceId),
   })) as ChatCompletionMessageParam[];
 
-  const response = await client.responses.create({
-    model,
-    input: toResponseInput(processedMessages),
-    temperature,
-    max_output_tokens: normalizeMaxOutputTokens(max_tokens),
-    text: response_format
-      ? {
-          format: response_format.type === 'json_object' ? { type: 'json_object' } : { type: 'text' },
-        }
-      : undefined,
-  });
+  const response = await withTemperatureFallback(model, temperature, (sampling) =>
+    client.responses.create({
+      model,
+      input: toResponseInput(processedMessages),
+      ...sampling,
+      max_output_tokens: normalizeMaxOutputTokens(max_tokens),
+      text: response_format
+        ? {
+            format: response_format.type === 'json_object' ? { type: 'json_object' } : { type: 'text' },
+          }
+        : undefined,
+    }),
+  );
 
   const rawResponse = response.output_text;
   const finalResponse = skipAnonymization ? rawResponse || '' : deAnonymizeText(rawResponse || '', workspaceId);
@@ -189,21 +192,23 @@ export async function createStructuredResponse<T>(
       : anonymizeText(normalizeMessageContent(message.content), workspaceId),
   })) as ChatCompletionMessageParam[];
 
-  const response = await client.responses.create({
-    model,
-    input: toResponseInput(processedMessages),
-    temperature,
-    max_output_tokens: normalizeMaxOutputTokens(max_tokens),
-    text: {
-      format: {
-        type: 'json_schema',
-        name: schemaName,
-        schema,
-        strict: true,
-        ...(schemaDescription ? { description: schemaDescription } : {}),
+  const response = await withTemperatureFallback(model, temperature, (sampling) =>
+    client.responses.create({
+      model,
+      input: toResponseInput(processedMessages),
+      ...sampling,
+      max_output_tokens: normalizeMaxOutputTokens(max_tokens),
+      text: {
+        format: {
+          type: 'json_schema',
+          name: schemaName,
+          schema,
+          strict: true,
+          ...(schemaDescription ? { description: schemaDescription } : {}),
+        },
       },
-    },
-  });
+    }),
+  );
 
   const rawResponse = response.output_text;
   const finalResponse = skipAnonymization ? rawResponse || '' : deAnonymizeText(rawResponse || '', workspaceId);

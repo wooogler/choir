@@ -1,6 +1,7 @@
 import { type LanguageCode, languageName } from 'services/common/language';
 import { resolveLLMConfig } from './llm-config';
 import { getOpenAIClient } from './openai-client-factory';
+import { reasoningFor } from './sampling-params';
 
 const MAX_CAPTION_TOKENS = 500;
 const MAX_SHORT_CAPTION_CHARS = 200;
@@ -54,6 +55,7 @@ export async function generateImageCaption(params: {
 }): Promise<ImageCaptionResult> {
   const resolved = await resolveLLMConfig(params.workspaceId, 'qa');
   const client = getOpenAIClient(resolved.apiKey);
+  const reasoning = reasoningFor(resolved.model);
 
   const altHint = params.alt?.trim() ? `\n\nThe author's alt text for this image is: "${params.alt.trim()}".` : '';
   const language = languageDirective(params.documentLanguage ?? 'en');
@@ -71,6 +73,9 @@ export async function generateImageCaption(params: {
       },
     ],
     max_output_tokens: MAX_CAPTION_TOKENS,
+    // Reasoning tokens count against max_output_tokens; at a GPT-6 model's
+    // default effort they can use up the whole caption budget.
+    ...(reasoning ? { reasoning } : {}),
   });
 
   const indexText = (response.output_text || '').trim();
