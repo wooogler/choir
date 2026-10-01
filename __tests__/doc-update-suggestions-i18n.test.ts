@@ -68,6 +68,7 @@ jest.mock('services/file-registry/main-service', () => ({
     getInstance: () => ({
       addNewSection: (...args: unknown[]) => addNewSection(...args),
       getMarkdownFile: (...args: unknown[]) => getMarkdownFile(...args),
+      ensureLoaded: async () => true,
     }),
   },
 }));

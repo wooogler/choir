@@ -38,6 +38,7 @@ export async function applyDocumentUpdatesToGithub({
   const githubService = GithubService.getInstance();
   const documentUpdateService = DocumentUpdateService.getInstance();
   const vectorStore = VectorStoreService.getInstance();
+  await vectorStore.ensureLoaded(workspaceId);
 
   for (const [fileName, fileUpdates] of updatesByFile.entries()) {
     try {

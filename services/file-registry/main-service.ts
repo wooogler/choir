@@ -13,6 +13,13 @@ export class VectorStoreService {
   private static instance: VectorStoreService;
   private readonly workspaceStates = new Map<string, VectorWorkspaceState>();
   private readonly defaultWorkspaceKey = 'default';
+  /**
+   * Workspaces whose file list has been set since the process started. Kept
+   * apart from `workspaceStates`, which every read creates an empty entry in, so
+   * "never loaded" cannot be mistaken for "loaded, and the repo is empty".
+   */
+  private readonly loadedWorkspaces = new Set<string>();
+  private readonly inFlightLoads = new Map<string, Promise<boolean>>();
 
   public static getInstance(): VectorStoreService {
     if (!VectorStoreService.instance) {
@@ -37,6 +44,7 @@ export class VectorStoreService {
 
   public clearWorkspaceState(workspaceId: string): void {
     this.workspaceStates.delete(this.getWorkspaceKey(workspaceId));
+    this.loadedWorkspaces.delete(this.getWorkspaceKey(workspaceId));
     Logger.info('VectorStoreService: cleared workspace state', { workspaceId });
   }
 
@@ -47,8 +55,63 @@ export class VectorStoreService {
     workspaceId?: string,
   ): Promise<boolean> {
     this.getState(workspaceId).markdownFiles = markdownFiles;
+    this.loadedWorkspaces.add(this.getWorkspaceKey(workspaceId));
     Logger.info(`VectorStoreService: stored ${markdownFiles.length} markdown files`, { workspaceId });
     return true;
+  }
+
+  /**
+   * The file list lives only in memory, and in OAuth mode nothing reloads it at
+   * startup until a webhook or a manual refresh arrives — so after a restart
+   * every lookup missed and document updates failed with "File not found in
+   * vector store". Anything that reads the list, or rewrites it from what it
+   * read, awaits this first; it fills the list from the on-disk mirror once.
+   *
+   * Returns whether the list is loaded. A workspace with no repo or an empty
+   * mirror stays unloaded, so the next call tries again.
+   */
+  public async ensureLoaded(workspaceId?: string): Promise<boolean> {
+    if (!workspaceId) return false;
+    const key = this.getWorkspaceKey(workspaceId);
+    if (this.loadedWorkspaces.has(key)) return true;
+
+    let load = this.inFlightLoads.get(key);
+    if (!load) {
+      load = this.loadFromMirror(workspaceId).finally(() => this.inFlightLoads.delete(key));
+      this.inFlightLoads.set(key, load);
+    }
+    return load;
+  }
+
+  private async loadFromMirror(workspaceId: string): Promise<boolean> {
+    try {
+      // Imported lazily: both modules sit above this one in the import graph.
+      const { WorkspaceStore } = await import('../workspace/workspace-store');
+      const { WorkspaceMirrorMarkdownLoader } = await import('../workspace/mirror-markdown-loader');
+
+      const repo = (await new WorkspaceStore().getWorkspaceConfig(workspaceId))?.githubRepo;
+      if (!repo) return false;
+
+      const markdownFiles = await WorkspaceMirrorMarkdownLoader.getInstance().loadMarkdownFiles({
+        workspaceId,
+        owner: repo.owner,
+        repo: repo.repo,
+        branch: repo.branch,
+      });
+      if (markdownFiles.length === 0) {
+        Logger.warn('VectorStoreService: mirror has no markdown files to load', { workspaceId });
+        return false;
+      }
+
+      // A full load (webhook, refresh) that finished while the mirror was being
+      // read is at least as fresh as what we read.
+      if (this.loadedWorkspaces.has(this.getWorkspaceKey(workspaceId))) return true;
+      this.setLoadedMarkdownFiles(markdownFiles, workspaceId);
+      return true;
+    } catch (error) {
+      Logger.error('VectorStoreService: failed to load markdown files from the mirror', error as Error);
+      return false;
+    }
   }
 
   public getMarkdownFile(fileName: string, workspaceId?: string): MarkdownFile | undefined {
@@ -66,6 +129,7 @@ export class VectorStoreService {
 
   public setLoadedMarkdownFiles(markdownFiles: MarkdownFile[], workspaceId?: string): void {
     this.getState(workspaceId).markdownFiles = markdownFiles;
+    this.loadedWorkspaces.add(this.getWorkspaceKey(workspaceId));
     Logger.info(`VectorStoreService: hydrated ${markdownFiles.length} markdown files`, { workspaceId });
   }
 

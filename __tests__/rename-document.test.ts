@@ -78,6 +78,7 @@ jest.mock('services/file-registry/main-service', () => ({
   VectorStoreService: {
     getInstance: () => ({
       getAllMarkdownFiles: () => indexedFiles,
+      ensureLoaded: async () => true,
       setLoadedMarkdownFiles,
     }),
   },

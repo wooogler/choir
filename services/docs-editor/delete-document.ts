@@ -106,6 +106,7 @@ export async function deleteDocument(params: {
 
   try {
     const vectorStore = VectorStoreService.getInstance();
+    await vectorStore.ensureLoaded(workspaceId);
     const remaining = vectorStore.getAllMarkdownFiles(workspaceId).filter((file) => file.path !== filePath);
     vectorStore.setLoadedMarkdownFiles(remaining, workspaceId);
   } catch (error) {

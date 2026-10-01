@@ -256,6 +256,7 @@ export const createFileSubmissionCallback = async ({
         };
 
         // Register new file in the in-memory file list; QMD index updates on next sync
+        await vectorStore.ensureLoaded(workspaceId);
         vectorStore.addToMarkdownFiles(markdownFile, workspaceId);
         logger.info(`Registered new file ${fileName} in markdown file registry`);
 

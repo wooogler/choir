@@ -145,6 +145,9 @@ export async function saveEditedDocument(params: {
   // overwritten below. Look up by full path so nested docs (and siblings sharing
   // a basename) resolve to the correct entry.
   const editedFileName = params.filePath.split('/').pop() || params.filePath;
+  // Also guards refreshIndexedFiles below, which rebuilds the list from what is
+  // already loaded: run against an unloaded store it would keep only this save.
+  await vectorStore.ensureLoaded(params.workspaceId);
   const beforeContent = vectorStore.getMarkdownFile(params.filePath, params.workspaceId)?.content ?? '';
 
   const trimmedMessage = params.commitMessage.trim() || `Update ${params.filePath}`;

@@ -1393,6 +1393,19 @@ async function initializeSingleWorkspaceOnStartup(): Promise<{
   return { workspaceId, repoInfo };
 }
 
+async function loadAllWorkspaceFilesOnStartup(): Promise<void> {
+  try {
+    const configs = await new WorkspaceStore().getAllWorkspaceConfigs();
+    // One at a time: each load reads and parses a whole mirror.
+    for (const config of configs) {
+      if (!config.githubRepo) continue;
+      await vectorStore.ensureLoaded(config.workspaceId);
+    }
+  } catch (error) {
+    app.logger.warn('Failed to load workspace file lists on startup', error as Error);
+  }
+}
+
 /** Start Bolt App */
 let isShuttingDown = false;
 
@@ -1477,6 +1490,9 @@ process.once('SIGINT', () => {
 
     if (slackConfig.mode === 'oauth') {
       app.logger.info('Slack OAuth install path: /slack/install');
+      // Single mode loads its one workspace's file list above; without this,
+      // every OAuth workspace starts with an empty list until a webhook arrives.
+      void loadAllWorkspaceFilesOnStartup();
     }
 
     if (singleWorkspaceStartup?.repoInfo) {

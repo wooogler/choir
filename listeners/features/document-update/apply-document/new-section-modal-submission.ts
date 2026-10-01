@@ -176,6 +176,7 @@ export const handleNewSectionModalSubmission = async ({
     }
 
     // 2. 업데이트된 마크다운 파일 가져오기
+    await vectorStore.ensureLoaded(currentWorkspaceId);
     const markdownFile = vectorStore.getMarkdownFile(targetFile, currentWorkspaceId);
     if (!markdownFile) {
       await client.chat.postMessage({

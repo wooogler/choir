@@ -44,6 +44,7 @@ jest.mock('services/file-registry/main-service', () => ({
       // Nothing is indexed under a path that does not exist yet.
       getMarkdownFile: () => undefined,
       getAllMarkdownFiles: () => [],
+      ensureLoaded: async () => true,
       setLoadedMarkdownFiles,
     }),
   },

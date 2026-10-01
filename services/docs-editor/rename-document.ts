@@ -153,7 +153,7 @@ export async function renameDocument(params: {
   }
 
   // ── (5) Vector store: the same content under the new path ─────────────────
-  refreshVectorStoreEntry({ workspaceId, from, to, content, repoInfo });
+  await refreshVectorStoreEntry({ workspaceId, from, to, content, repoInfo });
   scheduleQmdWarmup({ workspaceId, reason: 'docs-editor-rename' });
 
   // ── (6) Google Docs replica: mapping, state and baselines are path-keyed ───
@@ -321,15 +321,16 @@ function containedContextDir(repoRoot: string, docPath: string): string {
  * entry's existing `githubUrl`: here the URL is exactly what changed, so the
  * old one would send every citation to a 404.
  */
-function refreshVectorStoreEntry(params: {
+async function refreshVectorStoreEntry(params: {
   workspaceId: string;
   from: string;
   to: string;
   content: string;
   repoInfo: { owner: string; repo: string; branch?: string };
-}): void {
+}): Promise<void> {
   try {
     const vectorStore = VectorStoreService.getInstance();
+    await vectorStore.ensureLoaded(params.workspaceId);
     const name = params.to.split('/').pop() || params.to;
     const branchSegment = params.repoInfo.branch || 'main';
     const encodedPath = params.to

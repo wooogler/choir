@@ -1,6 +1,5 @@
 import { Logger } from 'services/common/logger';
 import { enrichWorkspaceImageCaptions } from 'services/document/image-captions';
-import { VectorStoreService } from 'services/file-registry/main-service';
 import { GithubService, type MarkdownFile } from 'services/github';
 import { schedulePublishAll } from 'services/google/replica-publisher';
 import { invalidateProjectIndex } from 'services/projects/project-index';
@@ -150,33 +149,5 @@ export class GitHubSyncService {
       markdownFiles,
       loadedFrom: 'github',
     };
-  }
-
-  public async hydrateVectorStoreFromMirror(params: {
-    workspaceId: string;
-    owner: string;
-    repo: string;
-    branch?: string;
-  }): Promise<boolean> {
-    const mirroredMarkdownFiles = await this.mirrorMarkdownLoader.loadMarkdownFiles({
-      workspaceId: params.workspaceId,
-      owner: params.owner,
-      repo: params.repo,
-      branch: params.branch,
-    });
-
-    if (mirroredMarkdownFiles.length === 0) {
-      Logger.info(`GitHubSyncService: no mirrored markdown files found for workspace ${params.workspaceId}`);
-      return false;
-    }
-
-    VectorStoreService.getInstance().setLoadedMarkdownFiles(mirroredMarkdownFiles, params.workspaceId);
-    Logger.info('GitHubSyncService: hydrated vector store metadata from mirror', {
-      workspaceId: params.workspaceId,
-      owner: params.owner,
-      repo: params.repo,
-      fileCount: mirroredMarkdownFiles.length,
-    });
-    return true;
   }
 }

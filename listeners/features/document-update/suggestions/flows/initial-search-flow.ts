@@ -27,7 +27,10 @@ export async function runInitialSearch(params: {
   sessionId: string;
   knowledgeSourceChannelId: string | undefined;
   knowledgeSourceThreadTs: string | undefined;
-  vectorStore: { getAllMarkdownFiles: (workspaceId: string) => any[] };
+  vectorStore: {
+    getAllMarkdownFiles: (workspaceId: string) => any[];
+    ensureLoaded: (workspaceId?: string) => Promise<boolean>;
+  };
   client: any;
   logger: any;
   /** The project folder this conversation updates, or null for the whole workspace. */
@@ -130,6 +133,7 @@ export async function runInitialSearch(params: {
   }
 
   if (!searchResults || searchResults.length === 0) {
+    await vectorStore.ensureLoaded(currentWorkspaceId);
     const allMarkdownFiles = vectorStore.getAllMarkdownFiles(currentWorkspaceId);
     if (allMarkdownFiles.length === 0) {
       const noDocumentsText = t('docUpdate.suggestions.error.noDocuments');

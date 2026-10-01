@@ -44,6 +44,7 @@ jest.mock('services/file-registry/main-service', () => ({
         githubUrl: 'https://github.com/echo-lab/assets/blob/master/a.md',
       }),
       getAllMarkdownFiles: () => [],
+      ensureLoaded: async () => true,
       setLoadedMarkdownFiles: jest.fn(),
     }),
   },

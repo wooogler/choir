@@ -62,6 +62,7 @@ jest.mock('services/file-registry/main-service', () => ({
     getInstance: () => ({
       getMarkdownFile: () => undefined,
       getAllMarkdownFiles: () => [],
+      ensureLoaded: async () => true,
       setLoadedMarkdownFiles,
     }),
   },

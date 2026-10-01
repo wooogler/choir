@@ -106,6 +106,7 @@ export async function processDocument(
   userId?: string,
 ): Promise<ProcessedDocument | null> {
   try {
+    await vectorStore.ensureLoaded(workspaceId);
     if (!doc.metadata?.fileName || !doc.metadata?.githubUrl || !doc.metadata?.nodeId) {
       console.log('메타데이터 누락된 문서 건너뜀:', doc.metadata);
       return null;
